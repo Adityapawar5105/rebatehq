@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const sourceRoots = ["app", "components", "lib", "legacy"];
+const sourceRoots = ["app", "components", "lib"];
 const sourceFiles = ["proxy.ts", "next.config.ts", "index.html", "app.js", "seed.js", "margin-engine.js", "margin-engine.d.ts"];
 const forbidden = /service[_-]?role(?:[_-]?key)?/i;
 const files = [...sourceFiles.map(file => path.join(root, file))];
