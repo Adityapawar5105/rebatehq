@@ -112,6 +112,14 @@ function duplicateErrors(objects, kind, scope = object => object.table) {
 export function lintMigrationSet(migrations) {
   const errors = [];
   const allSql = migrations.map(migration => migration.sql).join("\n");
+  for (const migration of migrations) {
+    const sqlWithoutComments = migration.sql
+      .replace(/\/\*[\s\S]*?\*\//g, " ")
+      .replace(/--[^\r\n]*/g, " ");
+    if (/\bGRANT\s+"?margindesk_app"?\s+TO\b/i.test(sqlWithoutComments)) {
+      errors.push(`${migration.name} grants membership in margindesk_app; role membership grants are allowed only in disposable test setup.`);
+    }
+  }
   const tables = readTableDefinitions(allSql);
   if (!tables.length) errors.push("No public tables found in migrations.");
 

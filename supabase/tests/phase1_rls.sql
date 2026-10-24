@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT extensions.plan(14);
+SELECT extensions.plan(15);
 
 -- Fixed local-only actors and two isolated tenants. The transaction rolls back.
 INSERT INTO auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,created_at,updated_at)
@@ -156,6 +156,14 @@ SELECT extensions.ok(NOT EXISTS (
 ), 'App role has intended table grants so isolation checks exercise RLS; audit log remains append-only');
 
 SET LOCAL ROLE margindesk_app;
+SELECT extensions.ok(
+  current_user = 'margindesk_app'
+  AND EXISTS (
+    SELECT 1 FROM pg_roles
+    WHERE rolname=current_user AND NOT rolsuper AND NOT rolbypassrls
+  ),
+  'SET ROLE uses NOSUPERUSER and NOBYPASSRLS margindesk_app'
+);
 SET LOCAL request.jwt.claim.sub = '10000000-0000-4000-8000-000000000001';
 SET LOCAL request.jwt.claim.role = 'authenticated';
 SET LOCAL request.jwt.claims = '{"sub":"10000000-0000-4000-8000-000000000001","role":"authenticated"}';

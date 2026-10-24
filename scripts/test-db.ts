@@ -13,6 +13,21 @@ async function runPgtap(connectionString: string) {
   });
   try {
     await client.connect();
+    const diagnostics = await client.query<{
+      login_role: string;
+      server_version_num: number;
+      login_super: boolean;
+      login_bypass: boolean;
+    }>(`SELECT session_user::text AS login_role,
+               current_setting('server_version_num')::int AS server_version_num,
+               role.rolsuper AS login_super,role.rolbypassrls AS login_bypass
+        FROM pg_roles role WHERE role.rolname=current_user`);
+    const connection = diagnostics.rows[0];
+    if (!connection) throw new Error("Could not inspect the TEST_DATABASE_URL connection role.");
+    process.stdout.write(
+      `pgTAP connection: PostgreSQL ${Math.floor(connection.server_version_num / 10000)}, role ${connection.login_role} ` +
+      `(SUPERUSER=${connection.login_super}, BYPASSRLS=${connection.login_bypass}).\n`,
+    );
     const sql = await readFile(testFile, "utf8");
     const result = await client.query(sql);
     const batches = Array.isArray(result) ? result : [result];
@@ -23,8 +38,8 @@ async function runPgtap(connectionString: string) {
     const plan = output.match(/^1\.\.(\d+)$/m);
     const passed = [...output.matchAll(/^ok\s+\d+\b/gm)].length;
     const failed = [...output.matchAll(/^not ok\s+\d+\b/gm)].length;
-    if (!plan || Number(plan[1]) !== 14 || passed !== 14 || failed !== 0) {
-      throw new Error(`pgTAP did not report all 14 checks passing.\n${output || "No TAP output was returned."}`);
+    if (!plan || Number(plan[1]) !== 15 || passed !== 15 || failed !== 0) {
+      throw new Error(`pgTAP did not report all 15 checks passing.\n${output || "No TAP output was returned."}`);
     }
     process.stdout.write(`${output}\n`);
   } finally {

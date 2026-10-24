@@ -16,9 +16,9 @@
 
 ### Which role does the app pool use?
 
-`APP_DATABASE_URL` is the PostgreSQL login used by the `pg.Pool` in [`lib/db.ts`](./lib/db.ts). The login must be a dedicated non-superuser role that is a member of `margindesk_app`. Each request transaction then runs `SET LOCAL ROLE margindesk_app`, so SQL statements execute under that restricted role while `session_user` continues to identify the login used by the pool.
+`APP_DATABASE_URL` is the PostgreSQL login used by the `pg.Pool` in [`lib/db.ts`](./lib/db.ts). The login must be a dedicated non-superuser role that is a member of `margindesk_app`. Each request transaction then runs `SET LOCAL ROLE margindesk_app`, so SQL statements execute under that restricted role while `session_user` continues to identify the login used by the pool. Separately, `scripts/test-db.ts` connects with `TEST_DATABASE_URL`; CI sets it from the disposable local Supabase `DB_URL`. The setup script grants this test login membership in `margindesk_app` only on the disposable test database, using `WITH INHERIT FALSE, SET TRUE` on PostgreSQL 16+ (the Supabase config currently selects PostgreSQL 17). It logs the live server major version and test-login `LOGIN`, `SUPERUSER`, and `BYPASSRLS` attributes without logging connection credentials. Those live values remain **unverified** until a passing CI run.
 
-The migration creates `margindesk_app` as `NOLOGIN NOINHERIT NOSUPERUSER NOBYPASSRLS`. Before assuming the app role, `withDatabase` checks the actual `session_user` in `pg_roles` and rejects a login with `rolsuper=true`, `rolbypassrls=true`, or no membership in `margindesk_app`. [`scripts/check-app-db-role.ts`](./scripts/check-app-db-role.ts) checks both the pool login and effective role, and [`supabase/tests/phase1_rls.sql`](./supabase/tests/phase1_rls.sql) asserts the app role flags.
+The migration creates `margindesk_app` as `NOLOGIN NOINHERIT NOSUPERUSER NOBYPASSRLS`. Before assuming the app role, `withDatabase` checks the actual `session_user` in `pg_roles` and rejects a login with `rolsuper=true`, `rolbypassrls=true`, or no membership in `margindesk_app`. [`scripts/check-app-db-role.ts`](./scripts/check-app-db-role.ts) checks both the pool login and effective role. Immediately after its `SET LOCAL ROLE margindesk_app`, the pgTAP suite asserts `current_user='margindesk_app'` and that the role is neither superuser nor `BYPASSRLS`; `RESET ROLE` remains before the elevated audit-trigger assertions. The live result remains **unverified** pending CI.
 
 Evidence command to run over the same connection string configured as `APP_DATABASE_URL`:
 
@@ -69,7 +69,7 @@ The migration also checks tenant columns and forced RLS during installation. `pn
 
 ## 3. Append-only audit log
 
-The migration installs a `BEFORE UPDATE OR DELETE` trigger that raises an exception and grants `margindesk_app` only `INSERT` on `audit_log`, explicitly revoking `UPDATE`, `DELETE`, and `TRUNCATE`. The database integration test executes `UPDATE` and `DELETE` attempts as `margindesk_app` and expects SQLSTATE `42501`. Those database attempts are **unverified** until `pnpm test:db` passes in CI and the run link/date is added above.
+The migration installs a `BEFORE UPDATE OR DELETE` trigger that raises an exception and grants `margindesk_app` only `INSERT` on `audit_log`, explicitly revoking `UPDATE`, `DELETE`, and `TRUNCATE`. Production migrations must never grant membership in `margindesk_app` to a login; `pnpm check:schema` now rejects that statement, with a fixture proving the check fails. The database integration test executes `UPDATE` and `DELETE` attempts as `margindesk_app` and expects SQLSTATE `42501`. Those database attempts and the static check's CI result remain **unverified** until `pnpm test:db` and `pnpm test` pass in CI and the run link/date is added above.
 
 ## 4. Rep API redaction and self-approval
 

@@ -96,3 +96,8 @@ test("migration lint rejects audit SELECT policies broader than owners and manag
   );
   await assertLintFailure(sql, /audit_log SELECT policy audit_log_select is not owner\/manager-only/);
 });
+
+test("migration lint rejects grants of margindesk_app membership", async () => {
+  await assertLintFailure(`${validMigration()}\nGRANT margindesk_app TO postgres;`, /grants membership in margindesk_app/);
+  await assertLintFailure(`${validMigration()}\nGRANT "margindesk_app" TO postgres;`, /grants membership in margindesk_app/);
+});
