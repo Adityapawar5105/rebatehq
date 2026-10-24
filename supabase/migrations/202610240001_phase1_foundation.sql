@@ -478,7 +478,7 @@ BEGIN
   END LOOP;
 END $$;
 CREATE POLICY audit_log_select ON audit_log FOR SELECT TO margindesk_app USING (public.is_tenant_role(tenant_id,ARRAY['owner','manager']));
-CREATE POLICY audit_log_append ON audit_log FOR INSERT TO PUBLIC WITH CHECK ((tenant_id IS NOT NULL AND actor_id=COALESCE(NULLIF(current_setting('app.real_actor_id',true),'')::uuid,auth.uid()) AND public.is_tenant_member(tenant_id)) OR (tenant_id IS NULL AND actor_id IS NULL AND action='auth.login_failed'));
+CREATE POLICY audit_log_append ON audit_log FOR INSERT TO margindesk_app WITH CHECK (tenant_id IS NOT NULL AND actor_id=COALESCE(NULLIF(current_setting('app.real_actor_id',true),'')::uuid,auth.uid()) AND public.is_tenant_member(tenant_id));
 
 -- Cost and margin columns are not exposed through PostgREST. The web server
 -- queries them with margindesk_app after verifying membership and role.
@@ -543,10 +543,9 @@ GRANT EXECUTE ON FUNCTION public.create_tenant_with_owner(text),public.accept_te
 REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.is_tenant_member(uuid),public.is_tenant_role(uuid,text[]),public.is_tenant_role_any_status(uuid,text[]),public.create_tenant_with_owner(text),public.accept_tenant_invite(text),public.record_failed_login(text,text,text) TO margindesk_app;
 
--- RLS policy expressions bind auth.uid() directly, so the restricted role
--- needs schema USAGE as well as EXECUTE on this one auth helper. It receives
--- no privileges on auth tables.
-GRANT USAGE ON SCHEMA auth TO margindesk_app;
+-- Stored policy expressions bind auth.uid() to its function OID, so app-role
+-- policy evaluation needs EXECUTE but not auth schema USAGE. Auth table access
+-- remains unavailable to the app role.
 GRANT EXECUTE ON FUNCTION auth.uid() TO margindesk_app;
 
 DO $$

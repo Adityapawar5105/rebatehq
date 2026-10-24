@@ -7,8 +7,6 @@ EXCEPTION WHEN duplicate_object THEN
   ALTER ROLE margindesk_app NOLOGIN NOINHERIT NOSUPERUSER NOBYPASSRLS;
 END $$;
 GRANT USAGE ON SCHEMA public TO margindesk_app;
-GRANT USAGE ON SCHEMA auth TO margindesk_app;
-GRANT EXECUTE ON FUNCTION auth.uid() TO margindesk_app;
 
 -- The tenant root uses tenant_id as its primary key; every other public table
 -- carries a NOT NULL tenant_id and a tenant-scoped index.
@@ -393,12 +391,15 @@ CREATE OR REPLACE FUNCTION public.prevent_audit_mutation()
 RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'audit_log is append-only' USING ERRCODE='55000'; END $$;
 CREATE TRIGGER audit_log_immutable BEFORE UPDATE OR DELETE ON audit_log
 FOR EACH ROW EXECUTE FUNCTION public.prevent_audit_mutation();
+-- TRUNCATE bypasses row-level triggers and RLS, so reject it at statement level.
+CREATE TRIGGER audit_log_prevent_truncate BEFORE TRUNCATE ON audit_log
+FOR EACH STATEMENT EXECUTE FUNCTION public.prevent_audit_mutation();
 
 DO $$
 DECLARE t text;
 BEGIN
   FOREACH t IN ARRAY ARRAY['tenant','membership','invite','customer','product','price_list','price_list_version','price_list_item','margin_policy','quote','quote_line','approval','sales_order','rebate_agreement','rebate_progress','invoice','invoice_line','cost_component','supplier_credit','alert','margin_snapshot','connector_secret','import_job','audit_log'] LOOP
-    EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON public.%I(tenant_id)',t||'_tenant_idx',t);
+    EXECUTE format('CREATE INDEX %I ON public.%I(tenant_id)',t||'_tenant_idx',t);
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY',t);
     EXECUTE format('ALTER TABLE public.%I FORCE ROW LEVEL SECURITY',t);
     IF t <> 'audit_log' THEN
@@ -422,9 +423,12 @@ BEGIN
     IF t='approval' THEN sel := '(public.is_tenant_role(tenant_id,ARRAY[''owner'',''manager'',''analyst'']) OR requested_by=auth.uid())'; END IF;
     IF t='sales_order' THEN sel := '(public.is_tenant_role(tenant_id,ARRAY[''owner'',''manager'',''analyst'']) OR EXISTS (SELECT 1 FROM public.customer c WHERE c.tenant_id=sales_order.tenant_id AND c.id=sales_order.customer_id AND c.assigned_rep_id=auth.uid()))'; END IF;
     IF t IN ('rebate_agreement','rebate_progress','invoice','invoice_line','cost_component','supplier_credit','margin_snapshot','connector_secret','import_job') THEN sel := 'public.is_tenant_role(tenant_id,ARRAY[''owner'',''manager'',''analyst''])'; END IF;
-    IF t='audit_log' THEN sel := 'public.is_tenant_role(tenant_id,ARRAY[''owner'',''manager''])'; END IF;
     IF t='connector_secret' THEN sel := 'public.is_tenant_role(tenant_id,ARRAY[''owner''])'; END IF;
-    EXECUTE format('CREATE POLICY %I ON public.%I FOR SELECT TO margindesk_app USING (%s)',t||'_select',t,sel);
+    -- audit_log has a dedicated SELECT policy below. Keeping it out of this
+    -- generic loop avoids a duplicate, potentially broader permissive policy.
+    IF t <> 'audit_log' THEN
+      EXECUTE format('CREATE POLICY %I ON public.%I FOR SELECT TO margindesk_app USING (%s)',t||'_select',t,sel);
+    END IF;
 
     ins := 'public.is_tenant_role(tenant_id,ARRAY[''owner'',''manager''])';
     upd := ins; del := ins;
@@ -474,14 +478,20 @@ BEGIN
   END LOOP;
 END $$;
 CREATE POLICY audit_log_select ON audit_log FOR SELECT TO margindesk_app USING (public.is_tenant_role(tenant_id,ARRAY['owner','manager']));
-CREATE POLICY audit_log_append ON audit_log FOR INSERT TO PUBLIC WITH CHECK ((tenant_id IS NOT NULL AND actor_id=COALESCE(NULLIF(current_setting('app.real_actor_id',true),'')::uuid,auth.uid()) AND public.is_tenant_member(tenant_id)) OR (tenant_id IS NULL AND actor_id IS NULL AND action='auth.login_failed'));
+CREATE POLICY audit_log_append ON audit_log FOR INSERT TO margindesk_app WITH CHECK (tenant_id IS NOT NULL AND actor_id=COALESCE(NULLIF(current_setting('app.real_actor_id',true),'')::uuid,auth.uid()) AND public.is_tenant_member(tenant_id));
 
 -- Cost and margin columns are not exposed through PostgREST. The web server
 -- queries them with margindesk_app after verifying membership and role.
 REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon,authenticated;
 GRANT SELECT ON tenant,membership,invite,customer,product,price_list,price_list_version,price_list_item,margin_policy,quote,quote_line,approval,sales_order,rebate_agreement,rebate_progress,invoice,invoice_line,cost_component,supplier_credit,alert,margin_snapshot,connector_secret,import_job,audit_log TO margindesk_app;
-GRANT INSERT,UPDATE,DELETE ON tenant,membership,invite,customer,product,price_list,price_list_version,price_list_item,margin_policy,quote,quote_line,approval,sales_order,rebate_agreement,rebate_progress,invoice,invoice_line,cost_component,supplier_credit,alert,margin_snapshot,connector_secret,import_job TO margindesk_app;
+-- Table ACLs grant only operations allowed by at least one policy. RLS still
+-- decides which tenant and role may perform each operation.
+GRANT INSERT ON invite,customer,product,price_list,price_list_version,price_list_item,margin_policy,quote,quote_line,approval,sales_order,rebate_agreement,rebate_progress,invoice,invoice_line,cost_component,supplier_credit,alert,margin_snapshot,connector_secret,import_job TO margindesk_app;
+GRANT UPDATE ON tenant,membership,invite,customer,product,price_list,price_list_version,price_list_item,margin_policy,quote,quote_line,approval,sales_order,rebate_agreement,rebate_progress,invoice,invoice_line,cost_component,supplier_credit,alert,margin_snapshot,connector_secret,import_job TO margindesk_app;
+GRANT DELETE ON membership,invite,customer,product,price_list,price_list_version,price_list_item,margin_policy,quote,quote_line,approval,sales_order,rebate_agreement,rebate_progress,invoice,invoice_line,cost_component,supplier_credit,alert,margin_snapshot,connector_secret,import_job TO margindesk_app;
 GRANT INSERT ON audit_log TO margindesk_app;
+REVOKE INSERT,UPDATE,DELETE,TRUNCATE ON tenant,membership,invite,customer,product,price_list,price_list_version,price_list_item,margin_policy,quote,quote_line,approval,sales_order,rebate_agreement,rebate_progress,invoice,invoice_line,cost_component,supplier_credit,alert,margin_snapshot,connector_secret,import_job,audit_log FROM PUBLIC;
+REVOKE TRUNCATE ON tenant,membership,invite,customer,product,price_list,price_list_version,price_list_item,margin_policy,quote,quote_line,approval,sales_order,rebate_agreement,rebate_progress,invoice,invoice_line,cost_component,supplier_credit,alert,margin_snapshot,connector_secret,import_job,audit_log FROM margindesk_app;
 REVOKE UPDATE,DELETE,TRUNCATE ON audit_log FROM margindesk_app;
 REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.is_tenant_member(uuid),public.is_tenant_role(uuid,text[]) TO margindesk_app;
@@ -533,12 +543,13 @@ GRANT EXECUTE ON FUNCTION public.create_tenant_with_owner(text),public.accept_te
 REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.is_tenant_member(uuid),public.is_tenant_role(uuid,text[]),public.is_tenant_role_any_status(uuid,text[]),public.create_tenant_with_owner(text),public.accept_tenant_invite(text),public.record_failed_login(text,text,text) TO margindesk_app;
 
+-- Stored policy expressions bind auth.uid() to its function OID, so app-role
+-- policy evaluation needs EXECUTE but not auth schema USAGE. Auth table access
+-- remains unavailable to the app role.
+GRANT EXECUTE ON FUNCTION auth.uid() TO margindesk_app;
+
 DO $$
-DECLARE t text;
 BEGIN
-  FOREACH t IN ARRAY ARRAY['tenant','membership','invite','customer','product','price_list','price_list_version','price_list_item','margin_policy','quote','quote_line','approval','sales_order','rebate_agreement','rebate_progress','invoice','invoice_line','cost_component','supplier_credit','alert','margin_snapshot','connector_secret','import_job','audit_log'] LOOP
-    EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON public.%I(tenant_id)',t||'_tenant_scope_idx',t);
-  END LOOP;
   IF EXISTS (
     SELECT 1 FROM pg_tables p JOIN pg_class c ON c.relname=p.tablename JOIN pg_namespace n ON n.oid=c.relnamespace
     WHERE p.schemaname='public' AND n.nspname='public' AND (NOT c.relrowsecurity OR NOT c.relforcerowsecurity OR NOT EXISTS (

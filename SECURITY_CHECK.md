@@ -14,7 +14,7 @@
 
 ### Current pgTAP check ledger
 
-The latest reported CI run had 31/32 checks pass and is not a passing run. This change expands the suite to 37 checks, so every check below remains **unverified** until a green PostgreSQL 17 CI run is linked. The test runner now prints the live `pg_policies` rows whose expressions reference `auth.*`, and executable `pg_proc` entries whose definitions reference `auth.*`, including `prosecdef` and pinned `search_path`. The SQL suite directly calls `auth.uid()` while `current_user=margindesk_app` and captures success/error for assertion after `RESET ROLE`.
+The latest reported CI run had 34/37 checks pass and is not a passing run. This change expands the suite to 41 checks, so every check below remains **unverified** until a green PostgreSQL 17 CI run is linked. The test runner prints live `pg_policies` rows whose expressions reference `auth.*` and executable `pg_proc` entries whose definitions reference it, including `prosecdef` and `search_path`. The SQL suite evaluates an `auth.uid()`-dependent customer policy as `margindesk_app` without auth schema USAGE, then probes the app role's EXECUTE grant inside a savepoint and rolls back.
 
 | # | Check | What it proves | Status / CI evidence |
 |---:|---|---|---|
@@ -23,8 +23,8 @@ The latest reported CI run had 31/32 checks pass and is not a passing run. This 
 | 3 | `margindesk_app` is NOLOGIN/NOSUPERUSER/NOBYPASSRLS | Restricted role attributes | **unverified** |
 | 4 | Browser role has no direct product SELECT grant | Browser roles cannot query product tables directly | **unverified** |
 | 5 | App role has `public` schema USAGE | Public objects resolve for the app role | **unverified** |
-| 6 | App role has `auth` schema USAGE | Direct policy and helper references to `auth.uid()` resolve | **unverified** |
-| 7 | App role has no table privileges in `auth` | Schema access does not expose Supabase Auth rows | **unverified** |
+| 6 | App role has NO `auth` schema USAGE | No app-pool SQL path needs schema resolution | **unverified** |
+| 7 | App role has no table privileges in `auth` | Auth rows stay inaccessible even with function EXECUTE | **unverified** |
 | 8 | App role has PL/pgSQL USAGE | Role can execute the restricted test blocks | **unverified** |
 | 9 | App role can EXECUTE `auth.uid()` | The specific Auth helper is callable | **unverified** |
 | 10 | App role can EXECUTE `is_tenant_member(uuid)` | Membership policy helper is callable | **unverified** |
@@ -36,9 +36,9 @@ The latest reported CI run had 31/32 checks pass and is not a passing run. This 
 | 16 | App lacks tenant/membership writes forbidden by policy | ACLs do not exceed those policy operations | **unverified** |
 | 17 | App has no tenant-table TRUNCATE | RLS cannot be bypassed with TRUNCATE | **unverified** |
 | 18 | Effective role flags captured after `SET ROLE` | Session is actually restricted and non-bypass | **unverified** |
-| 19 | App role directly calls `auth.uid()` | Schema USAGE and function EXECUTE work at runtime | **unverified** |
+| 19 | Assigned-rep customer policy evaluates `auth.uid()` | Stored policy evaluation works without schema USAGE | **unverified** |
 | 20 | Tenant A SELECTs its own row from every table | Positive read control for all tenant tables | **unverified** |
-| 21 | Tenant A INSERTs where policies allow | Positive insert controls prevent vacuous denials | **unverified** |
+| 21 | Tenant A INSERT succeeds per allowed table | Positive insert controls prevent vacuous denials; failures name the table | **unverified** |
 | 22 | Tenant A UPDATEs its own customer row | Positive control for an allowed UPDATE policy | **unverified** |
 | 23 | Tenant A DELETEs its own inserted customer row | Positive control for an allowed DELETE policy | **unverified** |
 | 24 | Rep sees a product but cannot DELETE it | Policy-forbidden role denial with visible target | **unverified** |
@@ -55,6 +55,10 @@ The latest reported CI run had 31/32 checks pass and is not a passing run. This 
 | 35 | Elevated UPDATE hits immutability trigger | Database trigger blocks privileged mutation | **unverified** |
 | 36 | Elevated DELETE hits immutability trigger | Database trigger blocks privileged mutation | **unverified** |
 | 37 | Elevated TRUNCATE hits statement trigger | Database trigger blocks privileged truncation | **unverified** |
+| 38 | App role cannot directly insert null-tenant failed-login audit row | No direct app write path for null-tenant audit events | **unverified** |
+| 39 | `record_failed_login` writes the null-tenant event | The SECURITY DEFINER function is the controlled failed-login path | **unverified** |
+| 40 | With PUBLIC EXECUTE revoked, app policy query still succeeds | The app role's own `auth.uid()` EXECUTE grant is sufficient | **unverified** |
+| 41 | Revoking app EXECUTE makes that policy query fail | The app-role EXECUTE grant is necessary; rollback restores it | **unverified** |
 
 No check is marked verified because no passing run link/date is available.
 
@@ -98,13 +102,15 @@ Expected: `effective_role=margindesk_app`; both superuser and bypass columns are
 
 RLS helpers use `auth.uid()` and active membership checks. The database integration test clears the user subject and JWT claims and asserts that a `product` query returns zero rows; the runtime check similarly asserts zero visible tenants with `withDatabase({})`. Both database assertions are **unverified** until a passing CI database run is linked above.
 
-### Why the app role needs `auth` schema USAGE
+### Auth privilege decision
 
-This is case **(b)**: stored RLS policy expressions directly reference `auth.uid()`, so the app role needs `USAGE` on `auth` to resolve/call this helper. `auth.uid()` also needs `EXECUTE`; neither privilege grants access to `auth.users`. The migration grants only schema `USAGE` and `EXECUTE` on `auth.uid()`, and check 7 asserts there are no table privileges in `auth`. The grant is in the checked-in, undeployed Phase 1 migration and is placed in its final privilege section.
+The application-code search found no direct SQL call to `auth.*` through the app pool, server library, or API routes. `scripts/seed-demo.ts` reads `auth.users` only through its `SEED_DATABASE_URL` administrative pool; its application import runs separately through `withDatabase`. Calls such as `supabase.auth.getUser()` use the Supabase Auth client and are not SQL access to the `auth` schema. Therefore the app role does **not** receive `USAGE` on schema `auth`; check 6 asserts its absence and check 7 asserts it has no Auth-table privileges.
 
-The current migration's auth-referencing policy inventory (the runner prints the live catalog inventory in CI) is `membership_select`, `customer_select`, `quote_select`, `quote_insert`, `quote_delete`, `quote_update`, `quote_line_select`, `quote_line_insert`, `quote_line_update`, `quote_line_delete`, `approval_select`, `approval_insert`, `approval_update`, `sales_order_select`, and `audit_log_append`. Some also call `public.is_tenant_*` helpers that read `auth.uid()`.
+Stored RLS expressions do reference `auth.uid()`, but PostgreSQL evaluates their stored function reference without requiring schema USAGE at query time. The app role does need EXECUTE on the function. Check 19 proves that a rep can see its assigned customer through the RLS policy with auth schema USAGE absent. Checks 40–41 revoke PUBLIC EXECUTE and then the app grant inside a savepoint: policy evaluation succeeds with only the app grant, fails with SQLSTATE `42501` after that grant is revoked, and the savepoint rollback restores the original ACL. The migration grants only `EXECUTE ON FUNCTION auth.uid()` to `margindesk_app` and does not grant auth schema USAGE.
 
-Executable public functions whose definitions reference `auth.*` are `is_tenant_member(uuid)`, `is_tenant_role(uuid,text[])`, `is_tenant_role_any_status(uuid,text[])`, `create_tenant_with_owner(text)`, `accept_tenant_invite(text)`, and `record_failed_login(text,text,text)`. Each is `SECURITY DEFINER` with pinned `search_path=public,extensions,pg_temp`. `auth.uid()` is an invoker function with no pinned search path; it is called directly from stored policy expressions, and check 19 explicitly calls it while `margindesk_app` is active. This is why case (a) does not apply. PGlite observed the catalog inventory and direct call after the migration change; this is local smoke evidence only, so checks 6, 7, 9, and 19 remain **unverified** pending CI.
+The current migration's auth-referencing policy inventory (the runner prints the live catalog inventory in CI) is `membership_select`, `customer_select`, `quote_select`, `quote_insert`, `quote_delete`, `quote_update`, `quote_line_select`, `quote_line_insert`, `quote_line_update`, `quote_line_delete`, `approval_select`, `approval_insert`, `approval_update`, `sales_order_select`, and `audit_log_append`. Some also call `public.is_tenant_*` helpers that read `auth.uid()`. These stored policy expressions do not cause the app role to issue a schema-qualified `auth.uid()` SQL call.
+
+Executable public functions whose definitions reference `auth.*` are `is_tenant_member(uuid)`, `is_tenant_role(uuid,text[])`, `is_tenant_role_any_status(uuid,text[])`, `create_tenant_with_owner(text)`, `accept_tenant_invite(text)`, and `record_failed_login(text,text,text)`. Each is `SECURITY DEFINER` with pinned `search_path=public,extensions,pg_temp`. `auth.uid()` is an invoker function with no pinned search path. The policy inventory and the probe show that its stored OID can be evaluated without auth schema USAGE, while the app role's explicit EXECUTE privilege is required. This decision follows the absence of direct app-pool SQL calls; checks 6, 7, 9, 19, 40, and 41 remain **unverified** pending CI.
 
 ### Is the Supabase service-role key used by user-facing code?
 
@@ -161,4 +167,4 @@ pnpm check:db-role
 pnpm test:db
 ```
 
-In this workspace, `pnpm test` passed (27 tests), `pnpm typecheck` passed, and `pnpm build` passed. The migration lint fixtures cover duplicate policies (including a policy generated by a loop), triggers, indexes, function signatures, named constraints, missing FORCE RLS, and an overly broad audit SELECT policy. The service-role scanner checked 86 user-facing files, and its fixture tests reject a client file containing the service-role environment key and an empty scan. A temporary PGlite smoke runner applied the migration and executed all 37 SQL checks with minimal Supabase Auth and pgTAP stubs; all emitted `ok`, including the direct `auth.uid()` call and UPDATE/DELETE positive controls. This does **not** count as database verification because PGlite and the pgTAP stubs are not the PostgreSQL 17/Supabase CI environment. Docker and `psql` are unavailable, and the fresh `pnpm test:db` attempt stopped before SQL with `ECONNREFUSED 127.0.0.1:54322`. The hosted CI path has not run. The runtime role, SQL RLS/ACL/audit/approval/TRUNCATE checks, clean-database migration application, and restore drill remain **unverified**; no CI run link/date is available to record.
+In this workspace, `pnpm test` passed (28 tests), `pnpm typecheck` passed, and `pnpm build` passed. The migration lint fixtures cover duplicate policies (including a policy generated by a loop), triggers, indexes, function signatures, named constraints, missing FORCE RLS, and an overly broad audit SELECT policy. The service-role scanner checked 86 user-facing files, and its fixture tests reject a client file containing the service-role environment key and an empty scan. A temporary PGlite smoke runner applied the migration and executed all 41 SQL checks with minimal Supabase Auth and pgTAP stubs; all emitted `ok`, including the no-auth-schema-USAGE policy test, the app-only EXECUTE probe, per-table unique INSERT controls, and the controlled failed-login audit path. This does **not** count as database verification because PGlite and the pgTAP stubs are not the PostgreSQL 17/Supabase CI environment. Docker and `psql` are unavailable, and the fresh `pnpm test:db` attempt stopped before SQL with `ECONNREFUSED 127.0.0.1:54322`. The hosted CI path has not run. The runtime role, SQL RLS/ACL/audit/approval/TRUNCATE checks, clean-database migration application, and restore drill remain **unverified**; no CI run link/date is available to record.

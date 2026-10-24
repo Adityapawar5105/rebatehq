@@ -177,8 +177,8 @@ async function runPgtap(connectionString: string) {
     const plan = output.match(/^1\.\.(\d+)$/m);
     const passed = [...output.matchAll(/^ok\s+\d+\b/gm)].length;
     const failed = [...output.matchAll(/^not ok\s+\d+\b/gm)].length;
-    if (!plan || Number(plan[1]) !== 37 || passed !== 37 || failed !== 0) {
-      throw new Error(`pgTAP did not report all 37 checks passing.\n${output || "No TAP output was returned."}`);
+    if (!plan || Number(plan[1]) !== 41 || passed !== 41 || failed !== 0) {
+      throw new Error(`pgTAP did not report all 41 checks passing.\n${output || "No TAP output was returned."}`);
     }
     process.stdout.write(`${output}\n`);
   } finally {

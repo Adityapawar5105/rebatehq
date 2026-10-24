@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT extensions.plan(37);
+SELECT extensions.plan(41);
 
 -- Fixed local-only actors and two isolated tenants. The transaction rolls back.
 INSERT INTO auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,created_at,updated_at)
@@ -21,7 +21,7 @@ ON CONFLICT(tenant_id,user_id) DO NOTHING;
 
 INSERT INTO public.customer(tenant_id,id,account_no,name,assigned_rep_id) VALUES
  ('20000000-0000-4000-8000-000000000001','30000000-0000-4000-8000-000000000001','A-001','Tenant A customer','10000000-0000-4000-8000-000000000001'),
- ('20000000-0000-4000-8000-000000000002','30000000-0000-4000-8000-000000000002','B-001','Tenant B customer','10000000-0000-4000-8000-000000000002')
+ ('20000000-0000-4000-8000-000000000002','30000000-0000-4000-8000-000000000002','B-001','Tenant B customer','10000000-0000-4000-8000-000000000003')
 ON CONFLICT(tenant_id,id) DO NOTHING;
 INSERT INTO public.product(tenant_id,id,sku,name,category,list_price,unit_cost) VALUES
  ('20000000-0000-4000-8000-000000000001','31000000-0000-4000-8000-000000000001','A-SKU','Tenant A product','Test',100,60),
@@ -224,7 +224,7 @@ SELECT extensions.ok(NOT EXISTS (
 SELECT extensions.ok(EXISTS (SELECT 1 FROM pg_roles WHERE rolname='margindesk_app' AND NOT rolsuper AND NOT rolbypassrls AND NOT rolcanlogin), 'margindesk_app is NOLOGIN, NOSUPERUSER, and NOBYPASSRLS');
 SELECT extensions.ok(NOT has_table_privilege('authenticated','public.product','SELECT'), 'Browser role has no direct product table grant');
 SELECT extensions.ok(has_schema_privilege('margindesk_app','public','USAGE'),'App role has public schema USAGE');
-SELECT extensions.ok(has_schema_privilege('margindesk_app','auth','USAGE'),'App role has auth schema USAGE');
+SELECT extensions.ok(NOT has_schema_privilege('margindesk_app','auth','USAGE'),'App role has NO auth schema USAGE');
 SELECT extensions.ok(NOT EXISTS (
   SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
   WHERE n.nspname='auth' AND c.relkind IN ('r','p','v','m','f')
@@ -237,6 +237,7 @@ SELECT extensions.ok(NOT EXISTS (
       OR has_table_privilege('margindesk_app',c.oid,'DELETE')
       OR has_table_privilege('margindesk_app',c.oid,'TRUNCATE')
       OR has_table_privilege('margindesk_app',c.oid,'REFERENCES')
+      OR has_any_column_privilege('margindesk_app',c.oid,'REFERENCES')
       OR has_table_privilege('margindesk_app',c.oid,'TRIGGER'))
 ), 'App role has no table privileges in auth schema');
 SELECT extensions.ok(has_language_privilege('margindesk_app','plpgsql','USAGE'),'App role has PL/pgSQL USAGE');
@@ -299,13 +300,43 @@ SET LOCAL request.jwt.claim.sub = '10000000-0000-4000-8000-000000000001';
 SET LOCAL request.jwt.claim.role = 'authenticated';
 SET LOCAL request.jwt.claims = '{"sub":"10000000-0000-4000-8000-000000000001","role":"authenticated"}';
 
-DO $$ DECLARE v_uid uuid; v_state text; v_msg text; BEGIN
+DO $$ DECLARE n integer; v_state text; v_msg text; BEGIN
+  PERFORM set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000003',true);
+  PERFORM set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000000003","role":"authenticated"}',true);
   BEGIN
-    SELECT auth.uid() INTO v_uid;
-    PERFORM set_config('app.phase1_auth_uid_result',jsonb_build_object('passed',v_uid='10000000-0000-4000-8000-000000000001'::uuid,'uid',v_uid::text,'state',NULL,'message',NULL)::text,true);
+    SELECT count(*) INTO n FROM public.customer
+      WHERE tenant_id='20000000-0000-4000-8000-000000000002'
+        AND id='30000000-0000-4000-8000-000000000002';
+    PERFORM set_config('app.phase1_auth_policy_result',jsonb_build_object('passed',n=1,'visible_rows',n,'state',NULL,'message',NULL)::text,true);
   EXCEPTION WHEN OTHERS THEN
     GET STACKED DIAGNOSTICS v_state=RETURNED_SQLSTATE,v_msg=MESSAGE_TEXT;
-    PERFORM set_config('app.phase1_auth_uid_result',jsonb_build_object('passed',false,'uid',NULL,'state',v_state,'message',v_msg)::text,true);
+    PERFORM set_config('app.phase1_auth_policy_result',jsonb_build_object('passed',false,'visible_rows',0,'state',v_state,'message',v_msg)::text,true);
+  END;
+  PERFORM set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000001',true);
+  PERFORM set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000000001","role":"authenticated"}',true);
+END $$;
+
+DO $$ DECLARE v_state text; v_msg text; BEGIN
+  BEGIN
+    INSERT INTO public.audit_log(id,tenant_id,actor_id,action,entity_type,entity_id)
+      VALUES(gen_random_uuid(),NULL,NULL,'auth.login_failed','auth_user','phase1-direct-null-write');
+    PERFORM set_config('app.phase1_direct_null_audit_result',jsonb_build_object('passed',false,'state','00000','message','unexpectedly inserted')::text,true);
+  EXCEPTION WHEN OTHERS THEN
+    GET STACKED DIAGNOSTICS v_state=RETURNED_SQLSTATE,v_msg=MESSAGE_TEXT;
+    PERFORM set_config('app.phase1_direct_null_audit_result',jsonb_build_object(
+      'passed',v_state='42501' AND position('row-level security' in lower(v_msg))>0,
+      'state',v_state,'message',v_msg
+    )::text,true);
+  END;
+END $$;
+
+DO $$ DECLARE v_state text; v_msg text; BEGIN
+  BEGIN
+    PERFORM public.record_failed_login('phase1-no-such-user@example.invalid','192.0.2.44','pgTAP controlled-path probe');
+    PERFORM set_config('app.phase1_failed_login_result',jsonb_build_object('passed',true,'state',NULL,'message',NULL)::text,true);
+  EXCEPTION WHEN OTHERS THEN
+    GET STACKED DIAGNOSTICS v_state=RETURNED_SQLSTATE,v_msg=MESSAGE_TEXT;
+    PERFORM set_config('app.phase1_failed_login_result',jsonb_build_object('passed',false,'state',v_state,'message',v_msg)::text,true);
   END;
 END $$;
 
@@ -329,7 +360,7 @@ DO $$ DECLARE t text; v_row jsonb; v_insert jsonb; v_state text; v_msg text; n i
   IF n<22 THEN RAISE EXCEPTION 'Tenant A positive INSERT loop expected at least 22 policy-allowed tables; found %',n; END IF;
   FOR t,v_row IN SELECT key,value FROM jsonb_each(current_setting('app.phase1_tenant_a_fixtures')::jsonb)
     WHERE key NOT IN ('tenant','membership') LOOP
-    v_insert:=jsonb_set(v_row,'{id}',to_jsonb(regexp_replace(v_row->>'id','[0-9a-f]$','4')::uuid),true);
+    v_insert:=jsonb_set(v_row,'{id}',to_jsonb(gen_random_uuid()),true);
     IF t='customer' THEN v_insert:=jsonb_set(v_insert,'{account_no}',to_jsonb('A-positive-control'::text),true);
     ELSIF t='product' THEN v_insert:=jsonb_set(v_insert,'{sku}',to_jsonb('A-POSITIVE-CONTROL'::text),true);
     ELSIF t='invite' THEN
@@ -552,15 +583,15 @@ SELECT extensions.ok(
   AND current_setting('app.phase1_role_context')::jsonb->>'rolbypassrls'='false',
   'SET ROLE used NOSUPERUSER and NOBYPASSRLS margindesk_app'
 );
-SELECT extensions.ok(current_setting('app.phase1_auth_uid_result')::jsonb->>'passed'='true',
-  'App role directly calls auth.uid() with the authenticated user context');
+SELECT extensions.ok(current_setting('app.phase1_auth_policy_result')::jsonb->>'passed'='true',
+  'A customer policy evaluates auth.uid() for its assigned rep without auth schema USAGE');
 SELECT extensions.ok(
   current_setting('app.phase1_positive_select_result')::jsonb->>'passed'='true',
   'Tenant A can SELECT its own seeded row in every tenant table: '||(current_setting('app.phase1_positive_select_result')::jsonb->>'detail')
 );
 SELECT extensions.ok(
   current_setting('app.phase1_positive_insert_result')::jsonb->>'passed'='true',
-  'Tenant A can INSERT where an RLS policy allows it: '||(current_setting('app.phase1_positive_insert_result')::jsonb->>'detail')
+  'Tenant A INSERT succeeds per allowed table; failed table(s): '||(current_setting('app.phase1_positive_insert_result')::jsonb->>'detail')
 );
 SELECT extensions.ok(current_setting('app.phase1_positive_update_result')::jsonb->>'passed'='true',
   'Tenant A can UPDATE its own customer row under an allowed policy');
@@ -597,5 +628,58 @@ SELECT extensions.ok(
 SELECT extensions.throws_ok('UPDATE public.audit_log SET action=''tampered'' WHERE id=''51000000-0000-4000-8000-000000000002''','55000',NULL,'Database immutability trigger rejects UPDATE even with elevated rights');
 SELECT extensions.throws_ok('DELETE FROM public.audit_log WHERE id=''51000000-0000-4000-8000-000000000002''','55000',NULL,'Database immutability trigger rejects DELETE even with elevated rights');
 SELECT extensions.throws_ok('TRUNCATE public.audit_log','55000',NULL,'Statement-level trigger rejects audit_log TRUNCATE even with elevated rights');
+
+SELECT extensions.ok(current_setting('app.phase1_direct_null_audit_result')::jsonb->>'passed'='true',
+  'App role cannot directly insert a null-tenant auth.login_failed audit row');
+SELECT extensions.ok(
+  current_setting('app.phase1_failed_login_result')::jsonb->>'passed'='true'
+  AND EXISTS (SELECT 1 FROM public.audit_log WHERE tenant_id IS NULL AND actor_id IS NULL
+    AND action='auth.login_failed' AND entity_type='auth_user' AND ip='192.0.2.44'),
+  'SECURITY DEFINER record_failed_login is the controlled null-tenant audit write path'
+);
+
+SAVEPOINT auth_uid_execute_probe;
+REVOKE EXECUTE ON FUNCTION auth.uid() FROM PUBLIC;
+SET LOCAL ROLE margindesk_app;
+SET LOCAL request.jwt.claim.sub = '10000000-0000-4000-8000-000000000003';
+SET LOCAL request.jwt.claims = '{"sub":"10000000-0000-4000-8000-000000000003","role":"authenticated"}';
+DO $$ DECLARE n integer; v_state text; v_msg text; BEGIN
+  BEGIN
+    SELECT count(*) INTO n FROM public.customer
+      WHERE tenant_id='20000000-0000-4000-8000-000000000002'
+        AND id='30000000-0000-4000-8000-000000000002';
+    PERFORM set_config('app.phase1_auth_uid_public_revoked_result',jsonb_build_object('passed',n=1,'state','00000','message',NULL,'visible_rows',n)::text,true);
+  EXCEPTION WHEN OTHERS THEN
+    GET STACKED DIAGNOSTICS v_state=RETURNED_SQLSTATE,v_msg=MESSAGE_TEXT;
+    PERFORM set_config('app.phase1_auth_uid_public_revoked_result',jsonb_build_object('passed',false,'state',v_state,'message',v_msg,'visible_rows',NULL)::text,true);
+  END;
+END $$;
+RESET ROLE;
+SELECT extensions.ok(
+  current_setting('app.phase1_auth_uid_public_revoked_result')::jsonb->>'passed'='true',
+  'With PUBLIC EXECUTE revoked, margindesk_app EXECUTE alone still evaluates the auth.uid policy'
+);
+REVOKE EXECUTE ON FUNCTION auth.uid() FROM margindesk_app;
+SET LOCAL ROLE margindesk_app;
+SET LOCAL request.jwt.claim.sub = '10000000-0000-4000-8000-000000000003';
+SET LOCAL request.jwt.claims = '{"sub":"10000000-0000-4000-8000-000000000003","role":"authenticated"}';
+DO $$ DECLARE n integer; v_state text; v_msg text; BEGIN
+  BEGIN
+    SELECT count(*) INTO n FROM public.customer
+      WHERE tenant_id='20000000-0000-4000-8000-000000000002'
+        AND id='30000000-0000-4000-8000-000000000002';
+    PERFORM set_config('app.phase1_auth_uid_revoked_result',jsonb_build_object('state','00000','message','query unexpectedly succeeded','visible_rows',n)::text,true);
+  EXCEPTION WHEN OTHERS THEN
+    GET STACKED DIAGNOSTICS v_state=RETURNED_SQLSTATE,v_msg=MESSAGE_TEXT;
+    PERFORM set_config('app.phase1_auth_uid_revoked_result',jsonb_build_object('state',v_state,'message',v_msg,'visible_rows',NULL)::text,true);
+  END;
+END $$;
+RESET ROLE;
+SELECT extensions.ok(
+  current_setting('app.phase1_auth_uid_revoked_result')::jsonb->>'state'='42501'
+  AND position('permission denied for function uid' in lower(current_setting('app.phase1_auth_uid_revoked_result')::jsonb->>'message'))>0,
+  'Revoking auth.uid EXECUTE makes the authenticated positive policy query fail (42501)'
+);
+ROLLBACK TO SAVEPOINT auth_uid_execute_probe;
 SELECT * FROM extensions.finish();
 ROLLBACK;
