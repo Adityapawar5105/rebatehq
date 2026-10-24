@@ -23,7 +23,7 @@ test("the restricted-role pgTAP checks capture results and run assertions after 
 });
 
 test("RLS fixtures prove tenant-positive paths, exact RLS write failures, and TRUNCATE protection", () => {
-  assert.match(sql, /extensions\.plan\(32\)/, "The pgTAP plan must match the current checks.");
+  assert.match(sql, /extensions\.plan\(37\)/, "The pgTAP plan must match the current checks.");
   assert.match(sql, /phase1_tenant_a_fixtures/, "Every application table must have a Tenant A fixture row.");
   assert.match(sql, /phase1_positive_select_result/, "Positive own-row SELECT controls must run as the app role.");
   assert.match(sql, /phase1_positive_insert_result/, "Positive INSERT controls must run wherever policy allows.");
@@ -31,6 +31,11 @@ test("RLS fixtures prove tenant-positive paths, exact RLS write failures, and TR
   assert.match(sql, /TRUNCATE public\.audit_log/, "The restricted role must attempt audit_log TRUNCATE.");
   assert.match(sql, /Statement-level trigger rejects audit_log TRUNCATE/, "Elevated-role TRUNCATE must be blocked by the statement trigger.");
   assert.match(sql, /has_table_privilege\('margindesk_app',[^\n]*'TRUNCATE'\)/, "The app role must be checked for TRUNCATE ACLs.");
+  assert.match(sql, /App role directly calls auth\.uid\(\)/, "The app role must prove it can invoke auth.uid directly.");
+  assert.match(sql, /App role has no table privileges in auth schema/, "Auth schema access must not imply auth table access.");
+  assert.match(sql, /Tenant A can UPDATE its own customer row/, "Allowed UPDATE requires a positive control.");
+  assert.match(sql, /Tenant A can DELETE its own inserted customer row/, "Allowed DELETE requires a positive control.");
+  assert.match(sql, /tenant rep can see a product but cannot DELETE/, "A policy-forbidden role needs a DELETE denial control.");
 });
 
 test("table loops are guarded against empty fixtures and SQL errors include server context", () => {
@@ -48,4 +53,6 @@ test("table loops are guarded against empty fixtures and SQL errors include serv
     assert.match(runner, new RegExp(`pgError\\.${field}`), `Postgres error field ${field} should be emitted.`);
   }
   assert.match(runner, /REDACTED_DATABASE_URL/);
+  assert.match(runner, /Policies whose stored expressions reference auth/);
+  assert.match(runner, /Executable functions whose definitions\/reference touch auth/);
 });

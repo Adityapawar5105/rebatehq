@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT extensions.plan(32);
+SELECT extensions.plan(37);
 
 -- Fixed local-only actors and two isolated tenants. The transaction rolls back.
 INSERT INTO auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,created_at,updated_at)
@@ -225,6 +225,20 @@ SELECT extensions.ok(EXISTS (SELECT 1 FROM pg_roles WHERE rolname='margindesk_ap
 SELECT extensions.ok(NOT has_table_privilege('authenticated','public.product','SELECT'), 'Browser role has no direct product table grant');
 SELECT extensions.ok(has_schema_privilege('margindesk_app','public','USAGE'),'App role has public schema USAGE');
 SELECT extensions.ok(has_schema_privilege('margindesk_app','auth','USAGE'),'App role has auth schema USAGE');
+SELECT extensions.ok(NOT EXISTS (
+  SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+  WHERE n.nspname='auth' AND c.relkind IN ('r','p','v','m','f')
+    AND (has_table_privilege('margindesk_app',c.oid,'SELECT')
+      OR has_any_column_privilege('margindesk_app',c.oid,'SELECT')
+      OR has_table_privilege('margindesk_app',c.oid,'INSERT')
+      OR has_any_column_privilege('margindesk_app',c.oid,'INSERT')
+      OR has_table_privilege('margindesk_app',c.oid,'UPDATE')
+      OR has_any_column_privilege('margindesk_app',c.oid,'UPDATE')
+      OR has_table_privilege('margindesk_app',c.oid,'DELETE')
+      OR has_table_privilege('margindesk_app',c.oid,'TRUNCATE')
+      OR has_table_privilege('margindesk_app',c.oid,'REFERENCES')
+      OR has_table_privilege('margindesk_app',c.oid,'TRIGGER'))
+), 'App role has no table privileges in auth schema');
 SELECT extensions.ok(has_language_privilege('margindesk_app','plpgsql','USAGE'),'App role has PL/pgSQL USAGE');
 SELECT extensions.ok(has_function_privilege('margindesk_app','auth.uid()','EXECUTE'),'App role has EXECUTE on auth.uid()');
 SELECT extensions.ok(has_function_privilege('margindesk_app','public.is_tenant_member(uuid)','EXECUTE'),'App role has EXECUTE on public.is_tenant_member(uuid)');
@@ -285,6 +299,16 @@ SET LOCAL request.jwt.claim.sub = '10000000-0000-4000-8000-000000000001';
 SET LOCAL request.jwt.claim.role = 'authenticated';
 SET LOCAL request.jwt.claims = '{"sub":"10000000-0000-4000-8000-000000000001","role":"authenticated"}';
 
+DO $$ DECLARE v_uid uuid; v_state text; v_msg text; BEGIN
+  BEGIN
+    SELECT auth.uid() INTO v_uid;
+    PERFORM set_config('app.phase1_auth_uid_result',jsonb_build_object('passed',v_uid='10000000-0000-4000-8000-000000000001'::uuid,'uid',v_uid::text,'state',NULL,'message',NULL)::text,true);
+  EXCEPTION WHEN OTHERS THEN
+    GET STACKED DIAGNOSTICS v_state=RETURNED_SQLSTATE,v_msg=MESSAGE_TEXT;
+    PERFORM set_config('app.phase1_auth_uid_result',jsonb_build_object('passed',false,'uid',NULL,'state',v_state,'message',v_msg)::text,true);
+  END;
+END $$;
+
 DO $$ DECLARE t text; n integer; v_missing text:=''; v_state text; v_msg text; BEGIN
   SELECT count(*) INTO n FROM jsonb_object_keys(current_setting('app.phase1_tenant_a_fixtures')::jsonb);
   IF n<24 THEN RAISE EXCEPTION 'Tenant A positive SELECT loop expected at least 24 tables; found %',n; END IF;
@@ -330,6 +354,60 @@ DO $$ DECLARE t text; v_row jsonb; v_insert jsonb; v_state text; v_msg text; n i
     END;
   END LOOP;
   PERFORM set_config('app.phase1_positive_insert_result',jsonb_build_object('passed',v_failed='','detail',COALESCE(v_failed,'none'))::text,true);
+END $$;
+
+DO $$ DECLARE n integer; v_state text; v_msg text; BEGIN
+  BEGIN
+    UPDATE public.customer SET name='Tenant A customer updated by positive control'
+      WHERE tenant_id='20000000-0000-4000-8000-000000000001'
+        AND id='30000000-0000-4000-8000-000000000001';
+    GET DIAGNOSTICS n=ROW_COUNT;
+    PERFORM set_config('app.phase1_positive_update_result',jsonb_build_object('passed',n=1,'rows',n,'state',NULL,'message',NULL)::text,true);
+  EXCEPTION WHEN OTHERS THEN
+    GET STACKED DIAGNOSTICS v_state=RETURNED_SQLSTATE,v_msg=MESSAGE_TEXT;
+    PERFORM set_config('app.phase1_positive_update_result',jsonb_build_object('passed',false,'rows',0,'state',v_state,'message',v_msg)::text,true);
+  END;
+END $$;
+
+DO $$ DECLARE n integer; v_state text; v_msg text; BEGIN
+  BEGIN
+    DELETE FROM public.customer WHERE tenant_id='20000000-0000-4000-8000-000000000001'
+      AND account_no='A-positive-control';
+    GET DIAGNOSTICS n=ROW_COUNT;
+    PERFORM set_config('app.phase1_positive_delete_result',jsonb_build_object('passed',n=1,'rows',n,'state',NULL,'message',NULL)::text,true);
+  EXCEPTION WHEN OTHERS THEN
+    GET STACKED DIAGNOSTICS v_state=RETURNED_SQLSTATE,v_msg=MESSAGE_TEXT;
+    PERFORM set_config('app.phase1_positive_delete_result',jsonb_build_object('passed',false,'rows',0,'state',v_state,'message',v_msg)::text,true);
+  END;
+END $$;
+
+DO $$ DECLARE v_before integer; v_deleted integer; v_after integer; v_state text; v_msg text; BEGIN
+  PERFORM set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000003',true);
+  PERFORM set_config('request.jwt.claim.role','authenticated',true);
+  PERFORM set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000000003","role":"authenticated"}',true);
+  BEGIN
+    SELECT count(*) INTO v_before FROM public.product
+      WHERE tenant_id='20000000-0000-4000-8000-000000000002'
+        AND id='31000000-0000-4000-8000-000000000002';
+    DELETE FROM public.product WHERE tenant_id='20000000-0000-4000-8000-000000000002'
+      AND id='31000000-0000-4000-8000-000000000002';
+    GET DIAGNOSTICS v_deleted=ROW_COUNT;
+    SELECT count(*) INTO v_after FROM public.product
+      WHERE tenant_id='20000000-0000-4000-8000-000000000002'
+        AND id='31000000-0000-4000-8000-000000000002';
+    PERFORM set_config('app.phase1_rep_delete_result',jsonb_build_object(
+      'passed',v_before=1 AND v_deleted=0 AND v_after=1,'visible_before',v_before,
+      'deleted',v_deleted,'visible_after',v_after,'state',NULL,'message',NULL
+    )::text,true);
+  EXCEPTION WHEN OTHERS THEN
+    GET STACKED DIAGNOSTICS v_state=RETURNED_SQLSTATE,v_msg=MESSAGE_TEXT;
+    PERFORM set_config('app.phase1_rep_delete_result',jsonb_build_object(
+      'passed',false,'visible_before',COALESCE(v_before,0),'deleted',COALESCE(v_deleted,0),
+      'visible_after',COALESCE(v_after,0),'state',v_state,'message',v_msg
+    )::text,true);
+  END;
+  PERFORM set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000001',true);
+  PERFORM set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000000001","role":"authenticated"}',true);
 END $$;
 
 DO $$ DECLARE t text; n integer; v_missing text:=''; v_state text; v_msg text; BEGIN
@@ -474,6 +552,8 @@ SELECT extensions.ok(
   AND current_setting('app.phase1_role_context')::jsonb->>'rolbypassrls'='false',
   'SET ROLE used NOSUPERUSER and NOBYPASSRLS margindesk_app'
 );
+SELECT extensions.ok(current_setting('app.phase1_auth_uid_result')::jsonb->>'passed'='true',
+  'App role directly calls auth.uid() with the authenticated user context');
 SELECT extensions.ok(
   current_setting('app.phase1_positive_select_result')::jsonb->>'passed'='true',
   'Tenant A can SELECT its own seeded row in every tenant table: '||(current_setting('app.phase1_positive_select_result')::jsonb->>'detail')
@@ -482,6 +562,12 @@ SELECT extensions.ok(
   current_setting('app.phase1_positive_insert_result')::jsonb->>'passed'='true',
   'Tenant A can INSERT where an RLS policy allows it: '||(current_setting('app.phase1_positive_insert_result')::jsonb->>'detail')
 );
+SELECT extensions.ok(current_setting('app.phase1_positive_update_result')::jsonb->>'passed'='true',
+  'Tenant A can UPDATE its own customer row under an allowed policy');
+SELECT extensions.ok(current_setting('app.phase1_positive_delete_result')::jsonb->>'passed'='true',
+  'Tenant A can DELETE its own inserted customer row under an allowed policy');
+SELECT extensions.ok(current_setting('app.phase1_rep_delete_result')::jsonb->>'passed'='true',
+  'A tenant rep can see a product but cannot DELETE where policy forbids it');
 SELECT extensions.ok(
   current_setting('app.phase1_cross_select_result')::jsonb->>'passed'='true',
   'Tenant A SELECT of Tenant B rows returns zero rows: '||(current_setting('app.phase1_cross_select_result')::jsonb->>'detail')

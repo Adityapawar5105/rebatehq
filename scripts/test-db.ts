@@ -97,6 +97,38 @@ async function runPgtap(connectionString: string) {
       `schema owner=${pgtap.schema_owner}; TEST_DATABASE_URL_USAGE=${pgtap.connection_usage}; ` +
       `margindesk_app_USAGE=${pgtap.app_usage}.\n`,
     );
+    const authPolicyRefs = await client.query<{ schemaname: string; tablename: string; policyname: string; expression: string }>(
+      `SELECT schemaname::text,tablename::text,policyname::text,
+              concat_ws(' ',qual,with_check)::text AS expression
+       FROM pg_policies
+       WHERE concat_ws(' ',qual,with_check) ILIKE '%auth.%'
+       ORDER BY schemaname,tablename,policyname`,
+    );
+    const authFunctionRefs = await client.query<{
+      schema_name: string;
+      function_name: string;
+      identity_arguments: string;
+      security_definer: boolean;
+      search_path: string | null;
+    }>(
+      `SELECT n.nspname::text AS schema_name,p.proname::text AS function_name,
+              pg_get_function_identity_arguments(p.oid)::text AS identity_arguments,
+              p.prosecdef AS security_definer,
+              (SELECT setting FROM unnest(COALESCE(p.proconfig,ARRAY[]::text[])) setting
+               WHERE setting LIKE 'search_path=%' LIMIT 1)::text AS search_path
+       FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+       WHERE has_function_privilege('margindesk_app',p.oid,'EXECUTE')
+         AND (p.prosrc ILIKE '%auth.%' OR (n.nspname='auth' AND p.proname='uid'))
+       ORDER BY n.nspname,p.proname,pg_get_function_identity_arguments(p.oid)`,
+    );
+    process.stdout.write(
+      `Policies whose stored expressions reference auth.*: ${authPolicyRefs.rows.map(row =>
+        `${row.schemaname}.${row.tablename}.${row.policyname} [${row.expression.trim()}]`,
+      ).join('; ') || 'none found'}.\n` +
+      `Executable functions whose definitions/reference touch auth.*: ${authFunctionRefs.rows.map(row =>
+        `${row.schema_name}.${row.function_name}(${row.identity_arguments}) SECURITY DEFINER=${row.security_definer} ${row.search_path ?? 'search_path=UNPINNED'}`,
+      ).join('; ') || 'none found'}.\n`,
+    );
     const pgtapFunctions = await client.query<{ name: string; executable: boolean }>(
       `SELECT p.proname::text AS name,
               has_function_privilege(session_user,p.oid,'EXECUTE') AS executable
@@ -145,8 +177,8 @@ async function runPgtap(connectionString: string) {
     const plan = output.match(/^1\.\.(\d+)$/m);
     const passed = [...output.matchAll(/^ok\s+\d+\b/gm)].length;
     const failed = [...output.matchAll(/^not ok\s+\d+\b/gm)].length;
-    if (!plan || Number(plan[1]) !== 32 || passed !== 32 || failed !== 0) {
-      throw new Error(`pgTAP did not report all 32 checks passing.\n${output || "No TAP output was returned."}`);
+    if (!plan || Number(plan[1]) !== 37 || passed !== 37 || failed !== 0) {
+      throw new Error(`pgTAP did not report all 37 checks passing.\n${output || "No TAP output was returned."}`);
     }
     process.stdout.write(`${output}\n`);
   } finally {

@@ -7,8 +7,6 @@ EXCEPTION WHEN duplicate_object THEN
   ALTER ROLE margindesk_app NOLOGIN NOINHERIT NOSUPERUSER NOBYPASSRLS;
 END $$;
 GRANT USAGE ON SCHEMA public TO margindesk_app;
-GRANT USAGE ON SCHEMA auth TO margindesk_app;
-GRANT EXECUTE ON FUNCTION auth.uid() TO margindesk_app;
 
 -- The tenant root uses tenant_id as its primary key; every other public table
 -- carries a NOT NULL tenant_id and a tenant-scoped index.
@@ -544,6 +542,12 @@ REVOKE ALL ON FUNCTION public.create_tenant_with_owner(text),public.accept_tenan
 GRANT EXECUTE ON FUNCTION public.create_tenant_with_owner(text),public.accept_tenant_invite(text),public.record_failed_login(text,text,text) TO margindesk_app;
 REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.is_tenant_member(uuid),public.is_tenant_role(uuid,text[]),public.is_tenant_role_any_status(uuid,text[]),public.create_tenant_with_owner(text),public.accept_tenant_invite(text),public.record_failed_login(text,text,text) TO margindesk_app;
+
+-- RLS policy expressions bind auth.uid() directly, so the restricted role
+-- needs schema USAGE as well as EXECUTE on this one auth helper. It receives
+-- no privileges on auth tables.
+GRANT USAGE ON SCHEMA auth TO margindesk_app;
+GRANT EXECUTE ON FUNCTION auth.uid() TO margindesk_app;
 
 DO $$
 BEGIN

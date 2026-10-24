@@ -12,6 +12,52 @@
 | No user-facing service-role credential use | **unverified** (local source scan passed) | Passing `MarginDesk CI` link/date and scan output |
 | Backup/restore dump, fresh target, sentinel, and post-restore tests | **unverified** | Passing `MarginDesk Restore Drill` link/date and job summary |
 
+### Current pgTAP check ledger
+
+The latest reported CI run had 31/32 checks pass and is not a passing run. This change expands the suite to 37 checks, so every check below remains **unverified** until a green PostgreSQL 17 CI run is linked. The test runner now prints the live `pg_policies` rows whose expressions reference `auth.*`, and executable `pg_proc` entries whose definitions reference `auth.*`, including `prosecdef` and pinned `search_path`. The SQL suite directly calls `auth.uid()` while `current_user=margindesk_app` and captures success/error for assertion after `RESET ROLE`.
+
+| # | Check | What it proves | Status / CI evidence |
+|---:|---|---|---|
+| 1 | Every application table has `tenant_id` | Tenant key coverage | **unverified** |
+| 2 | RLS enabled and forced on every application table | Owners cannot bypass table policies | **unverified** |
+| 3 | `margindesk_app` is NOLOGIN/NOSUPERUSER/NOBYPASSRLS | Restricted role attributes | **unverified** |
+| 4 | Browser role has no direct product SELECT grant | Browser roles cannot query product tables directly | **unverified** |
+| 5 | App role has `public` schema USAGE | Public objects resolve for the app role | **unverified** |
+| 6 | App role has `auth` schema USAGE | Direct policy and helper references to `auth.uid()` resolve | **unverified** |
+| 7 | App role has no table privileges in `auth` | Schema access does not expose Supabase Auth rows | **unverified** |
+| 8 | App role has PL/pgSQL USAGE | Role can execute the restricted test blocks | **unverified** |
+| 9 | App role can EXECUTE `auth.uid()` | The specific Auth helper is callable | **unverified** |
+| 10 | App role can EXECUTE `is_tenant_member(uuid)` | Membership policy helper is callable | **unverified** |
+| 11 | App role can EXECUTE `is_tenant_role(uuid,text[])` | Role policy helper is callable | **unverified** |
+| 12 | App role can EXECUTE `is_tenant_role_any_status(uuid,text[])` | Deleted-tenant policy helper is callable | **unverified** |
+| 13 | Required per-table ACLs exist | RLS checks are not masked by missing table grants | **unverified** |
+| 14 | Audit log has no app/PUBLIC UPDATE, DELETE, or TRUNCATE | Audit mutation ACLs are absent | **unverified** |
+| 15 | PUBLIC has no tenant-table write/TRUNCATE grants | No implicit public write access | **unverified** |
+| 16 | App lacks tenant/membership writes forbidden by policy | ACLs do not exceed those policy operations | **unverified** |
+| 17 | App has no tenant-table TRUNCATE | RLS cannot be bypassed with TRUNCATE | **unverified** |
+| 18 | Effective role flags captured after `SET ROLE` | Session is actually restricted and non-bypass | **unverified** |
+| 19 | App role directly calls `auth.uid()` | Schema USAGE and function EXECUTE work at runtime | **unverified** |
+| 20 | Tenant A SELECTs its own row from every table | Positive read control for all tenant tables | **unverified** |
+| 21 | Tenant A INSERTs where policies allow | Positive insert controls prevent vacuous denials | **unverified** |
+| 22 | Tenant A UPDATEs its own customer row | Positive control for an allowed UPDATE policy | **unverified** |
+| 23 | Tenant A DELETEs its own inserted customer row | Positive control for an allowed DELETE policy | **unverified** |
+| 24 | Rep sees a product but cannot DELETE it | Policy-forbidden role denial with visible target | **unverified** |
+| 25 | Tenant A cannot SELECT Tenant B rows | Cross-tenant reads return zero rows | **unverified** |
+| 26 | Tenant A cross-tenant UPDATE is rejected by RLS | WITH CHECK emits the RLS violation, not ACL denial | **unverified** |
+| 27 | Tenant A cross-tenant DELETE affects zero rows | RLS filters inaccessible target rows | **unverified** |
+| 28 | Tenant A cross-tenant INSERT is rejected by RLS | WITH CHECK emits the RLS violation, not ACL denial | **unverified** |
+| 29 | Quote creator cannot approve own quote | Self-approval remains blocked | **unverified** |
+| 30 | Rep cannot read audit log | Audit reads remain owner/manager-only | **unverified** |
+| 31 | Missing user context sees zero tenant rows | RLS fails closed without JWT subject | **unverified** |
+| 32 | App role cannot UPDATE audit log | ACL denial protects append-only rows | **unverified** |
+| 33 | App role cannot DELETE audit log | ACL denial protects append-only rows | **unverified** |
+| 34 | App role cannot TRUNCATE audit log | ACL denial protects the whole table | **unverified** |
+| 35 | Elevated UPDATE hits immutability trigger | Database trigger blocks privileged mutation | **unverified** |
+| 36 | Elevated DELETE hits immutability trigger | Database trigger blocks privileged mutation | **unverified** |
+| 37 | Elevated TRUNCATE hits statement trigger | Database trigger blocks privileged truncation | **unverified** |
+
+No check is marked verified because no passing run link/date is available.
+
 ## 1. Connection role and RLS context
 
 ### Which role does the app pool use?
@@ -52,6 +98,14 @@ Expected: `effective_role=margindesk_app`; both superuser and bypass columns are
 
 RLS helpers use `auth.uid()` and active membership checks. The database integration test clears the user subject and JWT claims and asserts that a `product` query returns zero rows; the runtime check similarly asserts zero visible tenants with `withDatabase({})`. Both database assertions are **unverified** until a passing CI database run is linked above.
 
+### Why the app role needs `auth` schema USAGE
+
+This is case **(b)**: stored RLS policy expressions directly reference `auth.uid()`, so the app role needs `USAGE` on `auth` to resolve/call this helper. `auth.uid()` also needs `EXECUTE`; neither privilege grants access to `auth.users`. The migration grants only schema `USAGE` and `EXECUTE` on `auth.uid()`, and check 7 asserts there are no table privileges in `auth`. The grant is in the checked-in, undeployed Phase 1 migration and is placed in its final privilege section.
+
+The current migration's auth-referencing policy inventory (the runner prints the live catalog inventory in CI) is `membership_select`, `customer_select`, `quote_select`, `quote_insert`, `quote_delete`, `quote_update`, `quote_line_select`, `quote_line_insert`, `quote_line_update`, `quote_line_delete`, `approval_select`, `approval_insert`, `approval_update`, `sales_order_select`, and `audit_log_append`. Some also call `public.is_tenant_*` helpers that read `auth.uid()`.
+
+Executable public functions whose definitions reference `auth.*` are `is_tenant_member(uuid)`, `is_tenant_role(uuid,text[])`, `is_tenant_role_any_status(uuid,text[])`, `create_tenant_with_owner(text)`, `accept_tenant_invite(text)`, and `record_failed_login(text,text,text)`. Each is `SECURITY DEFINER` with pinned `search_path=public,extensions,pg_temp`. `auth.uid()` is an invoker function with no pinned search path; it is called directly from stored policy expressions, and check 19 explicitly calls it while `margindesk_app` is active. This is why case (a) does not apply. PGlite observed the catalog inventory and direct call after the migration change; this is local smoke evidence only, so checks 6, 7, 9, and 19 remain **unverified** pending CI.
+
 ### Is the Supabase service-role key used by user-facing code?
 
 No user-facing source path should reference a service-role credential. Supabase SSR uses only `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`; SQL uses the restricted `APP_DATABASE_URL`. `pnpm test` runs [`scripts/check-service-role.mjs`](./scripts/check-service-role.mjs), which scans the present app, components, and library directories, any present conventional client-source directories, text-based public assets, and root browser/prototype files. It warns when an optional source directory is absent and fails if it finds no files. The tracked `legacy/` path contains only an empty `.gitkeep` placeholder and is not shipped source. The local scan passed and checked 86 user-facing files; CI status is **unverified** pending a passing `MarginDesk CI` run. This source scan does not substitute for keeping secrets out of deployment configuration and logs.
@@ -63,11 +117,11 @@ No user-facing source path should reference a service-role credential. Supabase 
 - any table is missing `tenant_id`, enabled RLS, or forced RLS;
 - Tenant A can select, update, or delete a Tenant B row;
 - Tenant A cannot move an A-visible row to Tenant B or insert a Tenant B row; both must fail with SQLSTATE `42501` and an error message identifying the RLS policy, not a table permission denial;
-- Tenant A can select its own seeded row in every tenant table and can insert on every table whose RLS policy allows INSERT; missing grants or policy failures are reported by table name;
+- Tenant A can select its own seeded row in every tenant table and can insert on every table whose RLS policy allows INSERT; it also updates its own customer and deletes its own inserted customer; a rep can see but cannot delete a product under the analyst/manager-only DELETE policy; missing grants or policy failures are reported by table name;
 - Tenant A cannot use TRUNCATE, and Tenant B deletes remain RLS-filtered to zero rows (PostgreSQL DELETE policies filter rows instead of raising an exception);
 - a request with no authenticated user context can see tenant data.
 
-The restricted test section touches only `public` tenant tables, `auth.uid()`, the public membership/role helpers, `pg_catalog` views and built-ins, and transaction-local request/test settings. Before role switching, the suite checks `USAGE` on `public` and `auth`, `EXECUTE` on `auth.uid()` and each policy helper, `USAGE` on `plpgsql` for its `DO` blocks, and the required per-table grants. It does not read `pg_temp`, invoke pgTAP, or use sequences while acting as `margindesk_app`. The test login handles fixture setup and pgTAP; the app role performs only the policy operations under test. These checks have not run against Postgres locally because Docker and `psql` are unavailable.
+The restricted test section touches only `public` tenant tables, `auth.uid()`, the public membership/role helpers, `pg_catalog` views and built-ins, and transaction-local request/test settings. Before role switching, the suite checks `USAGE` on `public` and `auth`, confirms there are no `auth` table grants, checks `EXECUTE` on `auth.uid()` and each policy helper, checks `USAGE` on `plpgsql` for its `DO` blocks, and verifies required per-table grants. It does not read `pg_temp`, invoke pgTAP, or use sequences while acting as `margindesk_app`. The test login handles fixture setup and pgTAP; the app role performs only the policy operations under test. These checks have not run against PostgreSQL locally because Docker and `psql` are unavailable.
 
 The migration also checks tenant columns and forced RLS during installation. `pnpm test` runs [`scripts/check-schema.mjs`](./scripts/check-schema.mjs), which statically checks every migration for duplicate policies, triggers, indexes, function signatures, and named constraints; missing tenant-table FORCE RLS; and audit SELECT policies broader than owners/managers. Fixture tests exercise each failure case. These local static checks pass, but applying the migration to a clean Supabase database and the Postgres integration suite remain **unverified** until a passing CI run is linked above; see [`README.md`](./README.md) for CI/local commands.
 
@@ -107,4 +161,4 @@ pnpm check:db-role
 pnpm test:db
 ```
 
-In this workspace, `pnpm test` passed (27 tests), `pnpm typecheck` passed, and `pnpm build` passed. The migration lint fixtures cover duplicate policies (including a policy generated by a loop), triggers, indexes, function signatures, named constraints, missing FORCE RLS, and an overly broad audit SELECT policy. The service-role scanner checked 86 user-facing files, and its fixture tests reject a client file containing the service-role environment key and an empty scan. A temporary PGlite smoke runner applied the migration and executed all 32 SQL checks with minimal Supabase Auth and pgTAP stubs; all emitted `ok`. This does **not** count as database verification because PGlite and the pgTAP stubs are not the PostgreSQL 17/Supabase CI environment. Docker and `psql` are unavailable, and the fresh `pnpm test:db` attempt stopped before SQL with `ECONNREFUSED 127.0.0.1:54322`. The hosted CI path has not run. The runtime role, SQL RLS/ACL/audit/approval/TRUNCATE checks, clean-database migration application, and restore drill remain **unverified**; no CI run link/date is available to record.
+In this workspace, `pnpm test` passed (27 tests), `pnpm typecheck` passed, and `pnpm build` passed. The migration lint fixtures cover duplicate policies (including a policy generated by a loop), triggers, indexes, function signatures, named constraints, missing FORCE RLS, and an overly broad audit SELECT policy. The service-role scanner checked 86 user-facing files, and its fixture tests reject a client file containing the service-role environment key and an empty scan. A temporary PGlite smoke runner applied the migration and executed all 37 SQL checks with minimal Supabase Auth and pgTAP stubs; all emitted `ok`, including the direct `auth.uid()` call and UPDATE/DELETE positive controls. This does **not** count as database verification because PGlite and the pgTAP stubs are not the PostgreSQL 17/Supabase CI environment. Docker and `psql` are unavailable, and the fresh `pnpm test:db` attempt stopped before SQL with `ECONNREFUSED 127.0.0.1:54322`. The hosted CI path has not run. The runtime role, SQL RLS/ACL/audit/approval/TRUNCATE checks, clean-database migration application, and restore drill remain **unverified**; no CI run link/date is available to record.
