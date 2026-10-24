@@ -1,0 +1,8 @@
+"use client";
+import { useState } from "react";
+type Member={user_id:string;email:string;role:"owner"|"manager"|"analyst"|"rep";status:string;created_at:string};
+export function UsersPanel({members}:{members:Member[]}) {
+  const [rows,setRows]=useState(members); const [message,setMessage]=useState(""); const [busy,setBusy]=useState("");
+  async function update(userId:string,role:Member["role"]){setBusy(userId);setMessage("");try{const response=await fetch(`/api/users/${userId}`,{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({role})});const result=await response.json();if(!response.ok)throw new Error(result.error||"Role could not be changed.");setRows(current=>current.map(member=>member.user_id===userId?{...member,role}:member));setMessage(`Role updated for ${result.data.email}.`)}catch(error){setMessage(error instanceof Error?error.message:"Role could not be changed.")}finally{setBusy("")}}
+  return <>{message&&<p role="status" className="form-message">{message}</p>}<div className="data-table"><table><thead><tr><th>Member</th><th>Role</th><th>Status</th><th>Joined</th><th>Change role</th></tr></thead><tbody>{rows.map(member=><tr key={member.user_id}><td>{member.email}</td><td>{member.role}</td><td>{member.status}</td><td>{new Date(member.created_at).toLocaleDateString("en-US")}</td><td><select aria-label={`Role for ${member.email}`} className="input" value={member.role} disabled={member.role==="owner"||Boolean(busy)} onChange={e=>void update(member.user_id,e.target.value as Member["role"])}><option value="owner">Owner</option><option value="manager">Manager</option><option value="analyst">Analyst</option><option value="rep">Rep</option></select></td></tr>)}</tbody></table></div></>;
+}

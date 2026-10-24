@@ -1,0 +1,182 @@
+name: MarginDesk Restore Drill
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Restore into a fresh local Supabase stack or a disposable hosted Supabase test project
+        required: true
+        type: choice
+        options:
+          - local
+          - hosted
+        default: local
+permissions:
+  contents: read
+jobs:
+  restore-drill:
+    runs-on: ubuntu-latest
+    env:
+      RESTORE_TARGET: ${{ inputs.target }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Initialize drill timers
+        shell: bash
+        run: |
+          now="$(date +%s)"
+          printf 'DRILL_START_EPOCH=%s\n' "$now" >> "$GITHUB_ENV"
+
+      - name: Start source Supabase and apply migrations (local)
+        if: inputs.target == 'local'
+        run: |
+          pnpm exec supabase start -x studio,edge-runtime,storage-api,imgproxy,logflare,vector
+          pnpm exec supabase db reset
+      - name: Generate local source database URLs (local)
+        if: inputs.target == 'local'
+        shell: bash
+        run: |
+          pnpm exec supabase status --output env > "$RUNNER_TEMP/source-status.env"
+          db_url="$(sed -n 's/^DB_URL=//p' "$RUNNER_TEMP/source-status.env" | head -n 1 | sed 's/^"//; s/"$//')"
+          if [[ -z "$db_url" ]]; then echo "Supabase CLI status did not return DB_URL." >&2; exit 1; fi
+          {
+            printf 'SEED_DATABASE_URL=%s\n' "$db_url"
+            printf 'RESTORE_TEST_SOURCE_DATABASE_URL=%s\n' "$db_url"
+          } >> "$GITHUB_ENV"
+      - name: Configure hosted source and target URLs
+        if: inputs.target == 'hosted'
+        env:
+          RESTORE_TEST_SOURCE_DATABASE_URL: ${{ secrets.RESTORE_TEST_SOURCE_DATABASE_URL }}
+          RESTORE_TEST_TARGET_DATABASE_URL: ${{ secrets.RESTORE_TEST_TARGET_DATABASE_URL }}
+        shell: bash
+        run: |
+          if [[ -z "$RESTORE_TEST_SOURCE_DATABASE_URL" || -z "$RESTORE_TEST_TARGET_DATABASE_URL" ]]; then
+            echo "Hosted mode requires RESTORE_TEST_SOURCE_DATABASE_URL and RESTORE_TEST_TARGET_DATABASE_URL secrets." >&2
+            exit 1
+          fi
+          printf 'SEED_DATABASE_URL=%s\n' "$RESTORE_TEST_SOURCE_DATABASE_URL" >> "$GITHUB_ENV"
+          printf 'TEST_DATABASE_URL=%s\n' "$RESTORE_TEST_TARGET_DATABASE_URL" >> "$GITHUB_ENV"
+      - name: Seed a sentinel in the disposable source database
+        run: pnpm seed:restore-drill
+      - name: Start source dump timer
+        shell: bash
+        run: printf 'DUMP_START_EPOCH=%s\n' "$(date +%s)" >> "$GITHUB_ENV"
+      - name: Dump source roles, schema, and data
+        shell: bash
+        env:
+          RESTORE_TEST_SOURCE_DATABASE_URL: ${{ secrets.RESTORE_TEST_SOURCE_DATABASE_URL }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/margindesk-dump"
+          if [[ "$RESTORE_TARGET" == "local" ]]; then
+            pnpm exec supabase db dump --local --role-only --file "$RUNNER_TEMP/margindesk-dump/roles.sql"
+            pnpm exec supabase db dump --local --file "$RUNNER_TEMP/margindesk-dump/schema.sql"
+            pnpm exec supabase db dump --local --data-only --use-copy --file "$RUNNER_TEMP/margindesk-dump/data.sql"
+          else
+            pnpm exec supabase db dump --db-url "$RESTORE_TEST_SOURCE_DATABASE_URL" --role-only --file "$RUNNER_TEMP/margindesk-dump/roles.sql"
+            pnpm exec supabase db dump --db-url "$RESTORE_TEST_SOURCE_DATABASE_URL" --file "$RUNNER_TEMP/margindesk-dump/schema.sql"
+            pnpm exec supabase db dump --db-url "$RESTORE_TEST_SOURCE_DATABASE_URL" --data-only --use-copy --file "$RUNNER_TEMP/margindesk-dump/data.sql"
+          fi
+          printf 'DUMP_END_EPOCH=%s\n' "$(date +%s)" >> "$GITHUB_ENV"
+          printf 'RESTORE_START_EPOCH=%s\n' "$(date +%s)" >> "$GITHUB_ENV"
+
+      - name: Stop and discard source stack before starting a fresh target (local)
+        if: inputs.target == 'local'
+        run: pnpm exec supabase stop --no-backup
+      - name: Start a fresh empty Supabase target stack (local)
+        if: inputs.target == 'local'
+        shell: bash
+        run: |
+          target_dir="$RUNNER_TEMP/margindesk-restore-target"
+          mkdir -p "$target_dir/supabase"
+          sed 's/^project_id = "margindesk-local"$/project_id = "margindesk-restore"/' supabase/config.toml > "$target_dir/supabase/config.toml"
+          pnpm exec supabase start --workdir "$target_dir" -x studio,edge-runtime,storage-api,imgproxy,logflare,vector
+          pnpm exec supabase status --workdir "$target_dir" --output env > "$RUNNER_TEMP/target-status.env"
+          db_url="$(sed -n 's/^DB_URL=//p' "$RUNNER_TEMP/target-status.env" | head -n 1 | sed 's/^"//; s/"$//')"
+          if [[ -z "$db_url" ]]; then echo "Target Supabase CLI status did not return DB_URL." >&2; exit 1; fi
+          {
+            printf 'SEED_DATABASE_URL=%s\n' "$db_url"
+            printf 'TEST_DATABASE_URL=%s\n' "$db_url"
+            printf 'RESTORE_TEST_TARGET_DATABASE_URL=%s\n' "$db_url"
+          } >> "$GITHUB_ENV"
+          db_container="$(docker ps --format '{{.Names}}' | grep '^supabase_db_' | head -n 1)"
+          if [[ -z "$db_container" ]]; then echo "Could not locate the fresh Supabase database container." >&2; exit 1; fi
+          printf 'RESTORE_DB_CONTAINER=%s\n' "$db_container" >> "$GITHUB_ENV"
+      - name: Require a fresh hosted target (hosted)
+        if: inputs.target == 'hosted'
+        env:
+          RESTORE_TEST_TARGET_DATABASE_URL: ${{ secrets.RESTORE_TEST_TARGET_DATABASE_URL }}
+        run: pnpm check:restore-target
+      - name: Restore dump into the fresh target (local)
+        if: inputs.target == 'local'
+        shell: bash
+        run: |
+          docker cp "$RUNNER_TEMP/margindesk-dump/roles.sql" "$RESTORE_DB_CONTAINER:/tmp/margindesk-roles.sql"
+          docker cp "$RUNNER_TEMP/margindesk-dump/schema.sql" "$RESTORE_DB_CONTAINER:/tmp/margindesk-schema.sql"
+          docker cp "$RUNNER_TEMP/margindesk-dump/data.sql" "$RESTORE_DB_CONTAINER:/tmp/margindesk-data.sql"
+          docker exec "$RESTORE_DB_CONTAINER" psql -U postgres -d postgres --single-transaction --set ON_ERROR_STOP=1 \
+            --file=/tmp/margindesk-roles.sql --file=/tmp/margindesk-schema.sql \
+            --command='SET session_replication_role = replica' --file=/tmp/margindesk-data.sql
+          printf 'RESTORE_END_EPOCH=%s\n' "$(date +%s)" >> "$GITHUB_ENV"
+      - name: Restore dump into the fresh hosted target (hosted)
+        if: inputs.target == 'hosted'
+        env:
+          RESTORE_TEST_TARGET_DATABASE_URL: ${{ secrets.RESTORE_TEST_TARGET_DATABASE_URL }}
+        shell: bash
+        run: |
+          docker run --rm -v "$RUNNER_TEMP/margindesk-dump:/restore:ro" postgres:17-alpine \
+            psql "$RESTORE_TEST_TARGET_DATABASE_URL" --single-transaction --set ON_ERROR_STOP=1 \
+            --file /restore/roles.sql --file /restore/schema.sql \
+            --command='SET session_replication_role = replica' --file /restore/data.sql
+          {
+            printf 'SEED_DATABASE_URL=%s\n' "$RESTORE_TEST_TARGET_DATABASE_URL"
+            printf 'TEST_DATABASE_URL=%s\n' "$RESTORE_TEST_TARGET_DATABASE_URL"
+          } >> "$GITHUB_ENV"
+          printf 'RESTORE_END_EPOCH=%s\n' "$(date +%s)" >> "$GITHUB_ENV"
+      - name: Verify restored sentinel and create restricted app login
+        run: |
+          pnpm check:restore-sentinel
+          pnpm setup:test-db-role
+          printf 'POST_RESTORE_TEST_START_EPOCH=%s\n' "$(date +%s)" >> "$GITHUB_ENV"
+      - name: Verify runtime role and no-context RLS
+        run: pnpm check:db-role
+      - name: Re-run full RLS and append-only suite against restored database
+        run: |
+          pnpm test:db
+          printf 'TEST_END_EPOCH=%s\n' "$(date +%s)" >> "$GITHUB_ENV"
+      - name: Record restore-drill timing in job summary
+        if: always()
+        shell: bash
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          finished="$(date +%s)"
+          dump_start="${DUMP_START_EPOCH:-$DRILL_START_EPOCH}"
+          dump_end="${DUMP_END_EPOCH:-$finished}"
+          restore_start="${RESTORE_START_EPOCH:-$dump_end}"
+          restore_end="${RESTORE_END_EPOCH:-$finished}"
+          test_end="${TEST_END_EPOCH:-$finished}"
+          dump_seconds=$((dump_end - dump_start))
+          restore_seconds=$((restore_end - restore_start))
+          tests_start="${POST_RESTORE_TEST_START_EPOCH:-$restore_end}"
+          tests_seconds=$((test_end - tests_start))
+          total_seconds=$((finished - DRILL_START_EPOCH))
+          {
+            echo '## MarginDesk restore drill'
+            echo
+            echo "- Result: **$JOB_STATUS**"
+            echo "- Target mode: **$RESTORE_TARGET**"
+            echo "- Dump duration: ${dump_seconds}s"
+            echo "- Restore duration: ${restore_seconds}s"
+            echo "- Post-restore app-role, sentinel, and RLS test duration: ${tests_seconds}s (upper bound if the job failed before tests completed)"
+            echo "- Total workflow elapsed: ${total_seconds}s"
+            echo '- Sentinel check, app-role check, and pgTAP suite are required steps; any failed step makes this drill fail.'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Stop local target stack
+        if: always() && inputs.target == 'local'
+        run: pnpm exec supabase stop --workdir "$RUNNER_TEMP/margindesk-restore-target" --no-backup

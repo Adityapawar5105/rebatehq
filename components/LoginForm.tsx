@@ -1,0 +1,7 @@
+"use client";
+import { useState } from "react";
+export function LoginForm({ inviteToken }: { inviteToken?: string }) {
+  const [email,setEmail]=useState(""); const [message,setMessage]=useState(""); const [busy,setBusy]=useState(false); const [error,setError]=useState(false);
+  async function submit(event:React.FormEvent<HTMLFormElement>){event.preventDefault();setBusy(true);setMessage("");setError(false);try{const response=await fetch("/api/auth/login",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email,inviteToken})});const result=await response.json();if(!response.ok)throw new Error(result.error||"We could not send the sign-in link.");setMessage("Check your email for a secure sign-in link. If you were invited, the link will finish joining that workspace.");}catch(e){setError(true);setMessage(e instanceof Error?e.message:"We couldn't send the sign-in link.");}finally{setBusy(false)}}
+  return <form className="app-form" onSubmit={submit}><div className="field"><label htmlFor="email">Work email</label><input className="input" id="email" type="email" required autoComplete="email" value={email} onChange={e=>setEmail(e.target.value)} /></div><button className="primary" disabled={busy}>{busy?"Sending…":"Email me a sign-in link"}</button>{message&&<p role="status" className={`form-message ${error?"error":"success"}`}>{message}</p>}<p className="small muted">Email verification is required. A sign-in link alone does not grant access to a workspace; workspace access requires an owner invitation.</p></form>;
+}

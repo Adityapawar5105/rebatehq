@@ -1,0 +1,45 @@
+{
+  "name": "margindesk",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "pnpm check:schema && pnpm check:service-role && node --test tests/*.test.js && tsx --test tests/*.test.ts",
+    "test:db": "tsx scripts/test-db.ts",
+    "setup:test-db-role": "tsx scripts/setup-test-app-role.ts",
+    "check:db-role": "tsx scripts/check-app-db-role.ts",
+    "seed:restore-drill": "tsx scripts/seed-restore-drill.ts",
+    "check:restore-target": "tsx scripts/check-restore-drill-target.ts",
+    "check:restore-sentinel": "tsx scripts/verify-restore-drill-sentinel.ts",
+    "check:service-role": "node scripts/check-service-role.mjs",
+    "check:schema": "node scripts/check-schema.mjs",
+    "seed:demo": "tsx scripts/seed-demo.ts",
+    "import:prototype": "tsx scripts/import-prototype.ts",
+    "test:unit": "node --test tests/*.test.js"
+  },
+  "dependencies": {
+    "@supabase/ssr": "0.12.7",
+    "@supabase/supabase-js": "2.118.0",
+    "@upstash/ratelimit": "^2.2.0",
+    "@upstash/redis": "^1.39.0",
+    "jszip": "^3.10.1",
+    "next": "16.4.3",
+    "pg": "^8.16.3",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@next/env": "16.4.3",
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.15.5",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "supabase": "^2.40.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  }
+}

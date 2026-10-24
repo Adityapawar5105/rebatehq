@@ -1,0 +1,6 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
+export type Impersonation = { realActorId: string; targetUserId: string; tenantId: string; expiresAt: number };
+function key() { const secret=process.env.DEV_IMPERSONATION_SECRET; if(!secret||secret.length<32)throw new Error("Development impersonation requires a 32-character secret.");return secret; }
+export function signImpersonation(value:Impersonation){const payload=Buffer.from(JSON.stringify(value)).toString("base64url");const signature=createHmac("sha256",key()).update(payload).digest("base64url");return `${payload}.${signature}`;}
+export function verifyImpersonation(token:string|undefined,realActorId:string):Impersonation|null{if(!token)return null;try{const [payload,signature]=token.split(".");if(!payload||!signature)return null;const expected=createHmac("sha256",key()).update(payload).digest();const actual=Buffer.from(signature,"base64url");if(actual.length!==expected.length||!timingSafeEqual(actual,expected))return null;const value=JSON.parse(Buffer.from(payload,"base64url").toString("utf8")) as Impersonation;if(value.realActorId!==realActorId||value.expiresAt<=Date.now())return null;return value;}catch{return null;}}
+export function devImpersonationEnabled(){return process.env.NODE_ENV==="development"&&process.env.DEV_IMPERSONATION_ENABLED==="true";}

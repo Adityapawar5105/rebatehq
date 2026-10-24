@@ -1,0 +1,50 @@
+name: MarginDesk CI
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+      - name: Start local Supabase services
+        run: pnpm exec supabase start -x studio,edge-runtime,storage-api,imgproxy,logflare,vector
+      - name: Apply every migration to the clean local database
+        run: pnpm exec supabase db reset
+      - name: Export local database URLs for this job
+        shell: bash
+        run: |
+          pnpm exec supabase status --output env > "$RUNNER_TEMP/supabase-status.env"
+          db_url="$(sed -n 's/^DB_URL=//p' "$RUNNER_TEMP/supabase-status.env" | head -n 1 | sed 's/^"//; s/"$//')"
+          if [[ -z "$db_url" ]]; then
+            echo "Supabase CLI status did not return DB_URL." >&2
+            exit 1
+          fi
+          {
+            printf 'SEED_DATABASE_URL=%s\n' "$db_url"
+            printf 'TEST_DATABASE_URL=%s\n' "$db_url"
+          } >> "$GITHUB_ENV"
+      - name: Create restricted app login (pgTAP creates disposable test users)
+        run: pnpm setup:test-db-role
+      - name: Verify runtime pool role and missing-auth isolation
+        run: pnpm check:db-role
+      - name: Run RLS, tenant isolation, role, and append-only database tests
+        run: pnpm test:db
+      - name: Stop local Supabase services
+        if: always()
+        run: pnpm exec supabase stop --no-backup

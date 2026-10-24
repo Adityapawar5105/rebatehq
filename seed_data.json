@@ -1,0 +1,721 @@
+{
+  "company": {
+    "id": "co-demo",
+    "name": "Northwind Industrial Supply",
+    "currency": "USD"
+  },
+  "users": [
+    {
+      "id": "u-owner",
+      "name": "Morgan Lee",
+      "role": "owner"
+    },
+    {
+      "id": "u-analyst",
+      "name": "Sam Patel",
+      "role": "analyst"
+    },
+    {
+      "id": "u-rep",
+      "name": "Jordan Reyes",
+      "role": "rep"
+    }
+  ],
+  "customers": [
+    {
+      "id": "c-acme",
+      "name": "Acme Corp",
+      "accountNo": "AC-104",
+      "region": "West",
+      "tier": "Strategic",
+      "phone": "+1 415 555 0144",
+      "email": "purchasing@acme.example"
+    },
+    {
+      "id": "c-blue",
+      "name": "Blue Ridge Mechanical",
+      "accountNo": "BR-220",
+      "region": "South",
+      "tier": "Growth",
+      "phone": "+1 615 555 0108",
+      "email": "buying@blueridge.example"
+    },
+    {
+      "id": "c-valley",
+      "name": "Valley Industrial",
+      "accountNo": "VI-041",
+      "region": "Midwest",
+      "tier": "Standard",
+      "phone": "+1 414 555 0125",
+      "email": "orders@valley.example"
+    },
+    {
+      "id": "c-rapid",
+      "name": "Rapid HVAC Partners",
+      "accountNo": "RH-518",
+      "region": "West",
+      "tier": "Growth",
+      "phone": "+1 206 555 0173",
+      "email": "ops@rapidhvac.example"
+    }
+  ],
+  "products": [
+    {
+      "id": "p-v100",
+      "sku": "SV-100",
+      "name": "Steel Gate Valve · 2 in",
+      "category": "Steel Valves",
+      "supplier": "NorthStar Metals",
+      "uom": "EA",
+      "cost": 74,
+      "freight": 4.2,
+      "termsCost": 1.1,
+      "listPrice": 126,
+      "tiers": {
+        "Strategic": 119,
+        "Growth": 122,
+        "Standard": 126
+      }
+    },
+    {
+      "id": "p-v200",
+      "sku": "SV-200",
+      "name": "Steel Ball Valve · 3 in",
+      "category": "Steel Valves",
+      "supplier": "NorthStar Metals",
+      "uom": "EA",
+      "cost": 118,
+      "freight": 7.5,
+      "termsCost": 1.8,
+      "listPrice": 194,
+      "tiers": {
+        "Strategic": 181,
+        "Growth": 188,
+        "Standard": 194
+      }
+    },
+    {
+      "id": "p-a110",
+      "sku": "AL-110",
+      "name": "Aluminum Bracket · 8 in",
+      "category": "Aluminum Parts",
+      "supplier": "AlumaWorks",
+      "uom": "EA",
+      "cost": 18.5,
+      "freight": 1.2,
+      "termsCost": 0.25,
+      "listPrice": 36,
+      "tiers": {
+        "Strategic": 34,
+        "Growth": 35,
+        "Standard": 36
+      }
+    },
+    {
+      "id": "p-h300",
+      "sku": "HV-300",
+      "name": "HVAC Condenser Fan Motor",
+      "category": "HVAC Supplies",
+      "supplier": "AirCore",
+      "uom": "EA",
+      "cost": 142,
+      "freight": 8.8,
+      "termsCost": 2.4,
+      "listPrice": 229,
+      "tiers": {
+        "Strategic": 216,
+        "Growth": 222,
+        "Standard": 229
+      }
+    },
+    {
+      "id": "p-e405",
+      "sku": "EL-405",
+      "name": "Electrical Breaker · 40A",
+      "category": "Electrical Supplies",
+      "supplier": "BrightLine",
+      "uom": "EA",
+      "cost": 21,
+      "freight": 1.4,
+      "termsCost": 0.35,
+      "listPrice": 42,
+      "tiers": {
+        "Strategic": 40,
+        "Growth": 41,
+        "Standard": 42
+      }
+    },
+    {
+      "id": "p-v305",
+      "sku": "SV-305",
+      "name": "Steel Check Valve · 4 in",
+      "category": "Steel Valves",
+      "supplier": "NorthStar Metals",
+      "uom": "EA",
+      "cost": 238,
+      "freight": 19,
+      "termsCost": 5.5,
+      "listPrice": 359,
+      "tiers": {
+        "Strategic": 338,
+        "Growth": 349,
+        "Standard": 359
+      }
+    },
+    {
+      "id": "p-h410",
+      "sku": "HV-410",
+      "name": "Copper Refrigerant Line Set",
+      "category": "HVAC Supplies",
+      "supplier": "AirCore",
+      "uom": "SET",
+      "cost": 82,
+      "freight": 4.8,
+      "termsCost": 1.25,
+      "listPrice": 139,
+      "tiers": {
+        "Strategic": 132,
+        "Growth": 135,
+        "Standard": 139
+      }
+    },
+    {
+      "id": "p-a240",
+      "sku": "AL-240",
+      "name": "Aluminum Mounting Plate",
+      "category": "Aluminum Parts",
+      "supplier": "AlumaWorks",
+      "uom": "EA",
+      "cost": 33,
+      "freight": 2.1,
+      "termsCost": 0.5,
+      "listPrice": 58,
+      "tiers": {
+        "Strategic": 55,
+        "Growth": 56.5,
+        "Standard": 58
+      }
+    }
+  ],
+  "orders": [
+    {
+      "id": "SO-8101",
+      "customerId": "c-acme",
+      "productId": "p-v100",
+      "qty": 80,
+      "discountPct": 5,
+      "offInvoiceRebatePct": 1,
+      "freightPerUnit": 6.2,
+      "termsPerUnit": 1.1,
+      "month": "2026-10"
+    },
+    {
+      "id": "SO-8102",
+      "customerId": "c-rapid",
+      "productId": "p-v305",
+      "qty": 28,
+      "discountPct": 14,
+      "discountApproved": false,
+      "offInvoiceRebatePct": 2,
+      "freightPerUnit": 68,
+      "termsPerUnit": 5.5,
+      "month": "2026-10"
+    },
+    {
+      "id": "SO-8103",
+      "customerId": "c-blue",
+      "productId": "p-h300",
+      "qty": 42,
+      "discountPct": 6,
+      "offInvoiceRebatePct": 1.5,
+      "freightPerUnit": 12,
+      "termsPerUnit": 2.4,
+      "month": "2026-10"
+    },
+    {
+      "id": "SO-8104",
+      "customerId": "c-valley",
+      "productId": "p-e405",
+      "qty": 120,
+      "discountPct": 3,
+      "offInvoiceRebatePct": 0,
+      "freightPerUnit": 1.8,
+      "termsPerUnit": 0.35,
+      "month": "2026-10"
+    },
+    {
+      "id": "SO-7998",
+      "customerId": "c-acme",
+      "productId": "p-v200",
+      "qty": 24,
+      "discountPct": 3,
+      "offInvoiceRebatePct": 1,
+      "freightPerUnit": 8,
+      "termsPerUnit": 1.8,
+      "month": "2026-09"
+    },
+    {
+      "id": "SO-7991",
+      "customerId": "c-rapid",
+      "productId": "p-h300",
+      "qty": 16,
+      "discountPct": 4,
+      "offInvoiceRebatePct": 1,
+      "freightPerUnit": 9,
+      "termsPerUnit": 2.4,
+      "month": "2026-09"
+    },
+    {
+      "id": "SO-7984",
+      "customerId": "c-blue",
+      "productId": "p-a110",
+      "qty": 90,
+      "discountPct": 5,
+      "offInvoiceRebatePct": 1,
+      "freightPerUnit": 1.5,
+      "termsPerUnit": 0.25,
+      "month": "2026-09"
+    },
+    {
+      "id": "SO-7972",
+      "customerId": "c-valley",
+      "productId": "p-v100",
+      "qty": 45,
+      "discountPct": 4,
+      "offInvoiceRebatePct": 0,
+      "freightPerUnit": 4.4,
+      "termsPerUnit": 1.1,
+      "month": "2026-09"
+    }
+  ],
+  "quotes": [
+    {
+      "id": "QT-221",
+      "customerId": "c-acme",
+      "productId": "p-v100",
+      "qty": 25,
+      "discountPct": 8,
+      "accessory": 0,
+      "status": "Open",
+      "createdAt": "2026-10-23"
+    },
+    {
+      "id": "QT-222",
+      "customerId": "c-blue",
+      "productId": "p-h300",
+      "qty": 10,
+      "discountPct": 12,
+      "accessory": 60,
+      "status": "Open",
+      "createdAt": "2026-10-23"
+    },
+    {
+      "id": "QT-223",
+      "customerId": "c-valley",
+      "productId": "p-e405",
+      "qty": 50,
+      "discountPct": 4,
+      "accessory": 0,
+      "status": "Open",
+      "createdAt": "2026-10-23"
+    },
+    {
+      "id": "QT-224",
+      "customerId": "c-rapid",
+      "productId": "p-v305",
+      "qty": 4,
+      "discountPct": 18,
+      "accessory": 0,
+      "status": "Open",
+      "createdAt": "2026-10-23"
+    }
+  ],
+  "approvals": [],
+  "marginPolicy": {
+    "target": 30,
+    "floor": 25,
+    "walkAway": 18,
+    "overrides": {
+      "category": {
+        "Steel Valves": {
+          "target": 28,
+          "floor": 22,
+          "walkAway": 16
+        }
+      },
+      "tier": {
+        "Strategic": {
+          "target": 28,
+          "floor": 23,
+          "walkAway": 16
+        }
+      }
+    }
+  },
+  "rebates": [
+    {
+      "id": "RA-301",
+      "kind": "Vendor",
+      "name": "NorthStar Metals — quarterly growth rebate",
+      "partyId": "NorthStar Metals",
+      "rate": 2,
+      "threshold": 20000,
+      "periodStart": "2026-07-01",
+      "periodEnd": "2026-09-30",
+      "eligibleSkus": [
+        "SV-100",
+        "SV-200",
+        "SV-305"
+      ],
+      "eligibleSpend": 29500,
+      "credits": 350,
+      "nextTier": 40000,
+      "nextRate": 3
+    },
+    {
+      "id": "RA-302",
+      "kind": "Customer",
+      "name": "Acme annual buying incentive",
+      "partyId": "c-acme",
+      "rate": 3,
+      "threshold": 180000,
+      "periodStart": "2026-01-01",
+      "periodEnd": "2026-12-31",
+      "eligibleSkus": [
+        "SV-100",
+        "SV-200",
+        "AL-110",
+        "EL-405"
+      ],
+      "eligibleSpend": 175000,
+      "credits": 0,
+      "nextTier": 180000,
+      "nextRate": 4
+    },
+    {
+      "id": "RA-303",
+      "kind": "Customer",
+      "name": "Blue Ridge seasonal growth rebate",
+      "partyId": "c-blue",
+      "rate": 2.5,
+      "threshold": 90000,
+      "periodStart": "2026-01-01",
+      "periodEnd": "2026-12-31",
+      "eligibleSkus": [
+        "HV-300",
+        "HV-410",
+        "EL-405"
+      ],
+      "eligibleSpend": 85200,
+      "credits": 0,
+      "nextTier": 90000,
+      "nextRate": 3
+    }
+  ],
+  "priceVersions": [
+    {
+      "id": "PV-1",
+      "createdAt": "2026-10-01T09:00:00Z",
+      "label": "Initial price list",
+      "count": 8,
+      "action": "Seeded"
+    }
+  ],
+  "alerts": [
+    {
+      "id": "AL-2",
+      "level": "review",
+      "message": "Acme Corp is $5,000 away from its next annual buying rebate tier.",
+      "customerId": "c-acme"
+    },
+    {
+      "id": "AL-3",
+      "level": "review",
+      "message": "Four supplier price rows need a buyer review before publishing.",
+      "action": "pricing"
+    }
+  ],
+  "invoices": [
+    {
+      "id": "INV-1001",
+      "customerId": "c-acme",
+      "productId": "p-v100",
+      "qty": 80,
+      "netSales": 9520,
+      "date": "2026-07-18"
+    },
+    {
+      "id": "INV-1002",
+      "customerId": "c-acme",
+      "productId": "p-v200",
+      "qty": 24,
+      "netSales": 4344,
+      "date": "2026-08-12"
+    },
+    {
+      "id": "INV-1003",
+      "customerId": "c-blue",
+      "productId": "p-h300",
+      "qty": 42,
+      "netSales": 9324,
+      "date": "2026-08-03"
+    },
+    {
+      "id": "INV-1004",
+      "customerId": "c-blue",
+      "productId": "p-h410",
+      "qty": 75,
+      "netSales": 10125,
+      "date": "2026-09-22"
+    },
+    {
+      "id": "INV-1005",
+      "customerId": "c-valley",
+      "productId": "p-e405",
+      "qty": 120,
+      "netSales": 4920,
+      "date": "2026-09-03"
+    },
+    {
+      "id": "INV-1006",
+      "customerId": "c-acme",
+      "productId": "p-a110",
+      "qty": 90,
+      "netSales": 3060,
+      "date": "2026-09-20"
+    }
+  ],
+  "supplierCredits": [
+    {
+      "id": "CM-7001",
+      "vendor": "NorthStar Metals",
+      "date": "2026-08-31",
+      "amount": 200,
+      "reference": "Remit 08-31"
+    },
+    {
+      "id": "CM-7215",
+      "vendor": "NorthStar Metals",
+      "date": "2026-09-30",
+      "amount": 150,
+      "reference": "Remit 09-30"
+    }
+  ],
+  "costComponents": [
+    {
+      "orderId": "SO-8101",
+      "freight": 496,
+      "terms": 88
+    },
+    {
+      "orderId": "SO-8102",
+      "freight": 784,
+      "terms": 154
+    },
+    {
+      "orderId": "SO-8103",
+      "freight": 504,
+      "terms": 101
+    }
+  ],
+  "marginSnapshots": [
+    {
+      "id": "company:co-demo:2026-09",
+      "entityType": "company",
+      "entityId": "co-demo",
+      "month": "2026-09",
+      "orderCount": 4,
+      "pocket": 15126.240000000002,
+      "margin": 5027.240000000001,
+      "marginRate": 33.235225674060445,
+      "storedAt": "2026-10-24T15:12:19.188Z"
+    },
+    {
+      "id": "customer:c-acme:2026-09",
+      "entityType": "customer",
+      "entityId": "c-acme",
+      "month": "2026-09",
+      "orderCount": 1,
+      "pocket": 3935.040000000001,
+      "margin": 1103.0400000000009,
+      "marginRate": 28.03122712856796,
+      "storedAt": "2026-10-24T15:12:19.188Z"
+    },
+    {
+      "id": "customer:c-blue:2026-09",
+      "entityType": "customer",
+      "entityId": "c-blue",
+      "month": "2026-09",
+      "orderCount": 1,
+      "pocket": 2803.5,
+      "margin": 1138.5,
+      "marginRate": 40.6099518459069,
+      "storedAt": "2026-10-24T15:12:19.188Z"
+    },
+    {
+      "id": "customer:c-rapid:2026-09",
+      "entityType": "customer",
+      "entityId": "c-rapid",
+      "month": "2026-09",
+      "orderCount": 1,
+      "pocket": 3192,
+      "margin": 920,
+      "marginRate": 28.82205513784461,
+      "storedAt": "2026-10-24T15:12:19.188Z"
+    },
+    {
+      "id": "customer:c-valley:2026-09",
+      "entityType": "customer",
+      "entityId": "c-valley",
+      "month": "2026-09",
+      "orderCount": 1,
+      "pocket": 5195.7,
+      "margin": 1865.6999999999998,
+      "marginRate": 35.908539754027366,
+      "storedAt": "2026-10-24T15:12:19.188Z"
+    },
+    {
+      "id": "product:p-a110:2026-09",
+      "entityType": "product",
+      "entityId": "p-a110",
+      "month": "2026-09",
+      "orderCount": 1,
+      "pocket": 2803.5,
+      "margin": 1138.5,
+      "marginRate": 40.6099518459069,
+      "storedAt": "2026-10-24T15:12:19.188Z"
+    },
+    {
+      "id": "product:p-h300:2026-09",
+      "entityType": "product",
+      "entityId": "p-h300",
+      "month": "2026-09",
+      "orderCount": 1,
+      "pocket": 3192,
+      "margin": 920,
+      "marginRate": 28.82205513784461,
+      "storedAt": "2026-10-24T15:12:19.188Z"
+    },
+    {
+      "id": "product:p-v100:2026-09",
+      "entityType": "product",
+      "entityId": "p-v100",
+      "month": "2026-09",
+      "orderCount": 1,
+      "pocket": 5195.7,
+      "margin": 1865.6999999999998,
+      "marginRate": 35.908539754027366,
+      "storedAt": "2026-10-24T15:12:19.188Z"
+    },
+    {
+      "id": "product:p-v200:2026-09",
+      "entityType": "product",
+      "entityId": "p-v200",
+      "month": "2026-09",
+      "orderCount": 1,
+      "pocket": 3935.040000000001,
+      "margin": 1103.0400000000009,
+      "marginRate": 28.03122712856796,
+      "storedAt": "2026-10-24T15:12:19.188Z"
+    },
+    {
+      "id": "company:co-demo:2026-10",
+      "entityType": "company",
+      "entityId": "co-demo",
+      "month": "2026-10",
+      "orderCount": 4,
+      "pocket": 27165.979999999996,
+      "margin": 6097.979999999998,
+      "marginRate": 22.447119522284854,
+      "storedAt": "2026-10-24T15:12:19.186Z"
+    },
+    {
+      "id": "customer:c-acme:2026-10",
+      "entityType": "customer",
+      "entityId": "c-acme",
+      "month": "2026-10",
+      "orderCount": 1,
+      "pocket": 8364.8,
+      "margin": 2444.7999999999993,
+      "marginRate": 29.227237949502673,
+      "storedAt": "2026-10-24T15:12:19.188Z"
+    },
+    {
+      "id": "customer:c-blue:2026-10",
+      "entityType": "customer",
+      "entityId": "c-blue",
+      "month": "2026-10",
+      "orderCount": 1,
+      "pocket": 8019.899999999999,
+      "margin": 2055.8999999999987,
+      "marginRate": 25.634982979837638,
+      "storedAt": "2026-10-24T15:12:19.188Z"
+    },
+    {
+      "id": "customer:c-rapid:2026-10",
+      "entityType": "customer",
+      "entityId": "c-rapid",
+      "month": "2026-10",
+      "orderCount": 1,
+      "pocket": 6150.48,
+      "margin": -513.5200000000004,
+      "marginRate": -8.349267049075852,
+      "storedAt": "2026-10-24T15:12:19.188Z"
+    },
+    {
+      "id": "customer:c-valley:2026-10",
+      "entityType": "customer",
+      "entityId": "c-valley",
+      "month": "2026-10",
+      "orderCount": 1,
+      "pocket": 4630.8,
+      "margin": 2110.8,
+      "marginRate": 45.581756931847636,
+      "storedAt": "2026-10-24T15:12:19.188Z"
+    },
+    {
+      "id": "product:p-e405:2026-10",
+      "entityType": "product",
+      "entityId": "p-e405",
+      "month": "2026-10",
+      "orderCount": 1,
+      "pocket": 4630.8,
+      "margin": 2110.8,
+      "marginRate": 45.581756931847636,
+      "storedAt": "2026-10-24T15:12:19.188Z"
+    },
+    {
+      "id": "product:p-h300:2026-10",
+      "entityType": "product",
+      "entityId": "p-h300",
+      "month": "2026-10",
+      "orderCount": 1,
+      "pocket": 8019.899999999999,
+      "margin": 2055.8999999999987,
+      "marginRate": 25.634982979837638,
+      "storedAt": "2026-10-24T15:12:19.188Z"
+    },
+    {
+      "id": "product:p-v100:2026-10",
+      "entityType": "product",
+      "entityId": "p-v100",
+      "month": "2026-10",
+      "orderCount": 1,
+      "pocket": 8364.8,
+      "margin": 2444.7999999999993,
+      "marginRate": 29.227237949502673,
+      "storedAt": "2026-10-24T15:12:19.188Z"
+    },
+    {
+      "id": "product:p-v305:2026-10",
+      "entityType": "product",
+      "entityId": "p-v305",
+      "month": "2026-10",
+      "orderCount": 1,
+      "pocket": 6150.48,
+      "margin": -513.5200000000004,
+      "marginRate": -8.349267049075852,
+      "storedAt": "2026-10-24T15:12:19.188Z"
+    }
+  ]
+}
