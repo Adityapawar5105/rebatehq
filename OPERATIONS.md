@@ -17,7 +17,7 @@ Use the Supabase transaction pooler for the web runtime. The `pg` adapter begins
 
 ## Phase 1 CI evidence status
 
-**As of 2026-10-24: all CI acceptance items are unverified.** No GitHub Actions run link is available yet. Do not change an item to verified until the linked workflow run has passed and its URL and date are recorded here and in [`SECURITY_CHECK.md`](./SECURITY_CHECK.md).
+**As of 2026-10-25: all CI acceptance items are unverified.** No GitHub Actions run link is available yet. Do not change an item to verified until the linked workflow run has passed and its URL and date are recorded here and in [`SECURITY_CHECK.md`](./SECURITY_CHECK.md).
 
 | Check | Status | CI evidence |
 |---|---|---|
@@ -45,7 +45,7 @@ Use the Supabase project’s Database → Backups page to inspect the configured
 
 ### Phase 1 restore-drill status
 
-**Unverified as of 2026-10-24.** No restore workflow run link/date is available. The local `pnpm test:db` attempt stopped before SQL execution with `ECONNREFUSED` for `127.0.0.1:54322`; Docker and `psql` are unavailable in this workspace. The manual workflow now performs a logical dump/restore drill, but it has not run. This workflow is not evidence that Supabase managed daily backup or PITR restoration was tested.
+**Unverified as of 2026-10-25.** No restore workflow run link/date is available. The local `pnpm test:db` attempt stopped before SQL execution with `ECONNREFUSED` for `127.0.0.1:54322`; Docker and `psql` are unavailable in this workspace. The manual workflow now performs a logical dump/restore drill, but it has not run. This workflow is not evidence that Supabase managed daily backup or PITR restoration was tested.
 
 | Drill field | Recorded result |
 |---|---|

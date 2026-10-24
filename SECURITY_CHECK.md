@@ -1,6 +1,6 @@
 # MarginDesk Phase 1 security verification
 
-**Status as of 2026-10-24:** no passing GitHub Actions run link is available yet. Every CI acceptance item below is **unverified** until the corresponding workflow run passes. Local source and unit checks have passed, but they are not evidence of PostgreSQL behavior. No result below claims a database test passed unless it ran.
+**Status as of 2026-10-25:** no passing GitHub Actions run link is available yet. Every CI acceptance item below is **unverified** until the corresponding workflow run passes. Local source and unit checks have passed, but they are not evidence of PostgreSQL behavior. No result below claims a database test passed unless it ran.
 
 | Acceptance item | Status | Evidence required to mark verified |
 |---|---|---|
@@ -8,8 +8,8 @@
 | Request without authenticated context sees zero tenant rows | **unverified** | Passing `MarginDesk CI` link/date and runtime-role check |
 | RLS select/insert/update/delete tenant isolation | **unverified** | Passing `pnpm test:db` pgTAP output against Postgres |
 | Audit log rejects app-role UPDATE and DELETE | **unverified** | Passing `pnpm test:db` pgTAP output against Postgres |
-| Rep response redaction and no self-approval | **unverified in CI** (local unit tests passed) | Passing `MarginDesk CI` link/date |
-| No user-facing service-role credential use | **unverified in CI** (local source scan passed) | Passing `MarginDesk CI` link/date and scan output |
+| Rep response redaction and no self-approval | **unverified** (local unit tests passed) | Passing `MarginDesk CI` link/date |
+| No user-facing service-role credential use | **unverified** (local source scan passed) | Passing `MarginDesk CI` link/date and scan output |
 | Backup/restore dump, fresh target, sentinel, and post-restore tests | **unverified** | Passing `MarginDesk Restore Drill` link/date and job summary |
 
 ## 1. Connection role and RLS context
@@ -54,7 +54,7 @@ RLS helpers use `auth.uid()` and active membership checks. The database integrat
 
 ### Is the Supabase service-role key used by user-facing code?
 
-No user-facing source path should reference a service-role credential. Supabase SSR uses only `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`; SQL uses the restricted `APP_DATABASE_URL`. `pnpm test` runs [`scripts/check-service-role.mjs`](./scripts/check-service-role.mjs), which scans the app, components, libraries, proxy/config, and both the legacy browser app and root prototype files for service-role names. The local scan passed and checked 85 user-facing source files; CI status is **unverified** pending a passing `MarginDesk CI` run. This source scan does not substitute for keeping secrets out of deployment configuration and logs.
+No user-facing source path should reference a service-role credential. Supabase SSR uses only `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`; SQL uses the restricted `APP_DATABASE_URL`. `pnpm test` runs [`scripts/check-service-role.mjs`](./scripts/check-service-role.mjs), which scans the present app, components, and library directories, any present conventional client-source directories, text-based public assets, and root browser/prototype files. It warns when an optional source directory is absent and fails if it finds no files. The tracked `legacy/` path contains only an empty `.gitkeep` placeholder and is not shipped source. The local scan passed and checked 86 user-facing files; CI status is **unverified** pending a passing `MarginDesk CI` run. This source scan does not substitute for keeping secrets out of deployment configuration and logs.
 
 ## 2. Tenant isolation across public tables
 
@@ -103,4 +103,4 @@ pnpm check:db-role
 pnpm test:db
 ```
 
-In this workspace, unit/security tests (14 total), typecheck, production build, schema guard, and service-role scan passed. `pnpm test:db` stopped before SQL with `ECONNREFUSED 127.0.0.1:54322`; Docker and `psql` are unavailable. The hosted CI path has been added but has not run. The runtime role, SQL RLS/audit/approval checks, and restore drill remain **unverified**; no CI run link/date is available to record.
+In this workspace, unit/security tests (16 total), typecheck, production build, schema guard, and service-role scan passed. The scanner checked 86 user-facing files, and fixture tests confirm it rejects a client file containing the service-role environment key and rejects an empty scan. `pnpm test:db` previously stopped before SQL with `ECONNREFUSED 127.0.0.1:54322`; Docker and `psql` are unavailable. The hosted CI path has been added but has not run. The runtime role, SQL RLS/audit/approval checks, and restore drill remain **unverified**; no CI run link/date is available to record.
