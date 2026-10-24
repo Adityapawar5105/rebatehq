@@ -398,7 +398,7 @@ DO $$
 DECLARE t text;
 BEGIN
   FOREACH t IN ARRAY ARRAY['tenant','membership','invite','customer','product','price_list','price_list_version','price_list_item','margin_policy','quote','quote_line','approval','sales_order','rebate_agreement','rebate_progress','invoice','invoice_line','cost_component','supplier_credit','alert','margin_snapshot','connector_secret','import_job','audit_log'] LOOP
-    EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON public.%I(tenant_id)',t||'_tenant_idx',t);
+    EXECUTE format('CREATE INDEX %I ON public.%I(tenant_id)',t||'_tenant_idx',t);
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY',t);
     EXECUTE format('ALTER TABLE public.%I FORCE ROW LEVEL SECURITY',t);
     IF t <> 'audit_log' THEN
@@ -422,9 +422,12 @@ BEGIN
     IF t='approval' THEN sel := '(public.is_tenant_role(tenant_id,ARRAY[''owner'',''manager'',''analyst'']) OR requested_by=auth.uid())'; END IF;
     IF t='sales_order' THEN sel := '(public.is_tenant_role(tenant_id,ARRAY[''owner'',''manager'',''analyst'']) OR EXISTS (SELECT 1 FROM public.customer c WHERE c.tenant_id=sales_order.tenant_id AND c.id=sales_order.customer_id AND c.assigned_rep_id=auth.uid()))'; END IF;
     IF t IN ('rebate_agreement','rebate_progress','invoice','invoice_line','cost_component','supplier_credit','margin_snapshot','connector_secret','import_job') THEN sel := 'public.is_tenant_role(tenant_id,ARRAY[''owner'',''manager'',''analyst''])'; END IF;
-    IF t='audit_log' THEN sel := 'public.is_tenant_role(tenant_id,ARRAY[''owner'',''manager''])'; END IF;
     IF t='connector_secret' THEN sel := 'public.is_tenant_role(tenant_id,ARRAY[''owner''])'; END IF;
-    EXECUTE format('CREATE POLICY %I ON public.%I FOR SELECT TO margindesk_app USING (%s)',t||'_select',t,sel);
+    -- audit_log has a dedicated SELECT policy below. Keeping it out of this
+    -- generic loop avoids a duplicate, potentially broader permissive policy.
+    IF t <> 'audit_log' THEN
+      EXECUTE format('CREATE POLICY %I ON public.%I FOR SELECT TO margindesk_app USING (%s)',t||'_select',t,sel);
+    END IF;
 
     ins := 'public.is_tenant_role(tenant_id,ARRAY[''owner'',''manager''])';
     upd := ins; del := ins;
@@ -534,11 +537,7 @@ REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.is_tenant_member(uuid),public.is_tenant_role(uuid,text[]),public.is_tenant_role_any_status(uuid,text[]),public.create_tenant_with_owner(text),public.accept_tenant_invite(text),public.record_failed_login(text,text,text) TO margindesk_app;
 
 DO $$
-DECLARE t text;
 BEGIN
-  FOREACH t IN ARRAY ARRAY['tenant','membership','invite','customer','product','price_list','price_list_version','price_list_item','margin_policy','quote','quote_line','approval','sales_order','rebate_agreement','rebate_progress','invoice','invoice_line','cost_component','supplier_credit','alert','margin_snapshot','connector_secret','import_job','audit_log'] LOOP
-    EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON public.%I(tenant_id)',t||'_tenant_scope_idx',t);
-  END LOOP;
   IF EXISTS (
     SELECT 1 FROM pg_tables p JOIN pg_class c ON c.relname=p.tablename JOIN pg_namespace n ON n.oid=c.relnamespace
     WHERE p.schemaname='public' AND n.nspname='public' AND (NOT c.relrowsecurity OR NOT c.relforcerowsecurity OR NOT EXISTS (
