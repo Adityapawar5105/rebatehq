@@ -529,14 +529,12 @@ CREATE OR REPLACE FUNCTION public.record_failed_login(p_email text,p_ip text,p_u
 RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,extensions,pg_temp AS $$
 DECLARE v_hash text := encode(digest(lower(trim(p_email)),'sha256'),'hex');
 BEGIN
+  -- A failed login must not reveal whether an email belongs to a tenant. This
+  -- function accepts no actor or tenant input and always writes the same
+  -- null-tenant, null-actor event, even if app.real_actor_id is set by caller.
   INSERT INTO public.audit_log(tenant_id,actor_id,action,entity_type,entity_id,after,ip,user_agent)
-  SELECT m.tenant_id,u.id,'auth.login_failed','auth_user',v_hash,jsonb_build_object('email_hash',v_hash),NULLIF(p_ip,'')::inet,left(p_user_agent,1000)
-  FROM auth.users u LEFT JOIN public.membership m ON m.user_id=u.id AND m.status='active'
-  WHERE lower(u.email)=lower(trim(p_email));
-  IF NOT FOUND THEN
-    INSERT INTO public.audit_log(tenant_id,actor_id,action,entity_type,entity_id,after,ip,user_agent)
-    VALUES(NULL,NULL,'auth.login_failed','auth_user',v_hash,jsonb_build_object('email_hash',v_hash),NULLIF(p_ip,'')::inet,left(p_user_agent,1000));
-  END IF;
+  VALUES(NULL,NULL,'auth.login_failed','auth_user',v_hash,
+    jsonb_build_object('email_hash',v_hash),NULLIF(p_ip,'')::inet,left(p_user_agent,1000));
 END $$;
 REVOKE ALL ON FUNCTION public.create_tenant_with_owner(text),public.accept_tenant_invite(text),public.record_failed_login(text,text,text) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.create_tenant_with_owner(text),public.accept_tenant_invite(text),public.record_failed_login(text,text,text) TO margindesk_app;

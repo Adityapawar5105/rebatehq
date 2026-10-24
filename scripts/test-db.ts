@@ -171,14 +171,42 @@ async function runPgtap(connectionString: string) {
     }
     const batches = Array.isArray(result) ? result : [result];
     const rows = batches.flatMap(batch => batch.rows as Array<Record<string, unknown>>);
-    const lines = rows.flatMap(row => Object.values(row).map(String));
+    const authUidDiagnostics = rows
+      .map(row => row.phase1_ci_diagnostic)
+      .filter((value): value is string => typeof value === "string");
+    for (const diagnostic of authUidDiagnostics) {
+      let parsed: Record<string, unknown>;
+      try {
+        parsed = JSON.parse(diagnostic) as Record<string, unknown>;
+      } catch {
+        process.stdout.write(`Auth UID privilege diagnostics (raw): ${diagnostic}\n`);
+        continue;
+      }
+      const outcome = parsed.auth_uid_query_after_app_revoke as { state?: string } | undefined;
+      const effectiveExecute = parsed.app_execute_after_revoke;
+      const diagnosis = outcome?.state === "00000" && effectiveExecute === false
+        ? "A: policy query succeeded after EXECUTE was absent; EXECUTE may not be required"
+        : effectiveExecute === true
+          ? "B: EXECUTE remains effective after the direct revoke; inspect ACL, memberships, and defaults"
+          : outcome?.state !== "42501"
+            ? `C: policy query failed with unexpected SQLSTATE ${outcome?.state ?? "unknown"}`
+            : "Expected explicit-grant denial observed: EXECUTE absent and policy query failed with 42501";
+      process.stdout.write(`Auth UID privilege diagnostics: ${JSON.stringify(parsed)}\nDiagnosis: ${diagnosis}\n`);
+    }
+    const lines = rows
+      .filter(row => !Object.hasOwn(row, "phase1_ci_diagnostic"))
+      .flatMap(row => Object.values(row).map(String));
     const tap = lines.filter(line => /^(?:ok|not ok)\s+\d+\b|^1\.\.\d+\b|^# (?:Looks like|Failed)/.test(line));
     const output = tap.join("\n");
     const plan = output.match(/^1\.\.(\d+)$/m);
     const passed = [...output.matchAll(/^ok\s+\d+\b/gm)].length;
     const failed = [...output.matchAll(/^not ok\s+\d+\b/gm)].length;
-    if (!plan || Number(plan[1]) !== 41 || passed !== 41 || failed !== 0) {
-      throw new Error(`pgTAP did not report all 41 checks passing.\n${output || "No TAP output was returned."}`);
+    const reportedMismatch = output.match(/^# Looks like you planned (\d+) tests but ran (\d+)$/m);
+    const planned = plan ? Number(plan[1]) : 0;
+    const ran = passed + failed;
+    if (!plan || planned !== 45 || ran !== planned || passed !== planned || failed !== 0 || reportedMismatch) {
+      const mismatch = reportedMismatch ? `; pgTAP reports planned ${reportedMismatch[1]} but ran ${reportedMismatch[2]}` : "";
+      throw new Error(`pgTAP did not report all 45 checks passing (planned=${planned}, result_lines=${ran}${mismatch}).\n${output || "No TAP output was returned."}`);
     }
     process.stdout.write(`${output}\n`);
   } finally {

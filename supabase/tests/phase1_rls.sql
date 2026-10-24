@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT extensions.plan(41);
+SELECT extensions.plan(45);
 
 -- Fixed local-only actors and two isolated tenants. The transaction rolls back.
 INSERT INTO auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,created_at,updated_at)
@@ -332,12 +332,18 @@ END $$;
 
 DO $$ DECLARE v_state text; v_msg text; BEGIN
   BEGIN
-    PERFORM public.record_failed_login('phase1-no-such-user@example.invalid','192.0.2.44','pgTAP controlled-path probe');
+    -- Spoof the ordinary app setting deliberately. The SECURITY DEFINER
+    -- function must ignore it and write a null actor and null tenant.
+    PERFORM set_config('app.real_actor_id','10000000-0000-4000-8000-000000000002',true);
+    PERFORM public.record_failed_login('phase1-a@example.invalid','192.0.2.45','pgTAP controlled-path probe');
     PERFORM set_config('app.phase1_failed_login_result',jsonb_build_object('passed',true,'state',NULL,'message',NULL)::text,true);
   EXCEPTION WHEN OTHERS THEN
     GET STACKED DIAGNOSTICS v_state=RETURNED_SQLSTATE,v_msg=MESSAGE_TEXT;
     PERFORM set_config('app.phase1_failed_login_result',jsonb_build_object('passed',false,'state',v_state,'message',v_msg)::text,true);
   END;
+  -- Do not let the deliberate spoof setting contaminate later tenant-A
+  -- positive controls in this transaction.
+  PERFORM set_config('app.real_actor_id','10000000-0000-4000-8000-000000000001',true);
 END $$;
 
 DO $$ DECLARE t text; n integer; v_missing text:=''; v_state text; v_msg text; BEGIN
@@ -634,11 +640,41 @@ SELECT extensions.ok(current_setting('app.phase1_direct_null_audit_result')::jso
 SELECT extensions.ok(
   current_setting('app.phase1_failed_login_result')::jsonb->>'passed'='true'
   AND EXISTS (SELECT 1 FROM public.audit_log WHERE tenant_id IS NULL AND actor_id IS NULL
-    AND action='auth.login_failed' AND entity_type='auth_user' AND ip='192.0.2.44'),
-  'SECURITY DEFINER record_failed_login is the controlled null-tenant audit write path'
+    AND action='auth.login_failed' AND entity_type='auth_user' AND ip='192.0.2.45')
+  AND NOT EXISTS (SELECT 1 FROM public.audit_log WHERE ip='192.0.2.45'
+    AND (tenant_id IS NOT NULL OR actor_id IS NOT NULL OR action<>'auth.login_failed')),
+  'record_failed_login always writes fixed auth.login_failed with NULL tenant and actor, despite a known email and spoofed actor setting'
 );
+SELECT extensions.ok(
+  (SELECT p.proargnames=ARRAY['p_email','p_ip','p_user_agent']::text[]
+      AND position('VALUES(NULL,NULL,''auth.login_failed''' IN p.prosrc)>0
+   FROM pg_proc p WHERE p.oid='public.record_failed_login(text,text,text)'::regprocedure),
+  'record_failed_login accepts no caller actor/tenant arguments and uses fixed NULL tenant/actor and action'
+);
+SELECT extensions.ok(
+  NOT EXISTS (
+    SELECT 1 FROM pg_proc p CROSS JOIN LATERAL aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) a
+    WHERE p.oid='public.record_failed_login(text,text,text)'::regprocedure
+      AND a.grantee=0 AND a.privilege_type='EXECUTE'
+  )
+  AND NOT has_function_privilege('anon','public.record_failed_login(text,text,text)','EXECUTE')
+  AND NOT has_function_privilege('authenticated','public.record_failed_login(text,text,text)','EXECUTE'),
+  'record_failed_login EXECUTE is revoked from PUBLIC, anon, and authenticated'
+);
+SELECT extensions.ok(
+  has_function_privilege('margindesk_app','public.record_failed_login(text,text,text)','EXECUTE')
+  AND NOT EXISTS (
+    SELECT 1 FROM pg_proc p CROSS JOIN LATERAL aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) a
+    WHERE p.oid='public.record_failed_login(text,text,text)'::regprocedure
+      AND a.privilege_type='EXECUTE'
+      AND a.grantee NOT IN (p.proowner,'margindesk_app'::regrole)
+  ),
+  'record_failed_login EXECUTE is limited to its owner and margindesk_app'
+);
+SELECT extensions.ok(NOT EXISTS (
+  SELECT 1 FROM pg_auth_members WHERE member='margindesk_app'::regrole
+), 'margindesk_app has no role memberships that could supply hidden privileges');
 
-SAVEPOINT auth_uid_execute_probe;
 REVOKE EXECUTE ON FUNCTION auth.uid() FROM PUBLIC;
 SET LOCAL ROLE margindesk_app;
 SET LOCAL request.jwt.claim.sub = '10000000-0000-4000-8000-000000000003';
@@ -675,11 +711,56 @@ DO $$ DECLARE n integer; v_state text; v_msg text; BEGIN
   END;
 END $$;
 RESET ROLE;
+
+-- Emit the complete live privilege path and the query outcome into the CI log.
+-- This runs before the final transaction rollback and after both revokes.
+SELECT jsonb_build_object(
+  'auth_uid_query_after_app_revoke',current_setting('app.phase1_auth_uid_revoked_result')::jsonb,
+  'app_execute_after_revoke',has_function_privilege('margindesk_app','auth.uid()','EXECUTE'),
+  'auth_uid_acl',(
+    SELECT COALESCE(jsonb_agg(jsonb_build_object(
+      'grantor',grantor_role.rolname,
+      'grantee',CASE WHEN acl.grantee=0 THEN 'PUBLIC' ELSE grantee_role.rolname END,
+      'privilege',acl.privilege_type,'grantable',acl.is_grantable
+    ) ORDER BY acl.grantee,acl.privilege_type),'[]'::jsonb)
+    FROM pg_proc p
+    CROSS JOIN LATERAL aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) acl
+    LEFT JOIN pg_roles grantor_role ON grantor_role.oid=acl.grantor
+    LEFT JOIN pg_roles grantee_role ON grantee_role.oid=acl.grantee
+    WHERE p.oid='auth.uid()'::regprocedure
+  ),
+  'margindesk_app_memberships',(
+    SELECT COALESCE(jsonb_agg(jsonb_build_object(
+      'role',granted_role.rolname,'grantor',grantor_role.rolname,
+      'inherit',m.inherit_option,'set',m.set_option,'admin',m.admin_option
+    ) ORDER BY granted_role.rolname),'[]'::jsonb)
+    FROM pg_auth_members m
+    JOIN pg_roles granted_role ON granted_role.oid=m.roleid
+    JOIN pg_roles grantor_role ON grantor_role.oid=m.grantor
+    WHERE m.member='margindesk_app'::regrole
+  ),
+  'auth_function_default_execute_privileges',(
+    SELECT COALESCE(jsonb_agg(jsonb_build_object(
+      'owner',owner_role.rolname,
+      'schema',COALESCE(schema_name.nspname,'<all schemas>'),
+      'grantee',CASE WHEN acl.grantee=0 THEN 'PUBLIC' ELSE grantee_role.rolname END,
+      'grantor',grantor_role.rolname,'grantable',acl.is_grantable
+    ) ORDER BY owner_role.rolname,schema_name.nspname,acl.grantee),'[]'::jsonb)
+    FROM pg_default_acl d
+    JOIN pg_roles owner_role ON owner_role.oid=d.defaclrole
+    LEFT JOIN pg_namespace schema_name ON schema_name.oid=d.defaclnamespace
+    CROSS JOIN LATERAL aclexplode(d.defaclacl) acl
+    LEFT JOIN pg_roles grantee_role ON grantee_role.oid=acl.grantee
+    LEFT JOIN pg_roles grantor_role ON grantor_role.oid=acl.grantor
+    WHERE d.defaclobjtype='f' AND d.defaclnamespace IN (0,'auth'::regnamespace)
+      AND acl.privilege_type='EXECUTE'
+  )
+)::text AS phase1_ci_diagnostic;
+
 SELECT extensions.ok(
   current_setting('app.phase1_auth_uid_revoked_result')::jsonb->>'state'='42501'
   AND position('permission denied for function uid' in lower(current_setting('app.phase1_auth_uid_revoked_result')::jsonb->>'message'))>0,
   'Revoking auth.uid EXECUTE makes the authenticated positive policy query fail (42501)'
 );
-ROLLBACK TO SAVEPOINT auth_uid_execute_probe;
 SELECT * FROM extensions.finish();
 ROLLBACK;

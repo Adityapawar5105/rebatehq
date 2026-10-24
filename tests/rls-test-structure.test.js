@@ -24,7 +24,7 @@ test("the restricted-role pgTAP checks capture results and run assertions after 
 });
 
 test("RLS fixtures prove tenant-positive paths, exact RLS write failures, and TRUNCATE protection", () => {
-  assert.match(sql, /extensions\.plan\(41\)/, "The pgTAP plan must match the current checks.");
+  assert.match(sql, /extensions\.plan\(45\)/, "The pgTAP plan must match the current checks.");
   assert.match(sql, /phase1_tenant_a_fixtures/, "Every application table must have a Tenant A fixture row.");
   assert.match(sql, /phase1_positive_select_result/, "Positive own-row SELECT controls must run as the app role.");
   assert.match(sql, /phase1_positive_insert_result/, "Positive INSERT controls must run wherever policy allows.");
@@ -39,9 +39,17 @@ test("RLS fixtures prove tenant-positive paths, exact RLS write failures, and TR
   assert.match(sql, /Tenant A can UPDATE its own customer row/, "Allowed UPDATE requires a positive control.");
   assert.match(sql, /Tenant A can DELETE its own inserted customer row/, "Allowed DELETE requires a positive control.");
   assert.match(sql, /tenant rep can see a product but cannot DELETE/, "A policy-forbidden role needs a DELETE denial control.");
-  assert.match(sql, /record_failed_login is the controlled null-tenant audit write path/);
+  assert.match(sql, /record_failed_login always writes fixed auth\.login_failed with NULL tenant and actor/);
+  assert.match(sql, /record_failed_login EXECUTE is revoked from PUBLIC, anon, and authenticated/);
+  assert.match(sql, /record_failed_login EXECUTE is limited to its owner and margindesk_app/);
+  assert.match(sql, /margindesk_app has no role memberships that could supply hidden privileges/);
   assert.match(sql, /App role cannot directly insert a null-tenant/);
-  assert.match(sql, /SAVEPOINT auth_uid_execute_probe[\s\S]*ROLLBACK TO SAVEPOINT auth_uid_execute_probe/);
+  assert.match(sql, /phase1_ci_diagnostic/);
+  assert.match(sql, /auth_function_default_execute_privileges/);
+  assert.match(sql, /margindesk_app_memberships/);
+  assert.doesNotMatch(sql, /SAVEPOINT auth_uid_execute_probe|ROLLBACK TO SAVEPOINT auth_uid_execute_probe/);
+  assert.match(runner, /ran !== planned/);
+  assert.match(runner, /Looks like you planned/);
 });
 
 test("auth function access stays minimal and failed-login audit writes use the definer function", () => {
