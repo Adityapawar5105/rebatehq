@@ -6,6 +6,23 @@ import { Client } from "pg";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const testFile = path.join(root, "supabase", "tests", "phase1_rls.sql");
 
+type PgDiagnosticError = Error & {
+  code?: string;
+  detail?: string;
+  hint?: string;
+  position?: string;
+  internalPosition?: string;
+  where?: string;
+  routine?: string;
+};
+
+function safeDiagnostic(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  return value
+    .replace(/\bpostgres(?:ql)?:\/\/[^\s'"<>]+/gi, "[REDACTED_DATABASE_URL]")
+    .replace(/\b(password|passwd|secret|token)\s*[:=]\s*[^\s,;]+/gi, "$1=[REDACTED]");
+}
+
 async function runPgtap(connectionString: string) {
   const client = new Client({
     connectionString,
@@ -96,7 +113,7 @@ async function runPgtap(connectionString: string) {
     try {
       result = await client.query(sql.slice(bootstrap[0].length));
     } catch (error) {
-      const pgError = error as Error & { position?: string; code?: string };
+      const pgError = error as PgDiagnosticError;
       const position = Number(pgError.position);
       const absolutePosition = Number.isInteger(position) && position > 0 ? bootstrap[0].length + position : undefined;
       const line = Number.isInteger(position) && position > 0
@@ -106,7 +123,19 @@ async function runPgtap(connectionString: string) {
       const roleSwitch = beforeError.lastIndexOf("SET LOCAL ROLE margindesk_app");
       const resetRole = beforeError.lastIndexOf("RESET ROLE");
       const roleContext = roleSwitch > resetRole ? "while current_user should be margindesk_app" : "as the TEST_DATABASE_URL connection role";
-      throw new Error(`Database test SQL failed${line ? ` at ${testFile}:${line}` : ""} ${roleContext}${pgError.code ? ` (SQLSTATE ${pgError.code})` : ""}: ${pgError.message}`);
+      const fields = [
+        ["where/context", pgError.where],
+        ["routine", pgError.routine],
+        ["position", pgError.position],
+        ["internal position", pgError.internalPosition],
+        ["detail", pgError.detail],
+        ["hint", pgError.hint],
+      ] as const;
+      const fieldOutput = fields
+        .map(([name, value]) => safeDiagnostic(value) ? `${name}: ${safeDiagnostic(value)}` : undefined)
+        .filter((value): value is string => Boolean(value));
+      const diagnosticOutput = fieldOutput.length ? `\n${fieldOutput.join("\n")}` : "";
+      throw new Error(`Database test SQL failed${line ? ` at ${testFile}:${line}` : ""} ${roleContext}${pgError.code ? ` (SQLSTATE ${pgError.code})` : ""}: ${safeDiagnostic(pgError.message) ?? "Database query failed."}${diagnosticOutput}`);
     }
     const batches = Array.isArray(result) ? result : [result];
     const rows = batches.flatMap(batch => batch.rows as Array<Record<string, unknown>>);

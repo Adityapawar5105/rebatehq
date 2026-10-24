@@ -110,7 +110,9 @@ ORDER BY c.oid;
 -- complete row ensures NOT NULL/FK/check constraints cannot masquerade as an
 -- RLS denial in the cross-tenant INSERT assertions below.
 CREATE TEMP TABLE phase1_rls_insert_fixtures(table_name text PRIMARY KEY, row_data jsonb);
-DO $$ DECLARE t text; n integer; BEGIN
+DO $$ DECLARE t text; n integer; expected_count integer; BEGIN
+  SELECT count(*) INTO expected_count FROM pg_temp.phase1_rls_tables;
+  IF expected_count < 24 THEN RAISE EXCEPTION 'Expected at least 24 tenant tables before fixture loop; found %',expected_count; END IF;
   FOR t IN SELECT table_name FROM pg_temp.phase1_rls_tables LOOP
     IF NOT EXISTS (
       SELECT 1 FROM information_schema.columns
@@ -127,6 +129,8 @@ DO $$ DECLARE t text; n integer; BEGIN
       RAISE EXCEPTION 'Tenant B fixture row is missing for application table %',t;
     END IF;
   END LOOP;
+  SELECT count(*) INTO n FROM pg_temp.phase1_rls_insert_fixtures;
+  IF n < 24 OR n <> expected_count THEN RAISE EXCEPTION 'Tenant B fixture loop covered % tables; expected at least 24 and one per tenant table (% expected)',n,expected_count; END IF;
 END $$;
 -- Build a corresponding Tenant A row for every tenant table. IDs and public
 -- foreign keys get an A-side UUID; auth user references point to user A.
@@ -134,18 +138,23 @@ END $$;
 INSERT INTO public.audit_log(id,tenant_id,actor_id,action,entity_type,entity_id) VALUES
  ('51000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000001','test.fixture','tenant','20000000-0000-4000-8000-000000000001')
 ON CONFLICT(id) DO NOTHING;
-DO $$ DECLARE t text; v_row jsonb; c record; BEGIN
+DO $$ DECLARE t text; v_row jsonb; col_name name; auth_ref boolean; public_ref boolean; n integer; BEGIN
+  SELECT count(*) INTO n FROM pg_temp.phase1_rls_insert_fixtures;
+  IF n < 24 THEN RAISE EXCEPTION 'Tenant A clone loop needs at least 24 source fixtures; found %',n; END IF;
   FOR t,v_row IN
     SELECT f.table_name,f.row_data FROM pg_temp.phase1_rls_insert_fixtures f
-    JOIN pg_class c ON c.relname=f.table_name JOIN pg_namespace n ON n.oid=c.relnamespace AND n.nspname='public'
-    ORDER BY c.oid
+    JOIN pg_class class_row ON class_row.relname=f.table_name JOIN pg_namespace ns ON ns.oid=class_row.relnamespace AND ns.nspname='public'
+    ORDER BY class_row.oid
   LOOP
     IF t NOT IN ('tenant','membership','audit_log') THEN
       v_row:=jsonb_set(v_row,'{tenant_id}',to_jsonb('20000000-0000-4000-8000-000000000001'::uuid),true);
-      FOR c IN
-        SELECT a.attname,
-               bool_or(rn.nspname='auth') AS auth_ref,
-               bool_or(rn.nspname='public') AS public_ref
+      SELECT count(*) INTO n FROM pg_attribute a
+      WHERE a.attrelid=format('public.%I',t)::regclass AND a.attnum>0 AND NOT a.attisdropped AND a.atttypid='uuid'::regtype;
+      IF n=0 THEN RAISE EXCEPTION 'Tenant A clone loop found no UUID columns on public.%',t; END IF;
+      FOR col_name,auth_ref,public_ref IN
+        SELECT a.attname::name,
+               COALESCE(bool_or(rn.nspname='auth'),false),
+               COALESCE(bool_or(rn.nspname='public'),false)
         FROM pg_attribute a
         LEFT JOIN pg_constraint fk ON fk.contype='f' AND fk.conrelid=a.attrelid AND a.attnum=ANY(fk.conkey)
         LEFT JOIN pg_class refc ON refc.oid=fk.confrelid
@@ -153,20 +162,20 @@ DO $$ DECLARE t text; v_row jsonb; c record; BEGIN
         WHERE a.attrelid=format('public.%I',t)::regclass AND a.attnum>0 AND NOT a.attisdropped AND a.atttypid='uuid'::regtype
         GROUP BY a.attname
       LOOP
-        IF c.attname='tenant_id' THEN CONTINUE;
-        ELSIF COALESCE(c.auth_ref,false) THEN
-          v_row:=jsonb_set(v_row,ARRAY[c.attname],to_jsonb('10000000-0000-4000-8000-000000000001'::uuid),true);
-        ELSIF c.attname='id' OR COALESCE(c.public_ref,false) THEN
-          IF v_row->>c.attname IS NOT NULL THEN
-            v_row:=jsonb_set(v_row,ARRAY[c.attname],to_jsonb(regexp_replace(v_row->>c.attname,'2$','3')::uuid),true);
+        IF col_name='tenant_id' THEN CONTINUE;
+        ELSIF auth_ref THEN
+          v_row:=jsonb_set(v_row,ARRAY[col_name::text],to_jsonb('10000000-0000-4000-8000-000000000001'::uuid),true);
+        ELSIF col_name='id' OR public_ref THEN
+          IF v_row->>col_name::text IS NOT NULL THEN
+            v_row:=jsonb_set(v_row,ARRAY[col_name::text],to_jsonb(regexp_replace(v_row->>col_name::text,'2$','3')::uuid),true);
           END IF;
         END IF;
       END LOOP;
       IF t='invite' THEN
         v_row:=jsonb_set(v_row,'{token_hash}',to_jsonb(repeat('a',64)),true);
-        v_row:=jsonb_set(v_row,'{email}',to_jsonb('new-a@example.invalid'),true);
+        v_row:=jsonb_set(v_row,'{email}',to_jsonb('new-a@example.invalid'::text),true);
       ELSIF t='margin_snapshot' THEN
-        v_row:=jsonb_set(v_row,'{entity_id}',to_jsonb('20000000-0000-4000-8000-000000000001'),true);
+        v_row:=jsonb_set(v_row,'{entity_id}',to_jsonb('20000000-0000-4000-8000-000000000001'::text),true);
       END IF;
       EXECUTE format('INSERT INTO public.%I SELECT (jsonb_populate_record(NULL::public.%I,$1)).*',t,t) USING v_row;
     END IF;
@@ -181,7 +190,9 @@ SELECT set_config(
   true
 );
 CREATE TEMP TABLE phase1_rls_tenant_a_fixtures(table_name text PRIMARY KEY,row_data jsonb);
-DO $$ DECLARE t text; n integer; BEGIN
+DO $$ DECLARE t text; n integer; expected_count integer; BEGIN
+  SELECT count(*) INTO expected_count FROM pg_temp.phase1_rls_tables;
+  IF expected_count < 24 THEN RAISE EXCEPTION 'Tenant A fixture loop needs at least 24 tenant tables; found %',expected_count; END IF;
   FOR t IN SELECT table_name FROM pg_temp.phase1_rls_tables LOOP
     EXECUTE format(
       'INSERT INTO pg_temp.phase1_rls_tenant_a_fixtures(table_name,row_data) SELECT %L,to_jsonb(x) FROM public.%I x WHERE tenant_id=$1 LIMIT 1',
@@ -190,6 +201,8 @@ DO $$ DECLARE t text; n integer; BEGIN
     GET DIAGNOSTICS n=ROW_COUNT;
     IF n=0 THEN RAISE EXCEPTION 'Tenant A positive-control fixture row is missing for public.%',t; END IF;
   END LOOP;
+  SELECT count(*) INTO n FROM pg_temp.phase1_rls_tenant_a_fixtures;
+  IF n < 24 OR n <> expected_count THEN RAISE EXCEPTION 'Tenant A fixture loop covered % tables; expected at least 24 and one per tenant table (% expected)',n,expected_count; END IF;
 END $$;
 SELECT set_config(
   'app.phase1_tenant_a_fixtures',
@@ -273,6 +286,8 @@ SET LOCAL request.jwt.claim.role = 'authenticated';
 SET LOCAL request.jwt.claims = '{"sub":"10000000-0000-4000-8000-000000000001","role":"authenticated"}';
 
 DO $$ DECLARE t text; n integer; v_missing text:=''; v_state text; v_msg text; BEGIN
+  SELECT count(*) INTO n FROM jsonb_object_keys(current_setting('app.phase1_tenant_a_fixtures')::jsonb);
+  IF n<24 THEN RAISE EXCEPTION 'Tenant A positive SELECT loop expected at least 24 tables; found %',n; END IF;
   FOR t IN SELECT jsonb_object_keys(current_setting('app.phase1_tenant_a_fixtures')::jsonb) LOOP
     BEGIN
       EXECUTE format('SELECT count(*) FROM public.%I WHERE tenant_id=$1',t) INTO n USING '20000000-0000-4000-8000-000000000001'::uuid;
@@ -286,19 +301,24 @@ DO $$ DECLARE t text; n integer; v_missing text:=''; v_state text; v_msg text; B
 END $$;
 
 DO $$ DECLARE t text; v_row jsonb; v_insert jsonb; v_state text; v_msg text; n integer; v_failed text:=''; BEGIN
+  SELECT count(*) INTO n FROM jsonb_each(current_setting('app.phase1_tenant_a_fixtures')::jsonb) WHERE key NOT IN ('tenant','membership');
+  IF n<22 THEN RAISE EXCEPTION 'Tenant A positive INSERT loop expected at least 22 policy-allowed tables; found %',n; END IF;
   FOR t,v_row IN SELECT key,value FROM jsonb_each(current_setting('app.phase1_tenant_a_fixtures')::jsonb)
     WHERE key NOT IN ('tenant','membership') LOOP
     v_insert:=jsonb_set(v_row,'{id}',to_jsonb(regexp_replace(v_row->>'id','[0-9a-f]$','4')::uuid),true);
-    IF t='customer' THEN v_insert:=jsonb_set(v_insert,'{account_no}',to_jsonb('A-positive-control'),true);
-    ELSIF t='product' THEN v_insert:=jsonb_set(v_insert,'{sku}',to_jsonb('A-POSITIVE-CONTROL'),true);
+    IF t='customer' THEN v_insert:=jsonb_set(v_insert,'{account_no}',to_jsonb('A-positive-control'::text),true);
+    ELSIF t='product' THEN v_insert:=jsonb_set(v_insert,'{sku}',to_jsonb('A-POSITIVE-CONTROL'::text),true);
     ELSIF t='invite' THEN
       v_insert:=jsonb_set(v_insert,'{token_hash}',to_jsonb(repeat('c',64)),true);
-      v_insert:=jsonb_set(v_insert,'{email}',to_jsonb('new-c@example.invalid'),true);
+      v_insert:=jsonb_set(v_insert,'{email}',to_jsonb('new-c@example.invalid'::text),true);
     ELSIF t='price_list_version' THEN v_insert:=jsonb_set(v_insert,'{version_no}',to_jsonb((v_row->>'version_no')::integer+1),true);
-    ELSIF t='margin_policy' THEN v_insert:=jsonb_set(v_insert,'{scope_key}',to_jsonb('positive-control'),true);
-    ELSIF t='sales_order' THEN v_insert:=jsonb_set(v_insert,'{source_id}',to_jsonb('A-POSITIVE-CONTROL'),true);
-    ELSIF t='margin_snapshot' THEN v_insert:=jsonb_set(v_insert,'{entity_id}',to_jsonb('positive-control'),true);
-    ELSIF t='connector_secret' THEN v_insert:=jsonb_set(v_insert,'{provider}',to_jsonb('positive-control'),true);
+    ELSIF t='margin_policy' THEN v_insert:=jsonb_set(v_insert,'{scope_key}',to_jsonb('positive-control'::text),true);
+    ELSIF t='sales_order' THEN v_insert:=jsonb_set(v_insert,'{source_id}',to_jsonb('A-POSITIVE-CONTROL'::text),true);
+    ELSIF t='margin_snapshot' THEN v_insert:=jsonb_set(v_insert,'{entity_id}',to_jsonb('positive-control'::text),true);
+    ELSIF t='connector_secret' THEN v_insert:=jsonb_set(v_insert,'{provider}',to_jsonb('positive-control'::text),true);
+    ELSIF t='audit_log' THEN
+      v_insert:=jsonb_set(v_insert,'{actor_id}',to_jsonb('10000000-0000-4000-8000-000000000001'::uuid),true);
+      v_insert:=jsonb_set(v_insert,'{action}',to_jsonb('test.positive_insert'::text),true);
     END IF;
     BEGIN
       EXECUTE format('INSERT INTO public.%I SELECT (jsonb_populate_record(NULL::public.%I,$1)).* RETURNING 1',t,t) INTO n USING v_insert;
@@ -313,6 +333,8 @@ DO $$ DECLARE t text; v_row jsonb; v_insert jsonb; v_state text; v_msg text; n i
 END $$;
 
 DO $$ DECLARE t text; n integer; v_missing text:=''; v_state text; v_msg text; BEGIN
+  SELECT count(*) INTO n FROM jsonb_object_keys(current_setting('app.phase1_tenant_b_fixtures')::jsonb);
+  IF n<24 THEN RAISE EXCEPTION 'Tenant B cross-SELECT loop expected at least 24 tables; found %',n; END IF;
   FOR t IN SELECT jsonb_object_keys(current_setting('app.phase1_tenant_b_fixtures')::jsonb) LOOP
     BEGIN
       EXECUTE format('SELECT count(*) FROM public.%I WHERE tenant_id=$1',t) INTO n USING '20000000-0000-4000-8000-000000000002'::uuid;
@@ -328,7 +350,11 @@ END $$;
 -- A cross-tenant UPDATE starts from an A-visible row and changes its tenant_id;
 -- RLS WITH CHECK must reject it. Approval is intentionally skipped because its
 -- UPDATE policy forbids a requester from modifying their own approval.
-DO $$ DECLARE t text; v_state text; v_msg text; v_bad text:=''; BEGIN
+DO $$ DECLARE t text; v_state text; v_msg text; v_bad text:=''; n integer; BEGIN
+  SELECT count(*) INTO n FROM jsonb_each(current_setting('app.phase1_tenant_a_fixtures')::jsonb) WHERE key NOT IN ('audit_log','approval');
+  IF n<22 THEN
+    RAISE EXCEPTION 'Cross-tenant UPDATE loop expected at least 22 eligible tables';
+  END IF;
   FOR t IN SELECT key FROM jsonb_each(current_setting('app.phase1_tenant_a_fixtures')::jsonb)
     WHERE key NOT IN ('audit_log','approval') LOOP
     v_state:='00000'; v_msg:='';
@@ -350,6 +376,10 @@ END $$;
 -- rather than raising an error). ACL checks above prove DELETE is granted for
 -- each tested operation, so permission denial cannot masquerade as RLS.
 DO $$ DECLARE t text; n integer; v_bad text:=''; v_state text; v_msg text; BEGIN
+  SELECT count(*) INTO n FROM jsonb_each(current_setting('app.phase1_tenant_b_fixtures')::jsonb) WHERE key NOT IN ('tenant','audit_log');
+  IF n<22 THEN
+    RAISE EXCEPTION 'Cross-tenant DELETE loop expected at least 22 eligible tables';
+  END IF;
   FOR t IN SELECT key FROM jsonb_each(current_setting('app.phase1_tenant_b_fixtures')::jsonb)
     WHERE key NOT IN ('tenant','audit_log') LOOP
     BEGIN
@@ -364,7 +394,11 @@ DO $$ DECLARE t text; n integer; v_bad text:=''; v_state text; v_msg text; BEGIN
   PERFORM set_config('app.phase1_cross_delete_result',jsonb_build_object('passed',v_bad='','detail',COALESCE(v_bad,'none'))::text,true);
 END $$;
 
-DO $$ DECLARE t text; v_row jsonb; v_state text; v_msg text; v_bad text:=''; BEGIN
+DO $$ DECLARE t text; v_row jsonb; v_state text; v_msg text; v_bad text:=''; n integer; BEGIN
+  SELECT count(*) INTO n FROM jsonb_each(current_setting('app.phase1_tenant_b_fixtures')::jsonb) WHERE key NOT IN ('tenant','membership');
+  IF n<22 THEN
+    RAISE EXCEPTION 'Cross-tenant INSERT loop expected at least 22 eligible tables';
+  END IF;
   FOR t,v_row IN SELECT key,value FROM jsonb_each(current_setting('app.phase1_tenant_b_fixtures')::jsonb)
     WHERE key NOT IN ('tenant','membership') LOOP
     v_state:='00000'; v_msg:='';

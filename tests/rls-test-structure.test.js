@@ -4,6 +4,7 @@ const path = require("node:path");
 const test = require("node:test");
 
 const sql = fs.readFileSync(path.join(__dirname, "..", "supabase", "tests", "phase1_rls.sql"), "utf8");
+const runner = fs.readFileSync(path.join(__dirname, "..", "scripts", "test-db.ts"), "utf8");
 
 test("the restricted-role pgTAP checks capture results and run assertions after RESET ROLE", () => {
   const roleStart = sql.indexOf("SET LOCAL ROLE margindesk_app;");
@@ -30,4 +31,21 @@ test("RLS fixtures prove tenant-positive paths, exact RLS write failures, and TR
   assert.match(sql, /TRUNCATE public\.audit_log/, "The restricted role must attempt audit_log TRUNCATE.");
   assert.match(sql, /Statement-level trigger rejects audit_log TRUNCATE/, "Elevated-role TRUNCATE must be blocked by the statement trigger.");
   assert.match(sql, /has_table_privilege\('margindesk_app',[^\n]*'TRUNCATE'\)/, "The app role must be checked for TRUNCATE ACLs.");
+});
+
+test("table loops are guarded against empty fixtures and SQL errors include server context", () => {
+  assert.doesNotMatch(sql, /\bc\s+record\b/i, "Avoid ambiguous/unassigned RECORD loop variables in test SQL.");
+  assert.match(sql, /Expected at least 24 tenant tables before fixture loop/);
+  assert.match(sql, /Tenant B fixture loop covered % tables/);
+  assert.match(sql, /Tenant A fixture loop covered % tables/);
+  assert.match(sql, /Tenant A positive SELECT loop expected at least 24 tables/);
+  assert.match(sql, /Tenant B cross-SELECT loop expected at least 24 tables/);
+  assert.match(sql, /positive INSERT loop expected at least 22 policy-allowed tables/);
+  assert.match(sql, /Cross-tenant UPDATE loop expected at least 22 eligible tables/);
+  assert.match(sql, /Cross-tenant DELETE loop expected at least 22 eligible tables/);
+  assert.match(sql, /Cross-tenant INSERT loop expected at least 22 eligible tables/);
+  for (const field of ["where", "routine", "position", "detail", "hint"]) {
+    assert.match(runner, new RegExp(`pgError\\.${field}`), `Postgres error field ${field} should be emitted.`);
+  }
+  assert.match(runner, /REDACTED_DATABASE_URL/);
 });
