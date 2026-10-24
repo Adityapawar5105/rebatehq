@@ -43,8 +43,8 @@ export async function withDatabase<T>(context: DbContext, operation: (db: PoolCl
     }
     await db.query("SET LOCAL ROLE margindesk_app");
     const subject = context.userId || "";
-    await db.query("SELECT set_config('request.jwt.claim.sub',$1,true), set_config('request.jwt.claim.role','authenticated',true), set_config('request.jwt.claims',$2,true)", [subject, JSON.stringify({ sub: subject || null, role: "authenticated" })]);
-    await db.query("SELECT set_config('app.real_actor_id',$1,true), set_config('app.client_ip',$2,true), set_config('app.user_agent',$3,true)", [context.realActorId || context.actorId || context.userId || "", clientIp(context.headers), context.headers?.get("user-agent") || ""]);
+    await db.query("SELECT set_config('request.jwt.claim.sub',$1::text,true), set_config('request.jwt.claim.role','authenticated',true), set_config('request.jwt.claims',$2::text,true)", [subject, JSON.stringify({ sub: subject || null, role: "authenticated" })]);
+    await db.query("SELECT set_config('app.real_actor_id',$1::text,true), set_config('app.client_ip',$2::text,true), set_config('app.user_agent',$3::text,true)", [context.realActorId || context.actorId || context.userId || "", clientIp(context.headers), context.headers?.get("user-agent") || ""]);
     await db.query("SET LOCAL statement_timeout='8s'");
     const value = await operation(db);
     await db.query("COMMIT");

@@ -29,6 +29,10 @@ Use the Supabase transaction pooler for the web runtime. The `pg` adapter begins
 | User-facing service-role scan | **unverified** | No run link/date |
 | Restore to fresh target and post-restore suite | **unverified** | No run link/date |
 
+### CI database-step sweep
+
+The scripts used after the local Supabase reset were reviewed on 2026-10-25. `setup-test-app-role.ts` now casts every `format()` argument, quotes the role identifier and password with PostgreSQL `format('%I'/'%L')`, emits a masked random password only through the GitHub environment file, and reports failed SQL steps with the password redacted. `check-app-db-role.ts` uses the runtime `APP_DATABASE_URL` and has no untyped parameters or DDL. `test-db.ts` uses `TEST_DATABASE_URL`; its dynamic pgTAP SQL binds UUIDs with explicit `::uuid` casts. The restore sentinel scripts use `TEST_DATABASE_URL`, while seed/role administration uses `SEED_DATABASE_URL`. No CI step was found using a stale variable name or relying on a role other than the migration-created `margindesk_app` plus the disposable login. This review is static only; database execution remains **unverified** until a green CI run.
+
 ## Initial setup and deployment
 
 1. Create the three Supabase projects and configure Auth email confirmation, magic-link redirect URLs, and a short-lived one-time link policy. Add the app callback URL `/auth/callback` to each environment’s allowed redirect list.
