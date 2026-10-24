@@ -101,3 +101,13 @@ test("migration lint rejects grants of margindesk_app membership", async () => {
   await assertLintFailure(`${validMigration()}\nGRANT margindesk_app TO postgres;`, /grants membership in margindesk_app/);
   await assertLintFailure(`${validMigration()}\nGRANT "margindesk_app" TO postgres;`, /grants membership in margindesk_app/);
 });
+
+test("migration lint rejects privilege changes on Supabase-managed schemas", async () => {
+  for (const statement of [
+    "GRANT EXECUTE ON FUNCTION auth.uid() TO margindesk_app;",
+    "REVOKE SELECT ON storage.objects FROM authenticated;",
+    "GRANT USAGE ON SCHEMA extensions TO margindesk_app;",
+  ]) {
+    await assertLintFailure(`${validMigration()}\n${statement}`, /Supabase-managed auth, storage, or extensions/);
+  }
+});

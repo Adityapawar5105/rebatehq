@@ -25,7 +25,16 @@ jobs:
       - name: Start local Supabase services
         run: pnpm exec supabase start -x studio,edge-runtime,storage-api,imgproxy,logflare,vector
       - name: Apply every migration to the clean local database
-        run: pnpm exec supabase db reset
+        env:
+          PGOPTIONS: -c client_min_messages=warning
+        run: |
+          set -o pipefail
+          migration_log="$RUNNER_TEMP/migration-reset.log"
+          pnpm exec supabase db reset 2>&1 | tee "$migration_log"
+          if grep -Eiq 'no privileges (were granted|could be revoked|were revoked)' "$migration_log"; then
+            echo "::error::Migration emitted a warning for an ineffective GRANT or REVOKE."
+            exit 1
+          fi
       - name: Export local database URLs for this job
         shell: bash
         run: |

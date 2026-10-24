@@ -241,7 +241,15 @@ SELECT extensions.ok(NOT EXISTS (
       OR has_table_privilege('margindesk_app',c.oid,'TRIGGER'))
 ), 'App role has no table privileges in auth schema');
 SELECT extensions.ok(has_language_privilege('margindesk_app','plpgsql','USAGE'),'App role has PL/pgSQL USAGE');
-SELECT extensions.ok(has_function_privilege('margindesk_app','auth.uid()','EXECUTE'),'App role has EXECUTE on auth.uid()');
+SELECT extensions.ok(
+  has_function_privilege('margindesk_app','auth.uid()','EXECUTE')
+  AND EXISTS (
+    SELECT 1 FROM pg_proc p
+    CROSS JOIN LATERAL aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) a
+    WHERE p.oid='auth.uid()'::regprocedure AND a.grantee=0 AND a.privilege_type='EXECUTE'
+  ),
+  'App role can execute auth.uid() through the Supabase platform PUBLIC grant'
+);
 SELECT extensions.ok(has_function_privilege('margindesk_app','public.is_tenant_member(uuid)','EXECUTE'),'App role has EXECUTE on public.is_tenant_member(uuid)');
 SELECT extensions.ok(has_function_privilege('margindesk_app','public.is_tenant_role(uuid,text[])','EXECUTE'),'App role has EXECUTE on public.is_tenant_role(uuid,text[])');
 SELECT extensions.ok(has_function_privilege('margindesk_app','public.is_tenant_role_any_status(uuid,text[])','EXECUTE'),'App role has EXECUTE on public.is_tenant_role_any_status(uuid,text[])');
@@ -664,18 +672,50 @@ SELECT extensions.ok(
 SELECT extensions.ok(
   has_function_privilege('margindesk_app','public.record_failed_login(text,text,text)','EXECUTE')
   AND NOT EXISTS (
-    SELECT 1 FROM pg_proc p CROSS JOIN LATERAL aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) a
-    WHERE p.oid='public.record_failed_login(text,text,text)'::regprocedure
-      AND a.privilege_type='EXECUTE'
-      AND a.grantee NOT IN (p.proowner,'margindesk_app'::regrole)
+    WITH allowlist(signature,app_allowed) AS (VALUES
+      ('is_tenant_member(p_tenant_id uuid)',true),
+      ('is_tenant_role(p_tenant_id uuid, p_roles text[])',true),
+      ('is_tenant_role_any_status(p_tenant_id uuid, p_roles text[])',true),
+      ('audit_row_change()',false),
+      ('prevent_audit_mutation()',false),
+      ('create_tenant_with_owner(p_name text)',true),
+      ('accept_tenant_invite(p_token text)',true),
+      ('record_failed_login(p_email text, p_ip text, p_user_agent text)',true)
+    ), defs AS (
+      SELECT p.oid,p.proowner,p.proname||'('||pg_get_function_identity_arguments(p.oid)||')' AS signature
+      FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+      WHERE n.nspname='public' AND p.prosecdef
+    )
+    SELECT 1 FROM defs d LEFT JOIN allowlist a USING(signature)
+    WHERE a.signature IS NULL
+       OR EXISTS (
+         SELECT 1 FROM pg_proc p
+         CROSS JOIN LATERAL aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) acl
+         WHERE p.oid=d.oid AND acl.privilege_type='EXECUTE'
+           AND acl.grantee NOT IN (d.proowner,CASE WHEN a.app_allowed THEN 'margindesk_app'::regrole ELSE d.proowner END)
+       )
+       OR (a.app_allowed AND NOT EXISTS (
+         SELECT 1 FROM pg_proc p
+         CROSS JOIN LATERAL aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) acl
+         WHERE p.oid=d.oid AND acl.grantee='margindesk_app'::regrole AND acl.privilege_type='EXECUTE'
+       ))
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM pg_default_acl d
+    CROSS JOIN LATERAL aclexplode(d.defaclacl) acl
+    WHERE d.defaclobjtype='f' AND d.defaclnamespace IN (0,'public'::regnamespace)
+      AND acl.privilege_type='EXECUTE' AND acl.grantee<>d.defaclrole
+      AND EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+        WHERE n.nspname='public' AND p.prosecdef AND p.proowner=d.defaclrole)
   ),
-  'record_failed_login EXECUTE is limited to its owner and margindesk_app'
+  'All public SECURITY DEFINER EXECUTE ACLs match the owner/app allowlist; no extra default grants exist'
 );
 SELECT extensions.ok(NOT EXISTS (
   SELECT 1 FROM pg_auth_members WHERE member='margindesk_app'::regrole
 ), 'margindesk_app has no role memberships that could supply hidden privileges');
 
-REVOKE EXECUTE ON FUNCTION auth.uid() FROM PUBLIC;
+-- Check the actual platform ACL; Supabase owns auth.uid(), so this migration
+-- role cannot manage its grants. The connection/runner prints the full ACL.
 SET LOCAL ROLE margindesk_app;
 SET LOCAL request.jwt.claim.sub = '10000000-0000-4000-8000-000000000003';
 SET LOCAL request.jwt.claims = '{"sub":"10000000-0000-4000-8000-000000000003","role":"authenticated"}';
@@ -684,39 +724,40 @@ DO $$ DECLARE n integer; v_state text; v_msg text; BEGIN
     SELECT count(*) INTO n FROM public.customer
       WHERE tenant_id='20000000-0000-4000-8000-000000000002'
         AND id='30000000-0000-4000-8000-000000000002';
-    PERFORM set_config('app.phase1_auth_uid_public_revoked_result',jsonb_build_object('passed',n=1,'state','00000','message',NULL,'visible_rows',n)::text,true);
+    PERFORM set_config('app.phase1_auth_uid_authenticated_result',jsonb_build_object('passed',n=1,'state','00000','message',NULL,'visible_rows',n)::text,true);
   EXCEPTION WHEN OTHERS THEN
     GET STACKED DIAGNOSTICS v_state=RETURNED_SQLSTATE,v_msg=MESSAGE_TEXT;
-    PERFORM set_config('app.phase1_auth_uid_public_revoked_result',jsonb_build_object('passed',false,'state',v_state,'message',v_msg,'visible_rows',NULL)::text,true);
+    PERFORM set_config('app.phase1_auth_uid_authenticated_result',jsonb_build_object('passed',false,'state',v_state,'message',v_msg,'visible_rows',NULL)::text,true);
   END;
 END $$;
 RESET ROLE;
 SELECT extensions.ok(
-  current_setting('app.phase1_auth_uid_public_revoked_result')::jsonb->>'passed'='true',
-  'With PUBLIC EXECUTE revoked, margindesk_app EXECUTE alone still evaluates the auth.uid policy'
+  current_setting('app.phase1_auth_uid_authenticated_result')::jsonb->>'passed'='true',
+  'Authenticated customer policy query returns its assigned row as margindesk_app'
 );
-REVOKE EXECUTE ON FUNCTION auth.uid() FROM margindesk_app;
+
 SET LOCAL ROLE margindesk_app;
-SET LOCAL request.jwt.claim.sub = '10000000-0000-4000-8000-000000000003';
-SET LOCAL request.jwt.claims = '{"sub":"10000000-0000-4000-8000-000000000003","role":"authenticated"}';
+SET LOCAL request.jwt.claim.sub = '';
+SET LOCAL request.jwt.claims = '{}';
 DO $$ DECLARE n integer; v_state text; v_msg text; BEGIN
   BEGIN
     SELECT count(*) INTO n FROM public.customer
       WHERE tenant_id='20000000-0000-4000-8000-000000000002'
         AND id='30000000-0000-4000-8000-000000000002';
-    PERFORM set_config('app.phase1_auth_uid_revoked_result',jsonb_build_object('state','00000','message','query unexpectedly succeeded','visible_rows',n)::text,true);
+    PERFORM set_config('app.phase1_auth_uid_no_context_result',jsonb_build_object('passed',n=0,'state','00000','message',NULL,'visible_rows',n)::text,true);
   EXCEPTION WHEN OTHERS THEN
     GET STACKED DIAGNOSTICS v_state=RETURNED_SQLSTATE,v_msg=MESSAGE_TEXT;
-    PERFORM set_config('app.phase1_auth_uid_revoked_result',jsonb_build_object('state',v_state,'message',v_msg,'visible_rows',NULL)::text,true);
+    PERFORM set_config('app.phase1_auth_uid_no_context_result',jsonb_build_object('passed',false,'state',v_state,'message',v_msg,'visible_rows',NULL)::text,true);
   END;
 END $$;
 RESET ROLE;
 
--- Emit the complete live privilege path and the query outcome into the CI log.
--- This runs before the final transaction rollback and after both revokes.
+-- Emit the complete live privilege path and function ACL audit into the CI log.
 SELECT jsonb_build_object(
-  'auth_uid_query_after_app_revoke',current_setting('app.phase1_auth_uid_revoked_result')::jsonb,
-  'app_execute_after_revoke',has_function_privilege('margindesk_app','auth.uid()','EXECUTE'),
+  'auth_uid_owner',(SELECT pg_get_userbyid(p.proowner) FROM pg_proc p WHERE p.oid='auth.uid()'::regprocedure),
+  'auth_uid_app_execute',has_function_privilege('margindesk_app','auth.uid()','EXECUTE'),
+  'auth_uid_authenticated_policy_query',current_setting('app.phase1_auth_uid_authenticated_result')::jsonb,
+  'auth_uid_missing_context_policy_query',current_setting('app.phase1_auth_uid_no_context_result')::jsonb,
   'auth_uid_acl',(
     SELECT COALESCE(jsonb_agg(jsonb_build_object(
       'grantor',grantor_role.rolname,
@@ -739,7 +780,49 @@ SELECT jsonb_build_object(
     JOIN pg_roles grantor_role ON grantor_role.oid=m.grantor
     WHERE m.member='margindesk_app'::regrole
   ),
-  'auth_function_default_execute_privileges',(
+  'record_failed_login',(
+    SELECT jsonb_build_object(
+      'owner',pg_get_userbyid(p.proowner),
+      'acl',COALESCE((SELECT jsonb_agg(jsonb_build_object(
+        'grantor',grantor_role.rolname,
+        'grantee',CASE WHEN acl.grantee=0 THEN 'PUBLIC' ELSE grantee_role.rolname END,
+        'privilege',acl.privilege_type,'grantable',acl.is_grantable
+      ) ORDER BY acl.grantee,acl.privilege_type)
+      FROM aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) acl
+      LEFT JOIN pg_roles grantor_role ON grantor_role.oid=acl.grantor
+      LEFT JOIN pg_roles grantee_role ON grantee_role.oid=acl.grantee),'[]'::jsonb),
+      'default_execute',COALESCE((SELECT jsonb_agg(jsonb_build_object(
+        'schema',COALESCE(schema_name.nspname,'<all schemas>'),
+        'grantee',CASE WHEN default_acl.grantee=0 THEN 'PUBLIC' ELSE default_grantee.rolname END,
+        'grantor',default_grantor.rolname,'grantable',default_acl.is_grantable
+      ) ORDER BY default_acl.grantee)
+      FROM pg_default_acl d
+      LEFT JOIN pg_namespace schema_name ON schema_name.oid=d.defaclnamespace
+      CROSS JOIN LATERAL aclexplode(d.defaclacl) default_acl
+      LEFT JOIN pg_roles default_grantee ON default_grantee.oid=default_acl.grantee
+      LEFT JOIN pg_roles default_grantor ON default_grantor.oid=default_acl.grantor
+      WHERE d.defaclrole=p.proowner AND d.defaclobjtype='f'
+        AND d.defaclnamespace IN (0,'public'::regnamespace)
+        AND default_acl.privilege_type='EXECUTE'),'[]'::jsonb)
+    ) FROM pg_proc p WHERE p.oid='public.record_failed_login(text,text,text)'::regprocedure
+  ),
+  'public_security_definer_acl',(
+    SELECT COALESCE(jsonb_agg(jsonb_build_object(
+      'signature',p.proname||'('||pg_get_function_identity_arguments(p.oid)||')',
+      'owner',pg_get_userbyid(p.proowner),
+      'acl',COALESCE((SELECT jsonb_agg(jsonb_build_object(
+        'grantor',grantor_role.rolname,
+        'grantee',CASE WHEN acl.grantee=0 THEN 'PUBLIC' ELSE grantee_role.rolname END,
+        'privilege',acl.privilege_type,'grantable',acl.is_grantable
+      ) ORDER BY acl.grantee,acl.privilege_type)
+      FROM aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) acl
+      LEFT JOIN pg_roles grantor_role ON grantor_role.oid=acl.grantor
+      LEFT JOIN pg_roles grantee_role ON grantee_role.oid=acl.grantee),'[]'::jsonb)
+    ) ORDER BY p.proname,pg_get_function_identity_arguments(p.oid)),'[]'::jsonb)
+    FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+    WHERE n.nspname='public' AND p.prosecdef
+  ),
+  'public_security_definer_default_execute',(
     SELECT COALESCE(jsonb_agg(jsonb_build_object(
       'owner',owner_role.rolname,
       'schema',COALESCE(schema_name.nspname,'<all schemas>'),
@@ -752,15 +835,16 @@ SELECT jsonb_build_object(
     CROSS JOIN LATERAL aclexplode(d.defaclacl) acl
     LEFT JOIN pg_roles grantee_role ON grantee_role.oid=acl.grantee
     LEFT JOIN pg_roles grantor_role ON grantor_role.oid=acl.grantor
-    WHERE d.defaclobjtype='f' AND d.defaclnamespace IN (0,'auth'::regnamespace)
+    WHERE d.defaclobjtype='f' AND d.defaclnamespace IN (0,'public'::regnamespace)
       AND acl.privilege_type='EXECUTE'
+      AND EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+        WHERE n.nspname='public' AND p.prosecdef AND p.proowner=d.defaclrole)
   )
 )::text AS phase1_ci_diagnostic;
 
 SELECT extensions.ok(
-  current_setting('app.phase1_auth_uid_revoked_result')::jsonb->>'state'='42501'
-  AND position('permission denied for function uid' in lower(current_setting('app.phase1_auth_uid_revoked_result')::jsonb->>'message'))>0,
-  'Revoking auth.uid EXECUTE makes the authenticated positive policy query fail (42501)'
+  current_setting('app.phase1_auth_uid_no_context_result')::jsonb->>'passed'='true',
+  'The same customer policy query returns zero rows as margindesk_app without authenticated context'
 );
 SELECT * FROM extensions.finish();
 ROLLBACK;

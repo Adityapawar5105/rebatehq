@@ -182,16 +182,9 @@ async function runPgtap(connectionString: string) {
         process.stdout.write(`Auth UID privilege diagnostics (raw): ${diagnostic}\n`);
         continue;
       }
-      const outcome = parsed.auth_uid_query_after_app_revoke as { state?: string } | undefined;
-      const effectiveExecute = parsed.app_execute_after_revoke;
-      const diagnosis = outcome?.state === "00000" && effectiveExecute === false
-        ? "A: policy query succeeded after EXECUTE was absent; EXECUTE may not be required"
-        : effectiveExecute === true
-          ? "B: EXECUTE remains effective after the direct revoke; inspect ACL, memberships, and defaults"
-          : outcome?.state !== "42501"
-            ? `C: policy query failed with unexpected SQLSTATE ${outcome?.state ?? "unknown"}`
-            : "Expected explicit-grant denial observed: EXECUTE absent and policy query failed with 42501";
-      process.stdout.write(`Auth UID privilege diagnostics: ${JSON.stringify(parsed)}\nDiagnosis: ${diagnosis}\n`);
+      process.stdout.write(
+        `Auth UID and SECURITY DEFINER ACL evidence (Supabase-managed auth.uid; no migration grant/revoke attempted): ${JSON.stringify(parsed)}\n`,
+      );
     }
     const lines = rows
       .filter(row => !Object.hasOwn(row, "phase1_ci_diagnostic"))

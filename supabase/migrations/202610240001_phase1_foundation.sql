@@ -345,6 +345,37 @@ CREATE TABLE audit_log (
 
 -- Helpers are SECURITY DEFINER only so policy checks can read membership without
 -- exposing that table or causing recursive RLS. Fixed search_path prevents hijacking.
+-- Clean existing default ACLs for public functions created by this migration
+-- role. Only revoke ACL entries that exist, so CI's warning guard never has to
+-- ignore a no-op privilege statement.
+DO $$
+DECLARE v_owner oid := (SELECT oid FROM pg_roles WHERE rolname=current_user);
+        v_owner_name name := current_user;
+        v_default record;
+        v_grantee_sql text;
+        v_scope_sql text;
+BEGIN
+  -- PostgreSQL's built-in default grants EXECUTE to PUBLIC. Suppress it for
+  -- future functions this migration role creates; later grants are explicit.
+  EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE %I REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC',v_owner_name);
+  FOR v_default IN
+    SELECT d.defaclnamespace,a.grantee,r.rolname
+    FROM pg_default_acl d
+    CROSS JOIN LATERAL aclexplode(d.defaclacl) a
+    LEFT JOIN pg_roles r ON r.oid=a.grantee
+    WHERE d.defaclrole=v_owner AND d.defaclobjtype='f'
+      AND d.defaclnamespace IN (0,'public'::regnamespace)
+      AND a.privilege_type='EXECUTE' AND a.grantee<>v_owner
+  LOOP
+    v_grantee_sql := CASE WHEN v_default.grantee=0 THEN 'PUBLIC' ELSE format('%I',v_default.rolname) END;
+    v_scope_sql := CASE WHEN v_default.defaclnamespace=0 THEN '' ELSE ' IN SCHEMA public' END;
+    EXECUTE format(
+      'ALTER DEFAULT PRIVILEGES FOR ROLE %I%s REVOKE EXECUTE ON FUNCTIONS FROM %s',
+      v_owner_name,v_scope_sql,v_grantee_sql
+    );
+  END LOOP;
+END $$;
+
 CREATE OR REPLACE FUNCTION public.is_tenant_member(p_tenant_id uuid)
 RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path=public,extensions,pg_temp AS $$
   SELECT EXISTS (
@@ -482,7 +513,6 @@ CREATE POLICY audit_log_append ON audit_log FOR INSERT TO margindesk_app WITH CH
 
 -- Cost and margin columns are not exposed through PostgREST. The web server
 -- queries them with margindesk_app after verifying membership and role.
-REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon,authenticated;
 GRANT SELECT ON tenant,membership,invite,customer,product,price_list,price_list_version,price_list_item,margin_policy,quote,quote_line,approval,sales_order,rebate_agreement,rebate_progress,invoice,invoice_line,cost_component,supplier_credit,alert,margin_snapshot,connector_secret,import_job,audit_log TO margindesk_app;
 -- Table ACLs grant only operations allowed by at least one policy. RLS still
 -- decides which tenant and role may perform each operation.
@@ -490,11 +520,49 @@ GRANT INSERT ON invite,customer,product,price_list,price_list_version,price_list
 GRANT UPDATE ON tenant,membership,invite,customer,product,price_list,price_list_version,price_list_item,margin_policy,quote,quote_line,approval,sales_order,rebate_agreement,rebate_progress,invoice,invoice_line,cost_component,supplier_credit,alert,margin_snapshot,connector_secret,import_job TO margindesk_app;
 GRANT DELETE ON membership,invite,customer,product,price_list,price_list_version,price_list_item,margin_policy,quote,quote_line,approval,sales_order,rebate_agreement,rebate_progress,invoice,invoice_line,cost_component,supplier_credit,alert,margin_snapshot,connector_secret,import_job TO margindesk_app;
 GRANT INSERT ON audit_log TO margindesk_app;
-REVOKE INSERT,UPDATE,DELETE,TRUNCATE ON tenant,membership,invite,customer,product,price_list,price_list_version,price_list_item,margin_policy,quote,quote_line,approval,sales_order,rebate_agreement,rebate_progress,invoice,invoice_line,cost_component,supplier_credit,alert,margin_snapshot,connector_secret,import_job,audit_log FROM PUBLIC;
-REVOKE TRUNCATE ON tenant,membership,invite,customer,product,price_list,price_list_version,price_list_item,margin_policy,quote,quote_line,approval,sales_order,rebate_agreement,rebate_progress,invoice,invoice_line,cost_component,supplier_credit,alert,margin_snapshot,connector_secret,import_job,audit_log FROM margindesk_app;
-REVOKE UPDATE,DELETE,TRUNCATE ON audit_log FROM margindesk_app;
-REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC,anon,authenticated;
-GRANT EXECUTE ON FUNCTION public.is_tenant_member(uuid),public.is_tenant_role(uuid,text[]) TO margindesk_app;
+-- Revoke only ACL entries that exist. This avoids silently ineffective
+-- GRANT/REVOKE statements and lets CI fail on any no-op privilege warning.
+DO $$
+DECLARE v_priv record; v_grantee text; v_table regclass;
+BEGIN
+  FOR v_priv IN
+    SELECT c.oid,c.relname,a.grantee,a.privilege_type,r.rolname
+    FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+    CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) a
+    LEFT JOIN pg_roles r ON r.oid=a.grantee
+    WHERE n.nspname='public' AND c.relname=ANY(ARRAY[
+      'tenant','membership','invite','customer','product','price_list','price_list_version','price_list_item',
+      'margin_policy','quote','quote_line','approval','sales_order','rebate_agreement','rebate_progress',
+      'invoice','invoice_line','cost_component','supplier_credit','alert','margin_snapshot','connector_secret','import_job','audit_log'
+    ]) AND (
+      (a.grantee=0 AND a.privilege_type IN ('INSERT','UPDATE','DELETE','TRUNCATE'))
+      OR (a.grantee='margindesk_app'::regrole AND (
+        a.privilege_type='TRUNCATE'
+        OR (c.relname='audit_log' AND a.privilege_type IN ('UPDATE','DELETE'))
+      ))
+    )
+  LOOP
+    IF v_priv.grantee=0 THEN v_grantee:='PUBLIC'; ELSE v_grantee:=format('%I',v_priv.rolname); END IF;
+    v_table:=v_priv.oid::regclass;
+    EXECUTE format('REVOKE %s ON TABLE %s FROM %s',v_priv.privilege_type,v_table,v_grantee);
+  END LOOP;
+  FOR v_priv IN
+    SELECT DISTINCT c.oid,c.relname,a.grantee,r.rolname
+    FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+    CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) a
+    LEFT JOIN pg_roles r ON r.oid=a.grantee
+    WHERE n.nspname='public' AND c.relkind IN ('r','p','v','m','f')
+      AND c.relname=ANY(ARRAY[
+        'tenant','membership','invite','customer','product','price_list','price_list_version','price_list_item',
+        'margin_policy','quote','quote_line','approval','sales_order','rebate_agreement','rebate_progress',
+        'invoice','invoice_line','cost_component','supplier_credit','alert','margin_snapshot','connector_secret','import_job','audit_log'
+      ]) AND a.grantee IN ('anon'::regrole,'authenticated'::regrole)
+  LOOP
+    v_grantee:=format('%I',v_priv.rolname);
+    v_table:=v_priv.oid::regclass;
+    EXECUTE format('REVOKE ALL ON TABLE %s FROM %s',v_table,v_grantee);
+  END LOOP;
+END $$;
 
 CREATE OR REPLACE FUNCTION public.create_tenant_with_owner(p_name text)
 RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,extensions,pg_temp AS $$
@@ -536,15 +604,30 @@ BEGIN
   VALUES(NULL,NULL,'auth.login_failed','auth_user',v_hash,
     jsonb_build_object('email_hash',v_hash),NULLIF(p_ip,'')::inet,left(p_user_agent,1000));
 END $$;
-REVOKE ALL ON FUNCTION public.create_tenant_with_owner(text),public.accept_tenant_invite(text),public.record_failed_login(text,text,text) FROM PUBLIC,anon,authenticated;
-GRANT EXECUTE ON FUNCTION public.create_tenant_with_owner(text),public.accept_tenant_invite(text),public.record_failed_login(text,text,text) TO margindesk_app;
-REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC,anon,authenticated;
+-- Explicit allowlist for every public SECURITY DEFINER function. Trigger
+-- functions remain owner-only; policy helpers and request APIs are app-only.
+DO $$
+DECLARE v_owner oid := (SELECT oid FROM pg_roles WHERE rolname=current_user);
+        v_acl record;
+        v_grantee_sql text;
+BEGIN
+  FOR v_acl IN
+    SELECT p.oid,a.grantee,r.rolname
+    FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+    CROSS JOIN LATERAL aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) a
+    LEFT JOIN pg_roles r ON r.oid=a.grantee
+    WHERE n.nspname='public' AND p.prosecdef AND p.proowner=v_owner
+      AND a.grantee<>v_owner
+  LOOP
+    v_grantee_sql := CASE WHEN v_acl.grantee=0 THEN 'PUBLIC' ELSE format('%I',v_acl.rolname) END;
+    EXECUTE format('REVOKE ALL ON FUNCTION %s FROM %s',v_acl.oid::regprocedure,v_grantee_sql);
+  END LOOP;
+END $$;
 GRANT EXECUTE ON FUNCTION public.is_tenant_member(uuid),public.is_tenant_role(uuid,text[]),public.is_tenant_role_any_status(uuid,text[]),public.create_tenant_with_owner(text),public.accept_tenant_invite(text),public.record_failed_login(text,text,text) TO margindesk_app;
 
--- Stored policy expressions bind auth.uid() to its function OID, so app-role
--- policy evaluation needs EXECUTE but not auth schema USAGE. Auth table access
--- remains unavailable to the app role.
-GRANT EXECUTE ON FUNCTION auth.uid() TO margindesk_app;
+-- auth.uid() is owned by Supabase's auth administrator role. Do not attempt
+-- grants or revokes here: the app relies on Supabase's platform-managed PUBLIC
+-- EXECUTE grant, and the integration test asserts that dependency.
 
 DO $$
 BEGIN

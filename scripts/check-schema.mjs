@@ -119,6 +119,9 @@ export function lintMigrationSet(migrations) {
     if (/\bGRANT\s+"?margindesk_app"?\s+TO\b/i.test(sqlWithoutComments)) {
       errors.push(`${migration.name} grants membership in margindesk_app; role membership grants are allowed only in disposable test setup.`);
     }
+    if (/\b(?:GRANT|REVOKE)\b[^;]*\bON\b[^;]*(?:\b(?:auth|storage|extensions)\s*\.|\bIN\s+SCHEMA\s+(?:auth|storage|extensions)\b|\bSCHEMA\s+(?:auth|storage|extensions)\b)/i.test(sqlWithoutComments)) {
+      errors.push(`${migration.name} attempts to change privileges on a Supabase-managed auth, storage, or extensions object/schema.`);
+    }
   }
   const tables = readTableDefinitions(allSql);
   if (!tables.length) errors.push("No public tables found in migrations.");
@@ -219,7 +222,10 @@ export function lintMigrationSet(migrations) {
     if (!ownerManagerOnly(policy.expression)) errors.push(`audit_log SELECT policy ${policy.name} is not owner/manager-only`);
   }
 
-  if (!/audit_log_immutable/i.test(allSql) || !/REVOKE\s+UPDATE,DELETE,TRUNCATE\s+ON\s+audit_log/i.test(allSql)) errors.push("Audit log must be append-only for row UPDATE and DELETE");
+  const auditAclCleanup = /a\.privilege_type\s+IN\s*\(\s*'INSERT'\s*,\s*'UPDATE'\s*,\s*'DELETE'\s*,\s*'TRUNCATE'\s*\)/i.test(allSql)
+    && /a\.grantee\s*=\s*0[\s\S]*?a\.grantee\s*=\s*'margindesk_app'::regrole/i.test(allSql)
+    && /'audit_log'/i.test(allSql);
+  if (!/audit_log_immutable/i.test(allSql) || !auditAclCleanup) errors.push("Audit log must be append-only for row UPDATE and DELETE");
   if (!/CREATE\s+TRIGGER\s+audit_log_prevent_truncate\s+BEFORE\s+TRUNCATE\s+ON\s+(?:public\.)?audit_log[\s\S]*?EXECUTE\s+FUNCTION\s+public\.prevent_audit_mutation\s*\(/i.test(allSql)) {
     errors.push("audit_log must have a statement-level BEFORE TRUNCATE trigger; row-level triggers do not protect TRUNCATE");
   }

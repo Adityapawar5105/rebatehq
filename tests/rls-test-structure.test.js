@@ -33,19 +33,25 @@ test("RLS fixtures prove tenant-positive paths, exact RLS write failures, and TR
   assert.match(sql, /Statement-level trigger rejects audit_log TRUNCATE/, "Elevated-role TRUNCATE must be blocked by the statement trigger.");
   assert.match(sql, /has_table_privilege\('margindesk_app',[^\n]*'TRUNCATE'\)/, "The app role must be checked for TRUNCATE ACLs.");
   assert.match(sql, /customer policy evaluates auth\.uid\(\).*without auth schema USAGE/i, "Policy evaluation must prove auth.uid works without schema USAGE.");
-  assert.match(sql, /REVOKE EXECUTE ON FUNCTION auth\.uid\(\) FROM margindesk_app/);
-  assert.match(sql, /REVOKE EXECUTE ON FUNCTION auth\.uid\(\) FROM PUBLIC/);
+  assert.match(sql, /through the Supabase platform PUBLIC grant/i);
+  assert.match(sql, /auth_uid_authenticated_policy_query/);
+  assert.match(sql, /auth_uid_missing_context_policy_query/);
+  assert.doesNotMatch(sql, /\b(?:GRANT|REVOKE)\b[^;]*\bauth\.uid\s*\(/i, "The migration/test must not try to manage Supabase-owned auth.uid ACLs.");
   assert.match(sql, /App role has no table privileges in auth schema/, "Auth schema access must not imply auth table access.");
   assert.match(sql, /Tenant A can UPDATE its own customer row/, "Allowed UPDATE requires a positive control.");
   assert.match(sql, /Tenant A can DELETE its own inserted customer row/, "Allowed DELETE requires a positive control.");
   assert.match(sql, /tenant rep can see a product but cannot DELETE/, "A policy-forbidden role needs a DELETE denial control.");
   assert.match(sql, /record_failed_login always writes fixed auth\.login_failed with NULL tenant and actor/);
   assert.match(sql, /record_failed_login EXECUTE is revoked from PUBLIC, anon, and authenticated/);
-  assert.match(sql, /record_failed_login EXECUTE is limited to its owner and margindesk_app/);
+  assert.match(sql, /All public SECURITY DEFINER EXECUTE ACLs match the owner\/app allowlist/);
+  assert.match(sql, /allowlist\(signature,app_allowed\)/, "Every SECURITY DEFINER signature must be enumerated.");
+  assert.match(sql, /a\.signature IS NULL/, "Unexpected SECURITY DEFINER functions must fail the allowlist check.");
+  assert.match(sql, /acl\.grantee NOT IN/, "Unexpected direct grantees must fail the function ACL check.");
+  assert.match(sql, /public_security_definer_default_execute/, "Applicable default function grants must be printed for diagnosis.");
   assert.match(sql, /margindesk_app has no role memberships that could supply hidden privileges/);
   assert.match(sql, /App role cannot directly insert a null-tenant/);
   assert.match(sql, /phase1_ci_diagnostic/);
-  assert.match(sql, /auth_function_default_execute_privileges/);
+  assert.match(sql, /public_security_definer_default_execute/);
   assert.match(sql, /margindesk_app_memberships/);
   assert.doesNotMatch(sql, /SAVEPOINT auth_uid_execute_probe|ROLLBACK TO SAVEPOINT auth_uid_execute_probe/);
   assert.match(runner, /ran !== planned/);
@@ -54,7 +60,7 @@ test("RLS fixtures prove tenant-positive paths, exact RLS write failures, and TR
 
 test("auth function access stays minimal and failed-login audit writes use the definer function", () => {
   assert.doesNotMatch(migration, /GRANT\s+USAGE\s+ON\s+SCHEMA\s+auth\s+TO\s+margindesk_app/i);
-  assert.match(migration, /GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+auth\.uid\(\)\s+TO\s+margindesk_app/i);
+  assert.doesNotMatch(migration, /\b(?:GRANT|REVOKE)\b[^;]*\bauth\.uid\s*\(/i);
   const auditInsertPolicy = migration.match(/CREATE POLICY audit_log_append[\s\S]*?;/i)?.[0] ?? "";
   assert.match(auditInsertPolicy, /FOR INSERT TO margindesk_app/i);
   assert.doesNotMatch(auditInsertPolicy, /tenant_id\s+IS\s+NULL/i);
