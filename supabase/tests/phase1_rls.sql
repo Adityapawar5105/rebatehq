@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT extensions.plan(16);
+SELECT extensions.plan(32);
 
 -- Fixed local-only actors and two isolated tenants. The transaction rolls back.
 INSERT INTO auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,created_at,updated_at)
@@ -103,7 +103,8 @@ WHERE n.nspname='public' AND c.relkind IN ('r','p')
   AND NOT EXISTS (
     SELECT 1 FROM pg_depend d
     WHERE d.classid='pg_class'::regclass AND d.objid=c.oid AND d.deptype='e'
-  );
+  )
+ORDER BY c.oid;
 
 -- Preserve valid Tenant B rows before assuming the app role. Replaying each
 -- complete row ensures NOT NULL/FK/check constraints cannot masquerade as an
@@ -127,12 +128,72 @@ DO $$ DECLARE t text; n integer; BEGIN
     END IF;
   END LOOP;
 END $$;
+-- Build a corresponding Tenant A row for every tenant table. IDs and public
+-- foreign keys get an A-side UUID; auth user references point to user A.
+-- tenant and membership already have valid A rows, and audit gets its own row.
+INSERT INTO public.audit_log(id,tenant_id,actor_id,action,entity_type,entity_id) VALUES
+ ('51000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000001','test.fixture','tenant','20000000-0000-4000-8000-000000000001')
+ON CONFLICT(id) DO NOTHING;
+DO $$ DECLARE t text; v_row jsonb; c record; BEGIN
+  FOR t,v_row IN
+    SELECT f.table_name,f.row_data FROM pg_temp.phase1_rls_insert_fixtures f
+    JOIN pg_class c ON c.relname=f.table_name JOIN pg_namespace n ON n.oid=c.relnamespace AND n.nspname='public'
+    ORDER BY c.oid
+  LOOP
+    IF t NOT IN ('tenant','membership','audit_log') THEN
+      v_row:=jsonb_set(v_row,'{tenant_id}',to_jsonb('20000000-0000-4000-8000-000000000001'::uuid),true);
+      FOR c IN
+        SELECT a.attname,
+               bool_or(rn.nspname='auth') AS auth_ref,
+               bool_or(rn.nspname='public') AS public_ref
+        FROM pg_attribute a
+        LEFT JOIN pg_constraint fk ON fk.contype='f' AND fk.conrelid=a.attrelid AND a.attnum=ANY(fk.conkey)
+        LEFT JOIN pg_class refc ON refc.oid=fk.confrelid
+        LEFT JOIN pg_namespace rn ON rn.oid=refc.relnamespace
+        WHERE a.attrelid=format('public.%I',t)::regclass AND a.attnum>0 AND NOT a.attisdropped AND a.atttypid='uuid'::regtype
+        GROUP BY a.attname
+      LOOP
+        IF c.attname='tenant_id' THEN CONTINUE;
+        ELSIF COALESCE(c.auth_ref,false) THEN
+          v_row:=jsonb_set(v_row,ARRAY[c.attname],to_jsonb('10000000-0000-4000-8000-000000000001'::uuid),true);
+        ELSIF c.attname='id' OR COALESCE(c.public_ref,false) THEN
+          IF v_row->>c.attname IS NOT NULL THEN
+            v_row:=jsonb_set(v_row,ARRAY[c.attname],to_jsonb(regexp_replace(v_row->>c.attname,'2$','3')::uuid),true);
+          END IF;
+        END IF;
+      END LOOP;
+      IF t='invite' THEN
+        v_row:=jsonb_set(v_row,'{token_hash}',to_jsonb(repeat('a',64)),true);
+        v_row:=jsonb_set(v_row,'{email}',to_jsonb('new-a@example.invalid'),true);
+      ELSIF t='margin_snapshot' THEN
+        v_row:=jsonb_set(v_row,'{entity_id}',to_jsonb('20000000-0000-4000-8000-000000000001'),true);
+      END IF;
+      EXECUTE format('INSERT INTO public.%I SELECT (jsonb_populate_record(NULL::public.%I,$1)).*',t,t) USING v_row;
+    END IF;
+  END LOOP;
+END $$;
 -- Carry the admin-built fixture snapshot across SET ROLE in a transaction-local
 -- custom setting. The restricted app role never needs access to pg_temp or
 -- the extensions schema to run these policy checks.
 SELECT set_config(
   'app.phase1_tenant_b_fixtures',
   (SELECT jsonb_object_agg(table_name,row_data)::text FROM pg_temp.phase1_rls_insert_fixtures),
+  true
+);
+CREATE TEMP TABLE phase1_rls_tenant_a_fixtures(table_name text PRIMARY KEY,row_data jsonb);
+DO $$ DECLARE t text; n integer; BEGIN
+  FOR t IN SELECT table_name FROM pg_temp.phase1_rls_tables LOOP
+    EXECUTE format(
+      'INSERT INTO pg_temp.phase1_rls_tenant_a_fixtures(table_name,row_data) SELECT %L,to_jsonb(x) FROM public.%I x WHERE tenant_id=$1 LIMIT 1',
+      t,t
+    ) USING '20000000-0000-4000-8000-000000000001'::uuid;
+    GET DIAGNOSTICS n=ROW_COUNT;
+    IF n=0 THEN RAISE EXCEPTION 'Tenant A positive-control fixture row is missing for public.%',t; END IF;
+  END LOOP;
+END $$;
+SELECT set_config(
+  'app.phase1_tenant_a_fixtures',
+  (SELECT jsonb_object_agg(table_name,row_data)::text FROM pg_temp.phase1_rls_tenant_a_fixtures),
   true
 );
 
@@ -149,27 +210,52 @@ SELECT extensions.ok(NOT EXISTS (
 ), 'RLS is enabled and forced on every application table');
 SELECT extensions.ok(EXISTS (SELECT 1 FROM pg_roles WHERE rolname='margindesk_app' AND NOT rolsuper AND NOT rolbypassrls AND NOT rolcanlogin), 'margindesk_app is NOLOGIN, NOSUPERUSER, and NOBYPASSRLS');
 SELECT extensions.ok(NOT has_table_privilege('authenticated','public.product','SELECT'), 'Browser role has no direct product table grant');
-SELECT extensions.ok(NOT EXISTS (
- SELECT 1 FROM pg_temp.phase1_rls_tables t
- WHERE NOT has_table_privilege('margindesk_app',format('public.%I',t.table_name),'SELECT')
-    OR NOT has_table_privilege('margindesk_app',format('public.%I',t.table_name),'INSERT')
-    OR (t.table_name <> 'audit_log' AND (
-      NOT has_table_privilege('margindesk_app',format('public.%I',t.table_name),'UPDATE')
-      OR NOT has_table_privilege('margindesk_app',format('public.%I',t.table_name),'DELETE')
-    ))
-    OR (t.table_name = 'audit_log' AND (
-      has_table_privilege('margindesk_app',format('public.%I',t.table_name),'UPDATE')
-      OR has_table_privilege('margindesk_app',format('public.%I',t.table_name),'DELETE')
-    ))
+SELECT extensions.ok(has_schema_privilege('margindesk_app','public','USAGE'),'App role has public schema USAGE');
+SELECT extensions.ok(has_schema_privilege('margindesk_app','auth','USAGE'),'App role has auth schema USAGE');
+SELECT extensions.ok(has_language_privilege('margindesk_app','plpgsql','USAGE'),'App role has PL/pgSQL USAGE');
+SELECT extensions.ok(has_function_privilege('margindesk_app','auth.uid()','EXECUTE'),'App role has EXECUTE on auth.uid()');
+SELECT extensions.ok(has_function_privilege('margindesk_app','public.is_tenant_member(uuid)','EXECUTE'),'App role has EXECUTE on public.is_tenant_member(uuid)');
+SELECT extensions.ok(has_function_privilege('margindesk_app','public.is_tenant_role(uuid,text[])','EXECUTE'),'App role has EXECUTE on public.is_tenant_role(uuid,text[])');
+SELECT extensions.ok(has_function_privilege('margindesk_app','public.is_tenant_role_any_status(uuid,text[])','EXECUTE'),'App role has EXECUTE on public.is_tenant_role_any_status(uuid,text[])');
+WITH required AS (
+  SELECT t.table_name,op.privilege
+  FROM pg_temp.phase1_rls_tables t
+  CROSS JOIN (VALUES ('SELECT'),('INSERT'),('UPDATE'),('DELETE')) op(privilege)
+  WHERE op.privilege='SELECT'
+     OR (op.privilege='INSERT' AND t.table_name NOT IN ('tenant','membership'))
+     OR (op.privilege='UPDATE' AND t.table_name<>'audit_log')
+     OR (op.privilege='DELETE' AND t.table_name NOT IN ('tenant','audit_log'))
+), missing AS (
+  SELECT r.table_name,r.privilege FROM required r
+  WHERE NOT has_table_privilege('margindesk_app',format('public.%I',r.table_name),r.privilege)
 )
-AND has_schema_privilege('margindesk_app','public','USAGE')
-AND has_schema_privilege('margindesk_app','auth','USAGE')
-AND has_function_privilege('margindesk_app','auth.uid()','EXECUTE')
-AND has_function_privilege('margindesk_app','public.is_tenant_member(uuid)','EXECUTE')
-AND has_function_privilege('margindesk_app','public.is_tenant_role(uuid,text[])','EXECUTE')
-AND has_function_privilege('margindesk_app','public.is_tenant_role_any_status(uuid,text[])','EXECUTE')
-AND has_language_privilege('margindesk_app','plpgsql','USAGE'),
-'App role has required table/schema/helper privileges for real RLS checks; audit log remains append-only');
+SELECT extensions.ok(NOT EXISTS(SELECT 1 FROM missing),
+  'App table grants are present; missing='||COALESCE((SELECT string_agg(table_name||'.'||privilege,', ' ORDER BY table_name,privilege) FROM missing),'none'));
+SELECT extensions.ok(
+  NOT has_table_privilege('margindesk_app','public.audit_log','UPDATE')
+  AND NOT has_table_privilege('margindesk_app','public.audit_log','DELETE')
+  AND NOT has_table_privilege('margindesk_app','public.audit_log','TRUNCATE')
+  AND NOT EXISTS (
+    SELECT 1 FROM pg_class c CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) a
+    WHERE c.oid='public.audit_log'::regclass AND a.grantee=0 AND a.privilege_type IN ('UPDATE','DELETE','TRUNCATE')
+  ),
+  'audit_log has no UPDATE, DELETE, or TRUNCATE grant to margindesk_app or PUBLIC');
+SELECT extensions.ok(NOT EXISTS (
+  SELECT 1 FROM pg_temp.phase1_rls_tables t
+  WHERE EXISTS (
+    SELECT 1 FROM pg_class c CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) a
+    WHERE c.oid=format('public.%I',t.table_name)::regclass AND a.grantee=0 AND a.privilege_type IN ('INSERT','UPDATE','DELETE','TRUNCATE')
+  )
+),'PUBLIC has no write or TRUNCATE grants on tenant tables');
+SELECT extensions.ok(
+  NOT has_table_privilege('margindesk_app','public.tenant','INSERT')
+  AND NOT has_table_privilege('margindesk_app','public.tenant','DELETE')
+  AND NOT has_table_privilege('margindesk_app','public.membership','INSERT'),
+  'App role has no tenant or membership write operations forbidden to every policy');
+SELECT extensions.ok(NOT EXISTS (
+  SELECT 1 FROM pg_temp.phase1_rls_tables t
+  WHERE t.table_name<>'audit_log' AND has_table_privilege('margindesk_app',format('public.%I',t.table_name),'TRUNCATE')
+),'App role has no TRUNCATE privilege on tenant tables');
 
 SET LOCAL ROLE margindesk_app;
 SELECT set_config(
@@ -186,54 +272,113 @@ SET LOCAL request.jwt.claim.sub = '10000000-0000-4000-8000-000000000001';
 SET LOCAL request.jwt.claim.role = 'authenticated';
 SET LOCAL request.jwt.claims = '{"sub":"10000000-0000-4000-8000-000000000001","role":"authenticated"}';
 
-DO $$ DECLARE t text; n integer; v_ok boolean:=true; BEGIN
-  FOR t IN SELECT jsonb_object_keys(current_setting('app.phase1_tenant_b_fixtures')::jsonb) LOOP
-    EXECUTE format('SELECT count(*) FROM public.%I WHERE tenant_id=$1',t) INTO n USING '20000000-0000-4000-8000-000000000002'::uuid;
-    v_ok:=v_ok AND n=0;
+DO $$ DECLARE t text; n integer; v_missing text:=''; v_state text; v_msg text; BEGIN
+  FOR t IN SELECT jsonb_object_keys(current_setting('app.phase1_tenant_a_fixtures')::jsonb) LOOP
+    BEGIN
+      EXECUTE format('SELECT count(*) FROM public.%I WHERE tenant_id=$1',t) INTO n USING '20000000-0000-4000-8000-000000000001'::uuid;
+      IF n=0 THEN v_missing:=concat_ws(', ',v_missing,t||' (no visible seeded row)'); END IF;
+    EXCEPTION WHEN OTHERS THEN
+      GET STACKED DIAGNOSTICS v_state=RETURNED_SQLSTATE,v_msg=MESSAGE_TEXT;
+      v_missing:=concat_ws(', ',v_missing,t||' ('||v_state||': '||v_msg||')');
+    END;
   END LOOP;
-  PERFORM set_config('app.phase1_cross_select_ok',v_ok::text,true);
+  PERFORM set_config('app.phase1_positive_select_result',jsonb_build_object('passed',v_missing='','detail',COALESCE(v_missing,'none'))::text,true);
 END $$;
 
-DO $$ DECLARE t text; n integer; v_ok boolean:=true; BEGIN
+DO $$ DECLARE t text; v_row jsonb; v_insert jsonb; v_state text; v_msg text; n integer; v_failed text:=''; BEGIN
+  FOR t,v_row IN SELECT key,value FROM jsonb_each(current_setting('app.phase1_tenant_a_fixtures')::jsonb)
+    WHERE key NOT IN ('tenant','membership') LOOP
+    v_insert:=jsonb_set(v_row,'{id}',to_jsonb(regexp_replace(v_row->>'id','[0-9a-f]$','4')::uuid),true);
+    IF t='customer' THEN v_insert:=jsonb_set(v_insert,'{account_no}',to_jsonb('A-positive-control'),true);
+    ELSIF t='product' THEN v_insert:=jsonb_set(v_insert,'{sku}',to_jsonb('A-POSITIVE-CONTROL'),true);
+    ELSIF t='invite' THEN
+      v_insert:=jsonb_set(v_insert,'{token_hash}',to_jsonb(repeat('c',64)),true);
+      v_insert:=jsonb_set(v_insert,'{email}',to_jsonb('new-c@example.invalid'),true);
+    ELSIF t='price_list_version' THEN v_insert:=jsonb_set(v_insert,'{version_no}',to_jsonb((v_row->>'version_no')::integer+1),true);
+    ELSIF t='margin_policy' THEN v_insert:=jsonb_set(v_insert,'{scope_key}',to_jsonb('positive-control'),true);
+    ELSIF t='sales_order' THEN v_insert:=jsonb_set(v_insert,'{source_id}',to_jsonb('A-POSITIVE-CONTROL'),true);
+    ELSIF t='margin_snapshot' THEN v_insert:=jsonb_set(v_insert,'{entity_id}',to_jsonb('positive-control'),true);
+    ELSIF t='connector_secret' THEN v_insert:=jsonb_set(v_insert,'{provider}',to_jsonb('positive-control'),true);
+    END IF;
+    BEGIN
+      EXECUTE format('INSERT INTO public.%I SELECT (jsonb_populate_record(NULL::public.%I,$1)).* RETURNING 1',t,t) INTO n USING v_insert;
+      GET DIAGNOSTICS n=ROW_COUNT;
+      IF n<>1 THEN v_failed:=concat_ws(', ',v_failed,t||' inserted '||n||' rows'); END IF;
+    EXCEPTION WHEN OTHERS THEN
+      GET STACKED DIAGNOSTICS v_state=RETURNED_SQLSTATE,v_msg=MESSAGE_TEXT;
+      v_failed:=concat_ws(', ',v_failed,t||' ('||v_state||': '||v_msg||')');
+    END;
+  END LOOP;
+  PERFORM set_config('app.phase1_positive_insert_result',jsonb_build_object('passed',v_failed='','detail',COALESCE(v_failed,'none'))::text,true);
+END $$;
+
+DO $$ DECLARE t text; n integer; v_missing text:=''; v_state text; v_msg text; BEGIN
   FOR t IN SELECT jsonb_object_keys(current_setting('app.phase1_tenant_b_fixtures')::jsonb) LOOP
     BEGIN
-      EXECUTE format('UPDATE public.%I SET tenant_id=tenant_id WHERE tenant_id=$1',t) USING '20000000-0000-4000-8000-000000000002'::uuid;
-      GET DIAGNOSTICS n=ROW_COUNT;
-    EXCEPTION WHEN insufficient_privilege THEN n:=0;
+      EXECUTE format('SELECT count(*) FROM public.%I WHERE tenant_id=$1',t) INTO n USING '20000000-0000-4000-8000-000000000002'::uuid;
+      IF n<>0 THEN v_missing:=concat_ws(', ',v_missing,t||' ('||n||' rows visible)'); END IF;
+    EXCEPTION WHEN OTHERS THEN
+      GET STACKED DIAGNOSTICS v_state=RETURNED_SQLSTATE,v_msg=MESSAGE_TEXT;
+      v_missing:=concat_ws(', ',v_missing,t||' ('||v_state||': '||v_msg||')');
     END;
-    v_ok:=v_ok AND n=0;
+  END LOOP;
+  PERFORM set_config('app.phase1_cross_select_result',jsonb_build_object('passed',v_missing='','detail',COALESCE(v_missing,'none'))::text,true);
+END $$;
+
+-- A cross-tenant UPDATE starts from an A-visible row and changes its tenant_id;
+-- RLS WITH CHECK must reject it. Approval is intentionally skipped because its
+-- UPDATE policy forbids a requester from modifying their own approval.
+DO $$ DECLARE t text; v_state text; v_msg text; v_bad text:=''; BEGIN
+  FOR t IN SELECT key FROM jsonb_each(current_setting('app.phase1_tenant_a_fixtures')::jsonb)
+    WHERE key NOT IN ('audit_log','approval') LOOP
+    v_state:='00000'; v_msg:='';
+    BEGIN
+      EXECUTE format('UPDATE public.%I SET tenant_id=$1 WHERE tenant_id=$2',t)
+        USING '20000000-0000-4000-8000-000000000002'::uuid,'20000000-0000-4000-8000-000000000001'::uuid;
+      v_bad:=concat_ws(', ',v_bad,t||' unexpectedly updated rows');
+    EXCEPTION WHEN OTHERS THEN
+      GET STACKED DIAGNOSTICS v_state=RETURNED_SQLSTATE,v_msg=MESSAGE_TEXT;
+      IF v_state<>'42501' OR position('row-level security' in lower(v_msg))=0 THEN
+        v_bad:=concat_ws(', ',v_bad,t||' ('||v_state||': '||v_msg||')');
+      END IF;
+    END;
+  END LOOP;
+  PERFORM set_config('app.phase1_cross_update_result',jsonb_build_object('passed',v_bad='','detail',COALESCE(v_bad,'none'))::text,true);
+END $$;
+
+-- DELETE policies hide Tenant B rows (PostgreSQL reports zero affected rows,
+-- rather than raising an error). ACL checks above prove DELETE is granted for
+-- each tested operation, so permission denial cannot masquerade as RLS.
+DO $$ DECLARE t text; n integer; v_bad text:=''; v_state text; v_msg text; BEGIN
+  FOR t IN SELECT key FROM jsonb_each(current_setting('app.phase1_tenant_b_fixtures')::jsonb)
+    WHERE key NOT IN ('tenant','audit_log') LOOP
     BEGIN
       EXECUTE format('DELETE FROM public.%I WHERE tenant_id=$1',t) USING '20000000-0000-4000-8000-000000000002'::uuid;
       GET DIAGNOSTICS n=ROW_COUNT;
-    EXCEPTION WHEN insufficient_privilege THEN n:=0;
+      IF n<>0 THEN v_bad:=concat_ws(', ',v_bad,t||' deleted '||n||' rows'); END IF;
+    EXCEPTION WHEN OTHERS THEN
+      GET STACKED DIAGNOSTICS v_state=RETURNED_SQLSTATE,v_msg=MESSAGE_TEXT;
+      v_bad:=concat_ws(', ',v_bad,t||' ('||v_state||': '||v_msg||')');
     END;
-    v_ok:=v_ok AND n=0;
   END LOOP;
-  PERFORM set_config('app.phase1_cross_update_delete_ok',v_ok::text,true);
+  PERFORM set_config('app.phase1_cross_delete_result',jsonb_build_object('passed',v_bad='','detail',COALESCE(v_bad,'none'))::text,true);
 END $$;
 
-DO $$ DECLARE t text; v_row jsonb; v_blocked boolean; v_ok boolean:=true; v_state text; v_detail text:=''; BEGIN
-  FOR t,v_row IN
-    SELECT key,value FROM jsonb_each(current_setting('app.phase1_tenant_b_fixtures')::jsonb)
-  LOOP
-    v_blocked:=false;
+DO $$ DECLARE t text; v_row jsonb; v_state text; v_msg text; v_bad text:=''; BEGIN
+  FOR t,v_row IN SELECT key,value FROM jsonb_each(current_setting('app.phase1_tenant_b_fixtures')::jsonb)
+    WHERE key NOT IN ('tenant','membership') LOOP
+    v_state:='00000'; v_msg:='';
     BEGIN
-      EXECUTE format(
-        'INSERT INTO public.%I SELECT (jsonb_populate_record(NULL::public.%I,$1)).*',t,t
-      ) USING v_row;
-    EXCEPTION WHEN insufficient_privilege THEN
-      GET STACKED DIAGNOSTICS v_state=RETURNED_SQLSTATE;
-      v_blocked:=v_state='42501';
-    WHEN OTHERS THEN
-      GET STACKED DIAGNOSTICS v_state=RETURNED_SQLSTATE, v_detail=MESSAGE_TEXT;
-      v_blocked:=false;
+      EXECUTE format('INSERT INTO public.%I SELECT (jsonb_populate_record(NULL::public.%I,$1)).*',t,t) USING v_row;
+      v_bad:=concat_ws(', ',v_bad,t||' unexpectedly inserted a Tenant B row');
+    EXCEPTION WHEN OTHERS THEN
+      GET STACKED DIAGNOSTICS v_state=RETURNED_SQLSTATE,v_msg=MESSAGE_TEXT;
+      IF v_state<>'42501' OR position('row-level security' in lower(v_msg))=0 THEN
+        v_bad:=concat_ws(', ',v_bad,t||' ('||v_state||': '||v_msg||')');
+      END IF;
     END;
-    IF NOT v_blocked THEN
-      v_ok:=false;
-      IF v_detail='' THEN v_detail:=format('Unexpected INSERT result for %s (SQLSTATE %s)',t,COALESCE(v_state,'00000')); END IF;
-    END IF;
   END LOOP;
-  PERFORM set_config('app.phase1_cross_insert_result',jsonb_build_object('passed',v_ok,'detail',v_detail)::text,true);
+  PERFORM set_config('app.phase1_cross_insert_result',jsonb_build_object('passed',v_bad='','detail',COALESCE(v_bad,'none'))::text,true);
 END $$;
 
 DO $$ DECLARE n integer; v_pending boolean; BEGIN
@@ -269,17 +414,22 @@ SELECT set_config(
   true
 );
 
-DO $$ DECLARE v_update_state text:='00000'; v_delete_state text:='00000'; v_detail text; BEGIN
+DO $$ DECLARE v_update_state text:='00000'; v_delete_state text:='00000'; v_truncate_state text:='00000'; v_update_msg text; v_delete_msg text; v_truncate_msg text; BEGIN
   BEGIN
     UPDATE public.audit_log SET action='tampered' WHERE tenant_id='20000000-0000-4000-8000-000000000001';
-  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS v_update_state=RETURNED_SQLSTATE, v_detail=MESSAGE_TEXT;
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS v_update_state=RETURNED_SQLSTATE, v_update_msg=MESSAGE_TEXT;
   END;
   BEGIN
     DELETE FROM public.audit_log WHERE tenant_id='20000000-0000-4000-8000-000000000001';
-  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS v_delete_state=RETURNED_SQLSTATE, v_detail=MESSAGE_TEXT;
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS v_delete_state=RETURNED_SQLSTATE, v_delete_msg=MESSAGE_TEXT;
+  END;
+  BEGIN
+    TRUNCATE public.audit_log;
+  EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS v_truncate_state=RETURNED_SQLSTATE, v_truncate_msg=MESSAGE_TEXT;
   END;
   PERFORM set_config('app.phase1_audit_app_result',jsonb_build_object(
-    'update_state',v_update_state,'delete_state',v_delete_state
+    'update_state',v_update_state,'delete_state',v_delete_state,'truncate_state',v_truncate_state,
+    'update_message',COALESCE(v_update_msg,''),'delete_message',COALESCE(v_delete_msg,''),'truncate_message',COALESCE(v_truncate_msg,'')
   )::text,true);
 END $$;
 RESET ROLE;
@@ -290,19 +440,42 @@ SELECT extensions.ok(
   AND current_setting('app.phase1_role_context')::jsonb->>'rolbypassrls'='false',
   'SET ROLE used NOSUPERUSER and NOBYPASSRLS margindesk_app'
 );
-SELECT extensions.ok(current_setting('app.phase1_cross_select_ok')::boolean,'Tenant A cannot select Tenant B rows in any public tenant table');
-SELECT extensions.ok(current_setting('app.phase1_cross_update_delete_ok')::boolean,'Tenant A cannot update or delete Tenant B rows in any public tenant table');
+SELECT extensions.ok(
+  current_setting('app.phase1_positive_select_result')::jsonb->>'passed'='true',
+  'Tenant A can SELECT its own seeded row in every tenant table: '||(current_setting('app.phase1_positive_select_result')::jsonb->>'detail')
+);
+SELECT extensions.ok(
+  current_setting('app.phase1_positive_insert_result')::jsonb->>'passed'='true',
+  'Tenant A can INSERT where an RLS policy allows it: '||(current_setting('app.phase1_positive_insert_result')::jsonb->>'detail')
+);
+SELECT extensions.ok(
+  current_setting('app.phase1_cross_select_result')::jsonb->>'passed'='true',
+  'Tenant A SELECT of Tenant B rows returns zero rows: '||(current_setting('app.phase1_cross_select_result')::jsonb->>'detail')
+);
+SELECT extensions.ok(
+  current_setting('app.phase1_cross_update_result')::jsonb->>'passed'='true',
+  'Tenant A cross-tenant UPDATE is rejected by RLS WITH CHECK (42501): '||(current_setting('app.phase1_cross_update_result')::jsonb->>'detail')
+);
+SELECT extensions.ok(
+  current_setting('app.phase1_cross_delete_result')::jsonb->>'passed'='true',
+  'Tenant A cross-tenant DELETE is RLS-filtered to zero rows: '||(current_setting('app.phase1_cross_delete_result')::jsonb->>'detail')
+);
 SELECT extensions.ok(
   current_setting('app.phase1_cross_insert_result')::jsonb->>'passed'='true',
-  'Tenant A cannot insert rows under Tenant B in every public tenant table: ' ||
-    COALESCE(current_setting('app.phase1_cross_insert_result')::jsonb->>'detail','')
+  'Tenant A cross-tenant INSERT fails with an RLS violation (42501): '||(current_setting('app.phase1_cross_insert_result')::jsonb->>'detail')
 );
 SELECT extensions.ok(current_setting('app.phase1_own_approval_ok')::boolean,'A user cannot decide their own quote approval');
 SELECT extensions.is(current_setting('app.phase1_rep_audit_rows')::int,0,'A tenant rep cannot read audit_log rows');
 SELECT extensions.is(current_setting('app.phase1_missing_auth_rows')::int,0,'No authenticated user context returns zero tenant rows');
 SELECT extensions.is(current_setting('app.phase1_audit_app_result')::jsonb->>'update_state','42501','App role cannot UPDATE audit_log');
 SELECT extensions.is(current_setting('app.phase1_audit_app_result')::jsonb->>'delete_state','42501','App role cannot DELETE audit_log');
+SELECT extensions.ok(
+  current_setting('app.phase1_audit_app_result')::jsonb->>'truncate_state'='42501'
+  AND position('permission denied for table audit_log' in lower(current_setting('app.phase1_audit_app_result')::jsonb->>'truncate_message'))>0,
+  'App role TRUNCATE audit_log is denied by the table ACL'
+);
 SELECT extensions.throws_ok('UPDATE public.audit_log SET action=''tampered'' WHERE id=''51000000-0000-4000-8000-000000000002''','55000',NULL,'Database immutability trigger rejects UPDATE even with elevated rights');
 SELECT extensions.throws_ok('DELETE FROM public.audit_log WHERE id=''51000000-0000-4000-8000-000000000002''','55000',NULL,'Database immutability trigger rejects DELETE even with elevated rights');
+SELECT extensions.throws_ok('TRUNCATE public.audit_log','55000',NULL,'Statement-level trigger rejects audit_log TRUNCATE even with elevated rights');
 SELECT * FROM extensions.finish();
 ROLLBACK;

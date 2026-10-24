@@ -393,6 +393,9 @@ CREATE OR REPLACE FUNCTION public.prevent_audit_mutation()
 RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'audit_log is append-only' USING ERRCODE='55000'; END $$;
 CREATE TRIGGER audit_log_immutable BEFORE UPDATE OR DELETE ON audit_log
 FOR EACH ROW EXECUTE FUNCTION public.prevent_audit_mutation();
+-- TRUNCATE bypasses row-level triggers and RLS, so reject it at statement level.
+CREATE TRIGGER audit_log_prevent_truncate BEFORE TRUNCATE ON audit_log
+FOR EACH STATEMENT EXECUTE FUNCTION public.prevent_audit_mutation();
 
 DO $$
 DECLARE t text;
@@ -483,8 +486,14 @@ CREATE POLICY audit_log_append ON audit_log FOR INSERT TO PUBLIC WITH CHECK ((te
 -- queries them with margindesk_app after verifying membership and role.
 REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon,authenticated;
 GRANT SELECT ON tenant,membership,invite,customer,product,price_list,price_list_version,price_list_item,margin_policy,quote,quote_line,approval,sales_order,rebate_agreement,rebate_progress,invoice,invoice_line,cost_component,supplier_credit,alert,margin_snapshot,connector_secret,import_job,audit_log TO margindesk_app;
-GRANT INSERT,UPDATE,DELETE ON tenant,membership,invite,customer,product,price_list,price_list_version,price_list_item,margin_policy,quote,quote_line,approval,sales_order,rebate_agreement,rebate_progress,invoice,invoice_line,cost_component,supplier_credit,alert,margin_snapshot,connector_secret,import_job TO margindesk_app;
+-- Table ACLs grant only operations allowed by at least one policy. RLS still
+-- decides which tenant and role may perform each operation.
+GRANT INSERT ON invite,customer,product,price_list,price_list_version,price_list_item,margin_policy,quote,quote_line,approval,sales_order,rebate_agreement,rebate_progress,invoice,invoice_line,cost_component,supplier_credit,alert,margin_snapshot,connector_secret,import_job TO margindesk_app;
+GRANT UPDATE ON tenant,membership,invite,customer,product,price_list,price_list_version,price_list_item,margin_policy,quote,quote_line,approval,sales_order,rebate_agreement,rebate_progress,invoice,invoice_line,cost_component,supplier_credit,alert,margin_snapshot,connector_secret,import_job TO margindesk_app;
+GRANT DELETE ON membership,invite,customer,product,price_list,price_list_version,price_list_item,margin_policy,quote,quote_line,approval,sales_order,rebate_agreement,rebate_progress,invoice,invoice_line,cost_component,supplier_credit,alert,margin_snapshot,connector_secret,import_job TO margindesk_app;
 GRANT INSERT ON audit_log TO margindesk_app;
+REVOKE INSERT,UPDATE,DELETE,TRUNCATE ON tenant,membership,invite,customer,product,price_list,price_list_version,price_list_item,margin_policy,quote,quote_line,approval,sales_order,rebate_agreement,rebate_progress,invoice,invoice_line,cost_component,supplier_credit,alert,margin_snapshot,connector_secret,import_job,audit_log FROM PUBLIC;
+REVOKE TRUNCATE ON tenant,membership,invite,customer,product,price_list,price_list_version,price_list_item,margin_policy,quote,quote_line,approval,sales_order,rebate_agreement,rebate_progress,invoice,invoice_line,cost_component,supplier_credit,alert,margin_snapshot,connector_secret,import_job,audit_log FROM margindesk_app;
 REVOKE UPDATE,DELETE,TRUNCATE ON audit_log FROM margindesk_app;
 REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.is_tenant_member(uuid),public.is_tenant_role(uuid,text[]) TO margindesk_app;

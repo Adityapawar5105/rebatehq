@@ -219,7 +219,10 @@ export function lintMigrationSet(migrations) {
     if (!ownerManagerOnly(policy.expression)) errors.push(`audit_log SELECT policy ${policy.name} is not owner/manager-only`);
   }
 
-  if (!/audit_log_immutable/i.test(allSql) || !/REVOKE\s+UPDATE,DELETE,TRUNCATE\s+ON\s+audit_log/i.test(allSql)) errors.push("Audit log must be append-only");
+  if (!/audit_log_immutable/i.test(allSql) || !/REVOKE\s+UPDATE,DELETE,TRUNCATE\s+ON\s+audit_log/i.test(allSql)) errors.push("Audit log must be append-only for row UPDATE and DELETE");
+  if (!/CREATE\s+TRIGGER\s+audit_log_prevent_truncate\s+BEFORE\s+TRUNCATE\s+ON\s+(?:public\.)?audit_log[\s\S]*?EXECUTE\s+FUNCTION\s+public\.prevent_audit_mutation\s*\(/i.test(allSql)) {
+    errors.push("audit_log must have a statement-level BEFORE TRUNCATE trigger; row-level triggers do not protect TRUNCATE");
+  }
   if (!/CREATE\s+POLICY[\s\S]*FOR\s+INSERT/i.test(allSql) || !/CREATE\s+POLICY[\s\S]*FOR\s+UPDATE/i.test(allSql) || !/CREATE\s+POLICY[\s\S]*FOR\s+DELETE/i.test(allSql)) errors.push("INSERT/UPDATE/DELETE policies must be defined");
   return { tables, errors };
 }
