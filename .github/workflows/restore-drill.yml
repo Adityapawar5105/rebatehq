@@ -75,17 +75,27 @@ jobs:
           RESTORE_TEST_SOURCE_DATABASE_URL: ${{ secrets.RESTORE_TEST_SOURCE_DATABASE_URL }}
         run: |
           mkdir -p "$RUNNER_TEMP/margindesk-dump"
+          schema_allowlist="$(node scripts/restore-dump-scope.mjs)"
+          echo "Using application schema allowlist: $schema_allowlist"
           if [[ "$RESTORE_TARGET" == "local" ]]; then
             pnpm exec supabase db dump --local --role-only --file "$RUNNER_TEMP/margindesk-dump/roles.sql"
-            pnpm exec supabase db dump --local --file "$RUNNER_TEMP/margindesk-dump/schema.sql"
-            pnpm exec supabase db dump --local --data-only --use-copy --file "$RUNNER_TEMP/margindesk-dump/data.sql"
+            pnpm exec supabase db dump --local --schema "$schema_allowlist" --file "$RUNNER_TEMP/margindesk-dump/schema.sql"
+            pnpm exec supabase db dump --local --data-only --use-copy --schema "$schema_allowlist" --file "$RUNNER_TEMP/margindesk-dump/data.sql"
           else
             pnpm exec supabase db dump --db-url "$RESTORE_TEST_SOURCE_DATABASE_URL" --role-only --file "$RUNNER_TEMP/margindesk-dump/roles.sql"
-            pnpm exec supabase db dump --db-url "$RESTORE_TEST_SOURCE_DATABASE_URL" --file "$RUNNER_TEMP/margindesk-dump/schema.sql"
-            pnpm exec supabase db dump --db-url "$RESTORE_TEST_SOURCE_DATABASE_URL" --data-only --use-copy --file "$RUNNER_TEMP/margindesk-dump/data.sql"
+            pnpm exec supabase db dump --db-url "$RESTORE_TEST_SOURCE_DATABASE_URL" --schema "$schema_allowlist" --file "$RUNNER_TEMP/margindesk-dump/schema.sql"
+            pnpm exec supabase db dump --db-url "$RESTORE_TEST_SOURCE_DATABASE_URL" --data-only --use-copy --schema "$schema_allowlist" --file "$RUNNER_TEMP/margindesk-dump/data.sql"
           fi
           printf 'DUMP_END_EPOCH=%s\n' "$(date +%s)" >> "$GITHUB_ENV"
           printf 'RESTORE_START_EPOCH=%s\n' "$(date +%s)" >> "$GITHUB_ENV"
+
+      - name: Inventory application dump and auth dependencies
+        shell: bash
+        run: |
+          node scripts/inspect-restore-dump.mjs \
+            "$RUNNER_TEMP/margindesk-dump/schema.sql" \
+            "$RUNNER_TEMP/margindesk-dump/data.sql" \
+            "$RUNNER_TEMP/margindesk-dump/dump-inventory.json"
 
       - name: Inspect role dump and filter to MarginDesk-owned roles
         shell: bash
@@ -97,7 +107,8 @@ jobs:
         shell: bash
         run: |
           node scripts/verify-restore-equivalence.mjs --snapshot \
-            "$RUNNER_TEMP/margindesk-dump/source-equivalence.json"
+            "$RUNNER_TEMP/margindesk-dump/source-equivalence.json" \
+            "$RUNNER_TEMP/margindesk-dump/dump-inventory.json"
 
       - name: Stop and discard source stack before starting a fresh target (local)
         if: always() && inputs.target == 'local'
@@ -137,18 +148,28 @@ jobs:
         env:
           RESTORE_TEST_TARGET_DATABASE_URL: ${{ secrets.RESTORE_TEST_TARGET_DATABASE_URL }}
         run: pnpm check:restore-target
-      - name: Restore dump into the fresh target (local)
+      - name: Restore owned roles and application schema (local)
         if: inputs.target == 'local'
         shell: bash
         run: |
           docker cp "$RUNNER_TEMP/margindesk-dump/margindesk-roles.sql" "$RESTORE_DB_CONTAINER:/tmp/margindesk-roles.sql"
           docker cp "$RUNNER_TEMP/margindesk-dump/schema.sql" "$RESTORE_DB_CONTAINER:/tmp/margindesk-schema.sql"
+          docker exec "$RESTORE_DB_CONTAINER" psql -U postgres -d postgres --single-transaction --set ON_ERROR_STOP=1 \
+            --file=/tmp/margindesk-roles.sql --file=/tmp/margindesk-schema.sql
+
+      - name: Prepare synthetic auth.users references
+        run: node scripts/prepare-restore-auth-users.mjs "$RUNNER_TEMP/margindesk-dump/dump-inventory.json"
+
+      - name: Restore application data (local)
+        if: inputs.target == 'local'
+        shell: bash
+        run: |
           docker cp "$RUNNER_TEMP/margindesk-dump/data.sql" "$RESTORE_DB_CONTAINER:/tmp/margindesk-data.sql"
           docker exec "$RESTORE_DB_CONTAINER" psql -U postgres -d postgres --single-transaction --set ON_ERROR_STOP=1 \
-            --file=/tmp/margindesk-roles.sql --file=/tmp/margindesk-schema.sql \
             --command='SET session_replication_role = replica' --file=/tmp/margindesk-data.sql
           printf 'RESTORE_END_EPOCH=%s\n' "$(date +%s)" >> "$GITHUB_ENV"
-      - name: Restore dump into the fresh hosted target (hosted)
+
+      - name: Restore owned roles and application schema (hosted)
         if: inputs.target == 'hosted'
         env:
           RESTORE_TEST_TARGET_DATABASE_URL: ${{ secrets.RESTORE_TEST_TARGET_DATABASE_URL }}
@@ -156,15 +177,24 @@ jobs:
         run: |
           docker run --rm -v "$RUNNER_TEMP/margindesk-dump:/restore:ro" postgres:17-alpine \
             psql "$RESTORE_TEST_TARGET_DATABASE_URL" --single-transaction --set ON_ERROR_STOP=1 \
-            --file /restore/margindesk-roles.sql --file /restore/schema.sql \
-            --command='SET session_replication_role = replica' --file /restore/data.sql
+            --file /restore/margindesk-roles.sql --file /restore/schema.sql
           {
             printf 'SEED_DATABASE_URL=%s\n' "$RESTORE_TEST_TARGET_DATABASE_URL"
             printf 'TEST_DATABASE_URL=%s\n' "$RESTORE_TEST_TARGET_DATABASE_URL"
           } >> "$GITHUB_ENV"
+
+      - name: Restore application data (hosted)
+        if: inputs.target == 'hosted'
+        env:
+          RESTORE_TEST_TARGET_DATABASE_URL: ${{ secrets.RESTORE_TEST_TARGET_DATABASE_URL }}
+        shell: bash
+        run: |
+          docker run --rm -v "$RUNNER_TEMP/margindesk-dump:/restore:ro" postgres:17-alpine \
+            psql "$RESTORE_TEST_TARGET_DATABASE_URL" --single-transaction --set ON_ERROR_STOP=1 \
+            --command='SET session_replication_role = replica' --file /restore/data.sql
           printf 'RESTORE_END_EPOCH=%s\n' "$(date +%s)" >> "$GITHUB_ENV"
-      - name: Compare restored role attributes, grants, and tenant row counts
-        run: node scripts/verify-restore-equivalence.mjs --compare "$RUNNER_TEMP/margindesk-dump/source-equivalence.json"
+      - name: Compare restored role attributes, grants, and application row counts
+        run: node scripts/verify-restore-equivalence.mjs --compare "$RUNNER_TEMP/margindesk-dump/source-equivalence.json" "$RUNNER_TEMP/margindesk-dump/dump-inventory.json"
       - name: Verify restored sentinel and create restricted app login
         run: |
           pnpm check:restore-sentinel

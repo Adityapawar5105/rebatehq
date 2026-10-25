@@ -79,10 +79,20 @@ test("restore workflow filters roles, snapshots source before shutdown, and keep
   const stopSourceIndex = workflow.indexOf("Stop and discard source stack before starting a fresh target");
   assert.ok(snapshotIndex >= 0 && stopSourceIndex > snapshotIndex, "Source ACL and row-count evidence must be captured before stopping it.");
   assert.match(workflow, /filter-restore-roles\.mjs/);
-  assert.match(workflow, /--file=\/tmp\/margindesk-roles\.sql --file=\/tmp\/margindesk-schema\.sql/);
-  assert.match(workflow, /--file \/restore\/margindesk-roles\.sql --file \/restore\/schema\.sql/);
+  assert.match(workflow, /restore-dump-scope\.mjs/);
+  assert.match(workflow, /--data-only --use-copy --schema "\$schema_allowlist"/);
+  assert.match(workflow, /inspect-restore-dump\.mjs/);
+  assert.match(workflow, /Restore owned roles and application schema \(local\)/);
+  assert.match(workflow, /Restore owned roles and application schema \(hosted\)/);
+  assert.match(workflow, /prepare-restore-auth-users\.mjs/);
+  assert.match(workflow, /Restore application data \(local\)/);
+  assert.match(workflow, /Restore application data \(hosted\)/);
   assert.match(workflow, /--set ON_ERROR_STOP=1/);
   assert.match(workflow, /verify-restore-equivalence\.mjs --compare/);
+  assert.match(workflow, /--file=\/tmp\/margindesk-roles\.sql --file=\/tmp\/margindesk-schema\.sql/);
+  assert.match(workflow, /--file \/restore\/margindesk-roles\.sql --file \/restore\/schema\.sql/);
+  assert.ok(workflow.indexOf("prepare-restore-auth-users.mjs") < workflow.indexOf("Restore application data (local)"), "Referenced auth users must exist before public data restore.");
+  assert.ok(workflow.indexOf("prepare-restore-auth-users.mjs") < workflow.indexOf("Restore application data (hosted)"), "Referenced auth users must exist before public data restore.");
   assert.match(workflow, /pnpm check:restore-sentinel/);
   assert.match(workflow, /pnpm setup:test-db-role/);
   assert.match(workflow, /pnpm check:db-role/);
@@ -90,4 +100,31 @@ test("restore workflow filters roles, snapshots source before shutdown, and keep
   assert.match(workflow, /Stop and discard source stack before starting a fresh target \(local\)[\s\S]*?if: always\(\) && inputs\.target == 'local'/);
   assert.match(workflow, /Stop local target stack[\s\S]*?if: always\(\) && inputs\.target == 'local'/);
   assert.doesNotMatch(workflow, /supabase stop[^\n]*(?:\|\|\s*true|;\s*true)/);
+});
+
+test("restore dump schema builder permits only public and rejects a storage-inclusive dump", async () => {
+  const { APPLICATION_SCHEMAS, EXCLUDED_SUPABASE_SCHEMAS, assertMigrationsFitApplicationSchemas, buildApplicationDumpArgs } = await import("../scripts/restore-dump-scope.mjs");
+  assert.deepEqual(APPLICATION_SCHEMAS, ["public"]);
+  assert.ok(EXCLUDED_SUPABASE_SCHEMAS.includes("storage"));
+  assert.ok(assertMigrationsFitApplicationSchemas() >= 1, "All current SQL migrations must fit the reviewed application schema scope.");
+  assert.deepEqual(buildApplicationDumpArgs(), ["--schema", "public"]);
+  assert.throws(() => buildApplicationDumpArgs(["public", "storage"]), /only the application schema allowlist/);
+  assert.throws(() => buildApplicationDumpArgs(["public", "auth"]), /only the application schema allowlist/);
+});
+
+test("restore dump inspection parses application tables and redacts COPY payload near line 448", async () => {
+  const { parseDumpTableNames, redactDataDumpContext } = await import("../scripts/inspect-restore-dump.mjs");
+  const schema = "CREATE TABLE public.alpha (id uuid);\nCREATE TABLE public.beta (id uuid);";
+  const data = "COPY public.alpha (id) FROM stdin;\nsecret-user-row\n\\.\nCOPY public.beta (id) FROM stdin;\nother-secret\n\\.";
+  assert.deepEqual(parseDumpTableNames(schema, "schema"), [
+    { schema: "public", table: "alpha" },
+    { schema: "public", table: "beta" },
+  ]);
+  assert.deepEqual(parseDumpTableNames(data, "data"), [
+    { schema: "public", table: "alpha" },
+    { schema: "public", table: "beta" },
+  ]);
+  const context = redactDataDumpContext(data, 2, 1);
+  assert.match(context.lines.join("\n"), /\[COPY DATA REDACTED\]/);
+  assert.doesNotMatch(context.lines.join("\n"), /secret-user-row|other-secret/);
 });
