@@ -9,6 +9,7 @@ const aclMigration = fs.readFileSync(path.join(__dirname, "..", "supabase", "mig
 const functionAclMigration = fs.readFileSync(path.join(__dirname, "..", "supabase", "migrations", "202610250002_revoke_platform_function_privileges.sql"), "utf8");
 const runner = fs.readFileSync(path.join(__dirname, "..", "scripts", "test-db.ts"), "utf8");
 const repeatability = fs.readFileSync(path.join(__dirname, "..", "scripts", "test-db-repeatability.ts"), "utf8");
+const rowCountHelpers = fs.readFileSync(path.join(__dirname, "..", "scripts", "tenant-row-counts.mjs"), "utf8");
 const roleSetup = fs.readFileSync(path.join(__dirname, "..", "scripts", "setup-test-app-role.ts"), "utf8");
 
 test("the restricted-role pgTAP checks capture results and run assertions after RESET ROLE", () => {
@@ -113,10 +114,12 @@ test("RLS fixtures prove tenant-positive paths, exact RLS write failures, and TR
 test("database repeatability command runs the suite twice and proves no tenant rows remain", () => {
   assert.match(repeatability, /const before = await snapshotTenantRows\(pool\)/);
   assert.match(repeatability, /await runDatabaseSuite\(\)[\s\S]*?const afterFirst = await snapshotTenantRows\(pool\)/);
-  assert.match(repeatability, /assert\.deepEqual\(afterFirst, before/);
+  assert.match(repeatability, /assertTenantRowCountsEqual\(before, afterFirst/);
   assert.match(repeatability, /await runDatabaseSuite\(\)[\s\S]*?const afterSecond = await snapshotTenantRows\(pool\)/);
-  assert.match(repeatability, /assert\.deepEqual\(afterSecond, before/);
+  assert.match(repeatability, /assertTenantRowCountsEqual\(before, afterSecond/);
+  assert.match(repeatability, /GROUP BY c\.relname\s+ORDER BY c\.relname/, "Tenant tables must be uniquely and deterministically sorted by name.");
   assert.match(repeatability, /tables\.rows\.length >= 24/);
+  assert.match(rowCountHelpers, /public\.\$\{tableName\}/, "Count mismatch errors must identify the public table.");
 });
 
 test("auth function access stays minimal and failed-login audit writes use the definer function", () => {

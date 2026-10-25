@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { Pool } from "pg";
+import { assertTenantRowCountsEqual } from "./tenant-row-counts.mjs";
 
 function quoteIdentifier(identifier: string): string {
   return `"${identifier.replace(/"/g, '""')}"`;
@@ -8,11 +9,12 @@ function quoteIdentifier(identifier: string): string {
 
 async function snapshotTenantRows(pool: Pool): Promise<Record<string, Array<{ tenant_id: string | null; row_count: string }>>> {
   const tables = await pool.query<{ table_name: string }>(`
-    SELECT DISTINCT c.relname::text AS table_name
+    SELECT c.relname::text AS table_name
     FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
     JOIN pg_attribute a ON a.attrelid=c.oid
     WHERE n.nspname='public' AND c.relkind IN ('r','p')
       AND a.attname='tenant_id' AND a.attnum>0 AND NOT a.attisdropped
+    GROUP BY c.relname
     ORDER BY c.relname
   `);
   assert.ok(tables.rows.length >= 24, `Repeatability check found only ${tables.rows.length} tenant tables.`);
@@ -48,11 +50,11 @@ async function main(): Promise<void> {
     process.stdout.write("Repeatability baseline captured for every public tenant table.\n");
     await runDatabaseSuite();
     const afterFirst = await snapshotTenantRows(pool);
-    assert.deepEqual(afterFirst, before, "The first pgTAP run left application tenant rows behind.");
+    assertTenantRowCountsEqual(before, afterFirst, "The first pgTAP run left application tenant rows behind");
     process.stdout.write("First pgTAP run passed; tenant row counts match the pre-run baseline.\n");
     await runDatabaseSuite();
     const afterSecond = await snapshotTenantRows(pool);
-    assert.deepEqual(afterSecond, before, "The second pgTAP run left application tenant rows behind or changed source data.");
+    assertTenantRowCountsEqual(before, afterSecond, "The second pgTAP run left application tenant rows behind or changed source data");
     process.stdout.write("Second pgTAP run passed on the same database; tenant row counts still match the original baseline.\n");
   } finally {
     await pool.end();
