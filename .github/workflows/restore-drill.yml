@@ -61,6 +61,8 @@ jobs:
             exit 1
           fi
           printf 'SEED_DATABASE_URL=%s\n' "$RESTORE_TEST_SOURCE_DATABASE_URL" >> "$GITHUB_ENV"
+          printf 'RESTORE_TEST_SOURCE_DATABASE_URL=%s\n' "$RESTORE_TEST_SOURCE_DATABASE_URL" >> "$GITHUB_ENV"
+          printf 'RESTORE_TEST_TARGET_DATABASE_URL=%s\n' "$RESTORE_TEST_TARGET_DATABASE_URL" >> "$GITHUB_ENV"
           printf 'TEST_DATABASE_URL=%s\n' "$RESTORE_TEST_TARGET_DATABASE_URL" >> "$GITHUB_ENV"
       - name: Seed a sentinel in the disposable source database
         run: pnpm seed:restore-drill
@@ -84,6 +86,18 @@ jobs:
           fi
           printf 'DUMP_END_EPOCH=%s\n' "$(date +%s)" >> "$GITHUB_ENV"
           printf 'RESTORE_START_EPOCH=%s\n' "$(date +%s)" >> "$GITHUB_ENV"
+
+      - name: Inspect role dump and filter to MarginDesk-owned roles
+        shell: bash
+        run: |
+          node scripts/filter-restore-roles.mjs \
+            "$RUNNER_TEMP/margindesk-dump/roles.sql" \
+            "$RUNNER_TEMP/margindesk-dump/margindesk-roles.sql"
+      - name: Capture source role, ACL, and tenant row-count baseline
+        shell: bash
+        run: |
+          node scripts/verify-restore-equivalence.mjs --snapshot \
+            "$RUNNER_TEMP/margindesk-dump/source-equivalence.json"
 
       - name: Stop and discard source stack before starting a fresh target (local)
         if: inputs.target == 'local'
@@ -116,7 +130,7 @@ jobs:
         if: inputs.target == 'local'
         shell: bash
         run: |
-          docker cp "$RUNNER_TEMP/margindesk-dump/roles.sql" "$RESTORE_DB_CONTAINER:/tmp/margindesk-roles.sql"
+          docker cp "$RUNNER_TEMP/margindesk-dump/margindesk-roles.sql" "$RESTORE_DB_CONTAINER:/tmp/margindesk-roles.sql"
           docker cp "$RUNNER_TEMP/margindesk-dump/schema.sql" "$RESTORE_DB_CONTAINER:/tmp/margindesk-schema.sql"
           docker cp "$RUNNER_TEMP/margindesk-dump/data.sql" "$RESTORE_DB_CONTAINER:/tmp/margindesk-data.sql"
           docker exec "$RESTORE_DB_CONTAINER" psql -U postgres -d postgres --single-transaction --set ON_ERROR_STOP=1 \
@@ -131,13 +145,15 @@ jobs:
         run: |
           docker run --rm -v "$RUNNER_TEMP/margindesk-dump:/restore:ro" postgres:17-alpine \
             psql "$RESTORE_TEST_TARGET_DATABASE_URL" --single-transaction --set ON_ERROR_STOP=1 \
-            --file /restore/roles.sql --file /restore/schema.sql \
+            --file /restore/margindesk-roles.sql --file /restore/schema.sql \
             --command='SET session_replication_role = replica' --file /restore/data.sql
           {
             printf 'SEED_DATABASE_URL=%s\n' "$RESTORE_TEST_TARGET_DATABASE_URL"
             printf 'TEST_DATABASE_URL=%s\n' "$RESTORE_TEST_TARGET_DATABASE_URL"
           } >> "$GITHUB_ENV"
           printf 'RESTORE_END_EPOCH=%s\n' "$(date +%s)" >> "$GITHUB_ENV"
+      - name: Compare restored role attributes, grants, and tenant row counts
+        run: node scripts/verify-restore-equivalence.mjs --compare "$RUNNER_TEMP/margindesk-dump/source-equivalence.json"
       - name: Verify restored sentinel and create restricted app login
         run: |
           pnpm check:restore-sentinel
@@ -175,7 +191,7 @@ jobs:
             echo "- Restore duration: ${restore_seconds}s"
             echo "- Post-restore app-role, sentinel, and RLS test duration: ${tests_seconds}s (upper bound if the job failed before tests completed)"
             echo "- Total workflow elapsed: ${total_seconds}s"
-            echo '- Sentinel check, app-role check, and pgTAP suite are required steps; any failed step makes this drill fail.'
+            echo '- Role-attribute, grant, and row-count comparisons; sentinel; runtime app-role/no-context checks; and the pgTAP suite are required steps. Any failed step makes this drill fail.'
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Stop local target stack
         if: always() && inputs.target == 'local'

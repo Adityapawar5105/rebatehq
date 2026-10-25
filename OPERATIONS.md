@@ -54,7 +54,7 @@ Use the Supabase project’s Database → Backups page to inspect the configured
 
 ### Phase 1 restore-drill status
 
-**Unverified as of 2026-10-25.** No restore workflow run link/date is available. The local `pnpm test:db` attempt stopped before SQL execution with `ECONNREFUSED` for `127.0.0.1:54322`; Docker and `psql` are unavailable in this workspace. The manual workflow now performs a logical dump/restore drill, but it has not run. This workflow is not evidence that Supabase managed daily backup or PITR restoration was tested.
+**Unverified as of 2026-10-25.** Restore Drill run #1 failed restoring the unfiltered `roles.sql`: line 16 attempted to set `log_min_messages` on a Supabase-managed role. The workflow now prints that line and its surrounding context with secrets redacted, lists all `ALTER ROLE ... SET` statements, and filters role restoration to an explicit owned-role allowlist. After restore it compares restricted `margindesk_app` attributes and memberships, tenant-table and SECURITY DEFINER function ACLs, schema ACLs, and per-tenant row counts; it then checks the sentinel, runtime role/no-context behavior, and the complete pgTAP suite. The fix has not passed a workflow run yet, so this drill remains unverified. The local mode tests a logical restore between local Supabase stacks; it does not test Supabase-managed backups or PITR. Hosted mode is limited to explicitly disposable test projects.
 
 | Drill field | Recorded result |
 |---|---|
@@ -68,7 +68,7 @@ Use the Supabase project’s Database → Backups page to inspect the configured
 
 ### Run the automated logical restore drill
 
-Use **Actions → MarginDesk Restore Drill → Run workflow**. The default `local` mode needs no Supabase project, database, or GitHub secrets: the workflow starts a local Supabase source stack, applies migrations, seeds a sentinel, dumps custom roles/schema/data, discards the source stack, starts a fresh Supabase target, restores the dump, verifies the sentinel, generates a random restricted app login, and runs `pnpm check:db-role` plus `pnpm test:db`. The job summary records dump, restore, test, and total elapsed time. A failed step leaves the drill unverified and must be fixed before recording a passing result.
+Use **Actions → MarginDesk Restore Drill → Run workflow**. The default `local` mode needs no Supabase project, database, or GitHub secrets: the workflow starts a local Supabase source stack, applies migrations, seeds a sentinel, dumps roles/schema/data, prints redacted role-dump diagnostics, restores only allowlisted MarginDesk roles plus schema/data into a fresh stack, and compares role attributes, memberships, ACLs, and per-tenant row counts to a source snapshot. It then verifies the sentinel, creates a random restricted app login, checks runtime role/no-context behavior, and runs the complete `pnpm test:db` suite. The job summary records the skipped platform-role statements, row counts, and dump, restore, test, and total timings. A failed step leaves the drill unverified and must be fixed before recording a passing result. Local mode validates the logical restore procedure only; it does not validate Supabase-managed backup/PITR recovery or production hosted infrastructure. Hosted mode must use disposable Supabase test projects only.
 
 To use a hosted test project, set these GitHub Actions repository secrets (the names are also listed in `.env.example`):
 
