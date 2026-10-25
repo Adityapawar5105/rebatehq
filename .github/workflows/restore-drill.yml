@@ -258,8 +258,11 @@ jobs:
       - name: Verify runtime role and no-context RLS
         run: pnpm check:db-role
       - name: Re-run full RLS and append-only suite against restored database
+        env:
+          RESTORE_TEST_MODE: "true"
+          RESTORE_BASELINE_PATH: ${{ runner.temp }}/margindesk-dump/source-equivalence.json
         run: |
-          pnpm test:db
+          pnpm test:db:repeat
           printf 'TEST_END_EPOCH=%s\n' "$(date +%s)" >> "$GITHUB_ENV"
       - name: Record restore-drill timing in job summary
         if: always()
@@ -287,7 +290,7 @@ jobs:
             echo "- Restore duration: ${restore_seconds}s"
             echo "- Post-restore app-role, sentinel, and RLS test duration: ${tests_seconds}s (upper bound if the job failed before tests completed)"
             echo "- Total workflow elapsed: ${total_seconds}s"
-            echo '- Role-attribute, grant, and row-count comparisons; sentinel; runtime app-role/no-context checks; and the pgTAP suite are required steps. Any failed step makes this drill fail.'
+            echo '- Role-attribute, grant, and row-count comparisons; sentinel; runtime app-role/no-context checks; and two consecutive pgTAP suite runs with unchanged row counts are required. Restore-mode pgTAP also checks the source sentinel hash, source tenant counts, and RLS against real restored rows. Any failed step makes this drill fail.'
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Stop local target stack
         if: always() && inputs.target == 'local'

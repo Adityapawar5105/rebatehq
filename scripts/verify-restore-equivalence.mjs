@@ -275,7 +275,20 @@ async function snapshot(pool, applicationTableNames, authUserIds) {
     ? Number((await pool.query("SELECT count(*)::int AS count FROM auth.users WHERE id=ANY($1::uuid[])", [authUserIds])).rows[0].count)
     : 0;
   assert.equal(authUserCount, authUserIds.length, "A referenced auth.users ID is missing from the source or restored target.");
-  return { role, applicationTableNames: [...applicationTableNames].sort(), applicationTables, securityDefiners, functions, schemas, defaultPrivileges, applicationRows, tenantRowCounts, authUserCount };
+  const sentinelResult = await pool.query(`
+    SELECT p.tenant_id::text,p.id::text,md5(jsonb_build_object(
+      'tenant_id',p.tenant_id,'id',p.id,'sku',p.sku,'name',p.name,'category',p.category,
+      'supplier',p.supplier,'uom',p.uom,'unit_cost',p.unit_cost,'freight_cost',p.freight_cost,
+      'payment_terms_cost',p.payment_terms_cost,'list_price',p.list_price,
+      'tier_prices',p.tier_prices,'active',p.active,
+      'created_at_utc',to_char(p.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
+    )::text) AS content_hash
+    FROM public.product p
+    WHERE p.tenant_id=$1::uuid AND p.id=$2::uuid AND p.sku='RESTORE-SENTINEL'
+    ORDER BY p.tenant_id,p.id
+  `, ["61000000-0000-4000-8000-000000000001", "62000000-0000-4000-8000-000000000001"]);
+  const sentinel = sentinelResult.rows.length === 1 ? sentinelResult.rows[0] : null;
+  return { role, applicationTableNames: [...applicationTableNames].sort(), applicationTables, securityDefiners, functions, schemas, defaultPrivileges, applicationRows, tenantRowCounts, authUserCount, sentinel };
 }
 
 function comparableAcl(items) {
@@ -315,6 +328,7 @@ async function main() {
   try {
   if (mode === "--snapshot") {
     const sourceState = await snapshot(db, applicationTableNames, inventory.authUserIds);
+    assert.ok(sourceState.sentinel, "Expected exactly one source RESTORE-SENTINEL product for the drill.");
     assert.ok(sourceState.applicationTables.length > 0, "Source must contain application tables; refusing a vacuous ACL/row-count snapshot.");
     assert.ok(sourceState.securityDefiners.length > 0, "Source must contain public SECURITY DEFINER functions; refusing a vacuous function-ACL snapshot.");
     assert.ok(sourceState.functions.length > 0, "Source must contain public functions; refusing a vacuous complete function ACL snapshot.");
@@ -323,6 +337,7 @@ async function main() {
     process.stdout.write(`Application tables: ${JSON.stringify(sourceState.applicationTableNames)}\n`);
     process.stdout.write(`Source application row counts: ${JSON.stringify(sourceState.applicationRows)}\n`);
     process.stdout.write(`Referenced auth.users IDs present in source: ${sourceState.authUserCount}.\n`);
+    process.stdout.write(`Source restore sentinel baseline: ${JSON.stringify(sourceState.sentinel)}\n`);
     process.stdout.write(`Captured ACL and security metadata for ${sourceState.functions.length} public functions.\n`);
     printApplicationTableAclDiagnostics("Source", sourceState.applicationTables);
     process.stdout.write(`Source ALTER DEFAULT PRIVILEGES entries for public and global defaults: ${JSON.stringify(sourceState.defaultPrivileges, null, 2)}\n`);
@@ -382,6 +397,7 @@ async function main() {
     reportSection("application row counts", () => assert.deepEqual(sourceState.applicationRows, targetState.applicationRows, "Application row counts differ."), failures);
     reportSection("per-tenant row counts", () => assert.deepEqual(sourceState.tenantRowCounts, targetState.tenantRowCounts, "Per-tenant row counts differ."), failures);
     reportSection("referenced auth.users IDs", () => assert.equal(targetState.authUserCount, sourceState.authUserCount, "Referenced auth.users IDs differ."), failures);
+    reportSection("restore sentinel identity and content hash", () => assert.deepEqual(targetState.sentinel, sourceState.sentinel, "Sentinel tenant, product ID, or content hash differs."), failures);
     if (failures.length) throw new Error(`Restore equivalence failed in ${failures.length} section(s):\n${failures.map(item => `- ${item}`).join("\n")}`);
 
     process.stdout.write(`Restored margindesk_app attributes and memberships match: ${JSON.stringify(targetState.role)}\n`);
@@ -392,6 +408,7 @@ async function main() {
     process.stdout.write(`Application table row counts match: ${JSON.stringify(Object.fromEntries(Object.keys(sourceState.applicationRows).map(table => [table, { source: sourceState.applicationRows[table], restored: targetState.applicationRows[table] }]))) }\n`);
     process.stdout.write(`Per-tenant row counts match for ${Object.keys(sourceState.tenantRowCounts).length} tenant tables.\n`);
     process.stdout.write(`Referenced auth.users stand-ins present in restored target: ${targetState.authUserCount}.\n`);
+    process.stdout.write(`Restored sentinel baseline: ${JSON.stringify(targetState.sentinel)}\n`);
     const summary = process.env.GITHUB_STEP_SUMMARY;
     if (summary) {
       const rows = Object.keys(sourceState.applicationRows).map(table => `| ${table} | ${sourceState.applicationRows[table]} | ${targetState.applicationRows[table]} |`);
@@ -401,6 +418,7 @@ async function main() {
         "- Restricted `margindesk_app` attributes and empty membership state matched.",
         `- Matched ACLs for ${sourceState.applicationTables.length} application tables, all ${sourceState.functions.length} public functions (${sourceState.securityDefiners.length} SECURITY DEFINER), and the public schema.`,
         `- Verified ${targetState.authUserCount} synthetic or existing target auth.users IDs required by application foreign keys. No source credential fields were copied.`,
+        `- Restored sentinel tenant/product identity and content hash matched: \`${JSON.stringify(targetState.sentinel)}\`.`,
         "- Application table row counts:",
         "",
         "| Table | Source rows | Restored rows |",

@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
 const workflow = fs.readFileSync(path.join(__dirname, "..", ".github", "workflows", "restore-drill.yml"), "utf8");
+const equivalence = fs.readFileSync(path.join(__dirname, "..", "scripts", "verify-restore-equivalence.mjs"), "utf8");
 
 test("role dump filter logs redacted diagnostics and restores only explicitly owned role statements", async () => {
   const { inspectAndFilterRolesDump } = await import("../scripts/filter-restore-roles.mjs");
@@ -108,9 +109,11 @@ test("restore workflow filters roles, snapshots source before shutdown, and keep
   assert.match(workflow, /Apply current application ACL migrations to restored schema \(local\)[\s\S]*?client_min_messages=warning[\s\S]*?ON_ERROR_STOP=1[\s\S]*?no privileges \(were granted\|could be revoked\|were revoked\)/);
   assert.match(workflow, /Apply current application ACL migrations to restored schema \(hosted\)[\s\S]*?client_min_messages=warning[\s\S]*?ON_ERROR_STOP=1[\s\S]*?no privileges \(were granted\|could be revoked\|were revoked\)/);
   assert.match(workflow, /pnpm check:restore-sentinel/);
+  assert.match(equivalence, /md5\(jsonb_build_object\([\s\S]*?created_at_utc[\s\S]*?content_hash/);
+  assert.match(equivalence, /restore sentinel identity and content hash/);
   assert.match(workflow, /pnpm setup:test-db-role/);
   assert.match(workflow, /pnpm check:db-role/);
-  assert.match(workflow, /pnpm test:db/);
+  assert.match(workflow, /Re-run full RLS and append-only suite against restored database[\s\S]*?RESTORE_TEST_MODE: "true"[\s\S]*?RESTORE_BASELINE_PATH: \$\{\{ runner\.temp \}\}\/margindesk-dump\/source-equivalence\.json[\s\S]*?pnpm test:db:repeat/);
   assert.match(workflow, /Stop and discard source stack before starting a fresh target \(local\)[\s\S]*?if: always\(\) && inputs\.target == 'local'/);
   assert.match(workflow, /Stop local target stack[\s\S]*?if: always\(\) && inputs\.target == 'local'/);
   assert.doesNotMatch(workflow, /supabase stop[^\n]*(?:\|\|\s*true|;\s*true)/);

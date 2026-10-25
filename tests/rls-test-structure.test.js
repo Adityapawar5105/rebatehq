@@ -8,6 +8,7 @@ const migration = fs.readFileSync(path.join(__dirname, "..", "supabase", "migrat
 const aclMigration = fs.readFileSync(path.join(__dirname, "..", "supabase", "migrations", "202610250001_revoke_platform_public_privileges.sql"), "utf8");
 const functionAclMigration = fs.readFileSync(path.join(__dirname, "..", "supabase", "migrations", "202610250002_revoke_platform_function_privileges.sql"), "utf8");
 const runner = fs.readFileSync(path.join(__dirname, "..", "scripts", "test-db.ts"), "utf8");
+const repeatability = fs.readFileSync(path.join(__dirname, "..", "scripts", "test-db-repeatability.ts"), "utf8");
 const roleSetup = fs.readFileSync(path.join(__dirname, "..", "scripts", "setup-test-app-role.ts"), "utf8");
 
 test("the restricted-role pgTAP checks capture results and run assertions after RESET ROLE", () => {
@@ -27,8 +28,9 @@ test("the restricted-role pgTAP checks capture results and run assertions after 
 });
 
 test("RLS fixtures prove tenant-positive paths, exact RLS write failures, and TRUNCATE protection", () => {
-  assert.match(sql, /extensions\.plan\(53\)/, "The pgTAP plan must match the current checks.");
+  assert.match(sql, /extensions\.plan\(53 \+ CASE WHEN current_setting\('app\.restore_test_mode',true\)='true' THEN 3 ELSE 0 END\)/, "Fresh runs plan 53 checks; restored-data runs add three restore-only checks.");
   assert.match(sql, /phase1_tenant_a_fixtures/, "Every application table must have a Tenant A fixture row.");
+  assert.match(sql, /Tenant A fixture clone failed for public\.% \(SQLSTATE %\)/, "Clone failures must identify the exact table and constraint error.");
   assert.match(sql, /CREATE TEMP TABLE phase1_rls_tables[\s\S]*?SELECT c\.relname[\s\S]*?n\.nspname='public'/, "The isolation suite must enumerate every public application table, including new migrations.");
   assert.match(sql, /Tenant B fixture row is missing for application table %/, "New tables without a seeded test row must fail before isolation checks.");
   assert.match(sql, /phase1_positive_select_result/, "Positive own-row SELECT controls must run as the app role.");
@@ -72,8 +74,25 @@ test("RLS fixtures prove tenant-positive paths, exact RLS write failures, and TR
   assert.match(sql, /app\.phase1_anon_function_exec_result/);
   assert.match(sql, /app\.phase1_authenticated_function_exec_result/);
   assert.match(sql, /has_function_privilege\(current_user,p\.oid,'EXECUTE'\)/);
-  assert.match(runner, /planned !== 53/);
-  assert.match(runner, /all 53 checks passing/);
+  assert.match(runner, /expectedFixturePlan = 53/);
+  assert.match(runner, /restoreFixturePlan = 56/);
+  assert.match(runner, /planned !== expectedPlan/);
+  assert.match(runner, /all \$\{expectedPlan\} checks passing/);
+  assert.match(runner, /materializeFixtureIds/);
+  assert.match(runner, /assertFixtureIdsDoNotCollide/);
+  assert.match(runner, /Legacy fixed-ID fixture\/sentinel diagnostic/);
+  assert.match(runner, /RESTORE_BASELINE_PATH/);
+  assert.match(runner, /phase1_restore_expected_tenant_counts/);
+  assert.match(sql, /Restore-only: sentinel tenant and product are present with the source content hash/);
+  assert.match(sql, /Restore-only: every table\/tenant row count still matches the source baseline/);
+  assert.match(sql, /Restore-only: synthetic Tenant A sees zero rows from the real restored sentinel tenant in every application table/);
+  assert.match(sql, /phase1_restore_real_isolation_result/);
+  assert.match(sql, /SELECT \* FROM extensions\.finish\(\);\s*ROLLBACK;/, "Fixture rows and settings must roll back after pgTAP finishes.");
+  assert.doesNotMatch(sql, /ON CONFLICT/i, "Fixtures must not silently reuse incomplete pre-existing rows.");
+  assert.doesNotMatch(sql, /(?:10000000|20000000|30000000|37000000)-0000-4000-8000-00000000000[123]/, "Historical fixed fixture UUIDs must not be embedded in the suite.");
+  for (const [before, after] of [["INSERT INTO public.tenant", "INSERT INTO public.membership"], ["INSERT INTO public.membership", "INSERT INTO public.customer"], ["INSERT INTO public.customer", "INSERT INTO public.product"], ["INSERT INTO public.product", "INSERT INTO public.quote"], ["INSERT INTO public.quote(", "INSERT INTO public.approval"]]) {
+    assert.ok(sql.indexOf(before) >= 0 && sql.indexOf(after) > sql.indexOf(before), `${before} must be seeded before ${after}.`);
+  }
   assert.match(roleSetup, /quotedRoleGrant\(admin, "authenticated", testLogin, version\)/, "The disposable test login must be able to SET ROLE authenticated for the ACL probe.");
   assert.match(sql, /permission denied for table tenant/);
   assert.match(sql, /permission denied for table product/);
@@ -89,6 +108,15 @@ test("RLS fixtures prove tenant-positive paths, exact RLS write failures, and TR
   assert.doesNotMatch(sql, /SAVEPOINT auth_uid_execute_probe|ROLLBACK TO SAVEPOINT auth_uid_execute_probe/);
   assert.match(runner, /ran !== planned/);
   assert.match(runner, /Looks like you planned/);
+});
+
+test("database repeatability command runs the suite twice and proves no tenant rows remain", () => {
+  assert.match(repeatability, /const before = await snapshotTenantRows\(pool\)/);
+  assert.match(repeatability, /await runDatabaseSuite\(\)[\s\S]*?const afterFirst = await snapshotTenantRows\(pool\)/);
+  assert.match(repeatability, /assert\.deepEqual\(afterFirst, before/);
+  assert.match(repeatability, /await runDatabaseSuite\(\)[\s\S]*?const afterSecond = await snapshotTenantRows\(pool\)/);
+  assert.match(repeatability, /assert\.deepEqual\(afterSecond, before/);
+  assert.match(repeatability, /tables\.rows\.length >= 24/);
 });
 
 test("auth function access stays minimal and failed-login audit writes use the definer function", () => {

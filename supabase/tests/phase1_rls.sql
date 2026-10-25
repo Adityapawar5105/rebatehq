@@ -1,100 +1,15 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT extensions.plan(53);
+SELECT extensions.plan(53 + CASE WHEN current_setting('app.restore_test_mode',true)='true' THEN 3 ELSE 0 END);
 SELECT set_config('app.phase1_migration_owner',current_user,true);
 
--- Fixed local-only actors and two isolated tenants. The transaction rolls back.
-INSERT INTO auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,created_at,updated_at)
-VALUES
- ('10000000-0000-4000-8000-000000000001','authenticated','authenticated','phase1-a@example.invalid','',now(),now(),now()),
- ('10000000-0000-4000-8000-000000000002','authenticated','authenticated','phase1-b@example.invalid','',now(),now(),now()),
- ('10000000-0000-4000-8000-000000000003','authenticated','authenticated','phase1-rep@example.invalid','',now(),now(),now())
-ON CONFLICT(id) DO NOTHING;
-INSERT INTO public.tenant(tenant_id,name,created_by) VALUES
- ('20000000-0000-4000-8000-000000000001','Phase 1 tenant A','10000000-0000-4000-8000-000000000001'),
- ('20000000-0000-4000-8000-000000000002','Phase 1 tenant B','10000000-0000-4000-8000-000000000002')
-ON CONFLICT(tenant_id) DO NOTHING;
-INSERT INTO public.membership(tenant_id,user_id,email,role) VALUES
- ('20000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000001','phase1-a@example.invalid','owner'),
- ('20000000-0000-4000-8000-000000000002','10000000-0000-4000-8000-000000000002','phase1-b@example.invalid','owner'),
- ('20000000-0000-4000-8000-000000000002','10000000-0000-4000-8000-000000000003','phase1-rep@example.invalid','rep')
-ON CONFLICT(tenant_id,user_id) DO NOTHING;
+-- The runner replaces named fixture IDs with fresh UUIDs on every run and
+-- checks them against public.id/public.tenant_id and auth.users before running.
+-- B-side IDs end in 2 so their related A-side IDs can be derived by the clone
+-- helper. All fixtures are transaction-scoped and rolled back at the end.
 
-INSERT INTO public.customer(tenant_id,id,account_no,name,assigned_rep_id) VALUES
- ('20000000-0000-4000-8000-000000000001','30000000-0000-4000-8000-000000000001','A-001','Tenant A customer','10000000-0000-4000-8000-000000000001'),
- ('20000000-0000-4000-8000-000000000002','30000000-0000-4000-8000-000000000002','B-001','Tenant B customer','10000000-0000-4000-8000-000000000003')
-ON CONFLICT(tenant_id,id) DO NOTHING;
-INSERT INTO public.product(tenant_id,id,sku,name,category,list_price,unit_cost) VALUES
- ('20000000-0000-4000-8000-000000000001','31000000-0000-4000-8000-000000000001','A-SKU','Tenant A product','Test',100,60),
- ('20000000-0000-4000-8000-000000000002','31000000-0000-4000-8000-000000000002','B-SKU','Tenant B product','Test',100,60)
-ON CONFLICT(tenant_id,id) DO NOTHING;
-INSERT INTO public.invite(id,tenant_id,email,role,token_hash,invited_by,expires_at) VALUES
- ('32000000-0000-4000-8000-000000000002','20000000-0000-4000-8000-000000000002','new-b@example.invalid','rep',repeat('b',64),'10000000-0000-4000-8000-000000000002',now()+interval '7 days')
-ON CONFLICT(id) DO NOTHING;
-INSERT INTO public.price_list(tenant_id,id,name) VALUES
- ('20000000-0000-4000-8000-000000000002','33000000-0000-4000-8000-000000000002','B price list')
-ON CONFLICT(tenant_id,id) DO NOTHING;
-INSERT INTO public.price_list_version(tenant_id,id,price_list_id,version_no,status,created_by) VALUES
- ('20000000-0000-4000-8000-000000000002','34000000-0000-4000-8000-000000000002','33000000-0000-4000-8000-000000000002',1,'draft','10000000-0000-4000-8000-000000000002')
-ON CONFLICT(tenant_id,id) DO NOTHING;
-INSERT INTO public.price_list_item(tenant_id,id,price_list_id,product_id,unit_price,version_id) VALUES
- ('20000000-0000-4000-8000-000000000002','35000000-0000-4000-8000-000000000002','33000000-0000-4000-8000-000000000002','31000000-0000-4000-8000-000000000002',100,'34000000-0000-4000-8000-000000000002')
-ON CONFLICT(tenant_id,id) DO NOTHING;
-INSERT INTO public.margin_policy(tenant_id,id,scope_type,scope_key,target_margin_pct,floor_margin_pct,walkaway_margin_pct,updated_by) VALUES
- ('20000000-0000-4000-8000-000000000002','36000000-0000-4000-8000-000000000002','global','',30,22,18,'10000000-0000-4000-8000-000000000002')
-ON CONFLICT(tenant_id,id) DO NOTHING;
-
-INSERT INTO public.quote(tenant_id,id,customer_id,created_by,status,pocket_price,cogs_total,pocket_margin,margin_pct,margin_zone,headroom) VALUES
- ('20000000-0000-4000-8000-000000000001','37000000-0000-4000-8000-000000000001','30000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000001','pending_approval',100,60,40,40,'green',22),
- ('20000000-0000-4000-8000-000000000002','37000000-0000-4000-8000-000000000002','30000000-0000-4000-8000-000000000002','10000000-0000-4000-8000-000000000002','pending_approval',100,60,40,40,'green',22)
-ON CONFLICT(tenant_id,id) DO NOTHING;
-INSERT INTO public.quote_line(tenant_id,id,quote_id,product_id,quantity,list_price,pocket_price,cogs_total,pocket_margin,margin_pct) VALUES
- ('20000000-0000-4000-8000-000000000002','38000000-0000-4000-8000-000000000002','37000000-0000-4000-8000-000000000002','31000000-0000-4000-8000-000000000002',1,100,100,60,40,40)
-ON CONFLICT(tenant_id,id) DO NOTHING;
-INSERT INTO public.approval(tenant_id,id,quote_id,requested_by,status,margin_pct_at_decision,policy_version) VALUES
- ('20000000-0000-4000-8000-000000000001','39000000-0000-4000-8000-000000000001','37000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000001','pending',40,1),
- ('20000000-0000-4000-8000-000000000002','39000000-0000-4000-8000-000000000002','37000000-0000-4000-8000-000000000002','10000000-0000-4000-8000-000000000002','pending',40,1)
-ON CONFLICT(tenant_id,id) DO NOTHING;
-INSERT INTO public.sales_order(tenant_id,id,source_id,customer_id,product_id,quantity,month_key) VALUES
- ('20000000-0000-4000-8000-000000000002','40000000-0000-4000-8000-000000000002','B-SO-1','30000000-0000-4000-8000-000000000002','31000000-0000-4000-8000-000000000002',1,'2026-10')
-ON CONFLICT(tenant_id,id) DO NOTHING;
-INSERT INTO public.rebate_agreement(tenant_id,id,party_type,party_id,name,rate_pct,threshold_amount,period_start,period_end) VALUES
- ('20000000-0000-4000-8000-000000000002','41000000-0000-4000-8000-000000000002','vendor','B-VENDOR','B rebate',2,1000,'2026-01-01','2026-12-31')
-ON CONFLICT(tenant_id,id) DO NOTHING;
-INSERT INTO public.rebate_progress(tenant_id,id,agreement_id,period_start,period_end,eligible_spend,modeled_amount,recorded_credits) VALUES
- ('20000000-0000-4000-8000-000000000002','42000000-0000-4000-8000-000000000002','41000000-0000-4000-8000-000000000002','2026-01-01','2026-12-31',1000,20,10)
-ON CONFLICT(tenant_id,id) DO NOTHING;
-INSERT INTO public.invoice(tenant_id,id,customer_id,invoice_date,source_ref) VALUES
- ('20000000-0000-4000-8000-000000000002','43000000-0000-4000-8000-000000000002','30000000-0000-4000-8000-000000000002','2026-10-01','B-INV-1')
-ON CONFLICT(tenant_id,id) DO NOTHING;
-INSERT INTO public.invoice_line(tenant_id,id,invoice_id,product_id,quantity,net_sales) VALUES
- ('20000000-0000-4000-8000-000000000002','44000000-0000-4000-8000-000000000002','43000000-0000-4000-8000-000000000002','31000000-0000-4000-8000-000000000002',1,100)
-ON CONFLICT(tenant_id,id) DO NOTHING;
-INSERT INTO public.cost_component(tenant_id,id,invoice_line_id,component_type,amount) VALUES
- ('20000000-0000-4000-8000-000000000002','45000000-0000-4000-8000-000000000002','44000000-0000-4000-8000-000000000002','freight',5)
-ON CONFLICT(tenant_id,id) DO NOTHING;
-INSERT INTO public.supplier_credit(tenant_id,id,vendor_name,credit_date,amount,reference) VALUES
- ('20000000-0000-4000-8000-000000000002','46000000-0000-4000-8000-000000000002','B vendor','2026-10-02',5,'B-CREDIT')
-ON CONFLICT(tenant_id,id) DO NOTHING;
-INSERT INTO public.alert(tenant_id,id,severity,message) VALUES
- ('20000000-0000-4000-8000-000000000002','47000000-0000-4000-8000-000000000002','review','Tenant B fixture alert')
-ON CONFLICT(tenant_id,id) DO NOTHING;
-INSERT INTO public.margin_snapshot(tenant_id,id,entity_type,entity_id,period_month,order_count,pocket_revenue,pocket_margin,margin_pct) VALUES
- ('20000000-0000-4000-8000-000000000002','48000000-0000-4000-8000-000000000002','company','20000000-0000-4000-8000-000000000002','2026-10-01',1,100,40,40)
-ON CONFLICT(tenant_id,id) DO NOTHING;
-INSERT INTO public.connector_secret(tenant_id,id,provider,ciphertext,nonce,auth_tag,created_by) VALUES
- ('20000000-0000-4000-8000-000000000002','49000000-0000-4000-8000-000000000002','netsuite','ciphertext','nonce','tag','10000000-0000-4000-8000-000000000002')
-ON CONFLICT(tenant_id,id) DO NOTHING;
-INSERT INTO public.import_job(tenant_id,id,import_type,status,created_by) VALUES
- ('20000000-0000-4000-8000-000000000002','50000000-0000-4000-8000-000000000002','prototype','dry_run','10000000-0000-4000-8000-000000000002')
-ON CONFLICT(tenant_id,id) DO NOTHING;
-INSERT INTO public.audit_log(id,tenant_id,actor_id,action,entity_type,entity_id) VALUES
- ('51000000-0000-4000-8000-000000000002','20000000-0000-4000-8000-000000000002','10000000-0000-4000-8000-000000000002','test.fixture','tenant','20000000-0000-4000-8000-000000000002')
-ON CONFLICT(id) DO NOTHING;
-
--- Include every application-owned public table, including tables added after
--- this test was written. Extension-owned objects are platform plumbing, not
--- tenant tables, and are intentionally excluded.
+-- Include every application-owned public table before seeding; restore-only
+-- count checks must observe only the already-restored baseline rows.
 CREATE TEMP TABLE phase1_rls_tables(table_name text PRIMARY KEY);
 INSERT INTO pg_temp.phase1_rls_tables(table_name)
 SELECT c.relname
@@ -106,6 +21,122 @@ WHERE n.nspname='public' AND c.relkind IN ('r','p')
     WHERE d.classid='pg_class'::regclass AND d.objid=c.oid AND d.deptype='e'
   )
 ORDER BY c.oid;
+
+DO $$ DECLARE t text; n integer; v_sentinel jsonb; v_expected_hash text; v_actual_hash text;
+  v_count_match boolean:=true; v_sentinel_present boolean:=false; v_detail text:=''; BEGIN
+  SELECT count(*) INTO n FROM pg_temp.phase1_rls_tables;
+  IF n<24 THEN RAISE EXCEPTION 'Expected at least 24 application tenant tables; found %',n; END IF;
+  IF current_setting('app.restore_test_mode',true)='true' THEN
+    v_expected_hash:=current_setting('app.restore_sentinel_content_hash');
+    SELECT jsonb_build_object('tenant_id',p.tenant_id::text,'id',p.id::text,
+      'content_hash',md5(jsonb_build_object(
+        'tenant_id',p.tenant_id,'id',p.id,'sku',p.sku,'name',p.name,'category',p.category,
+        'supplier',p.supplier,'uom',p.uom,'unit_cost',p.unit_cost,'freight_cost',p.freight_cost,
+        'payment_terms_cost',p.payment_terms_cost,'list_price',p.list_price,
+        'tier_prices',p.tier_prices,'active',p.active,
+        'created_at_utc',to_char(p.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
+      )::text)) INTO v_sentinel
+    FROM public.product p
+    WHERE p.tenant_id=current_setting('app.restore_sentinel_tenant_id')::uuid
+      AND p.id=current_setting('app.restore_sentinel_product_id')::uuid
+      AND p.sku='RESTORE-SENTINEL';
+    v_actual_hash:=v_sentinel->>'content_hash';
+    v_sentinel_present:=v_sentinel IS NOT NULL
+      AND v_sentinel->>'tenant_id'=current_setting('app.restore_sentinel_tenant_id')
+      AND v_sentinel->>'id'=current_setting('app.restore_sentinel_product_id')
+      AND v_actual_hash=v_expected_hash
+      AND EXISTS (SELECT 1 FROM public.tenant
+        WHERE tenant_id=current_setting('app.restore_sentinel_tenant_id')::uuid);
+
+    CREATE TEMP TABLE phase1_restore_actual_tenant_counts(
+      table_name text NOT NULL,tenant_id text NULL,row_count bigint NOT NULL
+    ) ON COMMIT DROP;
+    FOR t IN SELECT table_name FROM pg_temp.phase1_rls_tables LOOP
+      EXECUTE format(
+        'INSERT INTO pg_temp.phase1_restore_actual_tenant_counts(table_name,tenant_id,row_count) SELECT %L,tenant_id::text,count(*) FROM public.%I GROUP BY tenant_id::text',
+        t,t
+      );
+    END LOOP;
+    SELECT NOT EXISTS (
+      (SELECT table_name,tenant_id,row_count FROM pg_temp.phase1_restore_actual_tenant_counts
+       EXCEPT SELECT table_name,tenant_id,row_count FROM pg_temp.phase1_restore_expected_tenant_counts)
+      UNION ALL
+      (SELECT table_name,tenant_id,row_count FROM pg_temp.phase1_restore_expected_tenant_counts
+       EXCEPT SELECT table_name,tenant_id,row_count FROM pg_temp.phase1_restore_actual_tenant_counts)
+    ) INTO v_count_match;
+    v_detail:=jsonb_build_object('sentinel',v_sentinel,'expected_sentinel_hash',v_expected_hash,
+      'per_tenant_counts_match',v_count_match,'baseline_entries',
+      (SELECT count(*) FROM pg_temp.phase1_restore_expected_tenant_counts))::text;
+  END IF;
+  PERFORM set_config('app.phase1_restore_baseline_result',jsonb_build_object(
+    'restore_mode',current_setting('app.restore_test_mode',true)='true',
+    'sentinel_matches',v_sentinel_present,'counts_match',v_count_match,'detail',v_detail
+  )::text,true);
+END $$;
+
+-- Suite-owned auth users and tenants are inserted before dependent rows.
+INSERT INTO auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,created_at,updated_at)
+VALUES
+ ('__PHASE1_USER_A_ID__','authenticated','authenticated','phase1-a-__PHASE1_USER_A_ID__@example.invalid','',now(),now(),now()),
+ ('__PHASE1_USER_B_ID__','authenticated','authenticated','phase1-b-__PHASE1_USER_B_ID__@example.invalid','',now(),now(),now()),
+ ('__PHASE1_USER_REP_ID__','authenticated','authenticated','phase1-rep-__PHASE1_USER_REP_ID__@example.invalid','',now(),now(),now());
+INSERT INTO public.tenant(tenant_id,name,created_by) VALUES
+ ('__PHASE1_TENANT_A_ID__','Phase 1 tenant A','__PHASE1_USER_A_ID__'),
+ ('__PHASE1_TENANT_B_ID__','Phase 1 tenant B','__PHASE1_USER_B_ID__');
+INSERT INTO public.membership(tenant_id,user_id,email,role) VALUES
+ ('__PHASE1_TENANT_A_ID__','__PHASE1_USER_A_ID__','phase1-a-__PHASE1_USER_A_ID__@example.invalid','owner'),
+ ('__PHASE1_TENANT_B_ID__','__PHASE1_USER_B_ID__','phase1-b-__PHASE1_USER_B_ID__@example.invalid','owner'),
+ ('__PHASE1_TENANT_B_ID__','__PHASE1_USER_REP_ID__','phase1-rep-__PHASE1_USER_REP_ID__@example.invalid','rep');
+
+INSERT INTO public.customer(tenant_id,id,account_no,name,assigned_rep_id) VALUES
+ ('__PHASE1_TENANT_A_ID__','__PHASE1_CUSTOMER_A_ID__','A-001','Tenant A customer','__PHASE1_USER_A_ID__'),
+ ('__PHASE1_TENANT_B_ID__','__PHASE1_CUSTOMER_B_ID__','B-001','Tenant B customer','__PHASE1_USER_REP_ID__');
+INSERT INTO public.product(tenant_id,id,sku,name,category,list_price,unit_cost) VALUES
+ ('__PHASE1_TENANT_A_ID__','__PHASE1_PRODUCT_A_ID__','A-SKU','Tenant A product','Test',100,60),
+ ('__PHASE1_TENANT_B_ID__','__PHASE1_PRODUCT_B_ID__','B-SKU','Tenant B product','Test',100,60);
+INSERT INTO public.invite(id,tenant_id,email,role,token_hash,invited_by,expires_at) VALUES
+ ('__PHASE1_INVITE_B_ID__','__PHASE1_TENANT_B_ID__','new-b@example.invalid','rep',repeat('b',64),'__PHASE1_USER_B_ID__',now()+interval '7 days');
+INSERT INTO public.price_list(tenant_id,id,name) VALUES
+ ('__PHASE1_TENANT_B_ID__','__PHASE1_PRICE_LIST_B_ID__','B price list');
+INSERT INTO public.price_list_version(tenant_id,id,price_list_id,version_no,status,created_by) VALUES
+ ('__PHASE1_TENANT_B_ID__','__PHASE1_PRICE_LIST_VERSION_B_ID__','__PHASE1_PRICE_LIST_B_ID__',1,'draft','__PHASE1_USER_B_ID__');
+INSERT INTO public.price_list_item(tenant_id,id,price_list_id,product_id,unit_price,version_id) VALUES
+ ('__PHASE1_TENANT_B_ID__','__PHASE1_PRICE_LIST_ITEM_B_ID__','__PHASE1_PRICE_LIST_B_ID__','__PHASE1_PRODUCT_B_ID__',100,'__PHASE1_PRICE_LIST_VERSION_B_ID__');
+INSERT INTO public.margin_policy(tenant_id,id,scope_type,scope_key,target_margin_pct,floor_margin_pct,walkaway_margin_pct,updated_by) VALUES
+ ('__PHASE1_TENANT_B_ID__','__PHASE1_MARGIN_POLICY_B_ID__','global','',30,22,18,'__PHASE1_USER_B_ID__');
+
+INSERT INTO public.quote(tenant_id,id,customer_id,created_by,status,pocket_price,cogs_total,pocket_margin,margin_pct,margin_zone,headroom) VALUES
+ ('__PHASE1_TENANT_A_ID__','__PHASE1_QUOTE_A_ID__','__PHASE1_CUSTOMER_A_ID__','__PHASE1_USER_A_ID__','pending_approval',100,60,40,40,'green',22),
+ ('__PHASE1_TENANT_B_ID__','__PHASE1_QUOTE_B_ID__','__PHASE1_CUSTOMER_B_ID__','__PHASE1_USER_B_ID__','pending_approval',100,60,40,40,'green',22);
+INSERT INTO public.quote_line(tenant_id,id,quote_id,product_id,quantity,list_price,pocket_price,cogs_total,pocket_margin,margin_pct) VALUES
+ ('__PHASE1_TENANT_B_ID__','__PHASE1_QUOTE_LINE_B_ID__','__PHASE1_QUOTE_B_ID__','__PHASE1_PRODUCT_B_ID__',1,100,100,60,40,40);
+INSERT INTO public.approval(tenant_id,id,quote_id,requested_by,status,margin_pct_at_decision,policy_version) VALUES
+ ('__PHASE1_TENANT_A_ID__','__PHASE1_APPROVAL_A_ID__','__PHASE1_QUOTE_A_ID__','__PHASE1_USER_A_ID__','pending',40,1),
+ ('__PHASE1_TENANT_B_ID__','__PHASE1_APPROVAL_B_ID__','__PHASE1_QUOTE_B_ID__','__PHASE1_USER_B_ID__','pending',40,1);
+INSERT INTO public.sales_order(tenant_id,id,source_id,customer_id,product_id,quantity,month_key) VALUES
+ ('__PHASE1_TENANT_B_ID__','__PHASE1_SALES_ORDER_B_ID__','B-SO-1','__PHASE1_CUSTOMER_B_ID__','__PHASE1_PRODUCT_B_ID__',1,'2026-10');
+INSERT INTO public.rebate_agreement(tenant_id,id,party_type,party_id,name,rate_pct,threshold_amount,period_start,period_end) VALUES
+ ('__PHASE1_TENANT_B_ID__','__PHASE1_REBATE_AGREEMENT_B_ID__','vendor','B-VENDOR','B rebate',2,1000,'2026-01-01','2026-12-31');
+INSERT INTO public.rebate_progress(tenant_id,id,agreement_id,period_start,period_end,eligible_spend,modeled_amount,recorded_credits) VALUES
+ ('__PHASE1_TENANT_B_ID__','__PHASE1_REBATE_PROGRESS_B_ID__','__PHASE1_REBATE_AGREEMENT_B_ID__','2026-01-01','2026-12-31',1000,20,10);
+INSERT INTO public.invoice(tenant_id,id,customer_id,invoice_date,source_ref) VALUES
+ ('__PHASE1_TENANT_B_ID__','__PHASE1_INVOICE_B_ID__','__PHASE1_CUSTOMER_B_ID__','2026-10-01','B-INV-1');
+INSERT INTO public.invoice_line(tenant_id,id,invoice_id,product_id,quantity,net_sales) VALUES
+ ('__PHASE1_TENANT_B_ID__','__PHASE1_INVOICE_LINE_B_ID__','__PHASE1_INVOICE_B_ID__','__PHASE1_PRODUCT_B_ID__',1,100);
+INSERT INTO public.cost_component(tenant_id,id,invoice_line_id,component_type,amount) VALUES
+ ('__PHASE1_TENANT_B_ID__','__PHASE1_COST_COMPONENT_B_ID__','__PHASE1_INVOICE_LINE_B_ID__','freight',5);
+INSERT INTO public.supplier_credit(tenant_id,id,vendor_name,credit_date,amount,reference) VALUES
+ ('__PHASE1_TENANT_B_ID__','__PHASE1_SUPPLIER_CREDIT_B_ID__','B vendor','2026-10-02',5,'B-CREDIT');
+INSERT INTO public.alert(tenant_id,id,severity,message) VALUES
+ ('__PHASE1_TENANT_B_ID__','__PHASE1_ALERT_B_ID__','review','Tenant B fixture alert');
+INSERT INTO public.margin_snapshot(tenant_id,id,entity_type,entity_id,period_month,order_count,pocket_revenue,pocket_margin,margin_pct) VALUES
+ ('__PHASE1_TENANT_B_ID__','__PHASE1_MARGIN_SNAPSHOT_B_ID__','company','__PHASE1_TENANT_B_ID__','2026-10-01',1,100,40,40);
+INSERT INTO public.connector_secret(tenant_id,id,provider,ciphertext,nonce,auth_tag,created_by) VALUES
+ ('__PHASE1_TENANT_B_ID__','__PHASE1_CONNECTOR_SECRET_B_ID__','netsuite','ciphertext','nonce','tag','__PHASE1_USER_B_ID__');
+INSERT INTO public.import_job(tenant_id,id,import_type,status,created_by) VALUES
+ ('__PHASE1_TENANT_B_ID__','__PHASE1_IMPORT_JOB_B_ID__','prototype','dry_run','__PHASE1_USER_B_ID__');
+INSERT INTO public.audit_log(id,tenant_id,actor_id,action,entity_type,entity_id) VALUES
+ ('__PHASE1_AUDIT_B_ID__','__PHASE1_TENANT_B_ID__','__PHASE1_USER_B_ID__','test.fixture','tenant','__PHASE1_TENANT_B_ID__');
 
 -- Preserve valid Tenant B rows before assuming the app role. Replaying each
 -- complete row ensures NOT NULL/FK/check constraints cannot masquerade as an
@@ -124,7 +155,7 @@ DO $$ DECLARE t text; n integer; expected_count integer; BEGIN
     EXECUTE format(
       'INSERT INTO pg_temp.phase1_rls_insert_fixtures(table_name,row_data) SELECT %L,to_jsonb(x) FROM public.%I x WHERE tenant_id=$1 LIMIT 1',
       t,t
-    ) USING '20000000-0000-4000-8000-000000000002'::uuid;
+    ) USING '__PHASE1_TENANT_B_ID__'::uuid;
     GET DIAGNOSTICS n=ROW_COUNT;
     IF n=0 THEN
       RAISE EXCEPTION 'Tenant B fixture row is missing for application table %',t;
@@ -137,9 +168,8 @@ END $$;
 -- foreign keys get an A-side UUID; auth user references point to user A.
 -- tenant and membership already have valid A rows, and audit gets its own row.
 INSERT INTO public.audit_log(id,tenant_id,actor_id,action,entity_type,entity_id) VALUES
- ('51000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000001','test.fixture','tenant','20000000-0000-4000-8000-000000000001')
-ON CONFLICT(id) DO NOTHING;
-DO $$ DECLARE t text; v_row jsonb; col_name name; auth_ref boolean; public_ref boolean; n integer; BEGIN
+ ('__PHASE1_AUDIT_A_ID__','__PHASE1_TENANT_A_ID__','__PHASE1_USER_A_ID__','test.fixture','tenant','__PHASE1_TENANT_A_ID__');
+DO $$ DECLARE t text; v_row jsonb; col_name name; auth_ref boolean; public_ref boolean; n integer; v_state text; v_msg text; BEGIN
   SELECT count(*) INTO n FROM pg_temp.phase1_rls_insert_fixtures;
   IF n < 24 THEN RAISE EXCEPTION 'Tenant A clone loop needs at least 24 source fixtures; found %',n; END IF;
   FOR t,v_row IN
@@ -148,7 +178,7 @@ DO $$ DECLARE t text; v_row jsonb; col_name name; auth_ref boolean; public_ref b
     ORDER BY class_row.oid
   LOOP
     IF t NOT IN ('tenant','membership','audit_log') THEN
-      v_row:=jsonb_set(v_row,'{tenant_id}',to_jsonb('20000000-0000-4000-8000-000000000001'::uuid),true);
+      v_row:=jsonb_set(v_row,'{tenant_id}',to_jsonb('__PHASE1_TENANT_A_ID__'::uuid),true);
       SELECT count(*) INTO n FROM pg_attribute a
       WHERE a.attrelid=format('public.%I',t)::regclass AND a.attnum>0 AND NOT a.attisdropped AND a.atttypid='uuid'::regtype;
       IF n=0 THEN RAISE EXCEPTION 'Tenant A clone loop found no UUID columns on public.%',t; END IF;
@@ -165,7 +195,7 @@ DO $$ DECLARE t text; v_row jsonb; col_name name; auth_ref boolean; public_ref b
       LOOP
         IF col_name='tenant_id' THEN CONTINUE;
         ELSIF auth_ref THEN
-          v_row:=jsonb_set(v_row,ARRAY[col_name::text],to_jsonb('10000000-0000-4000-8000-000000000001'::uuid),true);
+          v_row:=jsonb_set(v_row,ARRAY[col_name::text],to_jsonb('__PHASE1_USER_A_ID__'::uuid),true);
         ELSIF col_name='id' OR public_ref THEN
           IF v_row->>col_name::text IS NOT NULL THEN
             v_row:=jsonb_set(v_row,ARRAY[col_name::text],to_jsonb(regexp_replace(v_row->>col_name::text,'2$','3')::uuid),true);
@@ -176,9 +206,14 @@ DO $$ DECLARE t text; v_row jsonb; col_name name; auth_ref boolean; public_ref b
         v_row:=jsonb_set(v_row,'{token_hash}',to_jsonb(repeat('a',64)),true);
         v_row:=jsonb_set(v_row,'{email}',to_jsonb('new-a@example.invalid'::text),true);
       ELSIF t='margin_snapshot' THEN
-        v_row:=jsonb_set(v_row,'{entity_id}',to_jsonb('20000000-0000-4000-8000-000000000001'::text),true);
+        v_row:=jsonb_set(v_row,'{entity_id}',to_jsonb('__PHASE1_TENANT_A_ID__'::text),true);
       END IF;
-      EXECUTE format('INSERT INTO public.%I SELECT (jsonb_populate_record(NULL::public.%I,$1)).*',t,t) USING v_row;
+      BEGIN
+        EXECUTE format('INSERT INTO public.%I SELECT (jsonb_populate_record(NULL::public.%I,$1)).*',t,t) USING v_row;
+      EXCEPTION WHEN OTHERS THEN
+        GET STACKED DIAGNOSTICS v_state=RETURNED_SQLSTATE,v_msg=MESSAGE_TEXT;
+        RAISE EXCEPTION 'Tenant A fixture clone failed for public.% (SQLSTATE %): %',t,v_state,v_msg USING ERRCODE=v_state;
+      END;
     END IF;
   END LOOP;
 END $$;
@@ -198,7 +233,7 @@ DO $$ DECLARE t text; n integer; expected_count integer; BEGIN
     EXECUTE format(
       'INSERT INTO pg_temp.phase1_rls_tenant_a_fixtures(table_name,row_data) SELECT %L,to_jsonb(x) FROM public.%I x WHERE tenant_id=$1 LIMIT 1',
       t,t
-    ) USING '20000000-0000-4000-8000-000000000001'::uuid;
+    ) USING '__PHASE1_TENANT_A_ID__'::uuid;
     GET DIAGNOSTICS n=ROW_COUNT;
     IF n=0 THEN RAISE EXCEPTION 'Tenant A positive-control fixture row is missing for public.%',t; END IF;
   END LOOP;
@@ -444,24 +479,24 @@ SELECT set_config(
    FROM pg_roles WHERE rolname=current_user),
   true
 );
-SET LOCAL request.jwt.claim.sub = '10000000-0000-4000-8000-000000000001';
+SET LOCAL request.jwt.claim.sub = '__PHASE1_USER_A_ID__';
 SET LOCAL request.jwt.claim.role = 'authenticated';
-SET LOCAL request.jwt.claims = '{"sub":"10000000-0000-4000-8000-000000000001","role":"authenticated"}';
+SET LOCAL request.jwt.claims = '{"sub":"__PHASE1_USER_A_ID__","role":"authenticated"}';
 
 DO $$ DECLARE n integer; v_state text; v_msg text; BEGIN
-  PERFORM set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000003',true);
-  PERFORM set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000000003","role":"authenticated"}',true);
+  PERFORM set_config('request.jwt.claim.sub','__PHASE1_USER_REP_ID__',true);
+  PERFORM set_config('request.jwt.claims','{"sub":"__PHASE1_USER_REP_ID__","role":"authenticated"}',true);
   BEGIN
     SELECT count(*) INTO n FROM public.customer
-      WHERE tenant_id='20000000-0000-4000-8000-000000000002'
-        AND id='30000000-0000-4000-8000-000000000002';
+      WHERE tenant_id='__PHASE1_TENANT_B_ID__'
+        AND id='__PHASE1_CUSTOMER_B_ID__';
     PERFORM set_config('app.phase1_auth_policy_result',jsonb_build_object('passed',n=1,'visible_rows',n,'state',NULL,'message',NULL)::text,true);
   EXCEPTION WHEN OTHERS THEN
     GET STACKED DIAGNOSTICS v_state=RETURNED_SQLSTATE,v_msg=MESSAGE_TEXT;
     PERFORM set_config('app.phase1_auth_policy_result',jsonb_build_object('passed',false,'visible_rows',0,'state',v_state,'message',v_msg)::text,true);
   END;
-  PERFORM set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000001',true);
-  PERFORM set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000000001","role":"authenticated"}',true);
+  PERFORM set_config('request.jwt.claim.sub','__PHASE1_USER_A_ID__',true);
+  PERFORM set_config('request.jwt.claims','{"sub":"__PHASE1_USER_A_ID__","role":"authenticated"}',true);
 END $$;
 
 DO $$ DECLARE v_state text; v_msg text; BEGIN
@@ -482,8 +517,8 @@ DO $$ DECLARE v_state text; v_msg text; BEGIN
   BEGIN
     -- Spoof the ordinary app setting deliberately. The SECURITY DEFINER
     -- function must ignore it and write a null actor and null tenant.
-    PERFORM set_config('app.real_actor_id','10000000-0000-4000-8000-000000000002',true);
-    PERFORM public.record_failed_login('phase1-a@example.invalid','192.0.2.45','pgTAP controlled-path probe');
+    PERFORM set_config('app.real_actor_id','__PHASE1_USER_B_ID__',true);
+    PERFORM public.record_failed_login('phase1-a-__PHASE1_USER_A_ID__@example.invalid','192.0.2.45','pgTAP controlled-path probe');
     PERFORM set_config('app.phase1_failed_login_result',jsonb_build_object('passed',true,'state',NULL,'message',NULL)::text,true);
   EXCEPTION WHEN OTHERS THEN
     GET STACKED DIAGNOSTICS v_state=RETURNED_SQLSTATE,v_msg=MESSAGE_TEXT;
@@ -491,7 +526,7 @@ DO $$ DECLARE v_state text; v_msg text; BEGIN
   END;
   -- Do not let the deliberate spoof setting contaminate later tenant-A
   -- positive controls in this transaction.
-  PERFORM set_config('app.real_actor_id','10000000-0000-4000-8000-000000000001',true);
+  PERFORM set_config('app.real_actor_id','__PHASE1_USER_A_ID__',true);
 END $$;
 
 DO $$ DECLARE t text; n integer; v_missing text:=''; v_state text; v_msg text; BEGIN
@@ -499,7 +534,7 @@ DO $$ DECLARE t text; n integer; v_missing text:=''; v_state text; v_msg text; B
   IF n<24 THEN RAISE EXCEPTION 'Tenant A positive SELECT loop expected at least 24 tables; found %',n; END IF;
   FOR t IN SELECT jsonb_object_keys(current_setting('app.phase1_tenant_a_fixtures')::jsonb) LOOP
     BEGIN
-      EXECUTE format('SELECT count(*) FROM public.%I WHERE tenant_id=$1',t) INTO n USING '20000000-0000-4000-8000-000000000001'::uuid;
+      EXECUTE format('SELECT count(*) FROM public.%I WHERE tenant_id=$1',t) INTO n USING '__PHASE1_TENANT_A_ID__'::uuid;
       IF n=0 THEN v_missing:=concat_ws(', ',v_missing,t||' (no visible seeded row)'); END IF;
     EXCEPTION WHEN OTHERS THEN
       GET STACKED DIAGNOSTICS v_state=RETURNED_SQLSTATE,v_msg=MESSAGE_TEXT;
@@ -526,7 +561,7 @@ DO $$ DECLARE t text; v_row jsonb; v_insert jsonb; v_state text; v_msg text; n i
     ELSIF t='margin_snapshot' THEN v_insert:=jsonb_set(v_insert,'{entity_id}',to_jsonb('positive-control'::text),true);
     ELSIF t='connector_secret' THEN v_insert:=jsonb_set(v_insert,'{provider}',to_jsonb('positive-control'::text),true);
     ELSIF t='audit_log' THEN
-      v_insert:=jsonb_set(v_insert,'{actor_id}',to_jsonb('10000000-0000-4000-8000-000000000001'::uuid),true);
+      v_insert:=jsonb_set(v_insert,'{actor_id}',to_jsonb('__PHASE1_USER_A_ID__'::uuid),true);
       v_insert:=jsonb_set(v_insert,'{action}',to_jsonb('test.positive_insert'::text),true);
     END IF;
     BEGIN
@@ -544,8 +579,8 @@ END $$;
 DO $$ DECLARE n integer; v_state text; v_msg text; BEGIN
   BEGIN
     UPDATE public.customer SET name='Tenant A customer updated by positive control'
-      WHERE tenant_id='20000000-0000-4000-8000-000000000001'
-        AND id='30000000-0000-4000-8000-000000000001';
+      WHERE tenant_id='__PHASE1_TENANT_A_ID__'
+        AND id='__PHASE1_CUSTOMER_A_ID__';
     GET DIAGNOSTICS n=ROW_COUNT;
     PERFORM set_config('app.phase1_positive_update_result',jsonb_build_object('passed',n=1,'rows',n,'state',NULL,'message',NULL)::text,true);
   EXCEPTION WHEN OTHERS THEN
@@ -556,7 +591,7 @@ END $$;
 
 DO $$ DECLARE n integer; v_state text; v_msg text; BEGIN
   BEGIN
-    DELETE FROM public.customer WHERE tenant_id='20000000-0000-4000-8000-000000000001'
+    DELETE FROM public.customer WHERE tenant_id='__PHASE1_TENANT_A_ID__'
       AND account_no='A-positive-control';
     GET DIAGNOSTICS n=ROW_COUNT;
     PERFORM set_config('app.phase1_positive_delete_result',jsonb_build_object('passed',n=1,'rows',n,'state',NULL,'message',NULL)::text,true);
@@ -567,19 +602,19 @@ DO $$ DECLARE n integer; v_state text; v_msg text; BEGIN
 END $$;
 
 DO $$ DECLARE v_before integer; v_deleted integer; v_after integer; v_state text; v_msg text; BEGIN
-  PERFORM set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000003',true);
+  PERFORM set_config('request.jwt.claim.sub','__PHASE1_USER_REP_ID__',true);
   PERFORM set_config('request.jwt.claim.role','authenticated',true);
-  PERFORM set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000000003","role":"authenticated"}',true);
+  PERFORM set_config('request.jwt.claims','{"sub":"__PHASE1_USER_REP_ID__","role":"authenticated"}',true);
   BEGIN
     SELECT count(*) INTO v_before FROM public.product
-      WHERE tenant_id='20000000-0000-4000-8000-000000000002'
-        AND id='31000000-0000-4000-8000-000000000002';
-    DELETE FROM public.product WHERE tenant_id='20000000-0000-4000-8000-000000000002'
-      AND id='31000000-0000-4000-8000-000000000002';
+      WHERE tenant_id='__PHASE1_TENANT_B_ID__'
+        AND id='__PHASE1_PRODUCT_B_ID__';
+    DELETE FROM public.product WHERE tenant_id='__PHASE1_TENANT_B_ID__'
+      AND id='__PHASE1_PRODUCT_B_ID__';
     GET DIAGNOSTICS v_deleted=ROW_COUNT;
     SELECT count(*) INTO v_after FROM public.product
-      WHERE tenant_id='20000000-0000-4000-8000-000000000002'
-        AND id='31000000-0000-4000-8000-000000000002';
+      WHERE tenant_id='__PHASE1_TENANT_B_ID__'
+        AND id='__PHASE1_PRODUCT_B_ID__';
     PERFORM set_config('app.phase1_rep_delete_result',jsonb_build_object(
       'passed',v_before=1 AND v_deleted=0 AND v_after=1,'visible_before',v_before,
       'deleted',v_deleted,'visible_after',v_after,'state',NULL,'message',NULL
@@ -591,8 +626,8 @@ DO $$ DECLARE v_before integer; v_deleted integer; v_after integer; v_state text
       'visible_after',COALESCE(v_after,0),'state',v_state,'message',v_msg
     )::text,true);
   END;
-  PERFORM set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000001',true);
-  PERFORM set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000000001","role":"authenticated"}',true);
+  PERFORM set_config('request.jwt.claim.sub','__PHASE1_USER_A_ID__',true);
+  PERFORM set_config('request.jwt.claims','{"sub":"__PHASE1_USER_A_ID__","role":"authenticated"}',true);
 END $$;
 
 DO $$ DECLARE t text; n integer; v_missing text:=''; v_state text; v_msg text; BEGIN
@@ -600,7 +635,7 @@ DO $$ DECLARE t text; n integer; v_missing text:=''; v_state text; v_msg text; B
   IF n<24 THEN RAISE EXCEPTION 'Tenant B cross-SELECT loop expected at least 24 tables; found %',n; END IF;
   FOR t IN SELECT jsonb_object_keys(current_setting('app.phase1_tenant_b_fixtures')::jsonb) LOOP
     BEGIN
-      EXECUTE format('SELECT count(*) FROM public.%I WHERE tenant_id=$1',t) INTO n USING '20000000-0000-4000-8000-000000000002'::uuid;
+      EXECUTE format('SELECT count(*) FROM public.%I WHERE tenant_id=$1',t) INTO n USING '__PHASE1_TENANT_B_ID__'::uuid;
       IF n<>0 THEN v_missing:=concat_ws(', ',v_missing,t||' ('||n||' rows visible)'); END IF;
     EXCEPTION WHEN OTHERS THEN
       GET STACKED DIAGNOSTICS v_state=RETURNED_SQLSTATE,v_msg=MESSAGE_TEXT;
@@ -608,6 +643,30 @@ DO $$ DECLARE t text; n integer; v_missing text:=''; v_state text; v_msg text; B
     END;
   END LOOP;
   PERFORM set_config('app.phase1_cross_select_result',jsonb_build_object('passed',v_missing='','detail',COALESCE(v_missing,'none'))::text,true);
+END $$;
+
+-- In restore mode Tenant A is still the fresh suite-owned tenant, while the
+-- denied tenant is the restored source sentinel tenant. The earlier baseline
+-- check proves that this target tenant has real restored tenant/product rows.
+DO $$ DECLARE t text; n integer; expected_count integer; v_bad text:='';
+  v_state text; v_msg text; BEGIN
+  IF current_setting('app.restore_test_mode',true)='true' THEN
+    SELECT count(*) INTO expected_count FROM jsonb_object_keys(current_setting('app.phase1_tenant_a_fixtures')::jsonb);
+    IF expected_count<24 THEN RAISE EXCEPTION 'Restore isolation check expected at least 24 tenant tables; found %',expected_count; END IF;
+    FOR t IN SELECT jsonb_object_keys(current_setting('app.phase1_tenant_a_fixtures')::jsonb) LOOP
+      BEGIN
+        EXECUTE format('SELECT count(*) FROM public.%I WHERE tenant_id=$1',t)
+          INTO n USING current_setting('app.restore_sentinel_tenant_id')::uuid;
+        IF n<>0 THEN v_bad:=concat_ws(', ',v_bad,t||' ('||n||' restored tenant rows visible)'); END IF;
+      EXCEPTION WHEN OTHERS THEN
+        GET STACKED DIAGNOSTICS v_state=RETURNED_SQLSTATE,v_msg=MESSAGE_TEXT;
+        v_bad:=concat_ws(', ',v_bad,t||' ('||v_state||': '||v_msg||')');
+      END;
+    END LOOP;
+    PERFORM set_config('app.phase1_restore_real_isolation_result',jsonb_build_object(
+      'passed',v_bad='','detail',COALESCE(v_bad,'none'),'checked_tables',expected_count
+    )::text,true);
+  END IF;
 END $$;
 
 -- A cross-tenant UPDATE starts from an A-visible row and changes its tenant_id;
@@ -623,7 +682,7 @@ DO $$ DECLARE t text; v_state text; v_msg text; v_bad text:=''; n integer; BEGIN
     v_state:='00000'; v_msg:='';
     BEGIN
       EXECUTE format('UPDATE public.%I SET tenant_id=$1 WHERE tenant_id=$2',t)
-        USING '20000000-0000-4000-8000-000000000002'::uuid,'20000000-0000-4000-8000-000000000001'::uuid;
+        USING '__PHASE1_TENANT_B_ID__'::uuid,'__PHASE1_TENANT_A_ID__'::uuid;
       v_bad:=concat_ws(', ',v_bad,t||' unexpectedly updated rows');
     EXCEPTION WHEN OTHERS THEN
       GET STACKED DIAGNOSTICS v_state=RETURNED_SQLSTATE,v_msg=MESSAGE_TEXT;
@@ -646,7 +705,7 @@ DO $$ DECLARE t text; n integer; v_bad text:=''; v_state text; v_msg text; BEGIN
   FOR t IN SELECT key FROM jsonb_each(current_setting('app.phase1_tenant_b_fixtures')::jsonb)
     WHERE key NOT IN ('tenant','audit_log') LOOP
     BEGIN
-      EXECUTE format('DELETE FROM public.%I WHERE tenant_id=$1',t) USING '20000000-0000-4000-8000-000000000002'::uuid;
+      EXECUTE format('DELETE FROM public.%I WHERE tenant_id=$1',t) USING '__PHASE1_TENANT_B_ID__'::uuid;
       GET DIAGNOSTICS n=ROW_COUNT;
       IF n<>0 THEN v_bad:=concat_ws(', ',v_bad,t||' deleted '||n||' rows'); END IF;
     EXCEPTION WHEN OTHERS THEN
@@ -680,25 +739,25 @@ END $$;
 
 DO $$ DECLARE n integer; v_pending boolean; BEGIN
   BEGIN
-    UPDATE public.approval SET status='approved',decided_by='10000000-0000-4000-8000-000000000001',decided_at=now()
-      WHERE tenant_id='20000000-0000-4000-8000-000000000001' AND id='39000000-0000-4000-8000-000000000001';
+    UPDATE public.approval SET status='approved',decided_by='__PHASE1_USER_A_ID__',decided_at=now()
+      WHERE tenant_id='__PHASE1_TENANT_A_ID__' AND id='__PHASE1_APPROVAL_A_ID__';
     GET DIAGNOSTICS n=ROW_COUNT;
   EXCEPTION WHEN insufficient_privilege THEN n:=0;
   END;
   SELECT status='pending' INTO v_pending FROM public.approval
-    WHERE tenant_id='20000000-0000-4000-8000-000000000001' AND id='39000000-0000-4000-8000-000000000001';
+    WHERE tenant_id='__PHASE1_TENANT_A_ID__' AND id='__PHASE1_APPROVAL_A_ID__';
   PERFORM set_config('app.phase1_own_approval_ok',(n=0 AND COALESCE(v_pending,false))::text,true);
 END $$;
 
 -- This authenticated rep belongs to Tenant B, which has an audit fixture.
 -- A zero count therefore proves the audit policy is role-restricted, not just
 -- tenant-isolated.
-SET LOCAL request.jwt.claim.sub = '10000000-0000-4000-8000-000000000003';
+SET LOCAL request.jwt.claim.sub = '__PHASE1_USER_REP_ID__';
 SET LOCAL request.jwt.claim.role = 'authenticated';
-SET LOCAL request.jwt.claims = '{"sub":"10000000-0000-4000-8000-000000000003","role":"authenticated"}';
+SET LOCAL request.jwt.claims = '{"sub":"__PHASE1_USER_REP_ID__","role":"authenticated"}';
 SELECT set_config(
   'app.phase1_rep_audit_rows',
-  (SELECT count(*)::text FROM public.audit_log WHERE tenant_id='20000000-0000-4000-8000-000000000002'),
+  (SELECT count(*)::text FROM public.audit_log WHERE tenant_id='__PHASE1_TENANT_B_ID__'),
   true
 );
 
@@ -707,17 +766,17 @@ SET LOCAL request.jwt.claim.role = 'authenticated';
 SET LOCAL request.jwt.claims = '{}';
 SELECT set_config(
   'app.phase1_missing_auth_rows',
-  (SELECT count(*)::text FROM public.product WHERE tenant_id='20000000-0000-4000-8000-000000000002'),
+  (SELECT count(*)::text FROM public.product WHERE tenant_id='__PHASE1_TENANT_B_ID__'),
   true
 );
 
 DO $$ DECLARE v_update_state text:='00000'; v_delete_state text:='00000'; v_truncate_state text:='00000'; v_update_msg text; v_delete_msg text; v_truncate_msg text; BEGIN
   BEGIN
-    UPDATE public.audit_log SET action='tampered' WHERE tenant_id='20000000-0000-4000-8000-000000000001';
+    UPDATE public.audit_log SET action='tampered' WHERE tenant_id='__PHASE1_TENANT_A_ID__';
   EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS v_update_state=RETURNED_SQLSTATE, v_update_msg=MESSAGE_TEXT;
   END;
   BEGIN
-    DELETE FROM public.audit_log WHERE tenant_id='20000000-0000-4000-8000-000000000001';
+    DELETE FROM public.audit_log WHERE tenant_id='__PHASE1_TENANT_A_ID__';
   EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS v_delete_state=RETURNED_SQLSTATE, v_delete_msg=MESSAGE_TEXT;
   END;
   BEGIN
@@ -779,8 +838,8 @@ SELECT extensions.ok(
   AND position('permission denied for table audit_log' in lower(current_setting('app.phase1_audit_app_result')::jsonb->>'truncate_message'))>0,
   'App role TRUNCATE audit_log is denied by the table ACL'
 );
-SELECT extensions.throws_ok('UPDATE public.audit_log SET action=''tampered'' WHERE id=''51000000-0000-4000-8000-000000000002''','55000',NULL,'Database immutability trigger rejects UPDATE even with elevated rights');
-SELECT extensions.throws_ok('DELETE FROM public.audit_log WHERE id=''51000000-0000-4000-8000-000000000002''','55000',NULL,'Database immutability trigger rejects DELETE even with elevated rights');
+SELECT extensions.throws_ok('UPDATE public.audit_log SET action=''tampered'' WHERE id=''__PHASE1_AUDIT_B_ID__''','55000',NULL,'Database immutability trigger rejects UPDATE even with elevated rights');
+SELECT extensions.throws_ok('DELETE FROM public.audit_log WHERE id=''__PHASE1_AUDIT_B_ID__''','55000',NULL,'Database immutability trigger rejects DELETE even with elevated rights');
 SELECT extensions.throws_ok('TRUNCATE public.audit_log','55000',NULL,'Statement-level trigger rejects audit_log TRUNCATE even with elevated rights');
 
 SELECT extensions.ok(current_setting('app.phase1_direct_null_audit_result')::jsonb->>'passed'='true',
@@ -857,13 +916,13 @@ SELECT extensions.ok(NOT EXISTS (
 -- Check the actual platform ACL; Supabase owns auth.uid(), so this migration
 -- role cannot manage its grants. The connection/runner prints the full ACL.
 SET LOCAL ROLE margindesk_app;
-SET LOCAL request.jwt.claim.sub = '10000000-0000-4000-8000-000000000003';
-SET LOCAL request.jwt.claims = '{"sub":"10000000-0000-4000-8000-000000000003","role":"authenticated"}';
+SET LOCAL request.jwt.claim.sub = '__PHASE1_USER_REP_ID__';
+SET LOCAL request.jwt.claims = '{"sub":"__PHASE1_USER_REP_ID__","role":"authenticated"}';
 DO $$ DECLARE n integer; v_state text; v_msg text; BEGIN
   BEGIN
     SELECT count(*) INTO n FROM public.customer
-      WHERE tenant_id='20000000-0000-4000-8000-000000000002'
-        AND id='30000000-0000-4000-8000-000000000002';
+      WHERE tenant_id='__PHASE1_TENANT_B_ID__'
+        AND id='__PHASE1_CUSTOMER_B_ID__';
     PERFORM set_config('app.phase1_auth_uid_authenticated_result',jsonb_build_object('passed',n=1,'state','00000','message',NULL,'visible_rows',n)::text,true);
   EXCEPTION WHEN OTHERS THEN
     GET STACKED DIAGNOSTICS v_state=RETURNED_SQLSTATE,v_msg=MESSAGE_TEXT;
@@ -882,8 +941,8 @@ SET LOCAL request.jwt.claims = '{}';
 DO $$ DECLARE n integer; v_state text; v_msg text; BEGIN
   BEGIN
     SELECT count(*) INTO n FROM public.customer
-      WHERE tenant_id='20000000-0000-4000-8000-000000000002'
-        AND id='30000000-0000-4000-8000-000000000002';
+      WHERE tenant_id='__PHASE1_TENANT_B_ID__'
+        AND id='__PHASE1_CUSTOMER_B_ID__';
     PERFORM set_config('app.phase1_auth_uid_no_context_result',jsonb_build_object('passed',n=0,'state','00000','message',NULL,'visible_rows',n)::text,true);
   EXCEPTION WHEN OTHERS THEN
     GET STACKED DIAGNOSTICS v_state=RETURNED_SQLSTATE,v_msg=MESSAGE_TEXT;
@@ -1131,6 +1190,23 @@ SELECT extensions.ok(
     WHERE attempt->>'sqlstate'<>'42501' OR attempt->>'message' NOT ILIKE '%permission denied for function%'
   ), 'authenticated receives permission denied when calling every app-exposed function, independent of RLS'
 );
+
+SELECT extensions.ok(
+  current_setting('app.phase1_restore_baseline_result')::jsonb->>'sentinel_matches'='true',
+  'Restore-only: sentinel tenant and product are present with the source content hash: '||
+    (current_setting('app.phase1_restore_baseline_result')::jsonb->>'detail')
+) WHERE current_setting('app.restore_test_mode',true)='true';
+SELECT extensions.ok(
+  current_setting('app.phase1_restore_baseline_result')::jsonb->>'counts_match'='true',
+  'Restore-only: every table/tenant row count still matches the source baseline before suite fixtures: '||
+    (current_setting('app.phase1_restore_baseline_result')::jsonb->>'detail')
+) WHERE current_setting('app.restore_test_mode',true)='true';
+SELECT extensions.ok(
+  current_setting('app.phase1_restore_real_isolation_result')::jsonb->>'passed'='true'
+    AND (current_setting('app.phase1_restore_real_isolation_result')::jsonb->>'checked_tables')::integer>=24,
+  'Restore-only: synthetic Tenant A sees zero rows from the real restored sentinel tenant in every application table: '||
+    (current_setting('app.phase1_restore_real_isolation_result')::jsonb->>'detail')
+) WHERE current_setting('app.restore_test_mode',true)='true';
 
 SELECT * FROM extensions.finish();
 ROLLBACK;

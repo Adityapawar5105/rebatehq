@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit",
     "test": "pnpm check:migrations-lock && pnpm check:schema && pnpm check:service-role && node --test tests/*.test.js && tsx --test tests/*.test.ts",
     "test:db": "tsx scripts/test-db.ts",
+    "test:db:repeat": "tsx scripts/test-db-repeatability.ts",
     "setup:test-db-role": "tsx scripts/setup-test-app-role.ts",
     "check:db-role": "tsx scripts/check-app-db-role.ts",
     "seed:restore-drill": "tsx scripts/seed-restore-drill.ts",

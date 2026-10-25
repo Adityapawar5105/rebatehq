@@ -12,7 +12,7 @@
 | No user-facing service-role credential use | **verified in CI run [MarginDesk CI #14](https://github.com/Adityapawar5105/margindesk/actions/runs/40137557258) · 2026-10-24** | Source scan passed |
 | Applied-migration hash lock and expanded future-migration gates | **unverified** | Added after CI #14; awaiting a run that exercises these new checks |
 | Application table and function ACLs exclude browser/platform roles; defaults stay minimal | **unverified** | New cleanup migrations and pgTAP checks added after CI #14; pending restore/CI run |
-| Backup/restore dump, fresh target, sentinel, and post-restore tests | **unverified** | Restore workflow has not passed |
+| Backup/restore dump, fresh target, sentinel, restored-data isolation, and repeated post-restore tests | **unverified** | Restore workflow has not passed |
 
 ### Current pgTAP check ledger
 
@@ -81,8 +81,17 @@ Run #5 passed the table ACL comparison, then found Supabase-default EXECUTE gran
 | 51 | Every public SECURITY DEFINER function is migration-role-owned and pins `search_path` | Prevents untrusted ownership or search-path resolution in privileged functions | **unverified** |
 | 52 | `anon` receives function permission-denied errors for every app-exposed function | Proves no browser role can call privileged functions, independent of RLS | **unverified** |
 | 53 | `authenticated` receives function permission-denied errors for every app-exposed function | Proves no authenticated browser role can call privileged functions, independent of RLS | **unverified** |
+| 54 | Restore-only sentinel tenant and product match the source identity and content hash | Detects missing or altered restored sentinel data inside the database suite | **unverified** |
+| 55 | Restore-only per-tenant row counts match the source snapshot before fixtures | Rechecks source-vs-restored tenant counts from within pgTAP | **unverified** |
+| 56 | Tenant A sees zero rows for the restored sentinel tenant in every application table | Runs the isolation query as `margindesk_app` while real restored sentinel rows exist | **unverified** |
 
-The original 45 pgTAP checks were verified in CI run [MarginDesk CI #14](https://github.com/Adityapawar5105/margindesk/actions/runs/40137557258) · 2026-10-24. Checks 46–53 and the restore drill remain unverified.
+The original 45 pgTAP checks were verified in CI run [MarginDesk CI #14](https://github.com/Adityapawar5105/margindesk/actions/runs/40137557258) · 2026-10-24. Checks 46–56 and the restore drill remain unverified. Fresh-database runs plan 53 checks; restore-mode runs plan 56, with checks 54–56 emitted only in restore mode.
+
+### Restore Drill #6 fixture repeatability finding
+
+Run #6 restored the source data and passed the strict source/target comparison, but the subsequent suite failed while inserting an `approval`. The test SQL’s Tenant A clone helper had selected a Tenant B row and rewritten UUIDs by changing a fixed suffix; it expected the corresponding cloned `quote` row to exist. The earlier fixture inserts used `ON CONFLICT DO NOTHING`, then selected any row in the fixture tenant, which allowed a pre-existing row from a restored database to replace a suite-created prerequisite. The local restore sentinel itself uses tenant/product IDs `61000000-...-0001` and `62000000-...-0001`, separate from the old `20000000-...` tenant and `37000000-...` quote fixture IDs. This workspace has no connection to the failed hosted runner database, so its exact legacy-ID contents cannot be asserted here; the test runner now logs whether each old fixture/sentinel UUID exists and where before running.
+
+The suite replaces named fixture placeholders with fresh UUIDs on each run, checks those UUIDs against all public UUID `id`/`tenant_id` columns and `auth.users`, and fails with the name and location of any collision. It no longer uses `ON CONFLICT DO NOTHING` for test fixtures. Fixtures are inserted in dependency order, including quote before approval, within one transaction that ends in `ROLLBACK`. Restore mode loads the source row-count snapshot and sentinel hash; three conditional checks verify sentinel content, per-tenant counts before fixtures, and that the restricted Tenant A context sees zero rows from the real restored sentinel tenant in every tenant table. The repeatability command runs the full suite twice against the same database and compares all tenant-table row counts before and after each run. The changes and Restore Drill remain **unverified** until a complete green Actions run.
 
 ## 1. Connection role and RLS context
 
@@ -197,4 +206,4 @@ pnpm check:db-role
 pnpm test:db
 ```
 
-In this workspace on 2026-10-25, after the ACL changes, `pnpm test` passed (40 JavaScript and 9 TypeScript tests), and `pnpm typecheck` and `pnpm build` passed. The earlier temporary PGlite smoke harness covered the Phase 1 baseline only; it does not execute the new ACL migrations and is not PostgreSQL 17/Supabase verification. Docker, `psql`, and database URLs are unavailable, so the new migrations, all 53 pgTAP checks, and the restore drill remain **unverified** locally and in CI until a later green Actions run.
+In this workspace on 2026-10-25, `pnpm test` passed (41 JavaScript and 9 TypeScript tests), and `pnpm typecheck` and `pnpm build` passed. Docker, `psql`, database URLs, and an installed PGlite package are unavailable, so the PostgreSQL suite was not run locally. The 53 fresh-database checks, 56 restore-mode checks, two-run residue verification, and restore drill remain **unverified** until green GitHub Actions runs exercise them.

@@ -55,7 +55,7 @@ jobs:
       - name: Verify runtime pool role and missing-auth isolation
         run: pnpm check:db-role
       - name: Run RLS, tenant isolation, role, and append-only database tests
-        run: pnpm test:db
+        run: pnpm test:db:repeat
       - name: Stop local Supabase services
         if: always()
         run: pnpm exec supabase stop --no-backup

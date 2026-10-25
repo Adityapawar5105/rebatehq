@@ -1,10 +1,157 @@
 import { readFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "pg";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const testFile = path.join(root, "supabase", "tests", "phase1_rls.sql");
+
+type RestoreBaseline = {
+  tenantRowCounts?: Record<string, Array<{ tenant_id: string | null; row_count: string }>>;
+  sentinel?: { tenant_id: string; id: string; content_hash: string };
+};
+
+const expectedFixturePlan = 53;
+const restoreFixturePlan = 56;
+
+function quoteIdentifier(identifier: string): string {
+  return `"${identifier.replace(/"/g, '""')}"`;
+}
+
+function quoteLiteral(literal: string): string {
+  return `'${literal.replace(/'/g, "''")}'`;
+}
+
+function materializeFixtureIds(template: string): { sql: string; ids: Map<string, string> } {
+  const tokens = [...new Set([...template.matchAll(/__PHASE1_([A-Z0-9_]+_ID)__/g)].map(match => match[0]))];
+  if (tokens.length === 0) throw new Error("The pgTAP SQL has no generated fixture ID placeholders.");
+  const ids = new Map<string, string>();
+  for (const token of tokens) {
+    const suffix = token.includes("_B_ID__") ? "2" : undefined;
+    const generated = randomUUID();
+    ids.set(token, suffix ? `${generated.slice(0, -1)}${suffix}` : generated);
+  }
+  if (new Set(ids.values()).size !== ids.size) throw new Error("Generated duplicate pgTAP fixture UUIDs; refusing to run.");
+  let sql = template;
+  for (const [token, value] of ids) sql = sql.replaceAll(token, value);
+  if (/__PHASE1_[A-Z0-9_]+_ID__/.test(sql)) throw new Error("Unresolved generated pgTAP fixture ID placeholder.");
+  return { sql, ids };
+}
+
+async function assertFixtureIdsDoNotCollide(client: Client, ids: Map<string, string>): Promise<void> {
+  const checkedIds = new Map(ids);
+  for (const [token, value] of ids) {
+    if (token.includes("_B_ID__")) checkedIds.set(`${token} A-side clone`, `${value.slice(0, -1)}3`);
+  }
+  const uniqueIds = [...new Set(checkedIds.values())];
+  const reverse = new Map([...checkedIds.entries()].map(([token, value]) => [value, token]));
+  const appColumns = await client.query<{ table_name: string; column_names: string[] }>(`
+    SELECT c.relname::text AS table_name,
+           array_agg(a.attname::text ORDER BY a.attnum) AS column_names
+    FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+    JOIN pg_attribute a ON a.attrelid=c.oid
+    WHERE n.nspname='public' AND c.relkind IN ('r','p')
+      AND a.attnum>0 AND NOT a.attisdropped AND a.atttypid='uuid'::regtype
+      AND a.attname IN ('id','tenant_id')
+    GROUP BY c.relname
+  `);
+  const collisions: string[] = [];
+  for (const table of appColumns.rows) {
+    const predicates = table.column_names.map(column => `existing_row.${quoteIdentifier(column)}=candidate.id`);
+    const found = await client.query<{ collision: string }>(
+      `SELECT candidate.id::text AS collision
+       FROM unnest($1::uuid[]) AS candidate(id)
+       WHERE EXISTS (
+         SELECT 1 FROM public.${quoteIdentifier(table.table_name)} existing_row
+         WHERE ${predicates.join(" OR ")}
+       )`,
+      [uniqueIds],
+    );
+    for (const row of found.rows) {
+      const token = reverse.get(row.collision);
+      collisions.push(`${token ?? "generated UUID"} already exists in public.${table.table_name}`);
+    }
+  }
+  const auth = await client.query<{ id: string }>("SELECT id::text FROM auth.users WHERE id=ANY($1::uuid[])", [uniqueIds]);
+  for (const row of auth.rows) collisions.push(`${reverse.get(row.id) ?? "generated UUID"} already exists in auth.users`);
+  if (collisions.length) {
+    throw new Error(`Generated pgTAP fixture UUID collision; refusing to seed fixtures: ${[...new Set(collisions)].join("; ")}`);
+  }
+  process.stdout.write(`Generated ${ids.size} pgTAP fixture UUIDs plus derived A-side IDs; checked for collisions across ${appColumns.rowCount} application tables and auth.users (none found).\n`);
+}
+
+async function reportLegacyFixtureIds(client: Client): Promise<void> {
+  const legacyIds = [
+    "10000000-0000-4000-8000-000000000001", "10000000-0000-4000-8000-000000000002",
+    "10000000-0000-4000-8000-000000000003", "20000000-0000-4000-8000-000000000001",
+    "20000000-0000-4000-8000-000000000002", "30000000-0000-4000-8000-000000000001",
+    "30000000-0000-4000-8000-000000000002", "37000000-0000-4000-8000-000000000001",
+    "37000000-0000-4000-8000-000000000002", "37000000-0000-4000-8000-000000000003",
+    "61000000-0000-4000-8000-000000000001", "62000000-0000-4000-8000-000000000001",
+  ];
+  const tables = await client.query<{ table_name: string; column_names: string[] }>(`
+    SELECT c.relname::text AS table_name,array_agg(a.attname::text ORDER BY a.attnum) AS column_names
+    FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+    JOIN pg_attribute a ON a.attrelid=c.oid
+    WHERE n.nspname='public' AND c.relkind IN ('r','p') AND a.attnum>0
+      AND NOT a.attisdropped AND a.atttypid='uuid'::regtype
+    GROUP BY c.relname ORDER BY c.relname
+  `);
+  const locations: string[] = [];
+  for (const table of tables.rows) {
+    const valueRows = table.column_names.map(column =>
+      `(${quoteLiteral(column)},existing_row.${quoteIdentifier(column)})`,
+    );
+    const result = await client.query<{ id: string; column_name: string }>(
+      `SELECT DISTINCT candidate.id::text AS id,id_match.column_name
+       FROM public.${quoteIdentifier(table.table_name)} existing_row
+       CROSS JOIN LATERAL (VALUES ${valueRows.join(",")}) AS id_match(column_name,candidate_id)
+       JOIN unnest($1::uuid[]) candidate(id) ON candidate.id=id_match.candidate_id`,
+      [legacyIds],
+    );
+    for (const row of result.rows) locations.push(`${row.id} in public.${table.table_name}.${row.column_name}`);
+  }
+  const authUsers = await client.query<{ id: string }>("SELECT id::text FROM auth.users WHERE id=ANY($1::uuid[])", [legacyIds]);
+  for (const row of authUsers.rows) locations.push(`${row.id} in auth.users`);
+  process.stdout.write(`Legacy fixed-ID fixture/sentinel diagnostic (these IDs are no longer used by pgTAP fixtures): ${locations.length ? locations.join("; ") : "no legacy tenant/user/customer/quote/sentinel IDs found"}.\n`);
+}
+
+async function prepareRestoreBaseline(client: Client): Promise<boolean> {
+  const restoreMode = process.env.RESTORE_TEST_MODE === "true";
+  if (!restoreMode) return false;
+  const baselinePath = process.env.RESTORE_BASELINE_PATH;
+  if (!baselinePath) throw new Error("RESTORE_TEST_MODE=true requires RESTORE_BASELINE_PATH from the source equivalence snapshot.");
+  const baseline = JSON.parse(await readFile(baselinePath, "utf8")) as RestoreBaseline;
+  if (!baseline.sentinel?.tenant_id || !baseline.sentinel.id || !baseline.sentinel.content_hash) {
+    throw new Error("Restore baseline lacks the source sentinel tenant, product ID, or content hash.");
+  }
+  const countRows = Object.entries(baseline.tenantRowCounts ?? {}).flatMap(([tableName, rows]) =>
+    rows.map(row => ({ tableName, tenantId: row.tenant_id, count: row.row_count })),
+  );
+  if (countRows.length === 0) throw new Error("Restore baseline contains no per-tenant row counts.");
+  await client.query(`
+    CREATE TEMP TABLE phase1_restore_expected_tenant_counts (
+      table_name text NOT NULL, tenant_id text NULL, row_count bigint NOT NULL
+    ) ON COMMIT DROP
+  `);
+  await client.query(`
+    INSERT INTO pg_temp.phase1_restore_expected_tenant_counts(table_name,tenant_id,row_count)
+    SELECT * FROM unnest($1::text[],$2::text[],$3::bigint[])
+  `, [
+    countRows.map(row => row.tableName),
+    countRows.map(row => row.tenantId),
+    countRows.map(row => row.count),
+  ]);
+  await client.query(`SELECT
+    set_config('app.restore_test_mode','true',true),
+    set_config('app.restore_sentinel_tenant_id',$1,true),
+    set_config('app.restore_sentinel_product_id',$2,true),
+    set_config('app.restore_sentinel_content_hash',$3,true)
+  `, [baseline.sentinel.tenant_id, baseline.sentinel.id, baseline.sentinel.content_hash]);
+  process.stdout.write(`Restore-only pgTAP controls loaded: ${countRows.length} source tenant/table row-count entries and sentinel ${baseline.sentinel.tenant_id}/${baseline.sentinel.id}.\n`);
+  return true;
+}
 
 type PgDiagnosticError = Error & {
   code?: string;
@@ -68,7 +215,11 @@ async function runPgtap(connectionString: string) {
     } else {
       process.stdout.write("Extension schema extensions does not exist before the pgTAP test starts.\n");
     }
-    const sql = await readFile(testFile, "utf8");
+    const template = await readFile(testFile, "utf8");
+    const materialized = materializeFixtureIds(template);
+    const sql = materialized.sql;
+    await reportLegacyFixtureIds(client);
+    await assertFixtureIdsDoNotCollide(client, materialized.ids);
     const bootstrap = /^\s*BEGIN\s*;\s*CREATE\s+EXTENSION\s+IF\s+NOT\s+EXISTS\s+pgtap\s+WITH\s+SCHEMA\s+extensions\s*;\s*/i.exec(sql);
     if (!bootstrap) throw new Error("The pgTAP SQL file must begin with BEGIN; and CREATE EXTENSION pgtap WITH SCHEMA extensions;.");
     try {
@@ -77,6 +228,7 @@ async function runPgtap(connectionString: string) {
       const pgError = error as Error & { code?: string };
       throw new Error(`pgTAP bootstrap failed as TEST_DATABASE_URL role ${connection.login_role}${pgError.code ? ` (SQLSTATE ${pgError.code})` : ""}: ${pgError.message}`);
     }
+    const restoreMode = await prepareRestoreBaseline(client);
     const installedPgtap = await client.query<{
       extension_schema: string;
       extension_owner: string;
@@ -197,9 +349,10 @@ async function runPgtap(connectionString: string) {
     const reportedMismatch = output.match(/^# Looks like you planned (\d+) tests but ran (\d+)$/m);
     const planned = plan ? Number(plan[1]) : 0;
     const ran = passed + failed;
-    if (!plan || planned !== 53 || ran !== planned || passed !== planned || failed !== 0 || reportedMismatch) {
+    const expectedPlan = restoreMode ? restoreFixturePlan : expectedFixturePlan;
+    if (!plan || planned !== expectedPlan || ran !== planned || passed !== planned || failed !== 0 || reportedMismatch) {
       const mismatch = reportedMismatch ? `; pgTAP reports planned ${reportedMismatch[1]} but ran ${reportedMismatch[2]}` : "";
-      throw new Error(`pgTAP did not report all 53 checks passing (planned=${planned}, result_lines=${ran}${mismatch}).\n${output || "No TAP output was returned."}`);
+      throw new Error(`pgTAP did not report all ${expectedPlan} checks passing (planned=${planned}, result_lines=${ran}${mismatch}).\n${output || "No TAP output was returned."}`);
     }
     process.stdout.write(`${output}\n`);
   } finally {
