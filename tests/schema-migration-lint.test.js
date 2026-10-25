@@ -26,7 +26,9 @@ CREATE POLICY customer_update ON public.customer FOR UPDATE TO margindesk_app US
 CREATE POLICY customer_delete ON public.customer FOR DELETE TO margindesk_app USING (true);
 CREATE POLICY audit_log_select ON public.audit_log FOR SELECT TO margindesk_app USING (public.is_tenant_role(tenant_id,ARRAY['owner','manager']));
 CREATE POLICY audit_log_append ON public.audit_log FOR INSERT TO PUBLIC WITH CHECK (true);
+CREATE FUNCTION public.audit_row_change() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$;
 CREATE FUNCTION public.audit_log_immutable() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'immutable'; END $$;
+CREATE TRIGGER customer_audit_row AFTER INSERT OR UPDATE OR DELETE ON public.customer FOR EACH ROW EXECUTE FUNCTION public.audit_row_change();
 CREATE TRIGGER audit_log_immutable BEFORE UPDATE OR DELETE ON public.audit_log FOR EACH ROW EXECUTE FUNCTION public.audit_log_immutable();
 REVOKE UPDATE,DELETE,TRUNCATE ON audit_log FROM margindesk_app;
 `;
@@ -89,6 +91,11 @@ test("migration lint requires FORCE ROW LEVEL SECURITY on every tenant table", a
   await assertLintFailure(sql, /customer lacks FORCE ROW LEVEL SECURITY/);
 });
 
+test("migration lint requires audit coverage for every application table", async () => {
+  const sql = validMigration().replace(/CREATE TRIGGER customer_audit_row[^;]+;\n/, "");
+  await assertLintFailure(sql, /customer lacks the required audit_row_change trigger/);
+});
+
 test("migration lint rejects audit SELECT policies broader than owners and managers", async () => {
   const sql = validMigration().replace(
     "ARRAY['owner','manager']));",
@@ -110,4 +117,12 @@ test("migration lint rejects privilege changes on Supabase-managed schemas", asy
   ]) {
     await assertLintFailure(`${validMigration()}\n${statement}`, /Supabase-managed auth, storage, or extensions/);
   }
+});
+
+test("new SECURITY DEFINER functions need an explicit revoke and grantee allowlist", async () => {
+  const sql = `CREATE FUNCTION public.future_helper() RETURNS boolean
+LANGUAGE sql SECURITY DEFINER SET search_path=public,pg_temp AS $$ SELECT true $$;`;
+  await assertLintFailure(sql, /SECURITY DEFINER function public\.future_helper must explicitly REVOKE ALL FROM PUBLIC/);
+  await assertLintFailure(sql, /needs an explicit EXECUTE grantee list/);
+  await assertLintFailure(`${sql}\nREVOKE ALL ON FUNCTION public.future_helper() FROM PUBLIC;\nGRANT EXECUTE ON FUNCTION public.future_helper() TO PUBLIC;`, /must not grant EXECUTE to PUBLIC/);
 });

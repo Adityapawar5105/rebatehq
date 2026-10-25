@@ -17,21 +17,22 @@ Use the Supabase transaction pooler for the web runtime. The `pg` adapter begins
 
 ## Phase 1 CI evidence status
 
-**As of 2026-10-25: all CI acceptance items are unverified.** No GitHub Actions run link is available yet. Do not change an item to verified until the linked workflow run has passed and its URL and date are recorded here and in [`SECURITY_CHECK.md`](./SECURITY_CHECK.md).
+**As of 2026-10-25: Phase 1 CI passed in [MarginDesk CI #14](https://github.com/Adityapawar5105/margindesk/actions/runs/40137557258) · 2026-10-24.** The restore drill remains unverified and must only be marked verified after its workflow passes.
 
 | Check | Status | CI evidence |
 |---|---|---|
-| Supabase local stack starts and all migrations apply | **unverified** | No run link/date |
-| Restricted app pool login and missing-auth zero-row check | **unverified** | No run link/date |
-| Tenant isolation across public tenant tables, including own-row positive controls and RLS-specific write denials | **unverified** | No run link/date |
-| Audit log UPDATE/DELETE/TRUNCATE denial and elevated-role immutability triggers | **unverified** | No run link/date |
-| Rep response and self-approval checks | **unverified** | No run link/date |
-| User-facing service-role scan | **unverified** | No run link/date |
-| Restore to fresh target and post-restore suite | **unverified** | No run link/date |
+| Supabase local stack starts and all migrations apply | **verified in CI run [MarginDesk CI #14](https://github.com/Adityapawar5105/margindesk/actions/runs/40137557258) · 2026-10-24** | Clean migration reset passed |
+| Restricted app pool login and missing-auth zero-row check | **verified in CI run [MarginDesk CI #14](https://github.com/Adityapawar5105/margindesk/actions/runs/40137557258) · 2026-10-24** | Runtime role check passed |
+| Tenant isolation across public tenant tables, including own-row positive controls and RLS-specific write denials | **verified in CI run [MarginDesk CI #14](https://github.com/Adityapawar5105/margindesk/actions/runs/40137557258) · 2026-10-24** | All 45 pgTAP checks passed |
+| Audit log UPDATE/DELETE/TRUNCATE denial and elevated-role immutability triggers | **verified in CI run [MarginDesk CI #14](https://github.com/Adityapawar5105/margindesk/actions/runs/40137557258) · 2026-10-24** | pgTAP checks passed |
+| Rep response and self-approval checks | **verified in CI run [MarginDesk CI #14](https://github.com/Adityapawar5105/margindesk/actions/runs/40137557258) · 2026-10-24** | Unit and database checks passed |
+| User-facing service-role scan | **verified in CI run [MarginDesk CI #14](https://github.com/Adityapawar5105/margindesk/actions/runs/40137557258) · 2026-10-24** | pnpm test source scan passed |
+| Applied-migration hash lock and expanded future-migration gates | **unverified** | Added after CI #14; awaiting a run that exercises these new checks |
+| Restore to fresh target and post-restore suite | **unverified** | Restore workflow has not passed |
 
 ### CI database-step sweep
 
-The scripts used after the local Supabase reset were reviewed on 2026-10-25. `setup-test-app-role.ts` quotes role identifiers and passwords with PostgreSQL `format('%I'/'%L')`, masks its random password through the GitHub environment file, and redacts it from errors. It reads `TEST_DATABASE_URL`, verifies the seed/test URLs target the same database, and grants the disposable test login membership in `margindesk_app` only in CI. The runtime role check uses `APP_DATABASE_URL`. `test-db.ts` logs PostgreSQL/role evidence, pgTAP schema access, auth-referencing policy/function metadata, ACL diagnostics, and SQL error context without credentials. The database suite remains at 45 planned checks and enforces planned = ran. The latest supplied PostgreSQL 17 run passed 43/45; it showed `auth.uid()` is owned by `supabase_auth_admin` and the effective app EXECUTE path comes from the platform PUBLIC grant, so the migration no longer attempts to GRANT/REVOKE it. Check 42 failed its SECURITY DEFINER allowlist audit; migration ACL cleanup and the test allowlist have been updated, but the new result is not available yet. CI now captures migration output with `client_min_messages=warning` and fails on ineffective privilege warning text; static migration lint also rejects GRANT/REVOKE against `auth`, `storage`, or `extensions`. These changes are unverified until a new green run. No local Postgres/Docker or green CI evidence is available. The `record_failed_login` function writes only fixed null-tenant/null-actor `auth.login_failed`; the application login route rate-limits attempts to 8 per 10 minutes using Upstash and fails closed without Redis, while the SQL function has no independent rate limiter. The audit actor GUC risk remains an open item in `SECURITY_CHECK.md`. `scripts/seed-demo.ts` uses only privileged `SEED_DATABASE_URL` for `auth.users` reads.
+The CI scripts were reviewed on 2026-10-25. The restricted test login is created with a randomly generated, masked password; runtime checks use `APP_DATABASE_URL` and database tests use `TEST_DATABASE_URL`. CI run [MarginDesk CI #14](https://github.com/Adityapawar5105/margindesk/actions/runs/40137557258) on 2026-10-24 passed clean migration application, runtime role verification, and all 45 pgTAP checks with planned equal to ran. It confirmed `auth.uid()` is owned by `supabase_auth_admin` and the effective app EXECUTE path uses Supabase's PUBLIC grant. The SECURITY DEFINER ACL allowlist passed. CI captures migration output with `client_min_messages=warning` and fails on ineffective privilege warnings; the baseline hash lock and expanded future-migration gates were added after run #14 and remain **unverified** until CI exercises them. The restore drill remains unverified. Login attempts are limited to 8 per 10 minutes by the Upstash route limiter; the SQL function has no independent rate limiter. The audit actor GUC risk remains open in `SECURITY_CHECK.md`.
 
 ## Initial setup and deployment
 

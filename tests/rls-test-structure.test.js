@@ -26,6 +26,8 @@ test("the restricted-role pgTAP checks capture results and run assertions after 
 test("RLS fixtures prove tenant-positive paths, exact RLS write failures, and TRUNCATE protection", () => {
   assert.match(sql, /extensions\.plan\(45\)/, "The pgTAP plan must match the current checks.");
   assert.match(sql, /phase1_tenant_a_fixtures/, "Every application table must have a Tenant A fixture row.");
+  assert.match(sql, /CREATE TEMP TABLE phase1_rls_tables[\s\S]*?SELECT c\.relname[\s\S]*?n\.nspname='public'/, "The isolation suite must enumerate every public application table, including new migrations.");
+  assert.match(sql, /Tenant B fixture row is missing for application table %/, "New tables without a seeded test row must fail before isolation checks.");
   assert.match(sql, /phase1_positive_select_result/, "Positive own-row SELECT controls must run as the app role.");
   assert.match(sql, /phase1_positive_insert_result/, "Positive INSERT controls must run wherever policy allows.");
   assert.match(sql, /position\('row-level security' in lower\(v_msg\)\)=0/, "Cross-tenant UPDATE/INSERT must distinguish RLS violations from table ACL denial.");

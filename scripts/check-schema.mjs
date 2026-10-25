@@ -109,9 +109,10 @@ function duplicateErrors(objects, kind, scope = object => object.table) {
   return errors;
 }
 
-export function lintMigrationSet(migrations) {
+export function lintMigrationSet(migrations, { frozenMigrationNames = [] } = {}) {
   const errors = [];
   const allSql = migrations.map(migration => migration.sql).join("\n");
+  const frozenNames = new Set(frozenMigrationNames);
   for (const migration of migrations) {
     const sqlWithoutComments = migration.sql
       .replace(/\/\*[\s\S]*?\*\//g, " ")
@@ -121,6 +122,25 @@ export function lintMigrationSet(migrations) {
     }
     if (/\b(?:GRANT|REVOKE)\b[^;]*\bON\b[^;]*(?:\b(?:auth|storage|extensions)\s*\.|\bIN\s+SCHEMA\s+(?:auth|storage|extensions)\b|\bSCHEMA\s+(?:auth|storage|extensions)\b)/i.test(sqlWithoutComments)) {
       errors.push(`${migration.name} attempts to change privileges on a Supabase-managed auth, storage, or extensions object/schema.`);
+    }
+    if (!frozenNames.has(migration.name)) {
+      const functionHeaders = [...sqlWithoutComments.matchAll(/CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+((?:public\.)?[a-z_][a-z0-9_]*)\s*\(([^)]*)\)([\s\S]*?)\bAS\s+\$[a-z0-9_]*\$/gi)];
+      for (const match of functionHeaders) {
+        if (!/\bSECURITY\s+DEFINER\b/i.test(match[3])) continue;
+        const qualifiedName = match[1];
+        const functionName = qualifiedName.split(".").at(-1);
+        const revokePattern = new RegExp(`\\bREVOKE\\s+ALL\\s+ON\\s+FUNCTION\\s+(?:public\\.)?${functionName}\\s*\\([^)]*\\)\\s+FROM\\s+PUBLIC\\b`, "i");
+        if (!revokePattern.test(sqlWithoutComments)) {
+          errors.push(`${migration.name} SECURITY DEFINER function ${qualifiedName} must explicitly REVOKE ALL FROM PUBLIC.`);
+        }
+        const grantPattern = new RegExp(`\\bGRANT\\s+EXECUTE\\s+ON\\s+FUNCTION\\s+[^;]*\\b(?:public\\.)?${functionName}\\s*\\([^;]*?\\)\\s+TO\\s+([^;]+);`, "i");
+        const grantMatch = grantPattern.exec(sqlWithoutComments);
+        if (!grantMatch) {
+          errors.push(`${migration.name} SECURITY DEFINER function ${qualifiedName} needs an explicit EXECUTE grantee list.`);
+        } else if (/(?:^|[,\\s])PUBLIC(?:$|[,\\s])/i.test(grantMatch[1])) {
+          errors.push(`${migration.name} SECURITY DEFINER function ${qualifiedName} must not grant EXECUTE to PUBLIC.`);
+        }
+      }
     }
   }
   const tables = readTableDefinitions(allSql);
@@ -184,6 +204,12 @@ export function lintMigrationSet(migrations) {
   }
   for (const trigger of generated.triggers) trigger.source = "dynamic trigger loop";
   errors.push(...duplicateErrors([...triggerRecords, ...generated.triggers], "TRIGGER"));
+  const auditTriggerRecords = [...triggerRecords, ...generated.triggers];
+  for (const table of tables) {
+    if (table.name !== "audit_log" && !auditTriggerRecords.some(trigger => trigger.table === table.name && trigger.name === `${table.name}_audit_row`)) {
+      errors.push(`${table.name} lacks the required audit_row_change trigger`);
+    }
+  }
 
   const indexRecords = [];
   for (const migration of migrations) {
@@ -236,7 +262,11 @@ export function lintMigrationSet(migrations) {
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const migrationFiles = fs.readdirSync(migrationDir).filter(file => file.endsWith(".sql")).sort();
   if (!migrationFiles.length) throw new Error("No SQL migrations found.");
-  const result = lintMigrationSet(migrationFiles.map(name => ({ name, sql: fs.readFileSync(path.join(migrationDir, name), "utf8") })));
+  const lock = JSON.parse(fs.readFileSync(path.join(root, "migrations.lock"), "utf8"));
+  const result = lintMigrationSet(
+    migrationFiles.map(name => ({ name, sql: fs.readFileSync(path.join(migrationDir, name), "utf8") })),
+    { frozenMigrationNames: Object.keys(lock.appliedMigrations ?? {}) },
+  );
   if (result.errors.length) {
     console.error(result.errors.join("\n"));
     process.exit(1);
