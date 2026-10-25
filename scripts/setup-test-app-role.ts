@@ -104,6 +104,14 @@ async function main() {
     } catch (error) {
       throw sqlFailure("grant disposable test login anon role-switch permission", "GRANT anon TO <TEST_DATABASE_URL login> WITH INHERIT FALSE, SET TRUE (PostgreSQL 16+)", error, password);
     }
+    try {
+      // CI-only membership enables an equivalent authenticated-role EXECUTE
+      // denial probe. INHERIT FALSE prevents either browser role from being
+      // active unless the pgTAP connection explicitly SET ROLEs to it.
+      await quotedRoleGrant(admin, "authenticated", testLogin, version);
+    } catch (error) {
+      throw sqlFailure("grant disposable test login authenticated role-switch permission", "GRANT authenticated TO <TEST_DATABASE_URL login> WITH INHERIT FALSE, SET TRUE (PostgreSQL 16+)", error, password);
+    }
 
     const appUrl = new URL(adminUrl);
     appUrl.username = roleName;

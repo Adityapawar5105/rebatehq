@@ -6,7 +6,9 @@ const test = require("node:test");
 const sql = fs.readFileSync(path.join(__dirname, "..", "supabase", "tests", "phase1_rls.sql"), "utf8");
 const migration = fs.readFileSync(path.join(__dirname, "..", "supabase", "migrations", "202610240001_phase1_foundation.sql"), "utf8");
 const aclMigration = fs.readFileSync(path.join(__dirname, "..", "supabase", "migrations", "202610250001_revoke_platform_public_privileges.sql"), "utf8");
+const functionAclMigration = fs.readFileSync(path.join(__dirname, "..", "supabase", "migrations", "202610250002_revoke_platform_function_privileges.sql"), "utf8");
 const runner = fs.readFileSync(path.join(__dirname, "..", "scripts", "test-db.ts"), "utf8");
+const roleSetup = fs.readFileSync(path.join(__dirname, "..", "scripts", "setup-test-app-role.ts"), "utf8");
 
 test("the restricted-role pgTAP checks capture results and run assertions after RESET ROLE", () => {
   const roleStart = sql.indexOf("SET LOCAL ROLE margindesk_app;");
@@ -25,7 +27,7 @@ test("the restricted-role pgTAP checks capture results and run assertions after 
 });
 
 test("RLS fixtures prove tenant-positive paths, exact RLS write failures, and TRUNCATE protection", () => {
-  assert.match(sql, /extensions\.plan\(49\)/, "The pgTAP plan must match the current checks.");
+  assert.match(sql, /extensions\.plan\(53\)/, "The pgTAP plan must match the current checks.");
   assert.match(sql, /phase1_tenant_a_fixtures/, "Every application table must have a Tenant A fixture row.");
   assert.match(sql, /CREATE TEMP TABLE phase1_rls_tables[\s\S]*?SELECT c\.relname[\s\S]*?n\.nspname='public'/, "The isolation suite must enumerate every public application table, including new migrations.");
   assert.match(sql, /Tenant B fixture row is missing for application table %/, "New tables without a seeded test row must fail before isolation checks.");
@@ -63,12 +65,27 @@ test("RLS fixtures prove tenant-positive paths, exact RLS write failures, and TR
   assert.match(sql, /has_column_privilege\('anon'/, "Inherited or effective column grants to anon must fail the ACL check.");
   assert.match(sql, /has_column_privilege\('service_role'/, "Inherited or effective column grants to service_role must fail the ACL check.");
   assert.match(sql, /anon has no effective CRUD table privileges/);
+  assert.match(sql, /Every migration-role public function has exactly its explicit EXECUTE grantee allowlist/);
+  assert.match(sql, /Every public SECURITY DEFINER function is owned by the migration role and pins search_path/);
+  assert.match(sql, /anon receives permission denied when calling every app-exposed function, independent of RLS/);
+  assert.match(sql, /authenticated receives permission denied when calling every app-exposed function, independent of RLS/);
+  assert.match(sql, /app\.phase1_anon_function_exec_result/);
+  assert.match(sql, /app\.phase1_authenticated_function_exec_result/);
+  assert.match(sql, /has_function_privilege\(current_user,p\.oid,'EXECUTE'\)/);
+  assert.match(runner, /planned !== 53/);
+  assert.match(runner, /all 53 checks passing/);
+  assert.match(roleSetup, /quotedRoleGrant\(admin, "authenticated", testLogin, version\)/, "The disposable test login must be able to SET ROLE authenticated for the ACL probe.");
   assert.match(sql, /permission denied for table tenant/);
   assert.match(sql, /permission denied for table product/);
   assert.match(aclMigration, /REVOKE ALL PRIVILEGES ON TABLE public\.%I FROM %s/);
   assert.match(aclMigration, /REVOKE %s \(%I\) ON TABLE public\.%I FROM %s/);
   assert.match(aclMigration, /ALTER DEFAULT PRIVILEGES FOR ROLE %I%s REVOKE ALL ON %s FROM %s/);
   assert.doesNotMatch(aclMigration, /GRANT\s+(?:ALL|SELECT|INSERT|UPDATE|DELETE)[^;]*\b(?:anon|authenticated|service_role|PUBLIC)\b/i);
+  assert.match(functionAclMigration, /n\.nspname='public' AND p\.proowner=v_migration_owner/);
+  assert.match(functionAclMigration, /REVOKE ALL ON FUNCTION %s FROM %s/);
+  assert.match(functionAclMigration, /GRANT EXECUTE ON FUNCTION %s TO %I/);
+  assert.match(functionAclMigration, /ALTER DEFAULT PRIVILEGES FOR ROLE %I%s REVOKE EXECUTE ON FUNCTIONS FROM %s/);
+  assert.doesNotMatch(functionAclMigration, /GRANT EXECUTE ON FUNCTION[^;]*\b(?:anon|authenticated|service_role|PUBLIC)\b/i);
   assert.doesNotMatch(sql, /SAVEPOINT auth_uid_execute_probe|ROLLBACK TO SAVEPOINT auth_uid_execute_probe/);
   assert.match(runner, /ran !== planned/);
   assert.match(runner, /Looks like you planned/);

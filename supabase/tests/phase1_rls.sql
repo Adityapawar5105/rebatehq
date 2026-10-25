@@ -1,6 +1,7 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT extensions.plan(49);
+SELECT extensions.plan(53);
+SELECT set_config('app.phase1_migration_owner',current_user,true);
 
 -- Fixed local-only actors and two isolated tenants. The transaction rolls back.
 INSERT INTO auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,created_at,updated_at)
@@ -985,5 +986,151 @@ SELECT extensions.ok(
   current_setting('app.phase1_auth_uid_no_context_result')::jsonb->>'passed'='true',
   'The same customer policy query returns zero rows as margindesk_app without authenticated context'
 );
+
+WITH allowlist(signature,app_allowed) AS (VALUES
+  ('is_tenant_member(p_tenant_id uuid)',true),
+  ('is_tenant_role(p_tenant_id uuid, p_roles text[])',true),
+  ('is_tenant_role_any_status(p_tenant_id uuid, p_roles text[])',true),
+  ('audit_row_change()',false),
+  ('prevent_audit_mutation()',false),
+  ('create_tenant_with_owner(p_name text)',true),
+  ('accept_tenant_invite(p_token text)',true),
+  ('record_failed_login(p_email text, p_ip text, p_user_agent text)',true)
+), owned_functions AS (
+  SELECT p.oid,p.proowner,p.proname||'('||pg_get_function_identity_arguments(p.oid)||')' AS signature
+  FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+  WHERE n.nspname='public' AND p.proowner=current_setting('app.phase1_migration_owner')::regrole
+), function_acl_errors AS (
+  SELECT 1
+  FROM owned_functions f
+  LEFT JOIN allowlist a USING(signature)
+  WHERE a.signature IS NULL
+     OR EXISTS (
+       SELECT 1 FROM pg_proc p CROSS JOIN LATERAL aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) acl
+       WHERE p.oid=f.oid AND acl.privilege_type='EXECUTE'
+         AND acl.grantee NOT IN (f.proowner,CASE WHEN a.app_allowed THEN 'margindesk_app'::regrole ELSE f.proowner END)
+     )
+     OR (a.app_allowed AND NOT EXISTS (
+       SELECT 1 FROM pg_proc p CROSS JOIN LATERAL aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) acl
+       WHERE p.oid=f.oid AND acl.grantee='margindesk_app'::regrole AND acl.privilege_type='EXECUTE'
+     ))
+), missing_allowlist_functions AS (
+  SELECT 1 FROM allowlist a LEFT JOIN owned_functions f USING(signature) WHERE f.oid IS NULL
+), unexpected_default_execute AS (
+  SELECT 1 FROM pg_default_acl d CROSS JOIN LATERAL aclexplode(d.defaclacl) acl
+  WHERE d.defaclrole=current_setting('app.phase1_migration_owner')::regrole
+    AND d.defaclnamespace IN (0,'public'::regnamespace) AND d.defaclobjtype='f'
+    AND acl.privilege_type='EXECUTE'
+    AND acl.grantee<>d.defaclrole
+)
+SELECT extensions.ok(
+  (SELECT count(*) FROM owned_functions)>=8
+  AND NOT EXISTS (SELECT 1 FROM function_acl_errors)
+  AND NOT EXISTS (SELECT 1 FROM missing_allowlist_functions)
+  AND NOT EXISTS (SELECT 1 FROM unexpected_default_execute),
+  'Every migration-role public function has exactly its explicit EXECUTE grantee allowlist and future defaults grant nothing'
+);
+
+SELECT extensions.ok(NOT EXISTS (
+  SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+  WHERE n.nspname='public' AND p.prosecdef
+    AND (p.proowner<>current_setting('app.phase1_migration_owner')::regrole
+      OR NOT EXISTS (
+        SELECT 1 FROM unnest(COALESCE(p.proconfig,ARRAY[]::text[])) AS config(setting) WHERE config.setting LIKE 'search_path=%'
+      ))
+), 'Every public SECURITY DEFINER function is owned by the migration role and pins search_path');
+
+SET LOCAL ROLE anon;
+DO $$
+DECLARE
+  v_sql text;
+  v_state text;
+  v_message text;
+  v_attempts jsonb:='[]'::jsonb;
+  v_executable_count integer;
+  v_tested integer:=0;
+BEGIN
+  SELECT count(*) INTO v_executable_count
+  FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+  WHERE n.nspname='public' AND p.proowner=current_setting('app.phase1_migration_owner')::regrole
+    AND has_function_privilege(current_user,p.oid,'EXECUTE');
+  FOREACH v_sql IN ARRAY ARRAY[
+    'SELECT public.is_tenant_member(NULL::uuid)',
+    'SELECT public.is_tenant_role(NULL::uuid,NULL::text[])',
+    'SELECT public.is_tenant_role_any_status(NULL::uuid,NULL::text[])',
+    'SELECT public.create_tenant_with_owner(NULL::text)',
+    'SELECT public.accept_tenant_invite(NULL::text)',
+    'SELECT public.record_failed_login(NULL::text,NULL::text,NULL::text)'
+  ] LOOP
+    v_tested:=v_tested+1;
+    v_state:='00000';
+    v_message:='function call unexpectedly succeeded';
+    BEGIN
+      EXECUTE v_sql;
+    EXCEPTION WHEN OTHERS THEN
+      GET STACKED DIAGNOSTICS v_state=RETURNED_SQLSTATE,v_message=MESSAGE_TEXT;
+    END;
+    v_attempts:=v_attempts||jsonb_build_array(jsonb_build_object('sql',v_sql,'sqlstate',v_state,'message',v_message));
+  END LOOP;
+  PERFORM set_config('app.phase1_anon_function_exec_result',jsonb_build_object(
+    'effective_executable_count',v_executable_count,'tested',v_tested,'attempts',v_attempts
+  )::text,true);
+END $$;
+RESET ROLE;
+SELECT extensions.ok(
+  current_setting('app.phase1_anon_function_exec_result')::jsonb->>'effective_executable_count'='0'
+  AND current_setting('app.phase1_anon_function_exec_result')::jsonb->>'tested'='6'
+  AND NOT EXISTS (
+    SELECT 1 FROM jsonb_array_elements(current_setting('app.phase1_anon_function_exec_result')::jsonb->'attempts') AS attempts(attempt)
+    WHERE attempt->>'sqlstate'<>'42501' OR attempt->>'message' NOT ILIKE '%permission denied for function%'
+  ), 'anon receives permission denied when calling every app-exposed function, independent of RLS'
+);
+
+SET LOCAL ROLE authenticated;
+DO $$
+DECLARE
+  v_sql text;
+  v_state text;
+  v_message text;
+  v_attempts jsonb:='[]'::jsonb;
+  v_executable_count integer;
+  v_tested integer:=0;
+BEGIN
+  SELECT count(*) INTO v_executable_count
+  FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+  WHERE n.nspname='public' AND p.proowner=current_setting('app.phase1_migration_owner')::regrole
+    AND has_function_privilege(current_user,p.oid,'EXECUTE');
+  FOREACH v_sql IN ARRAY ARRAY[
+    'SELECT public.is_tenant_member(NULL::uuid)',
+    'SELECT public.is_tenant_role(NULL::uuid,NULL::text[])',
+    'SELECT public.is_tenant_role_any_status(NULL::uuid,NULL::text[])',
+    'SELECT public.create_tenant_with_owner(NULL::text)',
+    'SELECT public.accept_tenant_invite(NULL::text)',
+    'SELECT public.record_failed_login(NULL::text,NULL::text,NULL::text)'
+  ] LOOP
+    v_tested:=v_tested+1;
+    v_state:='00000';
+    v_message:='function call unexpectedly succeeded';
+    BEGIN
+      EXECUTE v_sql;
+    EXCEPTION WHEN OTHERS THEN
+      GET STACKED DIAGNOSTICS v_state=RETURNED_SQLSTATE,v_message=MESSAGE_TEXT;
+    END;
+    v_attempts:=v_attempts||jsonb_build_array(jsonb_build_object('sql',v_sql,'sqlstate',v_state,'message',v_message));
+  END LOOP;
+  PERFORM set_config('app.phase1_authenticated_function_exec_result',jsonb_build_object(
+    'effective_executable_count',v_executable_count,'tested',v_tested,'attempts',v_attempts
+  )::text,true);
+END $$;
+RESET ROLE;
+SELECT extensions.ok(
+  current_setting('app.phase1_authenticated_function_exec_result')::jsonb->>'effective_executable_count'='0'
+  AND current_setting('app.phase1_authenticated_function_exec_result')::jsonb->>'tested'='6'
+  AND NOT EXISTS (
+    SELECT 1 FROM jsonb_array_elements(current_setting('app.phase1_authenticated_function_exec_result')::jsonb->'attempts') AS attempts(attempt)
+    WHERE attempt->>'sqlstate'<>'42501' OR attempt->>'message' NOT ILIKE '%permission denied for function%'
+  ), 'authenticated receives permission denied when calling every app-exposed function, independent of RLS'
+);
+
 SELECT * FROM extensions.finish();
 ROLLBACK;

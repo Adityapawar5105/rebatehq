@@ -72,6 +72,85 @@ export function formatApplicationTableAclDiff(sourceTables, restoredTables) {
   return Object.keys(differences).length ? JSON.stringify(differences, null, 2) : "(no table ACL or owner differences)";
 }
 
+export function compareFunctionAclSections(sourceFunctions, restoredFunctions) {
+  const sourceByName = new Map(sourceFunctions.map(fn => [fn.object_name, fn]));
+  const restoredByName = new Map(restoredFunctions.map(fn => [fn.object_name, fn]));
+  const differences = {};
+  const add = (functionName, grantee, side, entry) => {
+    differences[functionName] ??= {};
+    differences[functionName][grantee] ??= { sourceOnly: [], restoredOnly: [] };
+    differences[functionName][grantee][side].push(entry);
+  };
+  const functionNames = [...new Set([...sourceByName.keys(), ...restoredByName.keys()])].sort();
+  const metadataFields = ["schema_name", "proname", "argument_types", "owner_name", "security_type", "search_path_setting"];
+  for (const functionName of functionNames) {
+    const source = sourceByName.get(functionName);
+    const restored = restoredByName.get(functionName);
+    if (!source) {
+      add(functionName, "<function>", "restoredOnly", { function: functionName, restored: true, metadata: Object.fromEntries(metadataFields.map(field => [field, restored[field]])) });
+      continue;
+    }
+    if (!restored) {
+      add(functionName, "<function>", "sourceOnly", { function: functionName, source: true, metadata: Object.fromEntries(metadataFields.map(field => [field, source[field]])) });
+      continue;
+    }
+    for (const field of metadataFields) {
+      if (source[field] !== restored[field]) {
+        add(functionName, "<metadata>", "sourceOnly", { field, value: source[field] ?? null });
+        add(functionName, "<metadata>", "restoredOnly", { field, value: restored[field] ?? null });
+      }
+    }
+    const normalize = fn => (fn.acl ?? []).map(acl => ({
+      grantee: acl.grantee,
+      grantor: acl.grantor,
+      privilege: acl.privilege,
+      grantable: Boolean(acl.grantable),
+    }));
+    const countEntries = entries => {
+      const counts = new Map();
+      for (const entry of entries) {
+        const key = JSON.stringify(entry);
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+      return counts;
+    };
+    const sourceCounts = countEntries(normalize(source));
+    const restoredCounts = countEntries(normalize(restored));
+    for (const key of new Set([...sourceCounts.keys(), ...restoredCounts.keys()])) {
+      const entry = JSON.parse(key);
+      const sourceCount = sourceCounts.get(key) ?? 0;
+      const restoredCount = restoredCounts.get(key) ?? 0;
+      for (let index = restoredCount; index < sourceCount; index += 1) add(functionName, entry.grantee, "sourceOnly", entry);
+      for (let index = sourceCount; index < restoredCount; index += 1) add(functionName, entry.grantee, "restoredOnly", entry);
+    }
+  }
+  return Object.fromEntries(Object.entries(differences).sort(([left], [right]) => left.localeCompare(right)).map(([fn, grantees]) => [
+    fn,
+    Object.fromEntries(Object.entries(grantees).sort(([left], [right]) => left.localeCompare(right))),
+  ]));
+}
+
+export function assertFunctionAclSectionsEqual(sourceFunctions, restoredFunctions, label = "public function ACL") {
+  const differences = compareFunctionAclSections(sourceFunctions, restoredFunctions);
+  if (Object.keys(differences).length) {
+    throw new Error(`${label} mismatch grouped by function and grantee:\n${JSON.stringify(differences, null, 2)}`);
+  }
+  return true;
+}
+
+export function printFunctionDiagnostics(label, functions, write = line => process.stdout.write(`${line}\n`)) {
+  write(`${label} complete public function inventory and ACLs (${functions.length} functions):`);
+  for (const fn of [...functions].sort((a, b) => a.object_name.localeCompare(b.object_name))) {
+    const functionName = fn.object_name.includes(".") ? fn.object_name : `${fn.schema_name ?? "public"}.${fn.object_name}`;
+    write(`${functionName} args=${JSON.stringify(fn.argument_types)} owner=${fn.owner_name} security=${fn.security_type} search_path=${JSON.stringify(fn.search_path_setting)} ACL=${JSON.stringify(fn.acl)}`);
+  }
+}
+
+export function formatFunctionAclDiff(sourceFunctions, restoredFunctions) {
+  const differences = compareFunctionAclSections(sourceFunctions, restoredFunctions);
+  return Object.keys(differences).length ? JSON.stringify(differences, null, 2) : "(no public function ACL or metadata differences)";
+}
+
 const roleStateSql = `
   SELECT r.rolname,r.rolcanlogin,r.rolsuper,r.rolbypassrls,r.rolcreatedb,r.rolcreaterole,r.rolreplication,r.rolinherit,r.rolconfig,
          COALESCE(jsonb_agg(jsonb_build_object('role',parent.rolname,'grantor',grantor.rolname,'admin',m.admin_option)
@@ -100,8 +179,12 @@ const applicationTableAclSql = `
   ORDER BY c.relname
 `;
 
-const securityDefinerAclSql = `
-  SELECT p.oid::regprocedure::text AS object_name,owner.rolname AS owner_name,
+const publicFunctionAclSql = `
+  SELECT p.oid::regprocedure::text AS object_name,n.nspname::text AS schema_name,p.proname::text AS proname,
+    pg_get_function_identity_arguments(p.oid)::text AS argument_types,owner.rolname AS owner_name,
+    CASE WHEN p.prosecdef THEN 'DEFINER' ELSE 'INVOKER' END AS security_type,
+    (SELECT regexp_replace(config.setting,'^search_path=','') FROM unnest(COALESCE(p.proconfig,ARRAY[]::text[])) AS config(setting)
+     WHERE config.setting LIKE 'search_path=%' LIMIT 1) AS search_path_setting,
     COALESCE(jsonb_agg(jsonb_build_object(
       'grantor',grantor.rolname,'grantee',CASE WHEN acl.grantee=0 THEN 'PUBLIC' ELSE grantee.rolname END,
       'privilege',acl.privilege_type,'grantable',acl.is_grantable
@@ -111,8 +194,8 @@ const securityDefinerAclSql = `
   LEFT JOIN LATERAL aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) acl ON true
   LEFT JOIN pg_roles grantor ON grantor.oid=acl.grantor
   LEFT JOIN pg_roles grantee ON grantee.oid=acl.grantee
-  WHERE n.nspname='public' AND p.prosecdef
-  GROUP BY p.oid,owner.rolname
+  WHERE n.nspname='public'
+  GROUP BY p.oid,n.nspname,p.proname,p.prosecdef,p.proconfig,owner.rolname
   ORDER BY p.oid::regprocedure::text
 `;
 
@@ -169,7 +252,8 @@ async function snapshot(pool, applicationTableNames, authUserIds) {
   const role = (await pool.query(roleStateSql)).rows[0];
   assert.ok(role, "margindesk_app must exist in both source and restored databases.");
   const applicationTables = (await pool.query(applicationTableAclSql, [applicationTableNames])).rows;
-  const securityDefiners = (await pool.query(securityDefinerAclSql)).rows;
+  const functions = (await pool.query(publicFunctionAclSql)).rows;
+  const securityDefiners = functions.filter(fn => fn.security_type === "DEFINER");
   const schemas = (await pool.query(schemaAclSql)).rows;
   const defaultPrivileges = (await pool.query(defaultPrivilegesSql)).rows;
   assert.equal(applicationTables.length, applicationTableNames.length, "Application table ACL inventory is incomplete.");
@@ -191,11 +275,22 @@ async function snapshot(pool, applicationTableNames, authUserIds) {
     ? Number((await pool.query("SELECT count(*)::int AS count FROM auth.users WHERE id=ANY($1::uuid[])", [authUserIds])).rows[0].count)
     : 0;
   assert.equal(authUserCount, authUserIds.length, "A referenced auth.users ID is missing from the source or restored target.");
-  return { role, applicationTableNames: [...applicationTableNames].sort(), applicationTables, securityDefiners, schemas, defaultPrivileges, applicationRows, tenantRowCounts, authUserCount };
+  return { role, applicationTableNames: [...applicationTableNames].sort(), applicationTables, securityDefiners, functions, schemas, defaultPrivileges, applicationRows, tenantRowCounts, authUserCount };
 }
 
 function comparableAcl(items) {
   return items.map(({ object_name, owner_name, acl }) => ({ object_name, owner_name, acl }));
+}
+
+function reportSection(label, check, failures) {
+  try {
+    check();
+    process.stdout.write(`PASS ${label}\n`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    process.stdout.write(`FAIL ${label}\n${message}\n`);
+    failures.push(`${label}: ${message}`);
+  }
 }
 
 async function main() {
@@ -222,11 +317,13 @@ async function main() {
     const sourceState = await snapshot(db, applicationTableNames, inventory.authUserIds);
     assert.ok(sourceState.applicationTables.length > 0, "Source must contain application tables; refusing a vacuous ACL/row-count snapshot.");
     assert.ok(sourceState.securityDefiners.length > 0, "Source must contain public SECURITY DEFINER functions; refusing a vacuous function-ACL snapshot.");
+    assert.ok(sourceState.functions.length > 0, "Source must contain public functions; refusing a vacuous complete function ACL snapshot.");
     writeFileSync(snapshotPath, `${JSON.stringify(sourceState, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
     process.stdout.write(`Captured restricted role state, public table/function/schema ACLs, and source counts for ${sourceState.applicationTableNames.length} application tables.\n`);
     process.stdout.write(`Application tables: ${JSON.stringify(sourceState.applicationTableNames)}\n`);
     process.stdout.write(`Source application row counts: ${JSON.stringify(sourceState.applicationRows)}\n`);
     process.stdout.write(`Referenced auth.users IDs present in source: ${sourceState.authUserCount}.\n`);
+    process.stdout.write(`Captured ACL and security metadata for ${sourceState.functions.length} public functions.\n`);
     printApplicationTableAclDiagnostics("Source", sourceState.applicationTables);
     process.stdout.write(`Source ALTER DEFAULT PRIVILEGES entries for public and global defaults: ${JSON.stringify(sourceState.defaultPrivileges, null, 2)}\n`);
   } else {
@@ -243,29 +340,54 @@ async function main() {
     process.stdout.write(`Application table ACL grantees differing: ${differingGrantees.length ? differingGrantees.join(", ") : "none"}\n`);
     const tableAclDiff = Object.keys(tableAclDiffGroups).length ? JSON.stringify(tableAclDiffGroups, null, 2) : "(no table ACL or owner differences)";
     process.stdout.write(`Complete application table ACL diff grouped by grantee:\n${tableAclDiff}\n`);
-    assert.deepEqual(targetState.role, sourceState.role, "margindesk_app role attributes, settings, or memberships differ after restore.");
-    for (const [label, state] of [["source", sourceState.role], ["restored", targetState.role]]) {
-      assert.equal(state.rolcanlogin, false, `${label} margindesk_app must be NOLOGIN`);
-      assert.equal(state.rolsuper, false, `${label} margindesk_app must be NOSUPERUSER`);
-      assert.equal(state.rolbypassrls, false, `${label} margindesk_app must be NOBYPASSRLS`);
-      assert.equal(state.rolcreatedb, false, `${label} margindesk_app must be NOCREATEDB`);
-      assert.equal(state.rolcreaterole, false, `${label} margindesk_app must be NOCREATEROLE`);
-      assert.equal(state.rolreplication, false, `${label} margindesk_app must be NOREPLICATION`);
-      assert.equal(state.rolinherit, false, `${label} margindesk_app must be NOINHERIT`);
-      assert.deepEqual(state.memberships, [], `${label} margindesk_app must have no role memberships`);
+    const functionDiff = compareFunctionAclSections(sourceState.functions, targetState.functions);
+    const securityDefinerDiff = compareFunctionAclSections(sourceState.securityDefiners, targetState.securityDefiners);
+    if (Object.keys(functionDiff).length || Object.keys(securityDefinerDiff).length) {
+      printFunctionDiagnostics("Source", sourceState.functions);
+      printFunctionDiagnostics("Restored", targetState.functions);
+      const functionGranteeSummary = Object.entries(functionDiff)
+        .map(([functionName, grantees]) => `${functionName}: ${Object.keys(grantees).join(", ")}`)
+        .join("; ");
+      process.stdout.write(`Public function ACL differences by function and grantee: ${functionGranteeSummary || "none in complete function inventory"}\n`);
+      process.stdout.write(`Complete public function ACL diff grouped by function and grantee:\n${formatFunctionAclDiff(sourceState.functions, targetState.functions)}\n`);
     }
-    assertApplicationTableAclsEqual(sourceState.applicationTables, targetState.applicationTables);
-    for (const key of ["applicationTableNames", "securityDefiners", "schemas", "applicationRows", "tenantRowCounts", "authUserCount"]) {
-      assert.deepEqual(
-        key === "securityDefiners" || key === "schemas" ? comparableAcl(sourceState[key]) : sourceState[key],
-        key === "securityDefiners" || key === "schemas" ? comparableAcl(targetState[key]) : targetState[key],
-        `${key} differs between source and restored application schemas.`,
-      );
-    }
+
+    const failures = [];
+    reportSection("margindesk_app role attributes and memberships", () => {
+      assert.deepEqual(targetState.role, sourceState.role, "Role attributes/settings/memberships differ.");
+      for (const [label, state] of [["source", sourceState.role], ["restored", targetState.role]]) {
+        assert.equal(state.rolcanlogin, false, `${label} margindesk_app must be NOLOGIN`);
+        assert.equal(state.rolsuper, false, `${label} margindesk_app must be NOSUPERUSER`);
+        assert.equal(state.rolbypassrls, false, `${label} margindesk_app must be NOBYPASSRLS`);
+        assert.equal(state.rolcreatedb, false, `${label} margindesk_app must be NOCREATEDB`);
+        assert.equal(state.rolcreaterole, false, `${label} margindesk_app must be NOCREATEROLE`);
+        assert.equal(state.rolreplication, false, `${label} margindesk_app must be NOREPLICATION`);
+        assert.equal(state.rolinherit, false, `${label} margindesk_app must be NOINHERIT`);
+        assert.deepEqual(state.memberships, [], `${label} margindesk_app must have no role memberships`);
+      }
+    }, failures);
+    reportSection("application table ACLs", () => assertApplicationTableAclsEqual(sourceState.applicationTables, targetState.applicationTables), failures);
+    reportSection("complete public function ACLs and metadata", () => {
+      if (Object.keys(functionDiff).length) {
+        throw new Error(`Public function ACL/metadata mismatch grouped by function and grantee:\n${JSON.stringify(functionDiff, null, 2)}`);
+      }
+    }, failures);
+    reportSection("public SECURITY DEFINER ACLs and metadata", () => {
+      if (Object.keys(securityDefinerDiff).length) {
+        throw new Error(`SECURITY DEFINER ACL/metadata mismatch grouped by function and grantee:\n${JSON.stringify(securityDefinerDiff, null, 2)}`);
+      }
+    }, failures);
+    reportSection("public schema ACL", () => assert.deepEqual(comparableAcl(sourceState.schemas), comparableAcl(targetState.schemas), "Public schema ACL differs."), failures);
+    reportSection("application table inventory", () => assert.deepEqual(sourceState.applicationTableNames, targetState.applicationTableNames, "Application table inventory differs."), failures);
+    reportSection("application row counts", () => assert.deepEqual(sourceState.applicationRows, targetState.applicationRows, "Application row counts differ."), failures);
+    reportSection("per-tenant row counts", () => assert.deepEqual(sourceState.tenantRowCounts, targetState.tenantRowCounts, "Per-tenant row counts differ."), failures);
+    reportSection("referenced auth.users IDs", () => assert.equal(targetState.authUserCount, sourceState.authUserCount, "Referenced auth.users IDs differ."), failures);
+    if (failures.length) throw new Error(`Restore equivalence failed in ${failures.length} section(s):\n${failures.map(item => `- ${item}`).join("\n")}`);
 
     process.stdout.write(`Restored margindesk_app attributes and memberships match: ${JSON.stringify(targetState.role)}\n`);
     process.stdout.write(`Compared table ACLs for ${sourceState.applicationTables.length} application-owned tables.\n`);
     process.stdout.write(`Compared ACLs for ${sourceState.securityDefiners.length} public SECURITY DEFINER functions.\n`);
+    process.stdout.write(`Compared ACLs and execution metadata for ${sourceState.functions.length} public functions.\n`);
     process.stdout.write(`Compared the public schema ACL.\n`);
     process.stdout.write(`Application table row counts match: ${JSON.stringify(Object.fromEntries(Object.keys(sourceState.applicationRows).map(table => [table, { source: sourceState.applicationRows[table], restored: targetState.applicationRows[table] }]))) }\n`);
     process.stdout.write(`Per-tenant row counts match for ${Object.keys(sourceState.tenantRowCounts).length} tenant tables.\n`);
@@ -277,7 +399,7 @@ async function main() {
         "### Restore source/target application equivalence",
         "",
         "- Restricted `margindesk_app` attributes and empty membership state matched.",
-        `- Matched ACLs for ${sourceState.applicationTables.length} application tables, ${sourceState.securityDefiners.length} public SECURITY DEFINER functions, and the public schema.`,
+        `- Matched ACLs for ${sourceState.applicationTables.length} application tables, all ${sourceState.functions.length} public functions (${sourceState.securityDefiners.length} SECURITY DEFINER), and the public schema.`,
         `- Verified ${targetState.authUserCount} synthetic or existing target auth.users IDs required by application foreign keys. No source credential fields were copied.`,
         "- Application table row counts:",
         "",

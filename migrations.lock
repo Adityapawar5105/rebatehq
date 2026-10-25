@@ -15,9 +15,11 @@
     "202610240001_phase1_foundation.sql"
   ],
   "pendingOrder": [
-    "202610250001_revoke_platform_public_privileges.sql"
+    "202610250001_revoke_platform_public_privileges.sql",
+    "202610250002_revoke_platform_function_privileges.sql"
   ],
   "pendingMigrations": {
-    "202610250001_revoke_platform_public_privileges.sql": "d4b48072fac75e3d5a6683fe4b13e00042c9feb5a6a65a9e5576e44ecb9214a2"
+    "202610250001_revoke_platform_public_privileges.sql": "d4b48072fac75e3d5a6683fe4b13e00042c9feb5a6a65a9e5576e44ecb9214a2",
+    "202610250002_revoke_platform_function_privileges.sql": "39965a95a99202f8e47fa0af55dcda66ff408a226a216643cccf3fa18afcf970"
   }
 }

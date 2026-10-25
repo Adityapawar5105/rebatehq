@@ -197,9 +197,9 @@ async function runPgtap(connectionString: string) {
     const reportedMismatch = output.match(/^# Looks like you planned (\d+) tests but ran (\d+)$/m);
     const planned = plan ? Number(plan[1]) : 0;
     const ran = passed + failed;
-    if (!plan || planned !== 49 || ran !== planned || passed !== planned || failed !== 0 || reportedMismatch) {
+    if (!plan || planned !== 53 || ran !== planned || passed !== planned || failed !== 0 || reportedMismatch) {
       const mismatch = reportedMismatch ? `; pgTAP reports planned ${reportedMismatch[1]} but ran ${reportedMismatch[2]}` : "";
-      throw new Error(`pgTAP did not report all 49 checks passing (planned=${planned}, result_lines=${ran}${mismatch}).\n${output || "No TAP output was returned."}`);
+      throw new Error(`pgTAP did not report all 53 checks passing (planned=${planned}, result_lines=${ran}${mismatch}).\n${output || "No TAP output was returned."}`);
     }
     process.stdout.write(`${output}\n`);
   } finally {
