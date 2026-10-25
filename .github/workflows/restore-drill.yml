@@ -100,8 +100,19 @@ jobs:
             "$RUNNER_TEMP/margindesk-dump/source-equivalence.json"
 
       - name: Stop and discard source stack before starting a fresh target (local)
-        if: inputs.target == 'local'
-        run: pnpm exec supabase stop --no-backup
+        if: always() && inputs.target == 'local'
+        shell: bash
+        run: |
+          if [[ ! -d "$GITHUB_WORKSPACE/supabase" ]]; then
+            echo "Source Supabase workdir is missing; no source stack can be active. Skipping cleanup."
+            exit 0
+          fi
+          running_containers="$(docker ps --format '{{.Names}}')"
+          if grep -Eq '^supabase_[^[:space:]]*_margindesk-local$' <<< "$running_containers"; then
+            pnpm exec supabase stop --no-backup
+          else
+            echo "Source stack was never started or is already stopped; skipping cleanup."
+          fi
       - name: Start a fresh empty Supabase target stack (local)
         if: inputs.target == 'local'
         shell: bash
@@ -195,4 +206,16 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Stop local target stack
         if: always() && inputs.target == 'local'
-        run: pnpm exec supabase stop --workdir "$RUNNER_TEMP/margindesk-restore-target" --no-backup
+        shell: bash
+        run: |
+          target_dir="$RUNNER_TEMP/margindesk-restore-target"
+          if [[ ! -d "$target_dir/supabase" ]]; then
+            echo "Target Supabase workdir is missing; target stack was never started. Skipping cleanup."
+            exit 0
+          fi
+          running_containers="$(docker ps --format '{{.Names}}')"
+          if grep -Eq '^supabase_[^[:space:]]*_margindesk-restore$' <<< "$running_containers"; then
+            pnpm exec supabase stop --workdir "$target_dir" --no-backup
+          else
+            echo "Target stack is already stopped or was never started; skipping cleanup."
+          fi

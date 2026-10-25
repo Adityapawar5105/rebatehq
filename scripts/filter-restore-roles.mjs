@@ -11,6 +11,12 @@ export const SUPABASE_MANAGED_ROLES = new Set([
   "pg_read_server_files", "pg_signal_backend", "pg_stat_scan_tables", "pg_use_reserved_connections",
   "pg_write_all_data", "pg_write_server_files",
 ]);
+const ALLOWED_SESSION_STATEMENTS = new Set([
+  "SET CLIENT_ENCODING = 'UTF8';",
+  "SET STANDARD_CONFORMING_STRINGS = ON;",
+  "SET DEFAULT_TRANSACTION_READ_ONLY = OFF;",
+  "RESET ALL;",
+]);
 
 function splitSqlStatements(sql) {
   const statements = [];
@@ -109,14 +115,28 @@ export function inspectAndFilterRolesDump(sql) {
   }
 
   const restore = [];
+  const retainedOwned = [];
+  const retainedAppGrants = [];
+  const retainedSession = [];
   const skipped = [];
   const errors = [];
   for (const statement of statements) {
     const clean = statement.replace(/--[^\n]*/g, " ").trim();
     if (!clean) continue;
+    const canonical = clean.replace(/\s+/g, " ").toUpperCase();
+    if (ALLOWED_SESSION_STATEMENTS.has(canonical)) {
+      restore.push(statement);
+      retainedSession.push(redact(statement));
+      continue;
+    }
+    if (/^(?:SET|RESET)\b/i.test(clean)) {
+      errors.push(`Role dump contains an unallowlisted session setting: ${redact(statement)}`);
+      continue;
+    }
     let role = null;
     let keep = false;
     let referencedRoles = [];
+    let skipReason = "";
     if (/^CREATE\s+ROLE\b/i.test(clean)) {
       role = identifierAfter(clean, "CREATE\\s+ROLE");
       referencedRoles = role ? [role] : [];
@@ -125,6 +145,15 @@ export function inspectAndFilterRolesDump(sql) {
       role = identifierAfter(clean, "ALTER\\s+ROLE");
       referencedRoles = role ? [role] : [];
       keep = role !== null && RESTORE_OWNED_ROLES.has(role);
+    } else if (/^GRANT\s+(?:SET|ALTER\s+SYSTEM)\s+ON\s+PARAMETER\b/i.test(clean)) {
+      const match = /^GRANT\s+(SET|ALTER\s+SYSTEM)\s+ON\s+PARAMETER\s+("(?:[^"]|"")*"|[a-zA-Z_][a-zA-Z0-9_$]*)\s+TO\s+("(?:[^"]|"")*"|[a-zA-Z_][a-zA-Z0-9_$]*|PUBLIC)\s*;$/i.exec(clean);
+      const parameter = match?.[2] ? unquoteIdentifier(match[2]) : null;
+      const grantee = match?.[3] ? unquoteIdentifier(match[3]) : null;
+      if (!match || !grantee || grantee.toLowerCase() === "public" || RESTORE_OWNED_ROLES.has(grantee) || !SUPABASE_MANAGED_ROLES.has(grantee)) {
+        errors.push(`Parameter privilege grant is not allowlisted for a Supabase-managed role: ${redact(statement)}`);
+        continue;
+      }
+      skipReason = `Supabase-managed parameter privilege ${match[1]} on ${parameter} for existing platform role ${grantee}`;
     } else if (/^(?:GRANT|REVOKE)\b/i.test(clean)) {
       const match = /^(GRANT|REVOKE)\s+([\s\S]+?)\s+(TO|FROM)\s+([\s\S]+?)(?:\s+(?:WITH|GRANTED|GRANTOR)\b[\s\S]*)?;$/i.exec(clean);
       if (match) {
@@ -142,22 +171,36 @@ export function inspectAndFilterRolesDump(sql) {
     }
     if (keep) {
       restore.push(statement);
+      if (role && RESTORE_OWNED_ROLES.has(role)) retainedOwned.push(redact(statement));
+      if (/^(?:GRANT|REVOKE)\b/i.test(clean) && referencedRoles.includes("margindesk_app")) {
+        retainedAppGrants.push(redact(statement));
+      }
+      continue;
+    }
+    if (skipReason) {
+      skipped.push({ statement: redact(statement), reason: skipReason });
       continue;
     }
     if (!referencedRoles.length || referencedRoles.some(name => name === null || !SUPABASE_MANAGED_ROLES.has(name))) {
       errors.push(`Role dump contains a statement outside the explicit owned/managed role allowlists: ${redact(statement)}`);
       continue;
     }
-    skipped.push(redact(statement));
+    skipped.push({ statement: redact(statement), reason: `Existing Supabase-managed role ${referencedRoles.join(", ")}; target platform roles are preserved` });
   }
 
-  diagnostics.push(`Role statements retained for owned roles: ${restore.length}`);
+  diagnostics.push(`Role statements retained for owned roles: ${retainedOwned.length}`);
+  diagnostics.push(`Statements retained for owned role margindesk_app: ${retainedOwned.length}`);
+  for (const statement of retainedOwned) diagnostics.push(`RETAINED [margindesk_app]: ${statement}`);
+  diagnostics.push(`Membership grant statements retained for margindesk_app: ${retainedAppGrants.length}`);
+  for (const statement of retainedAppGrants) diagnostics.push(`RETAINED [grant involving margindesk_app]: ${statement}`);
+  diagnostics.push(`Allowlisted session statements retained: ${retainedSession.length}`);
+  for (const statement of retainedSession) diagnostics.push(`RETAINED [session allowlist]: ${statement}`);
   diagnostics.push(`Allowlisted platform-role statements skipped: ${skipped.length}`);
-  for (const statement of skipped) diagnostics.push(`SKIPPED: ${statement}`);
+  for (const item of skipped) diagnostics.push(`SKIPPED [${item.reason}]: ${item.statement}`);
   if (!restore.some(statement => /^\s*CREATE\s+ROLE\s+(?:"margindesk_app"|margindesk_app)(?:\s|;)/i.test(statement))) {
     errors.push("roles.sql did not contain CREATE ROLE margindesk_app; refusing a partial role restore.");
   }
-  return { restoreSql: `${restore.join("\n\n")}\n`, diagnostics, skipped, errors };
+  return { restoreSql: `${restore.join("\n\n")}\n`, diagnostics, retainedOwned, retainedAppGrants, retainedSession, skipped, errors };
 }
 
 if (process.argv[1] && process.argv[1].endsWith("filter-restore-roles.mjs")) {
@@ -171,11 +214,23 @@ if (process.argv[1] && process.argv[1].endsWith("filter-restore-roles.mjs")) {
     appendFileSync(summaryPath, [
       "### Filtered role dump",
       "",
-      "Only `margindesk_app` role statements were restored. Platform-managed role statements were skipped only when every referenced role was in the explicit Supabase role allowlist.",
+      "Only explicitly allowlisted `margindesk_app` role statements and four exact dump-session statements were retained. Platform-managed statements were skipped only under the bounded role/parameter allowlists.",
       "",
-      `Skipped ${result.skipped.length} allowlisted platform-role statement(s):`,
+      `Retained ${result.retainedOwned.length} ` + "`margindesk_app`" + " role statement(s):",
       "",
-      ...result.skipped.map(statement => `- \`${statement.replace(/`/g, "'")}\``),
+      ...result.retainedOwned.map(statement => `- \`${statement.replace(/`/g, "'")}\``),
+      "",
+      `Retained ${result.retainedAppGrants.length} membership statement(s) involving ` + "`margindesk_app`" + ":",
+      "",
+      ...result.retainedAppGrants.map(statement => `- \`${statement.replace(/`/g, "'")}\``),
+      "",
+      `Retained ${result.retainedSession.length} exact session statement(s):`,
+      "",
+      ...result.retainedSession.map(statement => `- \`${statement.replace(/`/g, "'")}\``),
+      "",
+      `Skipped ${result.skipped.length} allowlisted statement(s), with reasons:`,
+      "",
+      ...result.skipped.map(item => `- ${item.reason}: \`${item.statement.replace(/`/g, "'")}\``),
       ...result.errors.map(error => `- ERROR: ${error.replace(/`/g, "'")}`),
       "",
     ].join("\n"), "utf8");
