@@ -13,9 +13,20 @@ export function validateMigrationLock(lock, migrationNames, readMigration) {
     return ["migrations.lock has an unsupported format or no appliedMigrations map."];
   }
   const currentNames = new Set(migrationNames);
-  const lockedNames = Object.keys(lock.appliedMigrations).sort();
+  const lockedNames = lock.appliedOrder;
+  if (!Array.isArray(lockedNames) || lockedNames.some(name => typeof name !== "string")) {
+    return ["migrations.lock must include appliedOrder as an ordered array of applied migration filenames."];
+  }
+  const lockedNameSet = new Set(lockedNames);
+  if (lockedNameSet.size !== lockedNames.length || lockedNameSet.size !== Object.keys(lock.appliedMigrations).length || Object.keys(lock.appliedMigrations).some(name => !lockedNameSet.has(name))) {
+    errors.push("migrations.lock appliedOrder must contain each appliedMigrations entry exactly once.");
+  }
   if (!lockedNames.length || !lockedNames.includes(lock.appliedThrough)) {
     errors.push("migrations.lock must list its appliedThrough migration.");
+  }
+  const actualAppliedOrder = migrationNames.filter(name => name.localeCompare(lock.appliedThrough) <= 0);
+  if (JSON.stringify(actualAppliedOrder) !== JSON.stringify(lockedNames)) {
+    errors.push(`Applied migration order changed (expected ${lockedNames.join(", ")}, found ${actualAppliedOrder.join(", ")}).`);
   }
 
   for (const name of lockedNames) {
@@ -32,7 +43,7 @@ export function validateMigrationLock(lock, migrationNames, readMigration) {
       errors.push(`Invalid SHA-256 entry for ${name} in migrations.lock.`);
       continue;
     }
-    const actual = createHash("sha256").update(readMigration(name)).digest("hex");
+    const actual = hashMigrationContent(readMigration(name));
     if (actual.toLowerCase() !== expected.toLowerCase()) {
       errors.push(`Applied migration changed: ${name} (expected ${expected.toLowerCase()}, found ${actual}). Add a new migration instead of editing it.`);
     }
@@ -45,6 +56,15 @@ export function validateMigrationLock(lock, migrationNames, readMigration) {
     }
   }
   return errors;
+}
+
+export function normalizeMigrationContent(content) {
+  const text = Buffer.isBuffer(content) ? content.toString("utf8") : String(content);
+  return text.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n");
+}
+
+export function hashMigrationContent(content) {
+  return createHash("sha256").update(normalizeMigrationContent(content), "utf8").digest("hex");
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

@@ -16,6 +16,7 @@
     "check:restore-sentinel": "tsx scripts/verify-restore-drill-sentinel.ts",
     "check:service-role": "node scripts/check-service-role.mjs",
     "check:migrations-lock": "node scripts/check-migrations-lock.mjs",
+    "update:migrations-lock": "node scripts/update-migrations-lock.mjs",
     "check:schema": "node scripts/check-schema.mjs",
     "seed:demo": "tsx scripts/seed-demo.ts",
     "import:prototype": "tsx scripts/import-prototype.ts",

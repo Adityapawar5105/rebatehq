@@ -3,8 +3,15 @@
   "baselineRun": "https://github.com/Adityapawar5105/margindesk/actions/runs/40137557258",
   "baselineDate": "2026-10-24",
   "baselineCommit": "8e758e980dddc89abde5ada7eb98fa0301b5ea51",
+  "hashNormalization": "strip UTF-8 BOM; convert CRLF and lone CR to LF before SHA-256",
+  "hashUpdateDate": "2026-10-25",
+  "hashUpdateReason": "Windows CRLF versus CI LF caused different raw-byte hashes; normalized hash matches the CI content hash.",
+  "sqlContentUnchangedSinceBaselineRun": true,
   "appliedThrough": "202610240001_phase1_foundation.sql",
   "appliedMigrations": {
-    "202610240001_phase1_foundation.sql": "09df0975876911266624f8fba68eb28da3a0dd2eee6f6264a499f8dfb6fd4f36"
-  }
+    "202610240001_phase1_foundation.sql": "8faa57997119f29b3921b0e15b4b9e964edbc7fa2ecd8b52fbe32392be38c3bb"
+  },
+  "appliedOrder": [
+    "202610240001_phase1_foundation.sql"
+  ]
 }
