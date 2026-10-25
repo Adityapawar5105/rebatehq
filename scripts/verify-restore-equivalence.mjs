@@ -3,25 +3,74 @@ import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import pg from "pg";
 
 const { Pool } = pg;
-const mode = process.argv[2];
-const snapshotPath = process.argv[3];
-const inventoryPath = process.argv[4];
-if (!new Set(["--snapshot", "--compare"]).has(mode) || !snapshotPath || !inventoryPath) {
-  throw new Error("Usage: node scripts/verify-restore-equivalence.mjs --snapshot <source.json> <inventory.json> | --compare <source.json> <inventory.json>");
-}
-const databaseUrl = mode === "--snapshot" ? process.env.RESTORE_TEST_SOURCE_DATABASE_URL : process.env.RESTORE_TEST_TARGET_DATABASE_URL;
-if (!databaseUrl) throw new Error(`${mode === "--snapshot" ? "RESTORE_TEST_SOURCE_DATABASE_URL" : "RESTORE_TEST_TARGET_DATABASE_URL"} is required.`);
-const inventory = JSON.parse(readFileSync(inventoryPath, "utf8"));
-assert.deepEqual(inventory.applicationSchemas, ["public"], "Restore equivalence only accepts the reviewed public application schema allowlist.");
-assert.ok(Array.isArray(inventory.schemaTables) && inventory.schemaTables.length > 0, "Dump inventory must contain application tables.");
-const applicationTableNames = inventory.schemaTables.map(item => {
-  assert.equal(item.schema, "public", `Unexpected non-application table ${item.schema}.${item.table}.`);
-  return item.table;
-});
-assert.equal(new Set(applicationTableNames).size, applicationTableNames.length, "Application table inventory contains duplicate table names.");
-assert.ok(Array.isArray(inventory.authUserIds), "Dump inventory must include auth.users dependencies.");
 
-const db = new Pool({ connectionString: databaseUrl, ssl: /(?:localhost|127\.0\.0\.1)/i.test(databaseUrl) ? false : { rejectUnauthorized: true } });
+export function compareApplicationTableAcls(sourceTables, restoredTables) {
+  const sourceByName = new Map(sourceTables.map(table => [table.object_name, table]));
+  const restoredByName = new Map(restoredTables.map(table => [table.object_name, table]));
+  const grouped = new Map();
+  const add = (grantee, side, entry) => {
+    if (!grouped.has(grantee)) grouped.set(grantee, { sourceOnly: [], restoredOnly: [] });
+    grouped.get(grantee)[side].push(entry);
+  };
+  const tableNames = [...new Set([...sourceByName.keys(), ...restoredByName.keys()])].sort();
+  for (const tableName of tableNames) {
+    const source = sourceByName.get(tableName);
+    const restored = restoredByName.get(tableName);
+    if (!source) {
+      add("<table>", "restoredOnly", { table: tableName, owner: restored.owner_name, missingOnSource: true });
+      continue;
+    }
+    if (!restored) {
+      add("<table>", "sourceOnly", { table: tableName, owner: source.owner_name, missingOnRestored: true });
+      continue;
+    }
+    if (source.owner_name !== restored.owner_name) {
+      add("<owner>", "sourceOnly", { table: tableName, owner: source.owner_name });
+      add("<owner>", "restoredOnly", { table: tableName, owner: restored.owner_name });
+    }
+    const keyEntries = table => (table.acl ?? []).map(acl => ({
+      grantee: acl.grantee,
+      grantor: acl.grantor,
+      privilege: acl.privilege,
+      grantable: Boolean(acl.grantable),
+    }));
+    const sourceEntries = keyEntries(source);
+    const restoredEntries = keyEntries(restored);
+    const entryKey = entry => JSON.stringify(entry);
+    const sourceCounts = new Map();
+    const restoredCounts = new Map();
+    for (const entry of sourceEntries) sourceCounts.set(entryKey(entry), (sourceCounts.get(entryKey(entry)) ?? 0) + 1);
+    for (const entry of restoredEntries) restoredCounts.set(entryKey(entry), (restoredCounts.get(entryKey(entry)) ?? 0) + 1);
+    const keys = new Set([...sourceCounts.keys(), ...restoredCounts.keys()]);
+    for (const key of keys) {
+      const sourceCount = sourceCounts.get(key) ?? 0;
+      const restoredCount = restoredCounts.get(key) ?? 0;
+      const entry = { table: tableName, ...JSON.parse(key) };
+      for (let index = restoredCount; index < sourceCount; index += 1) add(entry.grantee, "sourceOnly", entry);
+      for (let index = sourceCount; index < restoredCount; index += 1) add(entry.grantee, "restoredOnly", entry);
+    }
+  }
+  return Object.fromEntries([...grouped.entries()].sort(([left], [right]) => left.localeCompare(right)));
+}
+
+export function assertApplicationTableAclsEqual(sourceTables, restoredTables) {
+  const differences = compareApplicationTableAcls(sourceTables, restoredTables);
+  const hasDifferences = Object.values(differences).some(group => group.sourceOnly.length || group.restoredOnly.length);
+  if (hasDifferences) throw new Error(`Application table ACL mismatch grouped by grantee:\n${JSON.stringify(differences, null, 2)}`);
+  return true;
+}
+
+export function printApplicationTableAclDiagnostics(label, tables, write = line => process.stdout.write(`${line}\n`)) {
+  write(`${label} application table owners and complete ACLs (${tables.length} tables):`);
+  for (const table of [...tables].sort((a, b) => a.object_name.localeCompare(b.object_name))) {
+    write(`public.${table.object_name} owner=${table.owner_name}; ACL=${JSON.stringify(table.acl)}`);
+  }
+}
+
+export function formatApplicationTableAclDiff(sourceTables, restoredTables) {
+  const differences = compareApplicationTableAcls(sourceTables, restoredTables);
+  return Object.keys(differences).length ? JSON.stringify(differences, null, 2) : "(no table ACL or owner differences)";
+}
 
 const roleStateSql = `
   SELECT r.rolname,r.rolcanlogin,r.rolsuper,r.rolbypassrls,r.rolcreatedb,r.rolcreaterole,r.rolreplication,r.rolinherit,r.rolconfig,
@@ -81,11 +130,30 @@ const schemaAclSql = `
   GROUP BY n.oid,n.nspname,owner.rolname
 `;
 
+const defaultPrivilegesSql = `
+  SELECT owner_role.rolname AS owner_name,
+         CASE WHEN d.defaclnamespace=0 THEN '<all schemas>' ELSE schema_name.nspname END AS schema_name,
+         CASE d.defaclobjtype WHEN 'r' THEN 'TABLES' WHEN 'S' THEN 'SEQUENCES' WHEN 'f' THEN 'FUNCTIONS' ELSE d.defaclobjtype::text END AS object_type,
+         COALESCE(jsonb_agg(jsonb_build_object(
+           'grantee',CASE WHEN acl.grantee=0 THEN 'PUBLIC' ELSE grantee_role.rolname END,
+           'grantor',grantor_role.rolname,'privilege',acl.privilege_type,'grantable',acl.is_grantable
+         ) ORDER BY acl.grantee,acl.privilege_type,grantor_role.rolname) FILTER (WHERE acl.grantee IS NOT NULL),'[]'::jsonb) AS acl
+  FROM pg_default_acl d
+  JOIN pg_roles owner_role ON owner_role.oid=d.defaclrole
+  LEFT JOIN pg_namespace schema_name ON schema_name.oid=d.defaclnamespace
+  LEFT JOIN LATERAL aclexplode(d.defaclacl) acl ON true
+  LEFT JOIN pg_roles grantor_role ON grantor_role.oid=acl.grantor
+  LEFT JOIN pg_roles grantee_role ON grantee_role.oid=acl.grantee
+  WHERE d.defaclnamespace IN (0,'public'::regnamespace)
+  GROUP BY owner_role.rolname,d.defaclnamespace,schema_name.nspname,d.defaclobjtype
+  ORDER BY owner_role.rolname,schema_name.nspname,object_type
+`;
+
 function quoteIdentifier(identifier) {
   return `"${identifier.replace(/"/g, '""')}"`;
 }
 
-async function assertApplicationTablesExist(pool) {
+async function assertApplicationTablesExist(pool, applicationTableNames) {
   const result = await pool.query(`
     SELECT c.relname
     FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
@@ -96,13 +164,14 @@ async function assertApplicationTablesExist(pool) {
   assert.deepEqual(actual, [...applicationTableNames].sort(), "An expected application table is missing from the restored database.");
 }
 
-async function snapshot(pool) {
-  await assertApplicationTablesExist(pool);
+async function snapshot(pool, applicationTableNames, authUserIds) {
+  await assertApplicationTablesExist(pool, applicationTableNames);
   const role = (await pool.query(roleStateSql)).rows[0];
   assert.ok(role, "margindesk_app must exist in both source and restored databases.");
   const applicationTables = (await pool.query(applicationTableAclSql, [applicationTableNames])).rows;
   const securityDefiners = (await pool.query(securityDefinerAclSql)).rows;
   const schemas = (await pool.query(schemaAclSql)).rows;
+  const defaultPrivileges = (await pool.query(defaultPrivilegesSql)).rows;
   assert.equal(applicationTables.length, applicationTableNames.length, "Application table ACL inventory is incomplete.");
   assert.equal(schemas.length, 1, "The application-owned schema ACL inventory must contain public exactly once.");
 
@@ -118,20 +187,39 @@ async function snapshot(pool) {
       tenantRowCounts[table] = (await pool.query(`SELECT tenant_id::text AS tenant_id,count(*)::text AS row_count FROM ${relation} GROUP BY tenant_id::text ORDER BY tenant_id::text NULLS FIRST`)).rows;
     }
   }
-  const authUserCount = inventory.authUserIds.length
-    ? Number((await pool.query("SELECT count(*)::int AS count FROM auth.users WHERE id=ANY($1::uuid[])", [inventory.authUserIds])).rows[0].count)
+  const authUserCount = authUserIds.length
+    ? Number((await pool.query("SELECT count(*)::int AS count FROM auth.users WHERE id=ANY($1::uuid[])", [authUserIds])).rows[0].count)
     : 0;
-  assert.equal(authUserCount, inventory.authUserIds.length, "A referenced auth.users ID is missing from the source or restored target.");
-  return { role, applicationTableNames: [...applicationTableNames].sort(), applicationTables, securityDefiners, schemas, applicationRows, tenantRowCounts, authUserCount };
+  assert.equal(authUserCount, authUserIds.length, "A referenced auth.users ID is missing from the source or restored target.");
+  return { role, applicationTableNames: [...applicationTableNames].sort(), applicationTables, securityDefiners, schemas, defaultPrivileges, applicationRows, tenantRowCounts, authUserCount };
 }
 
 function comparableAcl(items) {
   return items.map(({ object_name, owner_name, acl }) => ({ object_name, owner_name, acl }));
 }
 
-try {
+async function main() {
+  const mode = process.argv[2];
+  const snapshotPath = process.argv[3];
+  const inventoryPath = process.argv[4];
+  if (!new Set(["--snapshot", "--compare"]).has(mode) || !snapshotPath || !inventoryPath) {
+    throw new Error("Usage: node scripts/verify-restore-equivalence.mjs --snapshot <source.json> <inventory.json> | --compare <source.json> <inventory.json>");
+  }
+  const databaseUrl = mode === "--snapshot" ? process.env.RESTORE_TEST_SOURCE_DATABASE_URL : process.env.RESTORE_TEST_TARGET_DATABASE_URL;
+  if (!databaseUrl) throw new Error(`${mode === "--snapshot" ? "RESTORE_TEST_SOURCE_DATABASE_URL" : "RESTORE_TEST_TARGET_DATABASE_URL"} is required.`);
+  const inventory = JSON.parse(readFileSync(inventoryPath, "utf8"));
+  assert.deepEqual(inventory.applicationSchemas, ["public"], "Restore equivalence only accepts the reviewed public application schema allowlist.");
+  assert.ok(Array.isArray(inventory.schemaTables) && inventory.schemaTables.length > 0, "Dump inventory must contain application tables.");
+  const applicationTableNames = inventory.schemaTables.map(item => {
+    assert.equal(item.schema, "public", `Unexpected non-application table ${item.schema}.${item.table}.`);
+    return item.table;
+  });
+  assert.equal(new Set(applicationTableNames).size, applicationTableNames.length, "Application table inventory contains duplicate table names.");
+  assert.ok(Array.isArray(inventory.authUserIds), "Dump inventory must include auth.users dependencies.");
+  const db = new Pool({ connectionString: databaseUrl, ssl: /(?:localhost|127\.0\.0\.1)/i.test(databaseUrl) ? false : { rejectUnauthorized: true } });
+  try {
   if (mode === "--snapshot") {
-    const sourceState = await snapshot(db);
+    const sourceState = await snapshot(db, applicationTableNames, inventory.authUserIds);
     assert.ok(sourceState.applicationTables.length > 0, "Source must contain application tables; refusing a vacuous ACL/row-count snapshot.");
     assert.ok(sourceState.securityDefiners.length > 0, "Source must contain public SECURITY DEFINER functions; refusing a vacuous function-ACL snapshot.");
     writeFileSync(snapshotPath, `${JSON.stringify(sourceState, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
@@ -139,9 +227,22 @@ try {
     process.stdout.write(`Application tables: ${JSON.stringify(sourceState.applicationTableNames)}\n`);
     process.stdout.write(`Source application row counts: ${JSON.stringify(sourceState.applicationRows)}\n`);
     process.stdout.write(`Referenced auth.users IDs present in source: ${sourceState.authUserCount}.\n`);
+    printApplicationTableAclDiagnostics("Source", sourceState.applicationTables);
+    process.stdout.write(`Source ALTER DEFAULT PRIVILEGES entries for public and global defaults: ${JSON.stringify(sourceState.defaultPrivileges, null, 2)}\n`);
   } else {
     const sourceState = JSON.parse(readFileSync(snapshotPath, "utf8"));
-    const targetState = await snapshot(db);
+    const targetState = await snapshot(db, applicationTableNames, inventory.authUserIds);
+    printApplicationTableAclDiagnostics("Source", sourceState.applicationTables);
+    printApplicationTableAclDiagnostics("Restored", targetState.applicationTables);
+    process.stdout.write(`Source ALTER DEFAULT PRIVILEGES entries for public and global defaults: ${JSON.stringify(sourceState.defaultPrivileges, null, 2)}\n`);
+    process.stdout.write(`Restored ALTER DEFAULT PRIVILEGES entries for public and global defaults: ${JSON.stringify(targetState.defaultPrivileges, null, 2)}\n`);
+    const tableAclDiffGroups = compareApplicationTableAcls(sourceState.applicationTables, targetState.applicationTables);
+    const differingGrantees = Object.entries(tableAclDiffGroups)
+      .filter(([, group]) => group.sourceOnly.length || group.restoredOnly.length)
+      .map(([grantee]) => grantee);
+    process.stdout.write(`Application table ACL grantees differing: ${differingGrantees.length ? differingGrantees.join(", ") : "none"}\n`);
+    const tableAclDiff = Object.keys(tableAclDiffGroups).length ? JSON.stringify(tableAclDiffGroups, null, 2) : "(no table ACL or owner differences)";
+    process.stdout.write(`Complete application table ACL diff grouped by grantee:\n${tableAclDiff}\n`);
     assert.deepEqual(targetState.role, sourceState.role, "margindesk_app role attributes, settings, or memberships differ after restore.");
     for (const [label, state] of [["source", sourceState.role], ["restored", targetState.role]]) {
       assert.equal(state.rolcanlogin, false, `${label} margindesk_app must be NOLOGIN`);
@@ -153,10 +254,11 @@ try {
       assert.equal(state.rolinherit, false, `${label} margindesk_app must be NOINHERIT`);
       assert.deepEqual(state.memberships, [], `${label} margindesk_app must have no role memberships`);
     }
-    for (const key of ["applicationTableNames", "applicationTables", "securityDefiners", "schemas", "applicationRows", "tenantRowCounts", "authUserCount"]) {
+    assertApplicationTableAclsEqual(sourceState.applicationTables, targetState.applicationTables);
+    for (const key of ["applicationTableNames", "securityDefiners", "schemas", "applicationRows", "tenantRowCounts", "authUserCount"]) {
       assert.deepEqual(
-        key.endsWith("Tables") || key === "securityDefiners" || key === "schemas" ? comparableAcl(sourceState[key]) : sourceState[key],
-        key.endsWith("Tables") || key === "securityDefiners" || key === "schemas" ? comparableAcl(targetState[key]) : targetState[key],
+        key === "securityDefiners" || key === "schemas" ? comparableAcl(sourceState[key]) : sourceState[key],
+        key === "securityDefiners" || key === "schemas" ? comparableAcl(targetState[key]) : targetState[key],
         `${key} differs between source and restored application schemas.`,
       );
     }
@@ -186,6 +288,14 @@ try {
       ].join("\n"), "utf8");
     }
   }
-} finally {
-  await db.end();
+  } finally {
+    await db.end();
+  }
+}
+
+if (process.argv[1] && process.argv[1].endsWith("verify-restore-equivalence.mjs")) {
+  main().catch(error => {
+    process.stderr.write(`${error instanceof Error ? error.stack ?? error.message : "Restore equivalence check failed."}\n`);
+    process.exitCode = 1;
+  });
 }

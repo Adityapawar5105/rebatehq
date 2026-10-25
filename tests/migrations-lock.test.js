@@ -61,3 +61,23 @@ test("migration lock rejects reordered or deleted applied migrations", async () 
   assert.match(validateMigrationLock(lock, [second, first], read).join("\n"), /Applied migration order changed/);
   assert.match(validateMigrationLock(lock, [first], read).join("\n"), /Locked migration is missing: 202610250001_next_applied.sql/);
 });
+
+test("migration lock pins pending migration hashes without marking them applied", async () => {
+  const { hashMigrationContent, validateMigrationLock } = await import("../scripts/check-migrations-lock.mjs");
+  const applied = "202610240001_phase1_foundation.sql";
+  const pending = "202610250001_revoke_platform_public_privileges.sql";
+  const contents = new Map([[applied, "select 1;\n"], [pending, "revoke all;\n"]]);
+  const lock = {
+    version: 1,
+    appliedThrough: applied,
+    appliedOrder: [applied],
+    appliedMigrations: { [applied]: hashMigrationContent(contents.get(applied)) },
+    pendingOrder: [pending],
+    pendingMigrations: { [pending]: hashMigrationContent(contents.get(pending)) },
+  };
+  const read = name => Buffer.from(contents.get(name) ?? "");
+  assert.deepEqual(validateMigrationLock(lock, [applied, pending], read), []);
+  assert.match(validateMigrationLock(lock, [applied, pending], name => Buffer.from(name === pending ? "edited;\n" : contents.get(name))).join("\n"), /Pending migration changed/);
+  assert.match(validateMigrationLock(lock, [applied], read).join("\n"), /Pending migration order changed/);
+  assert.equal(lock.appliedThrough, applied, "A pending migration hash does not claim CI application or verification.");
+});

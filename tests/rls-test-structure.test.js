@@ -5,6 +5,7 @@ const test = require("node:test");
 
 const sql = fs.readFileSync(path.join(__dirname, "..", "supabase", "tests", "phase1_rls.sql"), "utf8");
 const migration = fs.readFileSync(path.join(__dirname, "..", "supabase", "migrations", "202610240001_phase1_foundation.sql"), "utf8");
+const aclMigration = fs.readFileSync(path.join(__dirname, "..", "supabase", "migrations", "202610250001_revoke_platform_public_privileges.sql"), "utf8");
 const runner = fs.readFileSync(path.join(__dirname, "..", "scripts", "test-db.ts"), "utf8");
 
 test("the restricted-role pgTAP checks capture results and run assertions after RESET ROLE", () => {
@@ -24,7 +25,7 @@ test("the restricted-role pgTAP checks capture results and run assertions after 
 });
 
 test("RLS fixtures prove tenant-positive paths, exact RLS write failures, and TRUNCATE protection", () => {
-  assert.match(sql, /extensions\.plan\(45\)/, "The pgTAP plan must match the current checks.");
+  assert.match(sql, /extensions\.plan\(49\)/, "The pgTAP plan must match the current checks.");
   assert.match(sql, /phase1_tenant_a_fixtures/, "Every application table must have a Tenant A fixture row.");
   assert.match(sql, /CREATE TEMP TABLE phase1_rls_tables[\s\S]*?SELECT c\.relname[\s\S]*?n\.nspname='public'/, "The isolation suite must enumerate every public application table, including new migrations.");
   assert.match(sql, /Tenant B fixture row is missing for application table %/, "New tables without a seeded test row must fail before isolation checks.");
@@ -55,6 +56,19 @@ test("RLS fixtures prove tenant-positive paths, exact RLS write failures, and TR
   assert.match(sql, /phase1_ci_diagnostic/);
   assert.match(sql, /public_security_definer_default_execute/);
   assert.match(sql, /margindesk_app_memberships/);
+  assert.match(sql, /No application table or column ACL grants any privilege to anon, authenticated, or PUBLIC/);
+  assert.match(sql, /service_role application table privilege allowlist is empty/);
+  assert.match(sql, /Public default privileges for application object owners grant nothing/);
+  assert.match(sql, /'MAINTAIN'/, "All PostgreSQL 17 table privilege types must be considered for platform roles.");
+  assert.match(sql, /has_column_privilege\('anon'/, "Inherited or effective column grants to anon must fail the ACL check.");
+  assert.match(sql, /has_column_privilege\('service_role'/, "Inherited or effective column grants to service_role must fail the ACL check.");
+  assert.match(sql, /anon has no effective CRUD table privileges/);
+  assert.match(sql, /permission denied for table tenant/);
+  assert.match(sql, /permission denied for table product/);
+  assert.match(aclMigration, /REVOKE ALL PRIVILEGES ON TABLE public\.%I FROM %s/);
+  assert.match(aclMigration, /REVOKE %s \(%I\) ON TABLE public\.%I FROM %s/);
+  assert.match(aclMigration, /ALTER DEFAULT PRIVILEGES FOR ROLE %I%s REVOKE ALL ON %s FROM %s/);
+  assert.doesNotMatch(aclMigration, /GRANT\s+(?:ALL|SELECT|INSERT|UPDATE|DELETE)[^;]*\b(?:anon|authenticated|service_role|PUBLIC)\b/i);
   assert.doesNotMatch(sql, /SAVEPOINT auth_uid_execute_probe|ROLLBACK TO SAVEPOINT auth_uid_execute_probe/);
   assert.match(runner, /ran !== planned/);
   assert.match(runner, /Looks like you planned/);

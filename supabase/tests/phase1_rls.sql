@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT extensions.plan(45);
+SELECT extensions.plan(49);
 
 -- Fixed local-only actors and two isolated tenants. The transaction rolls back.
 INSERT INTO auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,created_at,updated_at)
@@ -292,6 +292,145 @@ SELECT extensions.ok(NOT EXISTS (
   SELECT 1 FROM pg_temp.phase1_rls_tables t
   WHERE t.table_name<>'audit_log' AND has_table_privilege('margindesk_app',format('public.%I',t.table_name),'TRUNCATE')
 ),'App role has no TRUNCATE privilege on tenant tables');
+
+SELECT extensions.ok(NOT EXISTS (
+  SELECT 1
+  FROM pg_temp.phase1_rls_tables t
+  JOIN pg_class c ON c.relname=t.table_name
+  JOIN pg_namespace n ON n.oid=c.relnamespace AND n.nspname='public'
+  CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) acl
+  CROSS JOIN (VALUES ('SELECT'),('INSERT'),('UPDATE'),('DELETE'),('TRUNCATE'),('REFERENCES'),('TRIGGER'),('MAINTAIN')) table_privilege(privilege)
+  WHERE acl.grantee IN (0,'anon'::regrole,'authenticated'::regrole)
+     OR has_table_privilege('anon',c.oid,table_privilege.privilege)
+     OR has_table_privilege('authenticated',c.oid,table_privilege.privilege)
+     OR EXISTS (
+       SELECT 1 FROM pg_attribute a
+       WHERE a.attrelid=c.oid AND a.attnum>0 AND NOT a.attisdropped
+         AND (
+           EXISTS (
+             SELECT 1 FROM aclexplode(a.attacl) column_acl
+             WHERE column_acl.grantee IN (0,'anon'::regrole,'authenticated'::regrole)
+           )
+           OR
+           has_column_privilege('anon',a.attrelid,a.attnum,'SELECT')
+           OR has_column_privilege('anon',a.attrelid,a.attnum,'INSERT')
+           OR has_column_privilege('anon',a.attrelid,a.attnum,'UPDATE')
+           OR has_column_privilege('anon',a.attrelid,a.attnum,'REFERENCES')
+           OR has_column_privilege('authenticated',a.attrelid,a.attnum,'SELECT')
+           OR has_column_privilege('authenticated',a.attrelid,a.attnum,'INSERT')
+           OR has_column_privilege('authenticated',a.attrelid,a.attnum,'UPDATE')
+           OR has_column_privilege('authenticated',a.attrelid,a.attnum,'REFERENCES')
+         )
+     )
+), 'No application table or column ACL grants any privilege to anon, authenticated, or PUBLIC');
+
+SELECT extensions.ok(NOT EXISTS (
+  SELECT 1
+  FROM pg_temp.phase1_rls_tables t
+  JOIN pg_class c ON c.relname=t.table_name
+  JOIN pg_namespace n ON n.oid=c.relnamespace AND n.nspname='public'
+  CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) acl
+  CROSS JOIN (VALUES ('SELECT'),('INSERT'),('UPDATE'),('DELETE'),('TRUNCATE'),('REFERENCES'),('TRIGGER'),('MAINTAIN')) table_privilege(privilege)
+  WHERE acl.grantee='service_role'::regrole
+     OR has_table_privilege('service_role',c.oid,table_privilege.privilege)
+     OR EXISTS (
+       SELECT 1 FROM pg_attribute a
+       WHERE a.attrelid=c.oid AND a.attnum>0 AND NOT a.attisdropped
+         AND (
+           EXISTS (SELECT 1 FROM aclexplode(a.attacl) column_acl WHERE column_acl.grantee='service_role'::regrole)
+           OR has_column_privilege('service_role',a.attrelid,a.attnum,'SELECT')
+           OR has_column_privilege('service_role',a.attrelid,a.attnum,'INSERT')
+           OR has_column_privilege('service_role',a.attrelid,a.attnum,'UPDATE')
+           OR has_column_privilege('service_role',a.attrelid,a.attnum,'REFERENCES')
+         )
+     )
+), 'service_role application table privilege allowlist is empty (service_role bypasses RLS and the app does not use it)');
+
+WITH app_owners AS (
+  SELECT DISTINCT c.relowner AS owner_oid
+  FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+  WHERE n.nspname='public' AND c.relkind IN ('r','p')
+    AND EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid=c.oid AND a.attname='tenant_id' AND a.attnum>0 AND NOT a.attisdropped)
+  UNION
+  SELECT seq_class.relowner
+  FROM pg_class seq_class JOIN pg_namespace sequence_schema ON sequence_schema.oid=seq_class.relnamespace
+  JOIN pg_depend dependency ON dependency.classid='pg_class'::regclass AND dependency.objid=seq_class.oid
+    AND dependency.refclassid='pg_class'::regclass AND dependency.deptype IN ('a','i')
+  JOIN pg_class app_table ON app_table.oid=dependency.refobjid
+  JOIN pg_namespace app_schema ON app_schema.oid=app_table.relnamespace
+  WHERE sequence_schema.nspname='public' AND seq_class.relkind='S' AND app_schema.nspname='public'
+    AND EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid=app_table.oid AND a.attname='tenant_id' AND a.attnum>0 AND NOT a.attisdropped)
+  UNION
+  SELECT DISTINCT p.proowner
+  FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+  WHERE n.nspname='public'
+    AND p.proname=ANY(ARRAY['is_tenant_member','is_tenant_role','is_tenant_role_any_status','audit_row_change','prevent_audit_mutation','create_tenant_with_owner','accept_tenant_invite','record_failed_login'])
+), explicit_bad_defaults AS (
+  SELECT 1
+  FROM pg_default_acl d JOIN app_owners o ON o.owner_oid=d.defaclrole
+  CROSS JOIN LATERAL aclexplode(d.defaclacl) acl
+  WHERE d.defaclnamespace IN (0,'public'::regnamespace)
+    AND d.defaclobjtype IN ('r','S','f')
+    AND acl.grantee IN (0,'anon'::regrole,'authenticated'::regrole,'service_role'::regrole)
+), inherited_builtin_public_function AS (
+  SELECT 1 FROM app_owners o
+  WHERE NOT EXISTS (
+    SELECT 1 FROM pg_default_acl d WHERE d.defaclrole=o.owner_oid AND d.defaclnamespace=0 AND d.defaclobjtype='f'
+  ) AND EXISTS (
+    SELECT 1 FROM aclexplode(acldefault('f',o.owner_oid)) acl
+    WHERE acl.grantee=0 AND acl.privilege_type='EXECUTE'
+  )
+)
+SELECT extensions.ok(NOT EXISTS (SELECT 1 FROM explicit_bad_defaults)
+  AND NOT EXISTS (SELECT 1 FROM inherited_builtin_public_function),
+  'Public default privileges for application object owners grant nothing to anon, authenticated, service_role, or PUBLIC');
+
+SET LOCAL ROLE anon;
+DO $$
+DECLARE
+  v_operation text;
+  v_state text;
+  v_message text;
+  v_count bigint;
+  v_result jsonb:='{}'::jsonb;
+BEGIN
+  FOREACH v_operation IN ARRAY ARRAY['SELECT','INSERT','UPDATE','DELETE'] LOOP
+    v_state:='succeeded';
+    v_message:='';
+    BEGIN
+      IF v_operation='SELECT' THEN
+        EXECUTE 'SELECT count(*) FROM public.tenant' INTO v_count;
+      ELSIF v_operation='INSERT' THEN
+        EXECUTE 'INSERT INTO public.tenant(name) VALUES (''__anon_privilege_probe__'')';
+      ELSIF v_operation='UPDATE' THEN
+        EXECUTE 'UPDATE public.product SET name=name WHERE false';
+      ELSE
+        EXECUTE 'DELETE FROM public.product WHERE false';
+      END IF;
+    EXCEPTION WHEN OTHERS THEN
+      GET STACKED DIAGNOSTICS v_state=RETURNED_SQLSTATE,v_message=MESSAGE_TEXT;
+    END;
+    v_result:=v_result||jsonb_build_object(v_operation,jsonb_build_object('sqlstate',v_state,'message',v_message));
+  END LOOP;
+  PERFORM set_config('app.phase1_anon_privilege_result',v_result::text,true);
+END $$;
+RESET ROLE;
+SELECT extensions.ok(
+  NOT EXISTS (
+    SELECT 1 FROM pg_temp.phase1_rls_tables t
+    CROSS JOIN (VALUES ('SELECT'),('INSERT'),('UPDATE'),('DELETE')) op(privilege)
+    WHERE has_table_privilege('anon',format('public.%I',t.table_name),op.privilege)
+  )
+  AND (current_setting('app.phase1_anon_privilege_result')::jsonb->'SELECT'->>'sqlstate')='42501'
+  AND (current_setting('app.phase1_anon_privilege_result')::jsonb->'SELECT'->>'message') ILIKE '%permission denied for table tenant%'
+  AND (current_setting('app.phase1_anon_privilege_result')::jsonb->'INSERT'->>'sqlstate')='42501'
+  AND (current_setting('app.phase1_anon_privilege_result')::jsonb->'INSERT'->>'message') ILIKE '%permission denied for table tenant%'
+  AND (current_setting('app.phase1_anon_privilege_result')::jsonb->'UPDATE'->>'sqlstate')='42501'
+  AND (current_setting('app.phase1_anon_privilege_result')::jsonb->'UPDATE'->>'message') ILIKE '%permission denied for table product%'
+  AND (current_setting('app.phase1_anon_privilege_result')::jsonb->'DELETE'->>'sqlstate')='42501'
+  AND (current_setting('app.phase1_anon_privilege_result')::jsonb->'DELETE'->>'message') ILIKE '%permission denied for table product%',
+  'anon has no effective CRUD table privileges across the application schema; representative statements fail at ACL checks: '||current_setting('app.phase1_anon_privilege_result')
+);
 
 SET LOCAL ROLE margindesk_app;
 SELECT set_config(

@@ -18,5 +18,11 @@ for (const name of appliedOrder) {
   lock.appliedMigrations[name] = hashMigrationContent(readFileSync(path.join(migrationDir, name)));
 }
 lock.appliedOrder = appliedOrder;
+const pendingOrder = migrationNames.filter(name => name.localeCompare(appliedThrough) > 0);
+lock.pendingOrder = pendingOrder;
+lock.pendingMigrations = Object.fromEntries(pendingOrder.map(name => [
+  name,
+  hashMigrationContent(readFileSync(path.join(migrationDir, name))),
+]));
 writeFileSync(lockPath, `${JSON.stringify(lock, null, 2)}\n`, "utf8");
-console.log(`Updated normalized SHA-256 hashes for ${appliedOrder.length} applied migration(s).`);
+console.log(`Updated normalized SHA-256 hashes for ${appliedOrder.length} applied and ${pendingOrder.length} pending migration(s).`);

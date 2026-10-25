@@ -11,11 +11,16 @@
 | Rep response redaction and no self-approval | **verified in CI run [MarginDesk CI #14](https://github.com/Adityapawar5105/margindesk/actions/runs/40137557258) · 2026-10-24** | Unit/API guard and database self-approval checks passed |
 | No user-facing service-role credential use | **verified in CI run [MarginDesk CI #14](https://github.com/Adityapawar5105/margindesk/actions/runs/40137557258) · 2026-10-24** | Source scan passed |
 | Applied-migration hash lock and expanded future-migration gates | **unverified** | Added after CI #14; awaiting a run that exercises these new checks |
+| Application table ACLs exclude `anon`, `authenticated`, `service_role`, and `PUBLIC`; defaults stay minimal | **unverified** | New migration and pgTAP checks added after CI #14; pending restore/CI run |
 | Backup/restore dump, fresh target, sentinel, and post-restore tests | **unverified** | Restore workflow has not passed |
 
 ### Current pgTAP check ledger
 
-The passing PostgreSQL 17 run [MarginDesk CI #14](https://github.com/Adityapawar5105/margindesk/actions/runs/40137557258) · 2026-10-24 completed every CI step. The test job passed all 45 pgTAP checks with planned equal to ran. Its auth.uid() diagnostics confirmed the function is owned by supabase_auth_admin and app EXECUTE comes through the Supabase platform PUBLIC grant. The migration makes no ineffective grant/revoke attempt on auth.uid(). Check 42's SECURITY DEFINER ACL allowlist passed after cleanup; all 45 ledger checks are marked with this CI evidence below. The restore drill is tracked separately and remains unverified.
+The passing PostgreSQL 17 run [MarginDesk CI #14](https://github.com/Adityapawar5105/margindesk/actions/runs/40137557258) · 2026-10-24 completed every CI step. The test job passed the original 45 pgTAP checks with planned equal to ran. Its auth.uid() diagnostics confirmed the function is owned by supabase_auth_admin and app EXECUTE comes through the Supabase platform PUBLIC grant. The migration makes no ineffective grant/revoke attempt on auth.uid(). Check 42's SECURITY DEFINER ACL allowlist passed after cleanup. Four application table ACL/default-privilege checks have since been added and remain **unverified** until CI runs the new migration and all 49 checks. The restore drill is tracked separately and remains unverified.
+
+### Application table ACL finding from Restore Drill #4
+
+Restore Drill #4 exposed a real ACL difference: source application tables had a direct `anon` DELETE grant and `service_role` grants including INSERT, MAINTAIN, REFERENCES, SELECT, and TRIGGER (reported grantor `postgres`); those grants were absent on the restored target. `service_role` bypasses RLS, and the user-facing service-role scan finds no application path that uses it, so its application-table allowlist is intentionally empty. New migration [`202610250001_revoke_platform_public_privileges.sql`](./supabase/migrations/202610250001_revoke_platform_public_privileges.sql) revokes table and column privileges from `anon`, `authenticated`, `service_role`, and `PUBLIC` on every application tenant table. It also removes matching default ACL entries for the roles that own application objects, including public tables, sequences, and functions. It leaves the previously verified explicit `margindesk_app` grants intact. `migrations.lock` records this as a **pending hash**, not an applied or CI-verified migration. The restore comparison now prints every table owner and full source/restored ACL, both databases' global and `public` default ACL entries, and a complete ACL diff grouped by grantee before enforcing strict equality. The fix and new tests remain **unverified** until a green CI run.
 
 | # | Check | What it proves | Status / CI evidence |
 |---:|---|---|---|
@@ -64,8 +69,12 @@ The passing PostgreSQL 17 run [MarginDesk CI #14](https://github.com/Adityapawar
 | 43 | `margindesk_app` has no role memberships | No inherited role can silently restore revoked privileges | **verified in CI run [MarginDesk CI #14](https://github.com/Adityapawar5105/margindesk/actions/runs/40137557258) · 2026-10-24** |
 | 44 | Authenticated policy query returns the assigned customer row as `margindesk_app` | Stored policy evaluation succeeds using Supabase platform-managed PUBLIC EXECUTE; row count is logged | **verified in CI run [MarginDesk CI #14](https://github.com/Adityapawar5105/margindesk/actions/runs/40137557258) · 2026-10-24** |
 | 45 | The same policy query returns zero rows without authenticated context | RLS fails closed; row count and SQL outcome are logged | **verified in CI run [MarginDesk CI #14](https://github.com/Adityapawar5105/margindesk/actions/runs/40137557258) · 2026-10-24** |
+| 46 | No application table or column ACL grants privileges to `anon`, `authenticated`, or `PUBLIC` | Direct grants are absent across every application table | **unverified** |
+| 47 | `service_role` has no application table or column privileges | Explicit service-role table allowlist is empty; its RLS bypass is unnecessary for this app | **unverified** |
+| 48 | Application owners' public defaults grant nothing to `anon`, `authenticated`, `service_role`, or `PUBLIC` | Future tables, sequences, and functions do not regain broad defaults | **unverified** |
+| 49 | `anon` has no effective CRUD table privileges and representative SELECT/INSERT/UPDATE/DELETE fail with table permission denied | Confirms ACL denial before RLS evaluation, across all application tables | **unverified** |
 
-All 45 pgTAP checks were verified in CI run [MarginDesk CI #14](https://github.com/Adityapawar5105/margindesk/actions/runs/40137557258) · 2026-10-24. The restore drill remains unverified.
+The original 45 pgTAP checks were verified in CI run [MarginDesk CI #14](https://github.com/Adityapawar5105/margindesk/actions/runs/40137557258) · 2026-10-24. Checks 46–49 and the restore drill remain unverified.
 
 ## 1. Connection role and RLS context
 
@@ -180,4 +189,4 @@ pnpm check:db-role
 pnpm test:db
 ```
 
-In this workspace on 2026-10-25, `pnpm test` passed (33 tests), `pnpm typecheck` passed, and `pnpm build` passed. The temporary PGlite smoke harness applied the current migration and emitted 45 passing assertion lines using minimal Supabase Auth and pgTAP stubs; its pgTAP behavior is stubbed and it is not PostgreSQL 17/Supabase verification. Docker and `psql` are unavailable; `pnpm test:db` cannot be verified locally without a database at `127.0.0.1:54322`. CI run [MarginDesk CI #14](https://github.com/Adityapawar5105/margindesk/actions/runs/40137557258) · 2026-10-24 passed its local Supabase migration, role check, and all 45 pgTAP checks. The restore drill remains **unverified**.
+In this workspace on 2026-10-25, after the ACL change, `pnpm test` passed (36 JavaScript and 9 TypeScript tests), `pnpm build` passed, and `pnpm typecheck` passed. The earlier temporary PGlite smoke harness covered the Phase 1 baseline only; it does not execute the new ACL migration and is not PostgreSQL 17/Supabase verification. Docker and `psql` are unavailable, so the new migration, all 49 pgTAP checks, and the restore drill remain **unverified** locally and in CI until a later green Actions run.
