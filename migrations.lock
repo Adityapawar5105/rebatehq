@@ -7,19 +7,33 @@
   "hashUpdateDate": "2026-10-25",
   "hashUpdateReason": "Windows CRLF versus CI LF caused different raw-byte hashes; normalized hash matches the CI content hash.",
   "sqlContentUnchangedSinceBaselineRun": true,
-  "appliedThrough": "202610240001_phase1_foundation.sql",
+  "lockUpdateDate": "2026-10-26",
+  "lockUpdateReason": "ACL migrations were promoted from pending to locked after MarginDesk CI #24 and Restore Drill #8 passed on commit aabfb20 (2026-10-26); their line-ending-normalized SHA-256 hashes are unchanged.",
+  "appliedThrough": "202610250002_revoke_platform_function_privileges.sql",
   "appliedMigrations": {
-    "202610240001_phase1_foundation.sql": "8faa57997119f29b3921b0e15b4b9e964edbc7fa2ecd8b52fbe32392be38c3bb"
+    "202610240001_phase1_foundation.sql": "8faa57997119f29b3921b0e15b4b9e964edbc7fa2ecd8b52fbe32392be38c3bb",
+    "202610250001_revoke_platform_public_privileges.sql": "d4b48072fac75e3d5a6683fe4b13e00042c9feb5a6a65a9e5576e44ecb9214a2",
+    "202610250002_revoke_platform_function_privileges.sql": "39965a95a99202f8e47fa0af55dcda66ff408a226a216643cccf3fa18afcf970"
   },
   "appliedOrder": [
-    "202610240001_phase1_foundation.sql"
-  ],
-  "pendingOrder": [
+    "202610240001_phase1_foundation.sql",
     "202610250001_revoke_platform_public_privileges.sql",
     "202610250002_revoke_platform_function_privileges.sql"
   ],
-  "pendingMigrations": {
-    "202610250001_revoke_platform_public_privileges.sql": "d4b48072fac75e3d5a6683fe4b13e00042c9feb5a6a65a9e5576e44ecb9214a2",
-    "202610250002_revoke_platform_function_privileges.sql": "39965a95a99202f8e47fa0af55dcda66ff408a226a216643cccf3fa18afcf970"
+  "pendingOrder": [],
+  "pendingMigrations": {},
+  "appliedMigrationEvidence": {
+    "202610250001_revoke_platform_public_privileges.sql": {
+      "date": "2026-10-26",
+      "commit": "aabfb20541f38af0f4b465e09ead4227e565f612",
+      "ciRun": "https://github.com/Adityapawar5105/margindesk/actions/runs/40290388651/job/121463801598",
+      "restoreRun": "https://github.com/Adityapawar5105/margindesk/actions/runs/40291362616/job/121466953508"
+    },
+    "202610250002_revoke_platform_function_privileges.sql": {
+      "date": "2026-10-26",
+      "commit": "aabfb20541f38af0f4b465e09ead4227e565f612",
+      "ciRun": "https://github.com/Adityapawar5105/margindesk/actions/runs/40290388651/job/121463801598",
+      "restoreRun": "https://github.com/Adityapawar5105/margindesk/actions/runs/40291362616/job/121466953508"
+    }
   }
 }
