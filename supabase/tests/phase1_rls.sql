@@ -3,10 +3,9 @@ CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SELECT extensions.plan(53 + CASE WHEN current_setting('app.restore_test_mode',true)='true' THEN 3 ELSE 0 END);
 SELECT set_config('app.phase1_migration_owner',current_user,true);
 
--- The runner replaces named fixture IDs with fresh UUIDs on every run and
--- checks them against public.id/public.tenant_id and auth.users before running.
--- B-side IDs end in 2 so their related A-side IDs can be derived by the clone
--- helper. All fixtures are transaction-scoped and rolled back at the end.
+-- The runner replaces every named fixture ID with an independent fresh UUID
+-- and checks them against public.id/public.tenant_id and auth.users. All test
+-- rows are explicitly inserted in dependency order and rolled back at the end.
 
 -- Include every application-owned public table before seeding; restore-only
 -- count checks must observe only the already-restored baseline rows.
@@ -95,151 +94,143 @@ INSERT INTO public.product(tenant_id,id,sku,name,category,list_price,unit_cost) 
  ('__PHASE1_TENANT_A_ID__','__PHASE1_PRODUCT_A_ID__','A-SKU','Tenant A product','Test',100,60),
  ('__PHASE1_TENANT_B_ID__','__PHASE1_PRODUCT_B_ID__','B-SKU','Tenant B product','Test',100,60);
 INSERT INTO public.invite(id,tenant_id,email,role,token_hash,invited_by,expires_at) VALUES
- ('__PHASE1_INVITE_B_ID__','__PHASE1_TENANT_B_ID__','new-b@example.invalid','rep',repeat('b',64),'__PHASE1_USER_B_ID__',now()+interval '7 days');
+ ('__PHASE1_INVITE_A_ID__','__PHASE1_TENANT_A_ID__','new-a@example.invalid','rep',replace('__PHASE1_INVITE_A_ID__','-',''),'__PHASE1_USER_A_ID__',now()+interval '7 days'),
+ ('__PHASE1_INVITE_B_ID__','__PHASE1_TENANT_B_ID__','new-b@example.invalid','rep',replace('__PHASE1_INVITE_B_ID__','-',''),'__PHASE1_USER_B_ID__',now()+interval '7 days');
 INSERT INTO public.price_list(tenant_id,id,name) VALUES
+ ('__PHASE1_TENANT_A_ID__','__PHASE1_PRICE_LIST_A_ID__','A price list'),
  ('__PHASE1_TENANT_B_ID__','__PHASE1_PRICE_LIST_B_ID__','B price list');
 INSERT INTO public.price_list_version(tenant_id,id,price_list_id,version_no,status,created_by) VALUES
+ ('__PHASE1_TENANT_A_ID__','__PHASE1_PRICE_LIST_VERSION_A_ID__','__PHASE1_PRICE_LIST_A_ID__',1,'draft','__PHASE1_USER_A_ID__'),
  ('__PHASE1_TENANT_B_ID__','__PHASE1_PRICE_LIST_VERSION_B_ID__','__PHASE1_PRICE_LIST_B_ID__',1,'draft','__PHASE1_USER_B_ID__');
 INSERT INTO public.price_list_item(tenant_id,id,price_list_id,product_id,unit_price,version_id) VALUES
+ ('__PHASE1_TENANT_A_ID__','__PHASE1_PRICE_LIST_ITEM_A_ID__','__PHASE1_PRICE_LIST_A_ID__','__PHASE1_PRODUCT_A_ID__',100,'__PHASE1_PRICE_LIST_VERSION_A_ID__'),
  ('__PHASE1_TENANT_B_ID__','__PHASE1_PRICE_LIST_ITEM_B_ID__','__PHASE1_PRICE_LIST_B_ID__','__PHASE1_PRODUCT_B_ID__',100,'__PHASE1_PRICE_LIST_VERSION_B_ID__');
 INSERT INTO public.margin_policy(tenant_id,id,scope_type,scope_key,target_margin_pct,floor_margin_pct,walkaway_margin_pct,updated_by) VALUES
+ ('__PHASE1_TENANT_A_ID__','__PHASE1_MARGIN_POLICY_A_ID__','global','',30,22,18,'__PHASE1_USER_A_ID__'),
  ('__PHASE1_TENANT_B_ID__','__PHASE1_MARGIN_POLICY_B_ID__','global','',30,22,18,'__PHASE1_USER_B_ID__');
 
 INSERT INTO public.quote(tenant_id,id,customer_id,created_by,status,pocket_price,cogs_total,pocket_margin,margin_pct,margin_zone,headroom) VALUES
  ('__PHASE1_TENANT_A_ID__','__PHASE1_QUOTE_A_ID__','__PHASE1_CUSTOMER_A_ID__','__PHASE1_USER_A_ID__','pending_approval',100,60,40,40,'green',22),
  ('__PHASE1_TENANT_B_ID__','__PHASE1_QUOTE_B_ID__','__PHASE1_CUSTOMER_B_ID__','__PHASE1_USER_B_ID__','pending_approval',100,60,40,40,'green',22);
 INSERT INTO public.quote_line(tenant_id,id,quote_id,product_id,quantity,list_price,pocket_price,cogs_total,pocket_margin,margin_pct) VALUES
+ ('__PHASE1_TENANT_A_ID__','__PHASE1_QUOTE_LINE_A_ID__','__PHASE1_QUOTE_A_ID__','__PHASE1_PRODUCT_A_ID__',1,100,100,60,40,40),
  ('__PHASE1_TENANT_B_ID__','__PHASE1_QUOTE_LINE_B_ID__','__PHASE1_QUOTE_B_ID__','__PHASE1_PRODUCT_B_ID__',1,100,100,60,40,40);
 INSERT INTO public.approval(tenant_id,id,quote_id,requested_by,status,margin_pct_at_decision,policy_version) VALUES
  ('__PHASE1_TENANT_A_ID__','__PHASE1_APPROVAL_A_ID__','__PHASE1_QUOTE_A_ID__','__PHASE1_USER_A_ID__','pending',40,1),
  ('__PHASE1_TENANT_B_ID__','__PHASE1_APPROVAL_B_ID__','__PHASE1_QUOTE_B_ID__','__PHASE1_USER_B_ID__','pending',40,1);
 INSERT INTO public.sales_order(tenant_id,id,source_id,customer_id,product_id,quantity,month_key) VALUES
+ ('__PHASE1_TENANT_A_ID__','__PHASE1_SALES_ORDER_A_ID__','A-SO-1','__PHASE1_CUSTOMER_A_ID__','__PHASE1_PRODUCT_A_ID__',1,'2026-10'),
  ('__PHASE1_TENANT_B_ID__','__PHASE1_SALES_ORDER_B_ID__','B-SO-1','__PHASE1_CUSTOMER_B_ID__','__PHASE1_PRODUCT_B_ID__',1,'2026-10');
 INSERT INTO public.rebate_agreement(tenant_id,id,party_type,party_id,name,rate_pct,threshold_amount,period_start,period_end) VALUES
+ ('__PHASE1_TENANT_A_ID__','__PHASE1_REBATE_AGREEMENT_A_ID__','vendor','A-VENDOR','A rebate',2,1000,'2026-01-01','2026-12-31'),
  ('__PHASE1_TENANT_B_ID__','__PHASE1_REBATE_AGREEMENT_B_ID__','vendor','B-VENDOR','B rebate',2,1000,'2026-01-01','2026-12-31');
 INSERT INTO public.rebate_progress(tenant_id,id,agreement_id,period_start,period_end,eligible_spend,modeled_amount,recorded_credits) VALUES
+ ('__PHASE1_TENANT_A_ID__','__PHASE1_REBATE_PROGRESS_A_ID__','__PHASE1_REBATE_AGREEMENT_A_ID__','2026-01-01','2026-12-31',1000,20,10),
  ('__PHASE1_TENANT_B_ID__','__PHASE1_REBATE_PROGRESS_B_ID__','__PHASE1_REBATE_AGREEMENT_B_ID__','2026-01-01','2026-12-31',1000,20,10);
 INSERT INTO public.invoice(tenant_id,id,customer_id,invoice_date,source_ref) VALUES
+ ('__PHASE1_TENANT_A_ID__','__PHASE1_INVOICE_A_ID__','__PHASE1_CUSTOMER_A_ID__','2026-10-01','A-INV-1'),
  ('__PHASE1_TENANT_B_ID__','__PHASE1_INVOICE_B_ID__','__PHASE1_CUSTOMER_B_ID__','2026-10-01','B-INV-1');
 INSERT INTO public.invoice_line(tenant_id,id,invoice_id,product_id,quantity,net_sales) VALUES
+ ('__PHASE1_TENANT_A_ID__','__PHASE1_INVOICE_LINE_A_ID__','__PHASE1_INVOICE_A_ID__','__PHASE1_PRODUCT_A_ID__',1,100),
  ('__PHASE1_TENANT_B_ID__','__PHASE1_INVOICE_LINE_B_ID__','__PHASE1_INVOICE_B_ID__','__PHASE1_PRODUCT_B_ID__',1,100);
 INSERT INTO public.cost_component(tenant_id,id,invoice_line_id,component_type,amount) VALUES
+ ('__PHASE1_TENANT_A_ID__','__PHASE1_COST_COMPONENT_A_ID__','__PHASE1_INVOICE_LINE_A_ID__','freight',5),
  ('__PHASE1_TENANT_B_ID__','__PHASE1_COST_COMPONENT_B_ID__','__PHASE1_INVOICE_LINE_B_ID__','freight',5);
 INSERT INTO public.supplier_credit(tenant_id,id,vendor_name,credit_date,amount,reference) VALUES
+ ('__PHASE1_TENANT_A_ID__','__PHASE1_SUPPLIER_CREDIT_A_ID__','A vendor','2026-10-02',5,'A-CREDIT'),
  ('__PHASE1_TENANT_B_ID__','__PHASE1_SUPPLIER_CREDIT_B_ID__','B vendor','2026-10-02',5,'B-CREDIT');
 INSERT INTO public.alert(tenant_id,id,severity,message) VALUES
+ ('__PHASE1_TENANT_A_ID__','__PHASE1_ALERT_A_ID__','review','Tenant A fixture alert'),
  ('__PHASE1_TENANT_B_ID__','__PHASE1_ALERT_B_ID__','review','Tenant B fixture alert');
 INSERT INTO public.margin_snapshot(tenant_id,id,entity_type,entity_id,period_month,order_count,pocket_revenue,pocket_margin,margin_pct) VALUES
+ ('__PHASE1_TENANT_A_ID__','__PHASE1_MARGIN_SNAPSHOT_A_ID__','company','__PHASE1_TENANT_A_ID__','2026-10-01',1,100,40,40),
  ('__PHASE1_TENANT_B_ID__','__PHASE1_MARGIN_SNAPSHOT_B_ID__','company','__PHASE1_TENANT_B_ID__','2026-10-01',1,100,40,40);
 INSERT INTO public.connector_secret(tenant_id,id,provider,ciphertext,nonce,auth_tag,created_by) VALUES
+ ('__PHASE1_TENANT_A_ID__','__PHASE1_CONNECTOR_SECRET_A_ID__','netsuite','ciphertext','nonce','tag','__PHASE1_USER_A_ID__'),
  ('__PHASE1_TENANT_B_ID__','__PHASE1_CONNECTOR_SECRET_B_ID__','netsuite','ciphertext','nonce','tag','__PHASE1_USER_B_ID__');
 INSERT INTO public.import_job(tenant_id,id,import_type,status,created_by) VALUES
+ ('__PHASE1_TENANT_A_ID__','__PHASE1_IMPORT_JOB_A_ID__','prototype','dry_run','__PHASE1_USER_A_ID__'),
  ('__PHASE1_TENANT_B_ID__','__PHASE1_IMPORT_JOB_B_ID__','prototype','dry_run','__PHASE1_USER_B_ID__');
 INSERT INTO public.audit_log(id,tenant_id,actor_id,action,entity_type,entity_id) VALUES
+ ('__PHASE1_AUDIT_A_ID__','__PHASE1_TENANT_A_ID__','__PHASE1_USER_A_ID__','test.fixture','tenant','__PHASE1_TENANT_A_ID__'),
  ('__PHASE1_AUDIT_B_ID__','__PHASE1_TENANT_B_ID__','__PHASE1_USER_B_ID__','test.fixture','tenant','__PHASE1_TENANT_B_ID__');
 
--- Preserve valid Tenant B rows before assuming the app role. Replaying each
--- complete row ensures NOT NULL/FK/check constraints cannot masquerade as an
--- RLS denial in the cross-tenant INSERT assertions below.
+-- Capture only the explicitly seeded fixture rows by their known primary keys.
+-- No restored row is eligible, and no arbitrary LIMIT or cross-tenant row cloning is used.
 CREATE TEMP TABLE phase1_rls_insert_fixtures(table_name text PRIMARY KEY, row_data jsonb);
-DO $$ DECLARE t text; n integer; expected_count integer; BEGIN
+CREATE TEMP TABLE phase1_rls_tenant_a_fixtures(table_name text PRIMARY KEY, row_data jsonb);
+CREATE TEMP TABLE phase1_rls_fixture_keys(
+  sort_order smallint PRIMARY KEY,
+  table_name text NOT NULL UNIQUE,
+  key_column text NOT NULL,
+  tenant_a_key uuid NOT NULL,
+  tenant_b_key uuid NOT NULL
+);
+INSERT INTO pg_temp.phase1_rls_fixture_keys(sort_order,table_name,key_column,tenant_a_key,tenant_b_key) VALUES
+ (1,'tenant','tenant_id','__PHASE1_TENANT_A_ID__','__PHASE1_TENANT_B_ID__'),
+ (2,'membership','user_id','__PHASE1_USER_A_ID__','__PHASE1_USER_B_ID__'),
+ (3,'customer','id','__PHASE1_CUSTOMER_A_ID__','__PHASE1_CUSTOMER_B_ID__'),
+ (4,'product','id','__PHASE1_PRODUCT_A_ID__','__PHASE1_PRODUCT_B_ID__'),
+ (5,'invite','id','__PHASE1_INVITE_A_ID__','__PHASE1_INVITE_B_ID__'),
+ (6,'price_list','id','__PHASE1_PRICE_LIST_A_ID__','__PHASE1_PRICE_LIST_B_ID__'),
+ (7,'price_list_version','id','__PHASE1_PRICE_LIST_VERSION_A_ID__','__PHASE1_PRICE_LIST_VERSION_B_ID__'),
+ (8,'price_list_item','id','__PHASE1_PRICE_LIST_ITEM_A_ID__','__PHASE1_PRICE_LIST_ITEM_B_ID__'),
+ (9,'margin_policy','id','__PHASE1_MARGIN_POLICY_A_ID__','__PHASE1_MARGIN_POLICY_B_ID__'),
+ (10,'quote','id','__PHASE1_QUOTE_A_ID__','__PHASE1_QUOTE_B_ID__'),
+ (11,'quote_line','id','__PHASE1_QUOTE_LINE_A_ID__','__PHASE1_QUOTE_LINE_B_ID__'),
+ (12,'approval','id','__PHASE1_APPROVAL_A_ID__','__PHASE1_APPROVAL_B_ID__'),
+ (13,'sales_order','id','__PHASE1_SALES_ORDER_A_ID__','__PHASE1_SALES_ORDER_B_ID__'),
+ (14,'rebate_agreement','id','__PHASE1_REBATE_AGREEMENT_A_ID__','__PHASE1_REBATE_AGREEMENT_B_ID__'),
+ (15,'rebate_progress','id','__PHASE1_REBATE_PROGRESS_A_ID__','__PHASE1_REBATE_PROGRESS_B_ID__'),
+ (16,'invoice','id','__PHASE1_INVOICE_A_ID__','__PHASE1_INVOICE_B_ID__'),
+ (17,'invoice_line','id','__PHASE1_INVOICE_LINE_A_ID__','__PHASE1_INVOICE_LINE_B_ID__'),
+ (18,'cost_component','id','__PHASE1_COST_COMPONENT_A_ID__','__PHASE1_COST_COMPONENT_B_ID__'),
+ (19,'supplier_credit','id','__PHASE1_SUPPLIER_CREDIT_A_ID__','__PHASE1_SUPPLIER_CREDIT_B_ID__'),
+ (20,'alert','id','__PHASE1_ALERT_A_ID__','__PHASE1_ALERT_B_ID__'),
+ (21,'margin_snapshot','id','__PHASE1_MARGIN_SNAPSHOT_A_ID__','__PHASE1_MARGIN_SNAPSHOT_B_ID__'),
+ (22,'connector_secret','id','__PHASE1_CONNECTOR_SECRET_A_ID__','__PHASE1_CONNECTOR_SECRET_B_ID__'),
+ (23,'import_job','id','__PHASE1_IMPORT_JOB_A_ID__','__PHASE1_IMPORT_JOB_B_ID__'),
+ (24,'audit_log','id','__PHASE1_AUDIT_A_ID__','__PHASE1_AUDIT_B_ID__');
+DO $$ DECLARE v_fixture phase1_rls_fixture_keys%ROWTYPE; n integer; expected_count integer; BEGIN
   SELECT count(*) INTO expected_count FROM pg_temp.phase1_rls_tables;
-  IF expected_count < 24 THEN RAISE EXCEPTION 'Expected at least 24 tenant tables before fixture loop; found %',expected_count; END IF;
-  FOR t IN SELECT table_name FROM pg_temp.phase1_rls_tables LOOP
-    IF NOT EXISTS (
-      SELECT 1 FROM information_schema.columns
-      WHERE table_schema='public' AND table_name=t AND column_name='tenant_id'
-    ) THEN
-      RAISE EXCEPTION 'Application table % is missing tenant_id',t;
+  IF expected_count<24 THEN RAISE EXCEPTION 'Explicit fixture graph needs at least 24 tenant tables; found %',expected_count; END IF;
+  SELECT count(*) INTO n FROM pg_temp.phase1_rls_fixture_keys;
+  IF n<>expected_count THEN RAISE EXCEPTION 'Explicit fixture key list covers % tables; public tenant table inventory has %',n,expected_count; END IF;
+  FOR v_fixture IN SELECT * FROM pg_temp.phase1_rls_fixture_keys ORDER BY sort_order LOOP
+    IF NOT EXISTS (SELECT 1 FROM pg_temp.phase1_rls_tables WHERE table_name=v_fixture.table_name) THEN
+      RAISE EXCEPTION 'Explicit fixture graph references missing tenant table public.%',v_fixture.table_name;
     END IF;
     EXECUTE format(
-      'INSERT INTO pg_temp.phase1_rls_insert_fixtures(table_name,row_data) SELECT %L,to_jsonb(x) FROM public.%I x WHERE tenant_id=$1 LIMIT 1',
-      t,t
-    ) USING '__PHASE1_TENANT_B_ID__'::uuid;
+      'INSERT INTO pg_temp.phase1_rls_insert_fixtures(table_name,row_data) SELECT %L,to_jsonb(x) FROM public.%I x WHERE %I=$1',
+      v_fixture.table_name,v_fixture.table_name,v_fixture.key_column
+    ) USING v_fixture.tenant_b_key;
     GET DIAGNOSTICS n=ROW_COUNT;
-    IF n=0 THEN
-      RAISE EXCEPTION 'Tenant B fixture row is missing for application table %',t;
+    IF n<>1 THEN RAISE EXCEPTION 'Expected exactly one suite-created Tenant B fixture row in public.% keyed by %; found %',v_fixture.table_name,v_fixture.key_column,n; END IF;
+    IF (SELECT row_data->>'tenant_id' FROM pg_temp.phase1_rls_insert_fixtures WHERE table_name=v_fixture.table_name)
+       IS DISTINCT FROM (SELECT row_data->>'tenant_id' FROM pg_temp.phase1_rls_insert_fixtures WHERE table_name='tenant') THEN
+      RAISE EXCEPTION 'Tenant B fixture row has the wrong tenant_id in public.% keyed by %',v_fixture.table_name,v_fixture.key_column;
+    END IF;
+    EXECUTE format(
+      'INSERT INTO pg_temp.phase1_rls_tenant_a_fixtures(table_name,row_data) SELECT %L,to_jsonb(x) FROM public.%I x WHERE %I=$1',
+      v_fixture.table_name,v_fixture.table_name,v_fixture.key_column
+    ) USING v_fixture.tenant_a_key;
+    GET DIAGNOSTICS n=ROW_COUNT;
+    IF n<>1 THEN RAISE EXCEPTION 'Expected exactly one suite-created Tenant A fixture row in public.% keyed by %; found %',v_fixture.table_name,v_fixture.key_column,n; END IF;
+    IF (SELECT row_data->>'tenant_id' FROM pg_temp.phase1_rls_tenant_a_fixtures WHERE table_name=v_fixture.table_name)
+       IS DISTINCT FROM (SELECT row_data->>'tenant_id' FROM pg_temp.phase1_rls_tenant_a_fixtures WHERE table_name='tenant') THEN
+      RAISE EXCEPTION 'Tenant A fixture row has the wrong tenant_id in public.% keyed by %',v_fixture.table_name,v_fixture.key_column;
     END IF;
   END LOOP;
   SELECT count(*) INTO n FROM pg_temp.phase1_rls_insert_fixtures;
-  IF n < 24 OR n <> expected_count THEN RAISE EXCEPTION 'Tenant B fixture loop covered % tables; expected at least 24 and one per tenant table (% expected)',n,expected_count; END IF;
+  IF n<>expected_count THEN RAISE EXCEPTION 'Tenant B fixture graph covers % tables; expected %',n,expected_count; END IF;
+  SELECT count(*) INTO n FROM pg_temp.phase1_rls_tenant_a_fixtures;
+  IF n<>expected_count THEN RAISE EXCEPTION 'Tenant A fixture graph covers % tables; expected %',n,expected_count; END IF;
 END $$;
--- Build a corresponding Tenant A row for every tenant table. IDs and public
--- foreign keys get an A-side UUID; auth user references point to user A.
--- tenant and membership already have valid A rows, and audit gets its own row.
-INSERT INTO public.audit_log(id,tenant_id,actor_id,action,entity_type,entity_id) VALUES
- ('__PHASE1_AUDIT_A_ID__','__PHASE1_TENANT_A_ID__','__PHASE1_USER_A_ID__','test.fixture','tenant','__PHASE1_TENANT_A_ID__');
-DO $$ DECLARE t text; v_row jsonb; col_name name; auth_ref boolean; public_ref boolean; n integer; v_state text; v_msg text; BEGIN
-  SELECT count(*) INTO n FROM pg_temp.phase1_rls_insert_fixtures;
-  IF n < 24 THEN RAISE EXCEPTION 'Tenant A clone loop needs at least 24 source fixtures; found %',n; END IF;
-  FOR t,v_row IN
-    SELECT f.table_name,f.row_data FROM pg_temp.phase1_rls_insert_fixtures f
-    JOIN pg_class class_row ON class_row.relname=f.table_name JOIN pg_namespace ns ON ns.oid=class_row.relnamespace AND ns.nspname='public'
-    ORDER BY class_row.oid
-  LOOP
-    IF t NOT IN ('tenant','membership','audit_log') THEN
-      v_row:=jsonb_set(v_row,'{tenant_id}',to_jsonb('__PHASE1_TENANT_A_ID__'::uuid),true);
-      SELECT count(*) INTO n FROM pg_attribute a
-      WHERE a.attrelid=format('public.%I',t)::regclass AND a.attnum>0 AND NOT a.attisdropped AND a.atttypid='uuid'::regtype;
-      IF n=0 THEN RAISE EXCEPTION 'Tenant A clone loop found no UUID columns on public.%',t; END IF;
-      FOR col_name,auth_ref,public_ref IN
-        SELECT a.attname::name,
-               COALESCE(bool_or(rn.nspname='auth'),false),
-               COALESCE(bool_or(rn.nspname='public'),false)
-        FROM pg_attribute a
-        LEFT JOIN pg_constraint fk ON fk.contype='f' AND fk.conrelid=a.attrelid AND a.attnum=ANY(fk.conkey)
-        LEFT JOIN pg_class refc ON refc.oid=fk.confrelid
-        LEFT JOIN pg_namespace rn ON rn.oid=refc.relnamespace
-        WHERE a.attrelid=format('public.%I',t)::regclass AND a.attnum>0 AND NOT a.attisdropped AND a.atttypid='uuid'::regtype
-        GROUP BY a.attname
-      LOOP
-        IF col_name='tenant_id' THEN CONTINUE;
-        ELSIF auth_ref THEN
-          v_row:=jsonb_set(v_row,ARRAY[col_name::text],to_jsonb('__PHASE1_USER_A_ID__'::uuid),true);
-        ELSIF col_name='id' OR public_ref THEN
-          IF v_row->>col_name::text IS NOT NULL THEN
-            v_row:=jsonb_set(v_row,ARRAY[col_name::text],to_jsonb(regexp_replace(v_row->>col_name::text,'2$','3')::uuid),true);
-          END IF;
-        END IF;
-      END LOOP;
-      IF t='invite' THEN
-        v_row:=jsonb_set(v_row,'{token_hash}',to_jsonb(repeat('a',64)),true);
-        v_row:=jsonb_set(v_row,'{email}',to_jsonb('new-a@example.invalid'::text),true);
-      ELSIF t='margin_snapshot' THEN
-        v_row:=jsonb_set(v_row,'{entity_id}',to_jsonb('__PHASE1_TENANT_A_ID__'::text),true);
-      END IF;
-      BEGIN
-        EXECUTE format('INSERT INTO public.%I SELECT (jsonb_populate_record(NULL::public.%I,$1)).*',t,t) USING v_row;
-      EXCEPTION WHEN OTHERS THEN
-        GET STACKED DIAGNOSTICS v_state=RETURNED_SQLSTATE,v_msg=MESSAGE_TEXT;
-        RAISE EXCEPTION 'Tenant A fixture clone failed for public.% (SQLSTATE %): %',t,v_state,v_msg USING ERRCODE=v_state;
-      END;
-    END IF;
-  END LOOP;
-END $$;
--- Carry the admin-built fixture snapshot across SET ROLE in a transaction-local
--- custom setting. The restricted app role never needs access to pg_temp or
--- the extensions schema to run these policy checks.
 SELECT set_config(
   'app.phase1_tenant_b_fixtures',
   (SELECT jsonb_object_agg(table_name,row_data)::text FROM pg_temp.phase1_rls_insert_fixtures),
   true
 );
-CREATE TEMP TABLE phase1_rls_tenant_a_fixtures(table_name text PRIMARY KEY,row_data jsonb);
-DO $$ DECLARE t text; n integer; expected_count integer; BEGIN
-  SELECT count(*) INTO expected_count FROM pg_temp.phase1_rls_tables;
-  IF expected_count < 24 THEN RAISE EXCEPTION 'Tenant A fixture loop needs at least 24 tenant tables; found %',expected_count; END IF;
-  FOR t IN SELECT table_name FROM pg_temp.phase1_rls_tables LOOP
-    EXECUTE format(
-      'INSERT INTO pg_temp.phase1_rls_tenant_a_fixtures(table_name,row_data) SELECT %L,to_jsonb(x) FROM public.%I x WHERE tenant_id=$1 LIMIT 1',
-      t,t
-    ) USING '__PHASE1_TENANT_A_ID__'::uuid;
-    GET DIAGNOSTICS n=ROW_COUNT;
-    IF n=0 THEN RAISE EXCEPTION 'Tenant A positive-control fixture row is missing for public.%',t; END IF;
-  END LOOP;
-  SELECT count(*) INTO n FROM pg_temp.phase1_rls_tenant_a_fixtures;
-  IF n < 24 OR n <> expected_count THEN RAISE EXCEPTION 'Tenant A fixture loop covered % tables; expected at least 24 and one per tenant table (% expected)',n,expected_count; END IF;
-END $$;
 SELECT set_config(
   'app.phase1_tenant_a_fixtures',
   (SELECT jsonb_object_agg(table_name,row_data)::text FROM pg_temp.phase1_rls_tenant_a_fixtures),
@@ -553,8 +544,8 @@ DO $$ DECLARE t text; v_row jsonb; v_insert jsonb; v_state text; v_msg text; n i
     IF t='customer' THEN v_insert:=jsonb_set(v_insert,'{account_no}',to_jsonb('A-positive-control'::text),true);
     ELSIF t='product' THEN v_insert:=jsonb_set(v_insert,'{sku}',to_jsonb('A-POSITIVE-CONTROL'::text),true);
     ELSIF t='invite' THEN
-      v_insert:=jsonb_set(v_insert,'{token_hash}',to_jsonb(repeat('c',64)),true);
-      v_insert:=jsonb_set(v_insert,'{email}',to_jsonb('new-c@example.invalid'::text),true);
+      v_insert:=jsonb_set(v_insert,'{token_hash}',to_jsonb(replace(v_insert->>'id','-','')),true);
+      v_insert:=jsonb_set(v_insert,'{email}',to_jsonb('phase1-positive-'||(v_insert->>'id')||'@example.invalid'),true);
     ELSIF t='price_list_version' THEN v_insert:=jsonb_set(v_insert,'{version_no}',to_jsonb((v_row->>'version_no')::integer+1),true);
     ELSIF t='margin_policy' THEN v_insert:=jsonb_set(v_insert,'{scope_key}',to_jsonb('positive-control'::text),true);
     ELSIF t='sales_order' THEN v_insert:=jsonb_set(v_insert,'{source_id}',to_jsonb('A-POSITIVE-CONTROL'::text),true);

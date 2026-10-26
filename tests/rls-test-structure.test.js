@@ -31,9 +31,16 @@ test("the restricted-role pgTAP checks capture results and run assertions after 
 test("RLS fixtures prove tenant-positive paths, exact RLS write failures, and TRUNCATE protection", () => {
   assert.match(sql, /extensions\.plan\(53 \+ CASE WHEN current_setting\('app\.restore_test_mode',true\)='true' THEN 3 ELSE 0 END\)/, "Fresh runs plan 53 checks; restored-data runs add three restore-only checks.");
   assert.match(sql, /phase1_tenant_a_fixtures/, "Every application table must have a Tenant A fixture row.");
-  assert.match(sql, /Tenant A fixture clone failed for public\.% \(SQLSTATE %\)/, "Clone failures must identify the exact table and constraint error.");
+  assert.match(sql, /CREATE TEMP TABLE phase1_rls_fixture_keys/, "Fixture rows must be enumerated explicitly by table and generated primary key.");
+  assert.match(sql, /replace\('__PHASE1_INVITE_A_ID__','-',''\)/, "Fixture invite tokens must be unique to generated fixture IDs.");
+  assert.match(sql, /replace\(v_insert->>'id','-',''\)/, "Positive-control invite tokens must be unique to their generated row IDs.");
+  assert.match(sql, /Expected exactly one suite-created Tenant A fixture row in public\.% keyed by %; found %/, "Missing or duplicate fixtures must name the table and key.");
+  assert.match(sql, /Expected exactly one suite-created Tenant B fixture row in public\.% keyed by %; found %/, "Missing or duplicate fixtures must name the table and key.");
+  assert.doesNotMatch(sql, /Tenant A fixture clone failed|regexp_replace\([^\n]*'2\$','3'|SELECT[\s\S]{0,100}WHERE tenant_id[^\n]*LIMIT 1/i, "Tenant A rows must not be cloned from arbitrary restored data.");
+  assert.match(sql, /phase1_rls_fixture_keys[\s\S]*?\(10,'quote'[\s\S]*?\(11,'quote_line'[\s\S]*?\(12,'approval'[\s\S]*?\(13,'sales_order'/, "Fixture keys must follow the quote dependency order.");
+  assert.match(sql, /n<>expected_count THEN RAISE EXCEPTION 'Explicit fixture key list covers % tables/, "An uncovered tenant table must fail before any isolation loop.");
   assert.match(sql, /CREATE TEMP TABLE phase1_rls_tables[\s\S]*?SELECT c\.relname[\s\S]*?n\.nspname='public'/, "The isolation suite must enumerate every public application table, including new migrations.");
-  assert.match(sql, /Tenant B fixture row is missing for application table %/, "New tables without a seeded test row must fail before isolation checks.");
+  assert.match(sql, /Tenant B fixture graph covers % tables; expected %/, "New tables without an explicit Tenant B fixture must fail before isolation checks.");
   assert.match(sql, /phase1_positive_select_result/, "Positive own-row SELECT controls must run as the app role.");
   assert.match(sql, /phase1_positive_insert_result/, "Positive INSERT controls must run wherever policy allows.");
   assert.match(sql, /position\('row-level security' in lower\(v_msg\)\)=0/, "Cross-tenant UPDATE/INSERT must distinguish RLS violations from table ACL denial.");
@@ -132,9 +139,9 @@ test("auth function access stays minimal and failed-login audit writes use the d
 
 test("table loops are guarded against empty fixtures and SQL errors include server context", () => {
   assert.doesNotMatch(sql, /\bc\s+record\b/i, "Avoid ambiguous/unassigned RECORD loop variables in test SQL.");
-  assert.match(sql, /Expected at least 24 tenant tables before fixture loop/);
-  assert.match(sql, /Tenant B fixture loop covered % tables/);
-  assert.match(sql, /Tenant A fixture loop covered % tables/);
+  assert.match(sql, /Explicit fixture graph needs at least 24 tenant tables/);
+  assert.match(sql, /Tenant B fixture graph covers % tables; expected %/);
+  assert.match(sql, /Tenant A fixture graph covers % tables; expected %/);
   assert.match(sql, /Tenant A positive SELECT loop expected at least 24 tables/);
   assert.match(sql, /Tenant B cross-SELECT loop expected at least 24 tables/);
   assert.match(sql, /positive INSERT loop expected at least 22 policy-allowed tables/);

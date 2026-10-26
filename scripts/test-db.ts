@@ -28,9 +28,7 @@ function materializeFixtureIds(template: string): { sql: string; ids: Map<string
   if (tokens.length === 0) throw new Error("The pgTAP SQL has no generated fixture ID placeholders.");
   const ids = new Map<string, string>();
   for (const token of tokens) {
-    const suffix = token.includes("_B_ID__") ? "2" : undefined;
-    const generated = randomUUID();
-    ids.set(token, suffix ? `${generated.slice(0, -1)}${suffix}` : generated);
+    ids.set(token, randomUUID());
   }
   if (new Set(ids.values()).size !== ids.size) throw new Error("Generated duplicate pgTAP fixture UUIDs; refusing to run.");
   let sql = template;
@@ -41,9 +39,6 @@ function materializeFixtureIds(template: string): { sql: string; ids: Map<string
 
 async function assertFixtureIdsDoNotCollide(client: Client, ids: Map<string, string>): Promise<void> {
   const checkedIds = new Map(ids);
-  for (const [token, value] of ids) {
-    if (token.includes("_B_ID__")) checkedIds.set(`${token} A-side clone`, `${value.slice(0, -1)}3`);
-  }
   const uniqueIds = [...new Set(checkedIds.values())];
   const reverse = new Map([...checkedIds.entries()].map(([token, value]) => [value, token]));
   const appColumns = await client.query<{ table_name: string; column_names: string[] }>(`
@@ -78,7 +73,7 @@ async function assertFixtureIdsDoNotCollide(client: Client, ids: Map<string, str
   if (collisions.length) {
     throw new Error(`Generated pgTAP fixture UUID collision; refusing to seed fixtures: ${[...new Set(collisions)].join("; ")}`);
   }
-  process.stdout.write(`Generated ${ids.size} pgTAP fixture UUIDs plus derived A-side IDs; checked for collisions across ${appColumns.rowCount} application tables and auth.users (none found).\n`);
+  process.stdout.write(`Generated ${ids.size} independent pgTAP fixture UUIDs; checked for collisions across ${appColumns.rowCount} application tables and auth.users (none found).\n`);
 }
 
 async function reportLegacyFixtureIds(client: Client): Promise<void> {
