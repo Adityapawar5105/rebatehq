@@ -1,10 +1,10 @@
 # Chunk 2C verification record — 2026-10-28
 
-Status: **unverified in GitHub Actions**. Implementation and local checks pass; acceptance still requires a new green MarginDesk CI run and complete Restore Drill run. Earlier CI #29 / Restore Drill #11 on 13cea5a prove Chunk 2B only. No Phase 3 work is included.
+Status: Chunk 2C and Phase 2 are **verified in [MarginDesk CI #31](https://github.com/Adityapawar5105/margindesk/actions/runs/40739445610) and [MarginDesk Restore Drill #12](https://github.com/Adityapawar5105/margindesk/actions/runs/40740709133), 2026-10-28, commit `ed2aa6d`**. Current acceptance is **156 fresh / 159 restore-mode pgTAP checks**, planned = ran with two-run repeatability, across **38 tenant tables**. The Chunk 2C migration is locked with its unchanged normalized hash. Hosted-target restore, managed backup/PITR and deployed UI flows not exercised by these runs remain **unverified**. Phase 3 has not started.
 
 ## Scope and migration
 
-`20261028173257_chunk2c_foundation_tables.sql` is **pending**, normalized SHA-256 `03fccfa0a75954c206e2b091c474409162304d770e5803c3a7e2527bfcaa6dc3`. All five locked migration files, hashes and evidence entries remain unchanged.
+`20261028173257_chunk2c_foundation_tables.sql` is **locked**, normalized SHA-256 `03fccfa0a75954c206e2b091c474409162304d770e5803c3a7e2527bfcaa6dc3`. All five earlier locked migration files, hashes and evidence entries remain unchanged. The Chunk 2C hash is promoted from pending without SQL content changes.
 
 - Existing import_job: nonnegative accepted/rejected counts, bounded nonempty import type and object summary; existing statuses, rows, grants, RLS and audit are preserved.
 - New column_mapping_template, connector_sync_run, quote_share_link, approval_rule and plan_feature: tenant FK/index, ENABLE + FORCE RLS, operation/role-specific policies, only explicit app CRUD grants and audited writes.
@@ -21,7 +21,7 @@ Current inventory: **38 tenant tables** (33 existing plus five new). Plans: **15
 | pnpm test | Passed: 66 JavaScript + 10 TypeScript tests, including all Phase 0 margin/pricing/rebate goldens; service-role scanner checked 87 user-facing files |
 | pnpm typecheck | Passed |
 | pnpm build | Passed, production Next.js build |
-| pnpm check:migrations-lock | Passed: five locked migrations, one pending migration |
+| pnpm check:migrations-lock | Passed: six locked migrations, no pending migrations |
 | pnpm check:schema | Passed: 38 tables, forced RLS/audit coverage and duplicate-object/privilege lint |
 
 Every changed/added executable SQL statement ran at least once locally:
@@ -34,10 +34,12 @@ Every changed/added executable SQL statement ran at least once locally:
 
 PGlite uses real Postgres catalog, RLS, grants and constraints, with a minimal local auth schema/auth.uid() and roles instead of Supabase Auth. pgTAP assertion functions are local stubs that throw on failed assertions or plan/count mismatches; the pgTAP extension installation itself is omitted in that harness. All new SQL ran; actual Supabase platform setup, real pgTAP extension execution, pg driver role checks and dump/restore have **not** been run locally because Docker and psql are unavailable.
 
-## Required CI acceptance — unverified
+## Phase 2 CI acceptance — verified (2026-10-28)
 
-- Fresh real Supabase migration application, ignored-privilege warning gate, runtime role/no-context probe and 156-check suite twice with unchanged counts.
-- Local-target logical dump/restore, dump grants plus restore-only platform cleanup, every strict source/target ACL/metadata/count comparison, sentinel hash and 159-check suite twice. Dynamic restore inventory now rejects fewer than 38 tables.
+- **Verified in [MarginDesk CI #31](https://github.com/Adityapawar5105/margindesk/actions/runs/40739445610), 2026-10-28, commit `ed2aa6d`:** fresh real Supabase migration application, ignored-privilege warning gate, runtime role/no-context probe and 156-check suite twice with unchanged counts. pnpm test, typecheck and build also passed in that run; populated-upgrade SQL is covered by the PGlite tests within pnpm test.
+- **Verified in [MarginDesk Restore Drill #12](https://github.com/Adityapawar5105/margindesk/actions/runs/40740709133), 2026-10-28, commit `ed2aa6d`:** local-target logical dump/restore, dump grants plus restore-only platform cleanup, four function ACL checkpoints, every strict source/target ACL/metadata/count comparison, sentinel/runtime checks and 159-check suite twice. The inventory includes 38 tenant tables; planned = ran and no fixture residue.
 - Hosted-target restore and managed backup/PITR remain unverified; no UI, connectors, workers or public quote-sharing endpoint is built or claimed tested.
 
 See ASSUMPTIONS.md for the Phase 3 handoff, including the Phase 1 caller-settable audit actor GUC, record_failed_login input bounds and independent DB rate-limiting gaps. These are documented open items, not fixes made in this chunk.
+
+Full verified commit: `ed2aa6d1ced347e27e04774e0d09806dd14c929c`. Phase 2 (Chunks 2A–2C) is verified for the CI/local-target scope described above. Phase 3 is not started.
