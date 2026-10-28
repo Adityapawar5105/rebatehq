@@ -65,3 +65,11 @@ The log and summary must show the exact named workflow order and full owner/gran
 - Neither CI run exercised Supabase-managed daily backup or PITR recovery. Keep that separate staging recovery drill open.
 - The workflow does not validate application UI actions such as creating a quote or exporting CSV/owner data against a deployed web app.
 - Restore only `public` application data and owned roles. Supabase platform schemas and storage objects are provisioned by Supabase and are outside this dump/restore procedure.
+
+## Chunk 2C pending verification
+
+The new migration is **pending; unverified in CI**. Restore the dump's complete public schema and grants, followed only by restore-platform-acl-cleanup.sql, as above; never replay historical migrations. Dynamic inventory/ACL/count comparisons now require **38 tenant tables**, including column_mapping_template, connector_sync_run, quote_share_link, approval_rule and plan_feature; import_job and margin_snapshot remain included. Missing tables, unexpected grants and any per-tenant count mismatch still fail. No public functions are added; every existing function remains in the exact ACL registry and strict source/target comparison.
+
+The restored-database suite must now pass **159 planned = 159 ran** twice with identical before/after counts; fresh CI must pass **156**. Restored sentinel hash/count/isolation checks remain mandatory. Local PGlite testing exercises populated rows in all seven 2C-scope tables, but is not a logical dump/restore or a hosted Supabase run. Actual Chunk 2C local/hosted target restore is unverified until a new green run. Earlier #11 proves only Chunk 2B.
+
+Rollback note: export the five new tables before removing them in reverse dependency order, then remove only the three new import_job CHECK constraints if necessary. This is a manual destructive rollback, not an automatic script. Preserve existing import jobs, quotes, margin snapshots and audit records; use a fresh full logical restore for disaster recovery.

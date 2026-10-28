@@ -24,8 +24,12 @@
     "202610280001_chunk2a_cost_units_currency.sql",
     "20261028162156_chunk2b_pricing_rebate_tiers.sql"
   ],
-  "pendingOrder": [],
-  "pendingMigrations": {},
+  "pendingOrder": [
+    "20261028173257_chunk2c_foundation_tables.sql"
+  ],
+  "pendingMigrations": {
+    "20261028173257_chunk2c_foundation_tables.sql": "03fccfa0a75954c206e2b091c474409162304d770e5803c3a7e2527bfcaa6dc3"
+  },
   "appliedMigrationEvidence": {
     "202610250001_revoke_platform_public_privileges.sql": {
       "date": "2026-10-26",

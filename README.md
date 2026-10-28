@@ -1,5 +1,7 @@
 # MarginDesk Phase 1
 
+**Chunk 2C — unverified in CI:** secured persistence only, with five new tables and stricter existing import-job constraints. Current working-tree inventory is 38 tenant tables; plans are 156 fresh / 159 restore-mode checks. The migration remains pending. See [the Chunk 2C verification record](./CHUNK_2C_VERIFICATION.md) and [Phase 3 open items](./ASSUMPTIONS.md). No UI, connectors or Phase 3 work.
+
 **Chunk 2B status — verified:** pricing precedence and tiered rebate audit are **verified in [MarginDesk CI #29](https://github.com/Adityapawar5105/margindesk/actions/runs/40729384500) and [MarginDesk Restore Drill #11](https://github.com/Adityapawar5105/margindesk/actions/runs/40730343531), 2026-10-28, commit `13cea5a`**. The migration is locked with its unchanged normalized hash. Both suites passed with **88 fresh / 91 restore-mode pgTAP checks** and **33 tenant tables**. Hosted-target restore, managed backup/PITR and deployed UI flows not exercised by those runs remain **unverified**. See [the verification record](./CHUNK_2B_VERIFICATION.md). No Chunk 2C work.
 
 

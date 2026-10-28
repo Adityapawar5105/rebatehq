@@ -13,7 +13,7 @@ const tables = [
   "price_list_item", "margin_policy", "quote", "quote_line", "approval", "sales_order",
   "rebate_agreement", "rebate_progress", "invoice", "invoice_line", "cost_component",
   "supplier_credit", "alert", "margin_snapshot", "connector_secret", "import_job", "audit_log",
-  "uom", "cost_history", "uom_conversion", "fx_rate", "data_quality_issue", "customer_group", "customer_price", "rebate_tier", "rebate_entry",
+  "uom", "cost_history", "uom_conversion", "fx_rate", "data_quality_issue", "customer_group", "customer_price", "rebate_tier", "rebate_entry", "column_mapping_template", "connector_sync_run", "quote_share_link", "approval_rule", "plan_feature",
 ];
 const existingTenant = "20000000-0000-4000-8000-000000000001";
 const otherTenant = "20000000-0000-4000-8000-000000000002";
@@ -213,6 +213,11 @@ async function createHarnessSchema(db) {
       id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES public.tenant(tenant_id), import_type text,
       status text, created_by uuid REFERENCES auth.users(id), UNIQUE(tenant_id,id)
     );
+    CREATE TABLE public.column_mapping_template(id uuid PRIMARY KEY,tenant_id uuid NOT NULL REFERENCES tenant(tenant_id),name text,import_type text,column_mapping jsonb,UNIQUE(tenant_id,id),UNIQUE(tenant_id,name));
+    CREATE TABLE public.connector_sync_run(id uuid PRIMARY KEY,tenant_id uuid NOT NULL REFERENCES tenant(tenant_id),provider text,direction text,status text,UNIQUE(tenant_id,id));
+    CREATE TABLE public.quote_share_link(id uuid PRIMARY KEY,tenant_id uuid NOT NULL REFERENCES tenant(tenant_id),quote_id uuid,token_hash text UNIQUE,expires_at timestamptz,UNIQUE(tenant_id,id),FOREIGN KEY(tenant_id,quote_id) REFERENCES quote(tenant_id,id));
+    CREATE TABLE public.approval_rule(id uuid PRIMARY KEY,tenant_id uuid NOT NULL REFERENCES tenant(tenant_id),name text,minimum_margin_pct numeric,approver_role text,UNIQUE(tenant_id,id),UNIQUE(tenant_id,name));
+    CREATE TABLE public.plan_feature(id uuid PRIMARY KEY,tenant_id uuid NOT NULL REFERENCES tenant(tenant_id),feature_key text,enabled boolean,usage_limit bigint,UNIQUE(tenant_id,id),UNIQUE(tenant_id,feature_key));
     CREATE TABLE public.audit_log (
       id uuid PRIMARY KEY, tenant_id uuid, actor_id uuid, action text, entity_type text, entity_id text
     );
@@ -359,8 +364,8 @@ test("PGlite reproduces the arbitrary-clone FK failure and runs the explicit fix
       assert.deepEqual(actualTables, [...tables].sort());
       const tenantAFixtures = await db.query("SELECT table_name,row_data FROM pg_temp.phase1_rls_tenant_a_fixtures ORDER BY table_name");
       const tenantBFixtures = await db.query("SELECT table_name,row_data FROM pg_temp.phase1_rls_insert_fixtures ORDER BY table_name");
-      assert.equal(tenantAFixtures.rows.length, 33);
-      assert.equal(tenantBFixtures.rows.length, 33);
+      assert.equal(tenantAFixtures.rows.length, 38);
+      assert.equal(tenantBFixtures.rows.length, 38);
 
       const ids = runGraph.ids;
       const tenantA = ids.get("__PHASE1_TENANT_A_ID__");
@@ -381,7 +386,7 @@ test("PGlite reproduces the arbitrary-clone FK failure and runs the explicit fix
       await db.exec("ROLLBACK;");
       assert.deepEqual(await snapshotAllTenantTables(db), beforeGraph, `Fixture graph run ${run} must leave every tenant table unchanged after rollback.`);
     }
-    console.log("Explicit Tenant A/B fixture graph passed twice with 33 tenant tables and pre-existing multi-row restored data; both transactions rolled back with unchanged row counts.");
+    console.log("Explicit Tenant A/B fixture graph passed twice with 38 tenant tables and pre-existing multi-row restored data; both transactions rolled back with unchanged row counts.");
   } finally {
     await db.close();
   }

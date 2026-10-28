@@ -89,9 +89,9 @@ test("full pgTAP SQL executes in PGlite with assertion stubs and planned checks 
         RETURN '1..'||v_plan||' ('||v_ran||' checks passed)';
       END $$;
     `);
-    await db.exec(foundation);
-    await db.exec(chunk2a);
-    await db.exec(fs.readFileSync(path.join(root, 'supabase/migrations/20261028162156_chunk2b_pricing_rebate_tiers.sql'), 'utf8'));
+    for (const name of fs.readdirSync(path.join(root, 'supabase/migrations')).filter(n => n.endsWith('.sql')).sort()) {
+      await db.exec(fs.readFileSync(path.join(root, 'supabase/migrations', name), 'utf8'));
+    }
     const { loadDatabaseTestSql } = await import("../scripts/load-db-test-sql.mjs");
     const sql = materialize(await loadDatabaseTestSql()).replace(
       /^CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;\s*$/m,
@@ -99,7 +99,7 @@ test("full pgTAP SQL executes in PGlite with assertion stubs and planned checks 
     );
     const snapshot = async () => {
       const tables=(await db.query("SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('r','p') AND EXISTS(SELECT 1 FROM pg_attribute a WHERE a.attrelid=c.oid AND a.attname='tenant_id') ORDER BY c.relname")).rows;
-      assert.ok(tables.length>=33);
+      assert.ok(tables.length>=38);
       const counts={};
       for(const t of tables) counts[t.relname]=(await db.query(`SELECT count(*)::text AS n FROM public.${t.relname}`)).rows[0].n;
       return counts;
@@ -131,6 +131,21 @@ test("full pgTAP SQL executes in PGlite with assertion stubs and planned checks 
     await db.query("INSERT INTO public.tenant(tenant_id,name,currency) VALUES($1,'PGlite restore sentinel','USD')", [sentinelTenant]);
     await db.query(`INSERT INTO public.product(tenant_id,id,sku,name,category,uom,unit_cost,list_price)
       VALUES($1,$2,'RESTORE-SENTINEL','PGlite restore product','Test','EA',30,100)`, [sentinelTenant,sentinelProduct]);
+    const restoredUser = randomUUID();
+    const restoredCustomer = randomUUID();
+    const restoredQuote = randomUUID();
+    await db.query("INSERT INTO auth.users(id,email) VALUES($1,'restore-row@example.invalid')", [restoredUser]);
+    await db.query("INSERT INTO public.customer(id,tenant_id,account_no,name) VALUES($1,$2,'RESTORE-CUSTOMER','Restored customer')", [restoredCustomer,sentinelTenant]);
+    await db.query("INSERT INTO public.quote(id,tenant_id,customer_id,created_by,status,margin_zone) VALUES($1,$2,$3,$4,'draft','green')", [restoredQuote,sentinelTenant,restoredCustomer,restoredUser]);
+    for (let i=0;i<2;i++) {
+      await db.query("INSERT INTO public.import_job(tenant_id,import_type,status) VALUES($1,'fixture','dry_run')", [sentinelTenant]);
+      await db.query("INSERT INTO public.column_mapping_template(tenant_id,name,import_type) VALUES($1,$2,'invoice')", [sentinelTenant,`Restored mapping ${i}`]);
+      await db.query("INSERT INTO public.connector_sync_run(tenant_id,provider,direction) VALUES($1,'fixture','inbound')", [sentinelTenant]);
+      await db.query("INSERT INTO public.quote_share_link(tenant_id,quote_id,token_hash,expires_at) VALUES($1,$2,$3,now()+interval '1 day')", [sentinelTenant,restoredQuote,randomUUID().replaceAll('-','')+randomUUID().replaceAll('-','')]);
+      await db.query("INSERT INTO public.approval_rule(tenant_id,name,minimum_margin_pct,approver_role) VALUES($1,$2,20,'manager')", [sentinelTenant,`Restored rule ${i}`]);
+      await db.query("INSERT INTO public.plan_feature(tenant_id,feature_key) VALUES($1,$2)", [sentinelTenant,`restored_feature_${i}`]);
+      await db.query("INSERT INTO public.margin_snapshot(tenant_id,entity_type,entity_id,period_month,order_count,pocket_revenue,pocket_margin,margin_pct,currency) VALUES($1,'customer',$2,'2026-10-01',1,100,20,20,'USD')", [sentinelTenant,`restored_customer_${i}`]);
+    }
     const sentinel = (await db.query(`SELECT md5(jsonb_build_object(
       'tenant_id',p.tenant_id,'id',p.id,'sku',p.sku,'name',p.name,'category',p.category,
       'supplier',p.supplier,'uom',p.uom,'unit_cost',p.unit_cost,'freight_cost',p.freight_cost,

@@ -52,9 +52,9 @@
 - The schema dump is authoritative for intended grants. Historical migrations run only once in order on a fresh source, never again over its later schema or a restored schema.
 - Restore-only cleanup runs after schema creation so it removes target-inherited platform grants as well as future defaults; it never constructs application grants.
 
-# Current acceptance counts — 2026-10-28
+# Proven acceptance counts through Chunk 2B — 2026-10-28
 
-- The current suite has **88 fresh** and **91 restore-mode** pgTAP checks, with planned = ran and two-run repeatability. The inventory minimum is **33 tenant tables** (24 Phase 1, five Chunk 2A and four Chunk 2B). These are **verified in [MarginDesk CI #29](https://github.com/Adityapawar5105/margindesk/actions/runs/40729384500) and [MarginDesk Restore Drill #11](https://github.com/Adityapawar5105/margindesk/actions/runs/40730343531), 2026-10-28, commit `13cea5a`**; hosted-target restore remains unverified.
+- The proven Chunk 2B suite has **88 fresh** and **91 restore-mode** pgTAP checks, with planned = ran and two-run repeatability. The inventory minimum is **33 tenant tables** (24 Phase 1, five Chunk 2A and four Chunk 2B). These are **verified in [MarginDesk CI #29](https://github.com/Adityapawar5105/margindesk/actions/runs/40729384500) and [MarginDesk Restore Drill #11](https://github.com/Adityapawar5105/margindesk/actions/runs/40730343531), 2026-10-28, commit `13cea5a`**; hosted-target restore remains unverified.
 - Chunks 2A and 2B are locked with their original normalized hashes. Chunk 2C has not started.
 
 # Chunk 2B assumptions — 2026-10-28
@@ -72,3 +72,21 @@
 - Approval/send re-resolve pricing for the quote date. If an approved line price has changed, the request fails with a revision-required response rather than silently repricing the header while retaining old line values and creation rationale.
 
 - A targeted backfill repairs only the known NorthStar demo importer mix-up: is_demo, exact program/period/terms/spend, old modeled=350/recorded=0, and both documented remittance rows must match. The new ledger source_ref identifies that repair. No other program's supplier credits are automatically allocated.
+
+# Chunk 2C assumptions and Phase 3 handoff — 2026-10-28
+
+- Chunk 2C is persistence/security only. It remains **unverified in CI** until fresh and restore runs pass. Current plans are **156 fresh / 159 restore-mode** checks and **38 tenant tables**. The proven 2B baseline remains 88/91 and 33 tables.
+- import_job already exists; preserve its dry_run/committed/failed statuses and stored rows. Add nonnegative accepted/rejected counts, a nonempty bounded import type, and object-shaped summary. Invalid legacy rows cause an explicit constraint failure; do not discard or silently rewrite them.
+- The five new tables are column_mapping_template, connector_sync_run, quote_share_link, approval_rule and plan_feature. Owner/manager can read them; owner/manager can write mapping/sync/share metadata; only owners can mutate approval rules and plan features. Reps and analysts have no access to the five new tables. Existing import_job and margin_snapshot role rules are preserved.
+- Mapping templates hold column mappings, not upload contents or credentials. Sync rows are run metadata, not a connector implementation. Sync failed_count is a subset of processed_count; terminal status requires a finish timestamp and a valid start/finish order.
+- Share rows store a SHA-256-shaped hex digest (never the raw bearer token), a tenant-bound quote FK, creator, expiry and revocation timestamps. An exact column allowlist rejects cost/margin or arbitrary payload fields. No anonymous role can read this table and no redemption endpoint exists. Future sharing must generate high-entropy tokens server-side, enforce expiry/revocation and expose a separately whitelisted customer quote view.
+- approval_rule percentages use 0..100, matching margin-engine.js. Rules are inert configuration until a later workflow implements them. plan_feature is tenant-local configuration, NOT an authoritative paid entitlement; owners must not be able to mint billing privileges through it.
+- No new SQL functions or sequences are needed. All five new tables use the existing audited write trigger and tenant-role helpers. All restore inventories, counts, table ACLs and existing function ACLs continue to compare strictly; historical migrations are never replayed onto a restored schema.
+
+Open items carried to Phase 3 (recorded only; not implemented here):
+
+1. **Phase 1 audit actor trust:** lib/db.ts sets app.real_actor_id from realActorId/actorId/userId inside withDatabase; lib/context.ts and the development impersonation helpers supply the request actor. Both audit_row_change and audit_log_append trust this caller-settable GUC. Replace that trust with a reviewed SECURITY DEFINER append boundary or a verified server-signed actor assertion before production use. Do not claim that SQL callers cannot spoof it today.
+2. **Phase 1 record_failed_login input limits:** the function fixes action/NULL tenant/NULL actor and hashes the email; user_agent is truncated to 1,000 characters and IP is cast to inet, but the DB function has no explicit maximum email/IP/input byte length before processing. Add and test bounded inputs in a NEW migration; preserve the current fixed-event and EXECUTE allowlists.
+3. **Phase 1 failed-login rate limiting:** the HTTP login path currently limits 8 attempts per 10 minutes; production requires Upstash and fails closed if unavailable. The database function has no independent rate limit, so direct app-role calls can bypass HTTP throttling. Review trusted proxy/IP handling and a DB-side or restricted write-path control; distributed production behavior remains unverified here.
+4. Define import retention/PII rules, mapping validation, connector retry/idempotency and credential boundaries, safe quote token issuance/redemption with cost-free projections, approval execution/versioning, and billing-controlled entitlement ownership before activating these tables. No such endpoints or workers are added in 2C.
+5. Hosted-target logical restore, platform backup/PITR, production configuration and deployed browser workflows remain unverified. Complete the Chunk 2C CI and restore acceptance first; no Phase 3 work has started.
