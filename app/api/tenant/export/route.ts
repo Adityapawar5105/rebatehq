@@ -10,7 +10,7 @@ import { csvDocument } from "@/lib/csv";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-const tables = ["tenant","membership","invite","customer","product","price_list","price_list_version","price_list_item","margin_policy","quote","quote_line","approval","sales_order","rebate_agreement","rebate_progress","invoice","invoice_line","cost_component","supplier_credit","alert","margin_snapshot","connector_secret","import_job","audit_log","uom","cost_history","uom_conversion","fx_rate","data_quality_issue"] as const;
+const tables = ["tenant","membership","invite","customer","product","price_list","price_list_version","price_list_item","margin_policy","quote","quote_line","approval","sales_order","rebate_agreement","rebate_progress","invoice","invoice_line","cost_component","supplier_credit","alert","margin_snapshot","connector_secret","import_job","audit_log","uom","cost_history","uom_conversion","fx_rate","data_quality_issue","customer_group","customer_price","rebate_tier","rebate_entry"] as const;
 
 export async function GET(request: Request) {
   try {

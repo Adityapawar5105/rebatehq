@@ -91,12 +91,24 @@ test("full pgTAP SQL executes in PGlite with assertion stubs and planned checks 
     `);
     await db.exec(foundation);
     await db.exec(chunk2a);
+    await db.exec(fs.readFileSync(path.join(root, 'supabase/migrations/20261028162156_chunk2b_pricing_rebate_tiers.sql'), 'utf8'));
     const { loadDatabaseTestSql } = await import("../scripts/load-db-test-sql.mjs");
     const sql = materialize(await loadDatabaseTestSql()).replace(
       /^CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;\s*$/m,
       "-- pgTAP assertion functions are locally stubbed for this PGlite run.",
     );
-    await db.exec(sql);
+    const snapshot = async () => {
+      const tables=(await db.query("SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('r','p') AND EXISTS(SELECT 1 FROM pg_attribute a WHERE a.attrelid=c.oid AND a.attname='tenant_id') ORDER BY c.relname")).rows;
+      assert.ok(tables.length>=33);
+      const counts={};
+      for(const t of tables) counts[t.relname]=(await db.query(`SELECT count(*)::text AS n FROM public.${t.relname}`)).rows[0].n;
+      return counts;
+    };
+    const runTwice = async () => {
+      const before=await snapshot();
+      for(let i=0;i<2;i++){await db.exec(sql);assert.deepEqual(await snapshot(),before,'Full pgTAP run must leave no per-table residue');}
+    };
+    await runTwice();
 
     // Prove the shared registry rejects unknown functions and altered ACLs,
     // instead of checking only the currently expected happy-path inventory.
@@ -140,7 +152,7 @@ test("full pgTAP SQL executes in PGlite with assertion stubs and planned checks 
       set_config('app.restore_sentinel_tenant_id',$1,false),
       set_config('app.restore_sentinel_product_id',$2,false),
       set_config('app.restore_sentinel_content_hash',$3,false)`, [sentinelTenant,sentinelProduct,sentinel]);
-    await db.exec(sql);
+    await runTwice();
   } finally {
     await db.close();
   }

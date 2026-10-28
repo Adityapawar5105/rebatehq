@@ -5,7 +5,7 @@ const { randomUUID } = require("node:crypto");
 const test = require("node:test");
 
 const repoRoot = path.join(__dirname, "..");
-const phase1Sql = fs.readFileSync(path.join(repoRoot, "supabase", "tests", "phase1_rls.sql"), "utf8");
+const phase1Sql = fs.readFileSync(path.join(repoRoot, "supabase", "tests", "phase1_rls.sql"), "utf8").replace(/\r\n/g,"\n");
 const pgliteModule = import("@electric-sql/pglite");
 
 const tables = [
@@ -13,7 +13,7 @@ const tables = [
   "price_list_item", "margin_policy", "quote", "quote_line", "approval", "sales_order",
   "rebate_agreement", "rebate_progress", "invoice", "invoice_line", "cost_component",
   "supplier_credit", "alert", "margin_snapshot", "connector_secret", "import_job", "audit_log",
-  "uom", "cost_history", "uom_conversion", "fx_rate", "data_quality_issue",
+  "uom", "cost_history", "uom_conversion", "fx_rate", "data_quality_issue", "customer_group", "customer_price", "rebate_tier", "rebate_entry",
 ];
 const existingTenant = "20000000-0000-4000-8000-000000000001";
 const otherTenant = "20000000-0000-4000-8000-000000000002";
@@ -220,6 +220,13 @@ async function createHarnessSchema(db) {
 }
 
 async function seedRestoredRows(db) {
+  await db.exec(`
+    CREATE TABLE public.customer_group(id uuid PRIMARY KEY,tenant_id uuid NOT NULL REFERENCES tenant(tenant_id),name text,UNIQUE(tenant_id,id));
+    CREATE TABLE public.customer_price(id uuid PRIMARY KEY,tenant_id uuid NOT NULL REFERENCES tenant(tenant_id),group_id uuid,product_id uuid,rule_kind text,price numeric,currency text,effective_from date,effective_to date,source text,UNIQUE(tenant_id,id),FOREIGN KEY(tenant_id,group_id) REFERENCES customer_group(tenant_id,id),FOREIGN KEY(tenant_id,product_id) REFERENCES product(tenant_id,id));
+    CREATE TABLE public.rebate_tier(id uuid PRIMARY KEY,tenant_id uuid NOT NULL REFERENCES tenant(tenant_id),agreement_id uuid,from_amount numeric,rate numeric,UNIQUE(tenant_id,id),FOREIGN KEY(tenant_id,agreement_id) REFERENCES rebate_agreement(tenant_id,id));
+    CREATE TABLE public.rebate_entry(id uuid PRIMARY KEY,tenant_id uuid NOT NULL REFERENCES tenant(tenant_id),agreement_id uuid,entry_type text,amount numeric,currency text,occurred_on date,source_ref text,UNIQUE(tenant_id,id),FOREIGN KEY(tenant_id,agreement_id) REFERENCES rebate_agreement(tenant_id,id));
+  `);
+
   await db.query(`INSERT INTO auth.users(id,aud,role,email,encrypted_password,created_at,updated_at) VALUES
     ($1,'authenticated','authenticated','old-owner@example.invalid','',now(),now()),
     ($2,'authenticated','authenticated','old-rep@example.invalid','',now(),now()),
@@ -352,8 +359,8 @@ test("PGlite reproduces the arbitrary-clone FK failure and runs the explicit fix
       assert.deepEqual(actualTables, [...tables].sort());
       const tenantAFixtures = await db.query("SELECT table_name,row_data FROM pg_temp.phase1_rls_tenant_a_fixtures ORDER BY table_name");
       const tenantBFixtures = await db.query("SELECT table_name,row_data FROM pg_temp.phase1_rls_insert_fixtures ORDER BY table_name");
-      assert.equal(tenantAFixtures.rows.length, 29);
-      assert.equal(tenantBFixtures.rows.length, 29);
+      assert.equal(tenantAFixtures.rows.length, 33);
+      assert.equal(tenantBFixtures.rows.length, 33);
 
       const ids = runGraph.ids;
       const tenantA = ids.get("__PHASE1_TENANT_A_ID__");
@@ -374,7 +381,7 @@ test("PGlite reproduces the arbitrary-clone FK failure and runs the explicit fix
       await db.exec("ROLLBACK;");
       assert.deepEqual(await snapshotAllTenantTables(db), beforeGraph, `Fixture graph run ${run} must leave every tenant table unchanged after rollback.`);
     }
-    console.log("Explicit Tenant A/B fixture graph passed twice with 29 tenant tables and pre-existing multi-row restored data; both transactions rolled back with unchanged row counts.");
+    console.log("Explicit Tenant A/B fixture graph passed twice with 33 tenant tables and pre-existing multi-row restored data; both transactions rolled back with unchanged row counts.");
   } finally {
     await db.close();
   }

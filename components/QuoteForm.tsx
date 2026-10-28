@@ -51,7 +51,7 @@ export function QuoteForm({ currency }: { currency: string }) {
       if (!response.ok) throw new Error(data.error || "Quote could not be created.");
       setResult(data.data.zone === "red"
         ? "This quote is below the walk-away limit and was blocked."
-        : `Quote ${data.data.id} created · ${data.data.zone} guardrail${data.data.headroom !== undefined ? ` · ${data.data.headroom.toFixed(1)} points above walk-away` : ""}.`);
+        : `Quote ${data.data.id} created · ${data.data.zone} guardrail${data.data.headroom !== undefined ? ` · ${data.data.headroom.toFixed(1)} points above walk-away` : ""}. ${(data.data.pricingExplanation || []).map((why: any) => `Price: ${why.rule} · ${why.source}${why.from ? ` · from ${why.from}` : ""}${why.to ? ` until ${why.to}` : ""}`).join("; ")}`);
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Quote could not be created.");
     } finally {

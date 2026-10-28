@@ -12,7 +12,7 @@ export async function calculateServerQuote(db:PoolClient,tenantId:string,custome
   const tenant=tenantResult.rows[0];if(!tenant)throw Object.assign(new Error("Workspace was not found."),{status:404});
   const currency=(transactionCurrency||tenant.currency).trim().toUpperCase();
   if(!/^[A-Z]{3}$/.test(currency))throw Object.assign(new Error("The quote currency is invalid."),{status:422});
-  const customerResult=await db.query("SELECT id,name,account_no,tier,assigned_rep_id FROM customer WHERE tenant_id=$1 AND id=$2",[tenantId,customerId]);
+  const customerResult=await db.query("SELECT id,name,account_no,tier,group_id,assigned_rep_id FROM customer WHERE tenant_id=$1 AND id=$2",[tenantId,customerId]);
   const customer=customerResult.rows[0];if(!customer)throw Object.assign(new Error("Customer was not found or is not assigned to you."),{status:404});
   const ids=[...new Set(lines.map(line=>line.productId))];
   const productResult=await db.query<DbProduct>("SELECT id,sku,name,category,supplier,uom,unit_cost,freight_cost,payment_terms_cost,list_price,tier_prices,$3::char(3) AS currency FROM product WHERE tenant_id=$1 AND id=ANY($2::uuid[]) AND active=true",[tenantId,ids,tenant.currency]);
@@ -27,10 +27,12 @@ export async function calculateServerQuote(db:PoolClient,tenantId:string,custome
     if(quantity===null||quantity===undefined)throw Object.assign(new Error(`No known unit conversion from ${line.uom||"(missing)"} to ${product.uom||"(missing)"} for ${product.sku}. A data-quality issue was recorded.`),{status:422});
     normalizedLines.push({...line,qty:Number(quantity),uom:product.uom||undefined});
   }
+  const pricingRules=(await db.query("SELECT id,customer_id,group_id,product_id,rule_kind,contract_ref,price,currency,min_quantity,max_quantity,effective_from::text AS effective_from,effective_to::text AS effective_to,source FROM customer_price WHERE tenant_id=$1 AND product_id=ANY($2::uuid[]) AND (customer_id=$3 OR group_id=$4)",[tenantId,ids,customerId,customer.group_id])).rows;
   const costHistory=(await db.query("SELECT product_id,cost,basis,effective_from::text AS effective_from,effective_to::text AS effective_to,currency FROM cost_history WHERE tenant_id=$1 AND product_id=ANY($2::uuid[]) AND basis=$3",[tenantId,ids,tenant.default_cost_basis])).rows;
   const fxRates=(await db.query("SELECT rate_date::text AS rate_date,from_currency,to_currency,rate FROM fx_rate WHERE tenant_id=$1 AND rate_date<=$2",[tenantId,transactionDate])).rows;
-  const math=MarginEngine.calculateQuote(normalizedLines.map(line=>({productId:line.productId,qty:line.qty,discountPct:line.discountPct,rebatePct:line.rebatePct,accessory:line.accessory})),customer,products,{transactionDate,transactionCurrency:currency,costBasis:tenant.default_cost_basis,costHistory,fxRates});
+  const math=MarginEngine.calculateQuote(normalizedLines.map(line=>({productId:line.productId,qty:line.qty,discountPct:line.discountPct,rebatePct:line.rebatePct,accessory:line.accessory})),customer,products,{transactionDate,transactionCurrency:currency,costBasis:tenant.default_cost_basis,costHistory,fxRates,pricingRules});
   if(!math.valid){
+    if ((math.issues||[]).some((issue:any)=>issue.code.startsWith("pricing_"))) throw Object.assign(new Error("Approved pricing rules conflict or require a transaction date. Correct the pricing rules and retry."),{status:422});
     for(const issue of math.issues||[]){if(issue.code==="cost_history_gap"||issue.code==="fx_rate_missing")await db.query("SELECT public.record_data_quality_issue($1,$2,$3,$4,$5,$6::jsonb)",[tenantId,issue.code,"product",String(issue.productId||ids[0]||customerId),transactionDate,JSON.stringify(issue)]);}
     throw Object.assign(new Error("Quote data is incomplete for its transaction date or currency. A data-quality issue was recorded; complete the cost or FX history and retry."),{status:422});
   }
@@ -47,3 +49,11 @@ export async function calculateServerQuote(db:PoolClient,tenantId:string,custome
   return {customer,products,math,policy,policyVersion,zone,headroom,currency,transactionDate,normalizedLines};
 }
 export { MarginEngine };
+
+// A changed pricing rule requires a quote revision; approval/send must not
+// change header totals while leaving the stored line price and rationale behind.
+export function assertQuotedPricesCurrent(lines:any[],math:any) {
+  if(lines.length!==math.lines.length || lines.some((line,index)=>Number(line.quotedUnitPrice).toFixed(4)!==Number(math.lines[index].unitPrice).toFixed(4))) {
+    throw Object.assign(new Error("An approved price changed. Create a revised quote before approval or sending."),{status:409});
+  }
+}

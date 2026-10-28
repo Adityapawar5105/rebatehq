@@ -1,5 +1,8 @@
 # MarginDesk Phase 1
 
+**Chunk 2B status — unverified in CI:** pricing precedence and tiered rebate audit are implemented locally. The new migration is pending; current working-tree plans are 88 fresh / 91 restore checks with a 33-table minimum. Prior green CI #27 / Restore Drill #10 prove Chunk 2A only. See OPERATIONS.md and SECURITY_CHECK.md for local SQL execution and remaining verification. No Chunk 2C work.
+
+
 MarginDesk is being moved from a browser-local prototype to a multi-tenant app for mid-market distributors. Phase 1 adds the production foundation: Supabase Auth magic links, tenant and role enforcement, PostgreSQL RLS, audit logging, and a safe prototype import/export path. It does not add new pricing, rebate, or ERP features.
 
 ## Local app

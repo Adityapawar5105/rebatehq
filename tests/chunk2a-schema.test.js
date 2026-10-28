@@ -168,6 +168,41 @@ test("Chunk 2A migration backfills a database that already contains Phase 1 tena
     assert.ok(listItem.rows[0].id, "Existing price-list item surrogate ID remains present.");
     assert.equal(Number(listItem.rows[0].unit_price), 80);
     assert.ok(listItem.rows[0].effective_from instanceof Date || String(listItem.rows[0].effective_from).length >= 10);
+    // The new migration must also apply to populated Phase 1 + 2A data.
+    const agreementIds=[];
+    const seed=JSON.parse(fs.readFileSync(path.join(root,'seed_data.json'),'utf8'));
+    for (const x of seed.rebates.slice(0,2)) {
+      const id=require('node:crypto').randomUUID();agreementIds.push(id);
+      await db.query("INSERT INTO rebate_agreement(tenant_id,id,party_type,party_id,name,rate_pct,threshold_amount,period_start,period_end,currency) VALUES($1,$2,'vendor',$3,$4,$5,$6,$7,$8,'EUR')",[tenantId,id,x.partyId,x.name,x.rate,x.threshold,x.periodStart,x.periodEnd]);
+      await db.query("INSERT INTO rebate_progress(tenant_id,agreement_id,period_start,period_end,eligible_spend,recorded_credits,currency,updated_at) VALUES($1,$2,$3,$4,1,0,'EUR','2020-01-01'),($1,$2,$3,$4,$5,$6,'EUR',now())",[tenantId,id,x.periodStart,x.periodEnd,x.eligibleSpend,x.credits]);
+    }
+    // Reproduce the legacy demo importer bug, with its documented source credits.
+    await db.query("UPDATE tenant SET is_demo=true WHERE tenant_id=$1",[tenantId]);
+    await db.query("UPDATE rebate_progress SET modeled_amount=350,recorded_credits=0 WHERE tenant_id=$1 AND agreement_id=$2 AND eligible_spend=29500",[tenantId,agreementIds[0]]);
+    await db.query("INSERT INTO supplier_credit(tenant_id,vendor_name,credit_date,amount,reference,currency) VALUES($1,'NorthStar Metals','2026-08-31',200,'Remit 08-31','EUR'),($1,'NorthStar Metals','2026-09-30',150,'Remit 09-30','EUR')",[tenantId]);
+    await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20261028162156_chunk2b_pricing_rebate_tiers.sql'),'utf8'));
+    for (let i=0;i<agreementIds.length;i++){
+      const a=(await db.query("SELECT calculation_mode,currency,period_start::text,period_end::text FROM rebate_agreement WHERE id=$1",[agreementIds[i]])).rows[0];
+      const tiers=(await db.query("SELECT from_amount,to_amount,rate FROM rebate_tier WHERE agreement_id=$1",[agreementIds[i]])).rows;
+      const entries=(await db.query("SELECT amount,currency,entry_type,occurred_on::text,source_ref FROM rebate_entry WHERE agreement_id=$1",[agreementIds[i]])).rows;
+      assert.equal(entries.length,2,'Only latest cumulative snapshot migrates');
+      const result=require('../rebate-engine.js').calculate(a,tiers,entries);
+      if(i===0){assert.equal(Number(result.eligibleSpend),29500);assert.equal(Number(result.earned),590);assert.equal(Number(result.difference),240);}
+      else assert.equal(Number(result.remaining),5000);
+    }
+    const groupId=require('node:crypto').randomUUID();
+    await db.query("INSERT INTO customer_group(tenant_id,id,name) VALUES($1,$2,'Seed group')",[tenantId,groupId]);
+    await db.query("UPDATE customer SET group_id=$3 WHERE tenant_id=$1 AND id=$2",[tenantId,customerId,groupId]);
+    const insertRule="INSERT INTO customer_price(tenant_id,group_id,product_id,rule_kind,price,currency,min_quantity,max_quantity,effective_from,effective_to,source) VALUES($1,$2,$3,'group',70,'EUR',$4,$5,$6,$7,'Seed rule')";
+    await db.query(insertRule,[tenantId,groupId,productId,0,10,'2030-01-01','2030-02-01']);
+    await db.query(insertRule,[tenantId,groupId,productId,10,20,'2030-01-01','2030-02-01']);
+    await db.query(insertRule,[tenantId,groupId,productId,0,10,'2030-02-01','2030-03-01']);
+    await assert.rejects(db.query(insertRule,[tenantId,groupId,productId,9,11,'2030-01-01','2030-02-01']),error=>error.code==='23P01');
+    await assert.rejects(db.query("INSERT INTO customer_price(tenant_id,customer_id,product_id,rule_kind,price,currency,effective_from,source) VALUES($1,$2,$3,'customer','NaN','EUR',current_date,'invalid price')",[tenantId,customerId,productId]),error=>error.code==='23514');
+
+    await assert.rejects(db.query("INSERT INTO rebate_tier(tenant_id,agreement_id,from_amount,rate) VALUES($1,$2,0,101)",[tenantId,agreementIds[0]]),error=>error.code==='23514');
+
+
   } finally {
     await db.close();
   }

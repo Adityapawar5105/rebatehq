@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import { getRebateAudit } from "../lib/rebates";
 import { appendAudit } from "../lib/audit";
 import { getMonthlyWaterfall } from "../lib/analytics";
-import { calculateServerQuote } from "../lib/margin";
+import { calculateServerQuote, assertQuotedPricesCurrent } from "../lib/margin";
 import { importPrototypeData, validatePrototype } from "../lib/prototype-import";
 
 const root = path.resolve(__dirname, "..");
@@ -33,6 +34,7 @@ async function createDatabase(): Promise<any> {
   `);
   await db.exec(foundation);
   await db.exec(chunk2a);
+  await db.exec(readFileSync(path.join(root, 'supabase/migrations/20261028162156_chunk2b_pricing_rebate_tiers.sql'), 'utf8'));
   return db;
 }
 
@@ -57,6 +59,11 @@ test("Chunk 2A runtime quote queries and prototype import statements execute in 
 
     const imported = await importPrototypeData(db as any, tenantId, userId, plan, jobId);
     assert.equal(imported.products, seed.products.length);
+    const audits = await getRebateAudit(db as any,tenantId);
+    const northstar = audits.find((row:any)=>row.name.startsWith('NorthStar'))!;
+    assert.equal(Number(northstar.audit.earned),590);
+    assert.equal(Number(northstar.audit.difference),240);
+
     assert.ok(imported.orders > 0);
     assert.equal((await db.query("SELECT status FROM import_job WHERE id=$1", [jobId])).rows[0].status, "committed");
     assert.equal((await db.query("SELECT count(*)::int AS n FROM quote WHERE tenant_id=$1", [tenantId])).rows[0].n, imported.quotes);
@@ -70,6 +77,14 @@ test("Chunk 2A runtime quote queries and prototype import statements execute in 
     assert.equal(quote.currency, "USD");
     assert.equal(quote.normalizedLines[0].qty, 2);
     assert.equal(quote.math.valid, true);
+    await db.query("INSERT INTO customer_price(tenant_id,customer_id,product_id,rule_kind,contract_ref,price,currency,effective_from,source) VALUES($1,$2,$3,'contract','TEST-C',99,'USD',current_date,'Signed test contract')",[tenantId,customerId,product.id]);
+    const contractQuote=await calculateServerQuote(db as any,tenantId,customerId,[{productId:product.id,qty:2,uom:product.uom,discountPct:0,rebatePct:0,accessory:0}]);
+    assert.equal(contractQuote.math.lines[0].unitPrice,99);
+    assert.equal(contractQuote.math.lines[0].pricingExplanation.source,'Signed test contract');
+    assert.throws(()=>assertQuotedPricesCurrent([{quotedUnitPrice:98}],contractQuote.math),/approved price changed/);
+    assertQuotedPricesCurrent([{quotedUnitPrice:99}],contractQuote.math);
+    await db.query("DELETE FROM customer_price WHERE tenant_id=$1",[tenantId]);
+
 
     const productRows = (await db.query(`SELECT id,sku,name,category,supplier,uom,unit_cost,freight_cost,payment_terms_cost,list_price,tier_prices
       FROM product WHERE tenant_id=$1 AND active=true AND ($2='' OR sku ILIKE $3 OR name ILIKE $3 OR category ILIKE $3) ORDER BY sku LIMIT 500`, [tenantId,"","%%"])).rows;
@@ -99,17 +114,18 @@ test("Chunk 2A runtime quote queries and prototype import statements execute in 
     await db.query("INSERT INTO membership(tenant_id,user_id,email,role) VALUES($1,$2,'runtime-manager@example.invalid','manager')", [tenantId,managerId]);
     const decisionQuote = (await db.query("SELECT id,customer_id,created_by,status,currency,created_at::date::text AS created_at FROM quote WHERE tenant_id=$1 AND id=$2 FOR UPDATE", [tenantId,quoteId])).rows[0];
     const approval = (await db.query("SELECT id,requested_by FROM approval WHERE tenant_id=$1 AND quote_id=$2 AND status='pending' FOR UPDATE", [tenantId,quoteId])).rows[0];
-    const decisionLines = (await db.query(`SELECT product_id AS "productId",quantity AS qty,uom_code AS uom,
+    const decisionLines = (await db.query(`SELECT product_id AS "productId",quantity AS qty,uom_code AS uom,list_price AS "quotedUnitPrice",
       discount_pct AS "discountPct",off_invoice_rebate_pct AS "rebatePct",accessory_amount AS accessory
       FROM quote_line WHERE tenant_id=$1 AND quote_id=$2`, [tenantId,quoteId])).rows;
     const decisionMath = await calculateServerQuote(db as any,tenantId,decisionQuote.customer_id,decisionLines,decisionQuote.created_at,decisionQuote.currency);
+    assertQuotedPricesCurrent(decisionLines,decisionMath.math);
     await db.query("UPDATE approval SET status=$3,decided_by=$4,decision_note=$5,margin_pct_at_decision=$6,policy_version=$7,decided_at=now() WHERE tenant_id=$1 AND id=$2", [tenantId,approval.id,"approved",managerId,"PGlite decision",decisionMath.math.rate,decisionMath.policyVersion]);
     await db.query("UPDATE quote SET status=$3,pocket_price=$4,cogs_total=$5,pocket_margin=$6,margin_pct=$7,margin_zone=$8,headroom=$9,policy_version=$10,updated_at=now() WHERE tenant_id=$1 AND id=$2", [tenantId,quoteId,"approved",decisionMath.math.pocket,decisionMath.math.cogs,decisionMath.math.margin,decisionMath.math.rate,decisionMath.zone,decisionMath.headroom,decisionMath.policyVersion]);
     await db.query("SELECT set_config('app.real_actor_id',$1,false)", [managerId]);
     await appendAudit(db as any, { tenantId, actorId: managerId, action: "quote.approved", entityType: "quote", entityId: quoteId, after: { zone: decisionMath.zone } });
 
     const sendQuote = (await db.query("SELECT id,customer_id,status,currency,created_at::date::text AS created_at FROM quote WHERE tenant_id=$1 AND id=$2 FOR UPDATE", [tenantId,quoteId])).rows[0];
-    const sendLines = (await db.query(`SELECT product_id AS "productId",quantity AS qty,uom_code AS uom,
+    const sendLines = (await db.query(`SELECT product_id AS "productId",quantity AS qty,uom_code AS uom,list_price AS "quotedUnitPrice",
       discount_pct AS "discountPct",off_invoice_rebate_pct AS "rebatePct",accessory_amount AS accessory
       FROM quote_line WHERE tenant_id=$1 AND quote_id=$2`, [tenantId,quoteId])).rows;
     const sendMath = await calculateServerQuote(db as any,tenantId,sendQuote.customer_id,sendLines,sendQuote.created_at,sendQuote.currency);

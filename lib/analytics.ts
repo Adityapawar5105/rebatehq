@@ -2,19 +2,20 @@ import type { PoolClient } from "pg";
 import { MarginEngine } from "@/lib/margin";
 import { engineProduct, type DbProduct } from "@/lib/margin";
 
-type SourceRow={order_id:string;source_id:string;customer_id:string;customer_name:string;tier:string|null;product_id:string;sku:string;product_name:string;category:string;supplier:string|null;uom:string|null;unit_cost:string|number;freight_cost:string|number;payment_terms_cost:string|number;list_price:string|number;tier_prices:Record<string,number>;quantity:string|number;discount_pct:string|number;off_invoice_rebate_pct:string|number;freight_per_unit:string|number;payment_terms_per_unit:string|number;month_key:string;transaction_date:string;currency:string};
+type SourceRow={order_id:string;source_id:string;customer_id:string;customer_name:string;tier:string|null;group_id:string|null;product_id:string;sku:string;product_name:string;category:string;supplier:string|null;uom:string|null;unit_cost:string|number;freight_cost:string|number;payment_terms_cost:string|number;list_price:string|number;tier_prices:Record<string,number>;quantity:string|number;discount_pct:string|number;off_invoice_rebate_pct:string|number;freight_per_unit:string|number;payment_terms_per_unit:string|number;month_key:string;transaction_date:string;currency:string};
 export async function getMonthlyWaterfall(db:PoolClient,tenantId:string,month:string){
  const config=(await db.query<{currency:string;default_cost_basis:string}>("SELECT currency,default_cost_basis FROM tenant WHERE tenant_id=$1",[tenantId])).rows[0];
  if(!config)throw new Error("Workspace currency and cost basis are unavailable.");
- const rows=(await db.query<SourceRow>(`SELECT o.id AS order_id,o.source_id,o.customer_id,c.name AS customer_name,c.tier,p.id AS product_id,p.sku,p.name AS product_name,p.category,p.supplier,p.uom,p.unit_cost,p.freight_cost,p.payment_terms_cost,p.list_price,p.tier_prices,o.quantity,o.discount_pct,o.off_invoice_rebate_pct,o.freight_per_unit,o.payment_terms_per_unit,o.month_key,o.transaction_date::text AS transaction_date,o.currency
+ const rows=(await db.query<SourceRow>(`SELECT o.id AS order_id,o.source_id,o.customer_id,c.name AS customer_name,c.tier,c.group_id,p.id AS product_id,p.sku,p.name AS product_name,p.category,p.supplier,p.uom,p.unit_cost,p.freight_cost,p.payment_terms_cost,p.list_price,p.tier_prices,o.quantity,o.discount_pct,o.off_invoice_rebate_pct,o.freight_per_unit,o.payment_terms_per_unit,o.month_key,o.transaction_date::text AS transaction_date,o.currency
  FROM sales_order o JOIN customer c ON c.tenant_id=o.tenant_id AND c.id=o.customer_id JOIN product p ON p.tenant_id=o.tenant_id AND p.id=o.product_id
  WHERE o.tenant_id=$1 AND o.month_key=$2 ORDER BY o.source_id`,[tenantId,month])).rows;
  const ids=[...new Set(rows.map(row=>row.product_id))];
  const costHistory=ids.length?(await db.query("SELECT product_id,cost,basis,effective_from::text AS effective_from,effective_to::text AS effective_to,currency FROM cost_history WHERE tenant_id=$1 AND product_id=ANY($2::uuid[]) AND basis=$3",[tenantId,ids,config.default_cost_basis])).rows:[];
  const fxRates=(await db.query("SELECT rate_date::text AS rate_date,from_currency,to_currency,rate FROM fx_rate WHERE tenant_id=$1 AND rate_date<=((to_date($2||'-01','YYYY-MM-DD')+interval '1 month - 1 day')::date)",[tenantId,month])).rows;
+ const pricingRules=(await db.query("SELECT id,customer_id,group_id,product_id,rule_kind,contract_ref,price,currency,min_quantity,max_quantity,effective_from::text AS effective_from,effective_to::text AS effective_to,source FROM customer_price WHERE tenant_id=$1",[tenantId])).rows;
  const calculated:any[]=[];const dataQualityIssues:any[]=[];
  for(const row of rows){
-   const customer={id:row.customer_id,tier:row.tier};
+   const customer={id:row.customer_id,tier:row.tier,group_id:row.group_id};
    // Catalog prices and costs are denominated in the tenant currency; the
    // transaction may use another currency, which the shared engine converts
    // with the effective-dated FX rates below.
@@ -24,7 +25,7 @@ export async function getMonthlyWaterfall(db:PoolClient,tenantId:string,month:st
      product,customer,qty:order.qty,discountPct:order.discountPct,
      rebatePct:order.offInvoiceRebatePct,freightPerUnit:order.freightPerUnit,
      termsPerUnit:order.termsPerUnit,transactionDate:order.transactionDate,
-     transactionCurrency:order.currency,costBasis:order.costBasis,costHistory,fxRates,
+     transactionCurrency:order.currency,costBasis:order.costBasis,costHistory,fxRates,pricingRules,
    });
    if(result.valid){calculated.push({...result,order,c:customer,p:product});continue;}
    for(const mathIssue of result.issues){

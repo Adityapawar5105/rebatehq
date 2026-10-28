@@ -160,7 +160,7 @@ test("restore dump inspection parses application tables and redacts COPY payload
   const context = redactDataDumpContext(data, 2, 1);
   assert.match(context.lines.join("\n"), /\[COPY DATA REDACTED\]/);
   assert.doesNotMatch(context.lines.join("\n"), /secret-user-row|other-secret/);
-  const tenantTables = Array.from({ length: 29 }, (_, index) => ({ schema: "public", table: `tenant_table_${index}` }));
-  assert.equal(assertApplicationTableMinimum(tenantTables), 29);
-  assert.throws(() => assertApplicationTableMinimum(tenantTables.slice(0, 28)), /expected at least 29 after Chunk 2A/);
+  const tenantTables = Array.from({ length: 33 }, (_, index) => ({ schema: "public", table: `tenant_table_${index}` }));
+  assert.equal(assertApplicationTableMinimum(tenantTables), 33);
+  assert.throws(() => assertApplicationTableMinimum(tenantTables.slice(0, 32)), /expected at least 33 after Chunk 2B/);
 });

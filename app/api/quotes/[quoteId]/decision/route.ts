@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { assertPermission, errorResponse, HttpError } from "@/lib/authz";
 import { withDatabase } from "@/lib/db";
 import { DecisionSchema } from "@/lib/validators";
-import { calculateServerQuote } from "@/lib/margin";
+import { calculateServerQuote, assertQuotedPricesCurrent } from "@/lib/margin";
 import { appendAudit } from "@/lib/audit";
 import { assertNotQuoteCreator } from "@/lib/quote-approval";
 
@@ -33,12 +33,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ quo
       );
       if (!approval.rows[0]) throw new HttpError(409, "The pending approval was not found.");
       const lines = (await db.query(
-        `SELECT product_id AS "productId",quantity AS qty,uom_code AS uom,
+        `SELECT product_id AS "productId",quantity AS qty,uom_code AS uom,list_price AS "quotedUnitPrice",
                 discount_pct AS "discountPct",off_invoice_rebate_pct AS "rebatePct",accessory_amount AS accessory
          FROM quote_line WHERE tenant_id=$1 AND quote_id=$2`,
         [context.tenantId, quoteId],
       )).rows;
       const calc = await calculateServerQuote(db, context.tenantId, quote.customer_id, lines, String(quote.created_at).slice(0, 10), quote.currency);
+      assertQuotedPricesCurrent(lines,calc.math);
       if (parsed.data.decision === "approved" && calc.zone === "red") throw new HttpError(422, "The quote is below the current walk-away margin and cannot be approved.");
       const approvalStatus = parsed.data.decision;
       const quoteStatus = approvalStatus === "approved" ? "approved" : "denied";

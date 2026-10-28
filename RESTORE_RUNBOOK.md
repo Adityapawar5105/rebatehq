@@ -8,6 +8,10 @@ Current Chunk 2A and restore-platform-ACL-cleanup acceptance is **verified in [M
 
 This runbook restores the application-owned logical database contents to a **disposable, fresh Supabase target**. It does not restore storage objects or prove platform-managed backup recovery. Never use a production project as the target.
 
+## Chunk 2B working-tree status — unverified
+
+The pending pricing/rebate migration raises the minimum to 33 tenant tables and plans to 88 fresh / 91 restore-mode checks. Its dump includes all new tables and quote rationale; the dynamic inventory, ACL and per-tenant count comparisons cover them. Restore-only platform cleanup is unchanged and must preserve dump grants. CI #27 / Restore Drill #10 verify only locked Chunk 2A (70/73 checks). A new complete green run must prove the pending migration and 91-check suite; hosted mode remains unverified.
+
 ## Hosted-mode prerequisites
 
 1. Create two disposable Supabase projects: a source containing the MarginDesk data to test and a separate, empty target. Confirm that the target is new or can be safely discarded and recreated. The workflow rejects a target that already has `public.tenant`.
@@ -29,7 +33,7 @@ This runbook restores the application-owned logical database contents to a **dis
 5. Install and verify `btree_gist` in the target's existing `extensions` schema, then restore owned roles and the complete `public` schema dump including its GRANT statements with `ON_ERROR_STOP=1`. Capture the after-schema function ACL checkpoint. Do not apply migration files to this restored schema.
 6. Run `scripts/restore-platform-acl-cleanup.sql` with `ON_ERROR_STOP=1`. This idempotent restore-only script removes only PUBLIC/anon/authenticated/service_role table, column, sequence, function and default privileges for application owners. It contains no function allowlist and grants nothing. Running it after schema restore also removes ACLs inherited from target defaults during object creation. All intended application grants come from the dump. The warning gate fails on ineffective privilege statements. Capture the after-cleanup checkpoint and require all application function grants to be unchanged.
 7. Prepare synthetic `auth.users` rows for only the referenced UUIDs, without source emails, password hashes or secrets. Restore only application data with `ON_ERROR_STOP=1`, then capture the after-data ACL checkpoint.
-8. Compare source/target role attributes and memberships; full table/schema/function ACLs and metadata; inventory, per-table/per-tenant counts; auth IDs; and sentinel hash. Keep every section strict. Verify the sentinel, create the restricted app login, verify runtime-role/no-context RLS, and run the complete restore-mode database suite twice (73 planned = 73 run each time) with unchanged row counts.
+8. Compare source/target role attributes and memberships; full table/schema/function ACLs and metadata; inventory, per-table/per-tenant counts; auth IDs; and sentinel hash. Keep every section strict. Verify the sentinel, create the restricted app login, verify runtime-role/no-context RLS, and run the complete restore-mode database suite twice (91 planned = 91 run each time for pending Chunk 2B) with unchanged row counts.
 
 For a manual check against a prepared disposable target, the relevant project commands are:
 
@@ -43,7 +47,7 @@ pnpm check:db-role
 RESTORE_TEST_MODE=true RESTORE_BASELINE_PATH=/path/to/source-equivalence.json pnpm test:db:repeat
 ```
 
-The last command requires `TEST_DATABASE_URL`, `APP_DATABASE_URL`, and the source snapshot path. The current 70 fresh / 73 restore-mode plans, planned = ran and unchanged counts after two runs are **verified in [MarginDesk CI #27](https://github.com/Adityapawar5105/margindesk/actions/runs/40711121913) and [MarginDesk Restore Drill #10](https://github.com/Adityapawar5105/margindesk/actions/runs/40711768732), 2026-10-28, commit `d4c907c`** (local target). The earlier Phase 1 restore plan had 56 checks.
+The last command requires `TEST_DATABASE_URL`, `APP_DATABASE_URL`, and the source snapshot path. The locked Chunk 2A 70 fresh / 73 restore-mode plans, planned = ran and unchanged counts after two runs are **verified in [MarginDesk CI #27](https://github.com/Adityapawar5105/margindesk/actions/runs/40711121913) and [MarginDesk Restore Drill #10](https://github.com/Adityapawar5105/margindesk/actions/runs/40711768732), 2026-10-28, commit `d4c907c`** (local target). The earlier Phase 1 restore plan had 56 checks.
 
 ## Restore Drill #9 finding and current status
 
@@ -53,7 +57,7 @@ The corrected procedure is **verified in [MarginDesk CI #27](https://github.com/
 
 ## Expected job summary
 
-The log and summary must show the exact named workflow order and full owner/grantor/grantee/privilege ACLs for both helpers at source, after schema restore, after cleanup, and after data restore. Every adjacent checkpoint must preserve all application function grants. The summary should report a successful job, target mode, dump/restore/test/total timings, and the included/excluded schema scope. The comparison and sentinel steps must pass. The restored database suite must complete twice with the current planned checks equal to the number run, including restore-only checks for sentinel content hash, source tenant counts, and isolation from the restored sentinel tenant. The locked Phase 1 count was 56; locked Chunk 2A uses 73. A nonzero SQL command, unexpected skipped role statement, ACL difference, missing table, row-count difference, or test failure must fail the workflow.
+The log and summary must show the exact named workflow order and full owner/grantor/grantee/privilege ACLs for both helpers at source, after schema restore, after cleanup, and after data restore. Every adjacent checkpoint must preserve all application function grants. The summary should report a successful job, target mode, dump/restore/test/total timings, and the included/excluded schema scope. The comparison and sentinel steps must pass. The restored database suite must complete twice with the current planned checks equal to the number run, including restore-only checks for sentinel content hash, source tenant counts, and isolation from the restored sentinel tenant. The locked Phase 1 count was 56; locked Chunk 2A used 73; pending Chunk 2B must pass 91. A nonzero SQL command, unexpected skipped role statement, ACL difference, missing table, row-count difference, or test failure must fail the workflow.
 
 ## Known limits
 

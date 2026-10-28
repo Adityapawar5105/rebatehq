@@ -49,14 +49,33 @@
       : resolved;
   }
 
-  function priceFor(product, customer) {
-    return number(product?.tiers?.[customer?.tier] ?? product?.listPrice ?? 0);
+  function resolvePrice(product, customer, { quantity = 0, date, rules = [] } = {}) {
+    const kinds = ['contract', 'customer', 'group'];
+    const day = String(date || '').slice(0, 10);
+    if (rules.length && !/^\d{4}-\d{2}-\d{2}$/.test(day)) return { valid: false, issue: { code: 'pricing_date_missing' } };
+    for (const kind of kinds) {
+      const matches = rules.filter(row => row.product_id === product?.id && row.rule_kind === kind &&
+        (kind === 'group' ? row.group_id === customer?.group_id && row.group_id != null : row.customer_id === customer?.id) &&
+        String(row.effective_from).slice(0,10) <= day && (row.effective_to == null || day < String(row.effective_to).slice(0,10)) &&
+        number(row.min_quantity) <= quantity && (row.max_quantity == null || quantity < number(row.max_quantity)));
+      if (matches.length > 1) return { valid: false, issue: { code: 'pricing_overlap', productId: product?.id, kind } };
+      if (matches.length) {
+        const rule = matches[0];
+        return { valid: true, price: number(rule.price), currency: rule.currency || product?.currency,
+          explanation: { rule: kind, ruleId: rule.id, source: rule.source, contract: rule.contract_ref || null,
+            from: rule.effective_from, to: rule.effective_to, minQuantity: rule.min_quantity, maxQuantity: rule.max_quantity } };
+      }
+    }
+    const tier = product?.tiers?.[customer?.tier];
+    return { valid: true, price: number(tier ?? product?.listPrice), currency: product?.currency,
+      explanation: { rule: tier != null ? 'tier' : 'list', source: tier != null ? `Catalog tier: ${customer.tier}` : 'Product catalog', from: null, to: null } };
   }
+  function priceFor(product, customer) { return resolvePrice(product, customer).price; }
 
   function calculateLine({
     product, customer, qty = 0, discountPct = 0, rebatePct = 0,
     accessory = 0, unitPrice, freightPerUnit, termsPerUnit, costOverride,
-    transactionDate, transactionCurrency, costBasis = 'standard', costHistory, fxRates
+    transactionDate, transactionCurrency, costBasis = 'standard', costHistory, fxRates, pricingRules = []
   }) {
     const invalid = (issues = []) => ({ valid: false, issues, list: 0, baseList: 0, discount: 0, rebate: 0, freight: 0, terms: 0, pocket: 0, cogs: 0, margin: 0, rate: 0 });
     if (!product || !customer) return invalid();
@@ -64,13 +83,16 @@
     const date = transactionDate || '';
     const currency = String(transactionCurrency || product.currency || '').toUpperCase();
     const productCurrency = String(product.currency || currency).toUpperCase();
-    let selectedUnitPrice = unitPrice === undefined ? priceFor(product, customer) : number(unitPrice);
+    const priceResolution = unitPrice === undefined ? resolvePrice(product, customer, { quantity, date, rules: pricingRules }) : { valid: true, price: number(unitPrice), currency: productCurrency, explanation: { rule: 'explicit', source: 'Recorded price' } };
+    if (!priceResolution.valid) return invalid([priceResolution.issue]);
+    let selectedUnitPrice = priceResolution.price;
+    const priceCurrency = String(priceResolution.currency || productCurrency).toUpperCase();
     let freightUnit = number(freightPerUnit ?? product.freight);
     let termsUnit = number(termsPerUnit ?? product.termsCost);
     let selectedCost = number(costOverride ?? product.cost);
     const issues = [];
-    if (unitPrice === undefined && transactionCurrency && productCurrency !== currency) {
-      const converted = convertMoney(selectedUnitPrice, productCurrency, currency, fxRates, date);
+    if (unitPrice === undefined && transactionCurrency && priceCurrency !== currency) {
+      const converted = convertMoney(selectedUnitPrice, priceCurrency, currency, fxRates, date);
       if (!converted.valid) issues.push(converted.issue); else selectedUnitPrice = converted.value;
     }
     if (transactionCurrency && productCurrency !== currency) {
@@ -102,7 +124,7 @@
     const margin = pocket - cogs;
     return {
       valid: true, productId: product.id, product, qty: quantity, baseList,
-      unitPrice: selectedUnitPrice, accessory: number(accessory),
+      unitPrice: selectedUnitPrice, pricingExplanation: priceResolution.explanation, accessory: number(accessory),
       list, discount, rebate, freight, terms, pocket, cogs, margin,
       rate: marginRate(margin, pocket), marginWithoutFreight: margin + freight
     };
@@ -117,7 +139,7 @@
       transactionCurrency: order?.currency,
       costBasis: order?.costBasis,
       costHistory: order?.costHistory,
-      fxRates: order?.fxRates
+      fxRates: order?.fxRates, pricingRules: order?.pricingRules
     });
     return line.valid ? { ...line, order, c: customer, p: product } : null;
   }
@@ -137,7 +159,7 @@
       transactionCurrency: line.currency || options.transactionCurrency,
       costBasis: line.costBasis || options.costBasis,
       costHistory: options.costHistory,
-      fxRates: options.fxRates
+      fxRates: options.fxRates, pricingRules: options.pricingRules
     }));
     const valid = lineResults.every(line => line.valid);
     const totals = Object.fromEntries(FIELDS.map(field => [field, lineResults.reduce((sum, line) => sum + number(line[field]), 0)]));
@@ -210,5 +232,5 @@
     return { status: 'ready', direction: delta >= 0 ? 'up' : 'down', delta, previous, current };
   }
 
-  return { priceFor, effectiveCost, currencyRate, convertMoney, calculateLine, calculateOrder, calculateQuote, aggregate, calculateProductMargin, classify, calculatePassThrough, buildMonthlySnapshots, trendFor };
+  return { resolvePrice, priceFor, effectiveCost, currencyRate, convertMoney, calculateLine, calculateOrder, calculateQuote, aggregate, calculateProductMargin, classify, calculatePassThrough, buildMonthlySnapshots, trendFor };
 });

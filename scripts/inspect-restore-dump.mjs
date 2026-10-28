@@ -32,9 +32,9 @@ export function parseDumpTableNames(sql, kind) {
   return [...found.values()].sort((a, b) => `${a.schema}.${a.table}`.localeCompare(`${b.schema}.${b.table}`));
 }
 
-export function assertApplicationTableMinimum(tables, expected = 29) {
+export function assertApplicationTableMinimum(tables, expected = 33) {
   const count = tables.filter(table => table.schema === "public").length;
-  assert.ok(count >= expected, `Restore inventory found ${count} public application tables; expected at least ${expected} after Chunk 2A.`);
+  assert.ok(count >= expected, `Restore inventory found ${count} public application tables; expected at least ${expected} after Chunk 2B.`);
   return count;
 }
 
@@ -202,7 +202,7 @@ async function main() {
         "",
         `- Included schemas: ${APPLICATION_SCHEMAS.join(", ")}`,
         `- Excluded Supabase-managed schemas: ${EXCLUDED_SUPABASE_SCHEMAS.join(", ")}; all schemas outside the allowlist are excluded.`,
-        `- Source schema dump tables: ${schemaTables.length} (minimum 29); data dump COPY tables: ${dataTables.length}.`,
+        `- Source schema dump tables: ${schemaTables.length} (minimum 33); data dump COPY tables: ${dataTables.length}.`,
         "- Source counts are for application-owned public tables only.",
         "",
         "| Table | Source rows | In data dump |",
