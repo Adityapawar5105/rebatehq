@@ -91,11 +91,26 @@ test("full pgTAP SQL executes in PGlite with assertion stubs and planned checks 
     `);
     await db.exec(foundation);
     await db.exec(chunk2a);
-    const sql = materialize(databaseTests).replace(
+    const { loadDatabaseTestSql } = await import("../scripts/load-db-test-sql.mjs");
+    const sql = materialize(await loadDatabaseTestSql()).replace(
       /^CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;\s*$/m,
       "-- pgTAP assertion functions are locally stubbed for this PGlite run.",
     );
     await db.exec(sql);
+
+    // Prove the shared registry rejects unknown functions and altered ACLs,
+    // instead of checking only the currently expected happy-path inventory.
+    const registry = fs.readFileSync(path.join(root, 'config/function-acl-allowlist.sql'), 'utf8');
+    await db.exec("BEGIN; SELECT set_config('app.phase1_migration_owner',current_user,true);");
+    await db.exec(registry);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM pg_temp.phase1_function_acl_errors')).rows[0].n, 0);
+    await db.exec('CREATE FUNCTION public.unregistered_later_function() RETURNS integer LANGUAGE sql AS $$SELECT 1$$;');
+    assert.ok((await db.query("SELECT reason FROM pg_temp.phase1_function_acl_errors WHERE signature='public.unregistered_later_function()'")).rows.some(row => row.reason === 'no allowlist entry'));
+    await db.exec('DROP FUNCTION public.unregistered_later_function(); GRANT EXECUTE ON FUNCTION public.convert_quantity(uuid,uuid,numeric,text,text,date) TO anon;');
+    assert.ok((await db.query("SELECT actual_grantees FROM pg_temp.phase1_function_acl_errors WHERE oid='public.convert_quantity(uuid,uuid,numeric,text,text,date)'::regprocedure")).rows[0].actual_grantees.includes('anon'));
+    await db.exec('REVOKE EXECUTE ON FUNCTION public.convert_quantity(uuid,uuid,numeric,text,text,date) FROM anon; REVOKE EXECUTE ON FUNCTION public.convert_quantity(uuid,uuid,numeric,text,text,date) FROM margindesk_app;');
+    assert.equal((await db.query("SELECT reason FROM pg_temp.phase1_function_acl_errors WHERE oid='public.convert_quantity(uuid,uuid,numeric,text,text,date)'::regprocedure")).rows[0].reason, 'EXECUTE grantees differ');
+    await db.exec('ROLLBACK;');
 
     // Exercise the restore-only baseline and real-tenant isolation branches on
     // an already populated database, as Restore Drill does after data restore.

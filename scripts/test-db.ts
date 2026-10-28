@@ -1,8 +1,9 @@
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile, unlink } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "pg";
+import { loadDatabaseTestSql } from "./load-db-test-sql.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const testFile = path.join(root, "supabase", "tests", "phase1_rls.sql");
@@ -210,7 +211,7 @@ async function runPgtap(connectionString: string) {
     } else {
       process.stdout.write("Extension schema extensions does not exist before the pgTAP test starts.\n");
     }
-    const template = await readFile(testFile, "utf8");
+    const template = await loadDatabaseTestSql();
     const materialized = materializeFixtureIds(template);
     const sql = materialized.sql;
     await reportLegacyFixtureIds(client);
@@ -357,15 +358,20 @@ async function runPgtap(connectionString: string) {
 
 async function runLocalSupabase() {
   const { spawn } = await import("node:child_process");
-  await new Promise<void>((resolve, reject) => {
+  // The CLI must receive the same manifest and UUID materialization as the
+  // direct-connection runner; the raw template is intentionally incomplete.
+  const generatedName = `phase1-materialized-${randomUUID()}.sql`;
+  const generatedPath = path.join(root, generatedName);
+  await writeFile(generatedPath, materializeFixtureIds(await loadDatabaseTestSql()).sql, { flag: "wx" });
+  try { await new Promise<void>((resolve, reject) => {
     const command = process.platform === "win32" ? (process.env.ComSpec ?? "cmd.exe") : "pnpm";
     const args = process.platform === "win32"
-      ? ["/d", "/s", "/c", "pnpm exec supabase test db"]
-      : ["exec", "supabase", "test", "db"];
+      ? ["/d", "/s", "/c", `pnpm exec supabase test db ${generatedName}`]
+      : ["exec", "supabase", "test", "db", generatedName];
     const child = spawn(command, args, { cwd: root, stdio: "inherit" });
     child.once("error", reject);
     child.once("exit", code => code === 0 ? resolve() : reject(new Error(`supabase test db exited with code ${code ?? "unknown"}`)));
-  });
+  }); } finally { await unlink(generatedPath); }
 }
 
 async function main() {

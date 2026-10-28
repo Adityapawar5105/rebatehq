@@ -7,6 +7,7 @@ const sql = fs.readFileSync(path.join(__dirname, "..", "supabase", "tests", "pha
 const migration = fs.readFileSync(path.join(__dirname, "..", "supabase", "migrations", "202610240001_phase1_foundation.sql"), "utf8");
 const aclMigration = fs.readFileSync(path.join(__dirname, "..", "supabase", "migrations", "202610250001_revoke_platform_public_privileges.sql"), "utf8");
 const functionAclMigration = fs.readFileSync(path.join(__dirname, "..", "supabase", "migrations", "202610250002_revoke_platform_function_privileges.sql"), "utf8");
+const registry = fs.readFileSync(path.join(__dirname, "..", "config", "function-acl-allowlist.sql"), "utf8");
 const runner = fs.readFileSync(path.join(__dirname, "..", "scripts", "test-db.ts"), "utf8");
 const repeatability = fs.readFileSync(path.join(__dirname, "..", "scripts", "test-db-repeatability.ts"), "utf8");
 const rowCountHelpers = fs.readFileSync(path.join(__dirname, "..", "scripts", "tenant-row-counts.mjs"), "utf8");
@@ -59,9 +60,10 @@ test("RLS fixtures prove tenant-positive paths, exact RLS write failures, and TR
   assert.match(sql, /record_failed_login always writes fixed auth\.login_failed with NULL tenant and actor/);
   assert.match(sql, /record_failed_login EXECUTE is revoked from PUBLIC, anon, and authenticated/);
   assert.match(sql, /All public SECURITY DEFINER EXECUTE ACLs match the owner\/app allowlist/);
-  assert.match(sql, /allowlist\(signature,app_allowed\)/, "Every SECURITY DEFINER signature must be enumerated.");
-  assert.match(sql, /a\.signature IS NULL/, "Unexpected SECURITY DEFINER functions must fail the allowlist check.");
-  assert.match(sql, /acl\.grantee NOT IN/, "Unexpected direct grantees must fail the function ACL check.");
+  assert.match(sql, /INCLUDE FUNCTION ACL ALLOWLIST/, "The runner must load the single registry.");
+  assert.match(runner, /loadDatabaseTestSql/);
+  assert.match(registry, /listed_signature IS NULL/, "Unexpected functions must fail the registry check.");
+  assert.match(registry, /expected_grantees IS DISTINCT FROM actual_grantees/, "Unexpected or missing grantees must fail the ACL check.");
   assert.match(sql, /public_security_definer_default_execute/, "Applicable default function grants must be printed for diagnosis.");
   assert.match(sql, /margindesk_app has no role memberships that could supply hidden privileges/);
   assert.match(sql, /App role cannot directly insert a null-tenant/);
@@ -75,7 +77,7 @@ test("RLS fixtures prove tenant-positive paths, exact RLS write failures, and TR
   assert.match(sql, /has_column_privilege\('anon'/, "Inherited or effective column grants to anon must fail the ACL check.");
   assert.match(sql, /has_column_privilege\('service_role'/, "Inherited or effective column grants to service_role must fail the ACL check.");
   assert.match(sql, /anon has no effective CRUD table privileges/);
-  assert.match(sql, /Every migration-role public function has exactly its explicit EXECUTE grantee allowlist/);
+  assert.match(sql, /Every public function has a manifest entry and exactly its explicit EXECUTE grantee allowlist/);
   assert.match(sql, /Every public SECURITY DEFINER function is owned by the migration role and pins search_path/);
   assert.match(sql, /anon receives permission denied when calling every app-exposed function, independent of RLS/);
   assert.match(sql, /authenticated receives permission denied when calling every app-exposed function, independent of RLS/);

@@ -22,19 +22,14 @@ This runbook restores the application-owned logical database contents to a **dis
 
 ## Ordered restore procedure
 
-1. Open **Actions → MarginDesk Restore Drill → Run workflow** and choose `hosted`. Keep the target disposable and do not use customer production data.
-2. The workflow verifies the target is fresh and prepares a sentinel in the source. It snapshots source role attributes, ACLs, functions, and tenant row counts for strict comparison later.
-3. The workflow creates separate dumps for the application-owned `public` schema and its data; Supabase-managed schemas are excluded. The role dump is filtered through explicit allowlists; only MarginDesk-owned role statements are retained. Every skipped platform statement is logged with its reason, and any statement outside the allowlists fails the job.
-4. Before restoring the schema dump, install and verify `btree_gist` in the target's existing `extensions` schema. This extension supplies the exclusion-constraint operator classes but is outside the public-only dump. Then restore the owned roles and migrated `public` schema using `psql` with `ON_ERROR_STOP=1`. First apply **all MarginDesk migrations to the source**, including both ACL cleanup migrations and the pending cost/UOM/currency migration after CI verifies it. Its schema dump then carries the complete migrated schema to the target. Before the data-only restore begins, both locked ACL cleanup migrations are also applied to the target. Do not replay the foundation DDL migration on top of the restored schema dump; that dump already represents the full applied migration set.
-5. Before restoring data, apply these ACL cleanup migrations to the target, in this order:
-
-   1. `202610250001_revoke_platform_public_privileges.sql`
-   2. `202610250002_revoke_platform_function_privileges.sql`
-
-   This reapplies the table and function privilege cleanups to the restored schema before data loading. The remaining migration effects are already present in the schema dump. The workflow captures migration output and fails on ineffective GRANT/REVOKE warnings.
-6. Prepare synthetic `auth.users` rows for only the user UUIDs referenced by the application data. The workflow does not copy source emails, password hashes, credentials, or other auth data.
-7. Restore only the `public` application data with `ON_ERROR_STOP=1`. Restore errors stop the job; the restore does not suppress SQL failures.
-8. Run the verification sequence. The workflow checks role attributes and memberships; source-versus-target table, schema, and function grants; function owners and pinned search paths; per-table and per-tenant row counts; required auth IDs; and the sentinel. It then creates the restricted app login, verifies runtime role and no-context RLS behavior, and runs the full database suite twice in restore mode.
+1. Open **Actions → MarginDesk Restore Drill → Run workflow** and choose `local` or `hosted`. The workflow prints its exact named step order and runs a PGlite preflight reproducing the old grant loss and checking the replacement.
+2. In local mode, start the source stack and apply all migrations once in order with a clean reset. In hosted mode, supply an already migrated disposable source. Never replay historical migrations over either source's later schema.
+3. Seed the source sentinel, dump owned roles and only the migrated `public` schema/data, inventory tables and auth dependencies, filter the roles through explicit allowlists, and capture the source equivalence baseline and function ACL checkpoint. Every skipped role statement is logged; an unrecognized statement fails the job.
+4. In local mode, stop/discard the source and start a fresh target. In hosted mode, require a fresh disposable target without `public.tenant`.
+5. Install and verify `btree_gist` in the target's existing `extensions` schema, then restore owned roles and the complete `public` schema dump including its GRANT statements with `ON_ERROR_STOP=1`. Capture the after-schema function ACL checkpoint. Do not apply migration files to this restored schema.
+6. Run `scripts/restore-platform-acl-cleanup.sql` with `ON_ERROR_STOP=1`. This idempotent restore-only script removes only PUBLIC/anon/authenticated/service_role table, column, sequence, function and default privileges for application owners. It contains no function allowlist and grants nothing. Running it after schema restore also removes ACLs inherited from target defaults during object creation. All intended application grants come from the dump. The warning gate fails on ineffective privilege statements. Capture the after-cleanup checkpoint and require all application function grants to be unchanged.
+7. Prepare synthetic `auth.users` rows for only the referenced UUIDs, without source emails, password hashes or secrets. Restore only application data with `ON_ERROR_STOP=1`, then capture the after-data ACL checkpoint.
+8. Compare source/target role attributes and memberships; full table/schema/function ACLs and metadata; inventory, per-table/per-tenant counts; auth IDs; and sentinel hash. Keep every section strict. Verify the sentinel, create the restricted app login, verify runtime-role/no-context RLS, and run the complete restore-mode database suite twice (73 planned = 73 run each time) with unchanged row counts.
 
 For a manual check against a prepared disposable target, the relevant project commands are:
 
@@ -50,9 +45,15 @@ RESTORE_TEST_MODE=true RESTORE_BASELINE_PATH=/path/to/source-equivalence.json pn
 
 The last command requires `TEST_DATABASE_URL`, `APP_DATABASE_URL`, and the source snapshot path produced by the workflow. The locked Phase 1 run reported 56 planned and 56 passing checks. With the pending Chunk 2A migration, the expected plan is 73; that count remains **unverified in CI** until a complete restore run passes. Each repeatability run must preserve every application table count.
 
+## Restore Drill #9 finding and current status
+
+On 2026-10-28, the user reported that Drill #9 restored data and passed role, table/schema ACL, inventory, row-count, auth-reference and sentinel-hash comparisons. The complete function comparison failed because the old target cleanup replay removed EXECUTE from the two later Chunk 2A helpers. Subsequent sentinel/login, runtime-role and 73-check suite steps were skipped; they were not verified by that run. No run URL was supplied for #9.
+
+The corrected procedure remains **unverified in GitHub Actions**. Its preflight PGlite test runs the actual old cleanup against a later-function fixture and proves the strict comparator fails, then proves dump-derived grants plus the restore-only cleanup compare equally. This is a local SQL regression, not a real pg_dump/Supabase restore.
+
 ## Expected job summary
 
-The summary should report a successful job, target mode, dump/restore/test/total timings, and the included/excluded schema scope. The comparison and sentinel steps must pass. The restored database suite must complete twice with the current planned checks equal to the number run, including restore-only checks for sentinel content hash, source tenant counts, and isolation from the restored sentinel tenant. The locked Phase 1 count was 56; pending Chunk 2A expects 73. A nonzero SQL command, unexpected skipped role statement, ACL difference, missing table, row-count difference, or test failure must fail the workflow.
+The log and summary must show the exact named workflow order and full owner/grantor/grantee/privilege ACLs for both helpers at source, after schema restore, after cleanup, and after data restore. Every adjacent checkpoint must preserve all application function grants. The summary should report a successful job, target mode, dump/restore/test/total timings, and the included/excluded schema scope. The comparison and sentinel steps must pass. The restored database suite must complete twice with the current planned checks equal to the number run, including restore-only checks for sentinel content hash, source tenant counts, and isolation from the restored sentinel tenant. The locked Phase 1 count was 56; pending Chunk 2A expects 73. A nonzero SQL command, unexpected skipped role statement, ACL difference, missing table, row-count difference, or test failure must fail the workflow.
 
 ## Known limits
 

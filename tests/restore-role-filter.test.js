@@ -78,15 +78,18 @@ test("parameter grants to margindesk_app, PUBLIC, or unknown roles fail; unknown
 test("restore workflow filters roles, snapshots source before shutdown, and keeps post-restore steps strict", () => {
   const snapshotIndex = workflow.indexOf("verify-restore-equivalence.mjs --snapshot");
   const stopSourceIndex = workflow.indexOf("Stop and discard source stack before starting a fresh target");
-  const hostedSourceAclIndex = workflow.indexOf("Apply current application ACL migrations to hosted source");
   const seedIndex = workflow.indexOf("Seed a sentinel in the disposable source database");
   const dumpIndex = workflow.indexOf("Dump source roles, schema, and data");
   assert.ok(snapshotIndex >= 0 && stopSourceIndex > snapshotIndex, "Source ACL and row-count evidence must be captured before stopping it.");
-  assert.ok(hostedSourceAclIndex >= 0 && hostedSourceAclIndex < seedIndex && seedIndex < dumpIndex, "Hosted source ACLs must be normalized before seeding and snapshot/dump.");
-  assert.match(workflow, /Apply current application ACL migrations to hosted source[\s\S]*?client_min_messages=warning[\s\S]*?ON_ERROR_STOP=1[\s\S]*?no privileges \(were granted\|could be revoked\|were revoked\)/);
-  assert.match(workflow, /application-function-acl-migration\.sql/);
-  assert.match(workflow, /--file=\/tmp\/application-acl-migration\.sql --file=\/tmp\/application-function-acl-migration\.sql/);
-  assert.match(workflow, /--file \/restore\/application-acl-migration\.sql --file \/restore\/application-function-acl-migration\.sql/);
+  assert.ok(seedIndex >= 0 && seedIndex < dumpIndex, "The sentinel must be seeded before the dump.");
+  assert.doesNotMatch(workflow, /supabase\/migrations\/|application-function-acl-migration|application-acl-migration|Apply current application ACL migrations/, "Restore must never replay historical migrations on source or target.");
+  assert.match(workflow, /cp scripts\/restore-platform-acl-cleanup\.sql/);
+  assert.match(workflow, /--file=\/tmp\/restore-platform-acl-cleanup\.sql/);
+  assert.match(workflow, /--file \/restore\/restore-platform-acl-cleanup\.sql/);
+  assert.match(workflow, /inspect-restore-function-acls\.mjs --order/);
+  for (const stage of ["source","after-schema","after-cleanup","after-data"]) {
+    assert.match(workflow, new RegExp(`inspect-restore-function-acls\\.mjs ${stage} `));
+  }
   assert.match(workflow, /filter-restore-roles\.mjs/);
   assert.match(workflow, /restore-dump-scope\.mjs/);
   assert.match(workflow, /--data-only --use-copy --schema "\$schema_allowlist"/);
@@ -97,8 +100,8 @@ test("restore workflow filters roles, snapshots source before shutdown, and keep
   const schemaRestoreIndex = workflow.indexOf("Restore owned roles and application schema (local)");
   assert.ok(extensionIndex >= 0 && extensionIndex < schemaRestoreIndex, "btree_gist must be present before restoring its public exclusion constraints.");
   assert.match(workflow, /CREATE EXTENSION IF NOT EXISTS btree_gist WITH SCHEMA extensions/);
-  assert.match(workflow, /Apply current application ACL migrations to restored schema \(local\)/);
-  assert.match(workflow, /Apply current application ACL migrations to restored schema \(hosted\)/);
+  assert.match(workflow, /Remove target platform ACL additions \(local\)/);
+  assert.match(workflow, /Remove target platform ACL additions \(hosted\)/);
   assert.match(workflow, /prepare-restore-auth-users\.mjs/);
   assert.match(workflow, /Restore application data \(local\)/);
   assert.match(workflow, /Restore application data \(hosted\)/);
@@ -108,10 +111,19 @@ test("restore workflow filters roles, snapshots source before shutdown, and keep
   assert.match(workflow, /--file \/restore\/margindesk-roles\.sql --file \/restore\/schema\.sql/);
   assert.ok(workflow.indexOf("prepare-restore-auth-users.mjs") < workflow.indexOf("Restore application data (local)"), "Referenced auth users must exist before public data restore.");
   assert.ok(workflow.indexOf("prepare-restore-auth-users.mjs") < workflow.indexOf("Restore application data (hosted)"), "Referenced auth users must exist before public data restore.");
-  assert.ok(workflow.indexOf("Apply current application ACL migrations to restored schema (local)") < workflow.indexOf("Restore application data (local)"), "Current ACL defaults must be enforced before data restore.");
-  assert.ok(workflow.indexOf("Apply current application ACL migrations to restored schema (hosted)") < workflow.indexOf("Restore application data (hosted)"), "Current ACL defaults must be enforced before data restore.");
-  assert.match(workflow, /Apply current application ACL migrations to restored schema \(local\)[\s\S]*?client_min_messages=warning[\s\S]*?ON_ERROR_STOP=1[\s\S]*?no privileges \(were granted\|could be revoked\|were revoked\)/);
-  assert.match(workflow, /Apply current application ACL migrations to restored schema \(hosted\)[\s\S]*?client_min_messages=warning[\s\S]*?ON_ERROR_STOP=1[\s\S]*?no privileges \(were granted\|could be revoked\|were revoked\)/);
+  assert.ok(workflow.indexOf("Remove target platform ACL additions (local)") < workflow.indexOf("Restore application data (local)"), "Platform defaults must be cleaned before data restore.");
+  assert.ok(workflow.indexOf("Remove target platform ACL additions (hosted)") < workflow.indexOf("Restore application data (hosted)"), "Platform defaults must be cleaned before data restore.");
+  assert.match(workflow, /Remove target platform ACL additions \(local\)[\s\S]*?client_min_messages=warning[\s\S]*?ON_ERROR_STOP=1[\s\S]*?no privileges \(were granted\|could be revoked\|were revoked\)/);
+  assert.match(workflow, /Remove target platform ACL additions \(hosted\)[\s\S]*?client_min_messages=warning[\s\S]*?ON_ERROR_STOP=1[\s\S]*?no privileges \(were granted\|could be revoked\|were revoked\)/);
+  const checkpointIndexes = ["source","after-schema","after-cleanup","after-data"].map(stage => workflow.indexOf(`inspect-restore-function-acls.mjs ${stage} `));
+  assert.ok(checkpointIndexes.every((index,i) => index >= 0 && (i === 0 || index > checkpointIndexes[i-1])), "Function ACL checkpoints must run in source/schema/cleanup/data order.");
+  assert.ok(checkpointIndexes[0] < stopSourceIndex);
+  assert.ok(checkpointIndexes[1] > workflow.indexOf("Restore owned roles and application schema (hosted)"));
+  assert.ok(checkpointIndexes[1] < workflow.indexOf("Remove target platform ACL additions (local)"));
+  assert.ok(checkpointIndexes[2] > workflow.indexOf("Remove target platform ACL additions (hosted)"));
+  assert.ok(checkpointIndexes[2] < workflow.indexOf("Restore application data (local)"));
+  assert.ok(checkpointIndexes[3] > workflow.indexOf("Restore application data (hosted)"));
+  assert.ok(checkpointIndexes[3] < workflow.indexOf("verify-restore-equivalence.mjs --compare"));
   assert.match(workflow, /pnpm check:restore-sentinel/);
   assert.match(equivalence, /md5\(jsonb_build_object\([\s\S]*?created_at_utc[\s\S]*?content_hash/);
   assert.match(equivalence, /restore sentinel identity and content hash/);

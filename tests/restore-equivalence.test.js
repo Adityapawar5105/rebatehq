@@ -107,6 +107,23 @@ test("restore function ACL comparison fails when a target function is missing", 
   assert.throws(() => assertFunctionAclSectionsEqual(source, []), /missing|is_tenant_member/i);
 });
 
+test("Drill #9 missing EXECUTE on later functions is a strict source-only ACL mismatch", async () => {
+  const { assertFunctionAclSectionsEqual, compareFunctionAclSections } = await import("../scripts/verify-restore-equivalence.mjs");
+  const source = ["public.convert_quantity(uuid,uuid,numeric,text,text,date)", "public.record_data_quality_issue(uuid,text,text,text,date,jsonb)"].map(object_name => ({
+    ...functionFixture([
+      { grantee: "postgres", grantor: "postgres", privilege: "EXECUTE", grantable: false },
+      { grantee: "margindesk_app", grantor: "postgres", privilege: "EXECUTE", grantable: false },
+    ]), object_name,
+  }));
+  const restored = source.map(fn => ({ ...fn, acl: fn.acl.filter(entry => entry.grantee !== "margindesk_app") }));
+  const diff = compareFunctionAclSections(source, restored);
+  for (const fn of source) {
+    assert.deepEqual(diff[fn.object_name].margindesk_app, { sourceOnly: [fn.acl[1]], restoredOnly: [] });
+  }
+  assert.throws(() => assertFunctionAclSectionsEqual(source, restored), /convert_quantity.*margindesk_app.*record_data_quality_issue/s);
+  assert.equal(assertFunctionAclSectionsEqual(source, structuredClone(source)), true);
+});
+
 test("restore inventory requires all 29 tenant tables and compares every discovered public function", () => {
   const script = fs.readFileSync(path.join(__dirname, "..", "scripts", "verify-restore-equivalence.mjs"), "utf8");
   assert.match(script, /inventory\.schemaTables\.length >= 29/);

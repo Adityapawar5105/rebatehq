@@ -2,6 +2,7 @@ BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SELECT extensions.plan(70 + CASE WHEN current_setting('app.restore_test_mode',true)='true' THEN 3 ELSE 0 END);
 SELECT set_config('app.phase1_migration_owner',current_user,true);
+-- INCLUDE FUNCTION ACL ALLOWLIST
 
 -- The runner replaces every named fixture ID with an independent fresh UUID
 -- and checks them against public.id/public.tenant_id and auth.users. All test
@@ -423,7 +424,7 @@ WITH app_owners AS (
   SELECT DISTINCT p.proowner
   FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
   WHERE n.nspname='public'
-    AND p.proname=ANY(ARRAY['is_tenant_member','is_tenant_role','is_tenant_role_any_status','audit_row_change','prevent_audit_mutation','create_tenant_with_owner','accept_tenant_invite','record_failed_login','record_data_quality_issue','convert_quantity','sync_product_standard_cost_history'])
+    AND EXISTS (SELECT 1 FROM pg_temp.phase1_function_allowlist a WHERE to_regprocedure(a.signature)=p.oid)
 ), explicit_bad_defaults AS (
   SELECT 1
   FROM pg_default_acl d JOIN app_owners o ON o.owner_oid=d.defaclrole
@@ -971,38 +972,7 @@ SELECT extensions.ok(
 );
 SELECT extensions.ok(
   has_function_privilege('margindesk_app','public.record_failed_login(text,text,text)','EXECUTE')
-  AND NOT EXISTS (
-    WITH allowlist(signature,app_allowed) AS (VALUES
-      ('is_tenant_member(p_tenant_id uuid)',true),
-      ('is_tenant_role(p_tenant_id uuid, p_roles text[])',true),
-      ('is_tenant_role_any_status(p_tenant_id uuid, p_roles text[])',true),
-      ('audit_row_change()',false),
-      ('prevent_audit_mutation()',false),
-      ('create_tenant_with_owner(p_name text)',true),
-      ('accept_tenant_invite(p_token text)',true),
-      ('record_failed_login(p_email text, p_ip text, p_user_agent text)',true),
-      ('record_data_quality_issue(p_tenant_id uuid, p_issue_code text, p_entity_type text, p_entity_id text, p_occurred_on date, p_details jsonb)',true),
-      ('convert_quantity(p_tenant_id uuid, p_product_id uuid, p_quantity numeric, p_from_code text, p_to_code text, p_occurred_on date)',true),
-      ('sync_product_standard_cost_history()',false)
-    ), defs AS (
-      SELECT p.oid,p.proowner,p.proname||'('||pg_get_function_identity_arguments(p.oid)||')' AS signature
-      FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
-      WHERE n.nspname='public' AND p.prosecdef
-    )
-    SELECT 1 FROM defs d LEFT JOIN allowlist a USING(signature)
-    WHERE a.signature IS NULL
-       OR EXISTS (
-         SELECT 1 FROM pg_proc p
-         CROSS JOIN LATERAL aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) acl
-         WHERE p.oid=d.oid AND acl.privilege_type='EXECUTE'
-           AND acl.grantee NOT IN (d.proowner,CASE WHEN a.app_allowed THEN 'margindesk_app'::regrole ELSE d.proowner END)
-       )
-       OR (a.app_allowed AND NOT EXISTS (
-         SELECT 1 FROM pg_proc p
-         CROSS JOIN LATERAL aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) acl
-         WHERE p.oid=d.oid AND acl.grantee='margindesk_app'::regrole AND acl.privilege_type='EXECUTE'
-       ))
-  )
+  AND NOT EXISTS (SELECT 1 FROM pg_temp.phase1_function_acl_errors WHERE prosecdef IS TRUE)
   AND NOT EXISTS (
     SELECT 1 FROM pg_default_acl d
     CROSS JOIN LATERAL aclexplode(d.defaclacl) acl
@@ -1150,51 +1120,22 @@ SELECT extensions.ok(
   'The same customer policy query returns zero rows as margindesk_app without authenticated context'
 );
 
-WITH allowlist(signature,app_allowed) AS (VALUES
-  ('is_tenant_member(p_tenant_id uuid)',true),
-  ('is_tenant_role(p_tenant_id uuid, p_roles text[])',true),
-  ('is_tenant_role_any_status(p_tenant_id uuid, p_roles text[])',true),
-  ('audit_row_change()',false),
-  ('prevent_audit_mutation()',false),
-  ('create_tenant_with_owner(p_name text)',true),
-  ('accept_tenant_invite(p_token text)',true),
-  ('record_failed_login(p_email text, p_ip text, p_user_agent text)',true),
-  ('record_data_quality_issue(p_tenant_id uuid, p_issue_code text, p_entity_type text, p_entity_id text, p_occurred_on date, p_details jsonb)',true),
-  ('convert_quantity(p_tenant_id uuid, p_product_id uuid, p_quantity numeric, p_from_code text, p_to_code text, p_occurred_on date)',true),
-  ('sync_product_standard_cost_history()',false)
-), owned_functions AS (
-  SELECT p.oid,p.proowner,p.proname||'('||pg_get_function_identity_arguments(p.oid)||')' AS signature
-  FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
-  WHERE n.nspname='public' AND p.proowner=current_setting('app.phase1_migration_owner')::regrole
-), function_acl_errors AS (
-  SELECT 1
-  FROM owned_functions f
-  LEFT JOIN allowlist a USING(signature)
-  WHERE a.signature IS NULL
-     OR EXISTS (
-       SELECT 1 FROM pg_proc p CROSS JOIN LATERAL aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) acl
-       WHERE p.oid=f.oid AND acl.privilege_type='EXECUTE'
-         AND acl.grantee NOT IN (f.proowner,CASE WHEN a.app_allowed THEN 'margindesk_app'::regrole ELSE f.proowner END)
-     )
-     OR (a.app_allowed AND NOT EXISTS (
-       SELECT 1 FROM pg_proc p CROSS JOIN LATERAL aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) acl
-       WHERE p.oid=f.oid AND acl.grantee='margindesk_app'::regrole AND acl.privilege_type='EXECUTE'
-     ))
-), missing_allowlist_functions AS (
-  SELECT 1 FROM allowlist a LEFT JOIN owned_functions f USING(signature) WHERE f.oid IS NULL
-), unexpected_default_execute AS (
-  SELECT 1 FROM pg_default_acl d CROSS JOIN LATERAL aclexplode(d.defaclacl) acl
-  WHERE d.defaclrole=current_setting('app.phase1_migration_owner')::regrole
-    AND d.defaclnamespace IN (0,'public'::regnamespace) AND d.defaclobjtype='f'
-    AND acl.privilege_type='EXECUTE'
-    AND acl.grantee<>d.defaclrole
-)
+-- This strengthened existing check covers every public function and exact ACL
+-- through one versioned manifest; plans remain 70 fresh / 73 restore mode.
+SELECT jsonb_build_object('function_acl_manifest_errors',COALESCE(
+  (SELECT jsonb_agg(to_jsonb(e) ORDER BY signature) FROM pg_temp.phase1_function_acl_errors e),'[]'::jsonb
+))::text AS phase1_ci_diagnostic;
 SELECT extensions.ok(
-  (SELECT count(*) FROM owned_functions)>=11
-  AND NOT EXISTS (SELECT 1 FROM function_acl_errors)
-  AND NOT EXISTS (SELECT 1 FROM missing_allowlist_functions)
-  AND NOT EXISTS (SELECT 1 FROM unexpected_default_execute),
-  'Every migration-role public function has exactly its explicit EXECUTE grantee allowlist and future defaults grant nothing'
+  (SELECT count(*) FROM pg_temp.phase1_function_allowlist)>=11
+  AND (SELECT count(*) FROM pg_temp.phase1_public_function_inventory)>=11
+  AND NOT EXISTS (SELECT 1 FROM pg_temp.phase1_function_acl_errors)
+  AND NOT EXISTS (
+    SELECT 1 FROM pg_default_acl d CROSS JOIN LATERAL aclexplode(d.defaclacl) acl
+    WHERE d.defaclrole=current_setting('app.phase1_migration_owner')::regrole
+      AND d.defaclnamespace IN (0,'public'::regnamespace) AND d.defaclobjtype='f'
+      AND acl.privilege_type='EXECUTE' AND acl.grantee<>d.defaclrole
+  ),
+  'Every public function has a manifest entry and exactly its explicit EXECUTE grantee allowlist; future defaults grant nothing'
 );
 
 SELECT extensions.ok(NOT EXISTS (
@@ -1205,6 +1146,17 @@ SELECT extensions.ok(NOT EXISTS (
         SELECT 1 FROM unnest(COALESCE(p.proconfig,ARRAY[]::text[])) AS config(setting) WHERE config.setting LIKE 'search_path=%'
       ))
 ), 'Every public SECURITY DEFINER function is owned by the migration role and pins search_path');
+
+-- Derive browser-role call probes from the same exact-signature manifest.
+SELECT set_config('app.phase1_function_permission_probes',COALESCE((
+ SELECT jsonb_agg(format('SELECT %I.%I(%s)',n.nspname,p.proname,(
+   SELECT string_agg('NULL::'||format_type(arg.type_oid,NULL),',' ORDER BY arg.ordinality)
+   FROM unnest(p.proargtypes::oid[]) WITH ORDINALITY arg(type_oid,ordinality)
+ )) ORDER BY a.signature)
+ FROM pg_temp.phase1_function_allowlist a JOIN pg_proc p ON p.oid=to_regprocedure(a.signature)
+ JOIN pg_namespace n ON n.oid=p.pronamespace
+ WHERE 'margindesk_app'=ANY(a.grantees)
+),'[]'::jsonb)::text,true);
 
 SET LOCAL ROLE anon;
 DO $$
@@ -1220,16 +1172,7 @@ BEGIN
   FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
   WHERE n.nspname='public' AND p.proowner=current_setting('app.phase1_migration_owner')::regrole
     AND has_function_privilege(current_user,p.oid,'EXECUTE');
-  FOREACH v_sql IN ARRAY ARRAY[
-    'SELECT public.is_tenant_member(NULL::uuid)',
-    'SELECT public.is_tenant_role(NULL::uuid,NULL::text[])',
-    'SELECT public.is_tenant_role_any_status(NULL::uuid,NULL::text[])',
-    'SELECT public.create_tenant_with_owner(NULL::text)',
-    'SELECT public.accept_tenant_invite(NULL::text)',
-    'SELECT public.record_failed_login(NULL::text,NULL::text,NULL::text)',
-    'SELECT public.record_data_quality_issue(NULL::uuid,NULL::text,NULL::text,NULL::text,NULL::date,NULL::jsonb)',
-    'SELECT public.convert_quantity(NULL::uuid,NULL::uuid,NULL::numeric,NULL::text,NULL::text,NULL::date)'
-  ] LOOP
+  FOR v_sql IN SELECT jsonb_array_elements_text(current_setting('app.phase1_function_permission_probes')::jsonb) LOOP
     v_tested:=v_tested+1;
     v_state:='00000';
     v_message:='function call unexpectedly succeeded';
@@ -1247,7 +1190,8 @@ END $$;
 RESET ROLE;
 SELECT extensions.ok(
   current_setting('app.phase1_anon_function_exec_result')::jsonb->>'effective_executable_count'='0'
-  AND current_setting('app.phase1_anon_function_exec_result')::jsonb->>'tested'='8'
+  AND (current_setting('app.phase1_anon_function_exec_result')::jsonb->>'tested')::int>=8
+  AND (current_setting('app.phase1_anon_function_exec_result')::jsonb->>'tested')::int=jsonb_array_length(current_setting('app.phase1_function_permission_probes')::jsonb)
   AND NOT EXISTS (
     SELECT 1 FROM jsonb_array_elements(current_setting('app.phase1_anon_function_exec_result')::jsonb->'attempts') AS attempts(attempt)
     WHERE attempt->>'sqlstate'<>'42501' OR attempt->>'message' NOT ILIKE '%permission denied for function%'
@@ -1268,16 +1212,7 @@ BEGIN
   FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
   WHERE n.nspname='public' AND p.proowner=current_setting('app.phase1_migration_owner')::regrole
     AND has_function_privilege(current_user,p.oid,'EXECUTE');
-  FOREACH v_sql IN ARRAY ARRAY[
-    'SELECT public.is_tenant_member(NULL::uuid)',
-    'SELECT public.is_tenant_role(NULL::uuid,NULL::text[])',
-    'SELECT public.is_tenant_role_any_status(NULL::uuid,NULL::text[])',
-    'SELECT public.create_tenant_with_owner(NULL::text)',
-    'SELECT public.accept_tenant_invite(NULL::text)',
-    'SELECT public.record_failed_login(NULL::text,NULL::text,NULL::text)',
-    'SELECT public.record_data_quality_issue(NULL::uuid,NULL::text,NULL::text,NULL::text,NULL::date,NULL::jsonb)',
-    'SELECT public.convert_quantity(NULL::uuid,NULL::uuid,NULL::numeric,NULL::text,NULL::text,NULL::date)'
-  ] LOOP
+  FOR v_sql IN SELECT jsonb_array_elements_text(current_setting('app.phase1_function_permission_probes')::jsonb) LOOP
     v_tested:=v_tested+1;
     v_state:='00000';
     v_message:='function call unexpectedly succeeded';
@@ -1295,7 +1230,8 @@ END $$;
 RESET ROLE;
 SELECT extensions.ok(
   current_setting('app.phase1_authenticated_function_exec_result')::jsonb->>'effective_executable_count'='0'
-  AND current_setting('app.phase1_authenticated_function_exec_result')::jsonb->>'tested'='8'
+  AND (current_setting('app.phase1_authenticated_function_exec_result')::jsonb->>'tested')::int>=8
+  AND (current_setting('app.phase1_authenticated_function_exec_result')::jsonb->>'tested')::int=jsonb_array_length(current_setting('app.phase1_function_permission_probes')::jsonb)
   AND NOT EXISTS (
     SELECT 1 FROM jsonb_array_elements(current_setting('app.phase1_authenticated_function_exec_result')::jsonb->'attempts') AS attempts(attempt)
     WHERE attempt->>'sqlstate'<>'42501' OR attempt->>'message' NOT ILIKE '%permission denied for function%'
@@ -1398,7 +1334,7 @@ SELECT extensions.ok(
    AND has_function_privilege('margindesk_app',p.oid,'EXECUTE')
    AND p.prosecdef
    AND EXISTS(SELECT 1 FROM unnest(COALESCE(p.proconfig,ARRAY[]::text[])) cfg(setting) WHERE cfg.setting='search_path=public, pg_temp')
-   AND NOT EXISTS(SELECT 1 FROM aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) a WHERE a.grantee NOT IN(p.proowner,'margindesk_app'::regrole))
+   AND NOT EXISTS(SELECT 1 FROM pg_temp.phase1_function_acl_errors e WHERE e.oid=p.oid)
   FROM pg_proc p WHERE p.oid='public.record_data_quality_issue(uuid,text,text,text,date,jsonb)'::regprocedure),
  'record_data_quality_issue is migration-owned, pinned, SECURITY DEFINER, and executable only by owner/app'
 );
@@ -1407,7 +1343,7 @@ SELECT extensions.ok(
    AND has_function_privilege('margindesk_app',p.oid,'EXECUTE')
    AND p.prosecdef
    AND EXISTS(SELECT 1 FROM unnest(COALESCE(p.proconfig,ARRAY[]::text[])) cfg(setting) WHERE cfg.setting='search_path=public, pg_temp')
-   AND NOT EXISTS(SELECT 1 FROM aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) a WHERE a.grantee NOT IN(p.proowner,'margindesk_app'::regrole))
+   AND NOT EXISTS(SELECT 1 FROM pg_temp.phase1_function_acl_errors e WHERE e.oid=p.oid)
   FROM pg_proc p WHERE p.oid='public.convert_quantity(uuid,uuid,numeric,text,text,date)'::regprocedure),
  'convert_quantity is migration-owned, pinned, SECURITY DEFINER, and executable only by owner/app'
 );
@@ -1416,7 +1352,7 @@ SELECT extensions.ok(
    AND p.prosecdef
    AND EXISTS(SELECT 1 FROM unnest(COALESCE(p.proconfig,ARRAY[]::text[])) cfg(setting) WHERE cfg.setting='search_path=public, pg_temp')
    AND NOT has_function_privilege('margindesk_app',p.oid,'EXECUTE')
-   AND NOT EXISTS(SELECT 1 FROM aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) a WHERE a.grantee<>p.proowner)
+   AND NOT EXISTS(SELECT 1 FROM pg_temp.phase1_function_acl_errors e WHERE e.oid=p.oid)
   FROM pg_proc p WHERE p.oid='public.sync_product_standard_cost_history()'::regprocedure),
  'sync_product_standard_cost_history is migration-owned and executable only by its owner'
 );
