@@ -1,6 +1,8 @@
-# MarginDesk Phase 1
+# MarginDesk
 
-Chunk 2C and Phase 2 are **verified in [MarginDesk CI #31](https://github.com/Adityapawar5105/margindesk/actions/runs/40739445610) and [MarginDesk Restore Drill #12](https://github.com/Adityapawar5105/margindesk/actions/runs/40740709133), 2026-10-28, commit `ed2aa6d`**. Current acceptance is **156 fresh / 159 restore-mode pgTAP checks**, planned = ran with two-run repeatability, across **38 tenant tables**. The Chunk 2C migration is locked with its unchanged normalized hash. Hosted-target restore, managed backup/PITR and deployed UI flows not exercised by these runs remain **unverified**. Phase 3 has not started. See [the verification record](./CHUNK_2C_VERIFICATION.md) and [open Phase 3 items](./ASSUMPTIONS.md).
+**Chunk 3A — local implementation, CI unverified (2026-10-29):** Price Lists now has a three-step supplier-file review for data-only XLSX, CSV and TSV. It detects the sheet and header, suggests mappings, reports issues with original row and column, and saves supplier/file-type templates per tenant. This is a dry run: it stores review metadata and relevant data-quality issues, but does not import product, cost or price rows or retain the source file. See [Chunk 3A verification](./CHUNK_3A_VERIFICATION.md) and [assumptions](./ASSUMPTIONS.md). Chunk 3B has not started.
+
+Chunk 2C and Phase 2 are **verified in [MarginDesk CI #31](https://github.com/Adityapawar5105/margindesk/actions/runs/40739445610) and [MarginDesk Restore Drill #12](https://github.com/Adityapawar5105/margindesk/actions/runs/40740709133), 2026-10-28, commit `ed2aa6d`**. Current acceptance is **156 fresh / 159 restore-mode pgTAP checks**, planned = ran with two-run repeatability, across **38 tenant tables**. The Chunk 2C migration is locked with its unchanged normalized hash. Hosted-target restore, managed backup/PITR and deployed UI flows not exercised by these runs remain **unverified**. Chunk 3A builds on that baseline; Chunk 3B has not started. See [the Phase 2 verification record](./CHUNK_2C_VERIFICATION.md) and [current assumptions](./ASSUMPTIONS.md).
 
 **Chunk 2B status — verified:** pricing precedence and tiered rebate audit are **verified in [MarginDesk CI #29](https://github.com/Adityapawar5105/margindesk/actions/runs/40729384500) and [MarginDesk Restore Drill #11](https://github.com/Adityapawar5105/margindesk/actions/runs/40730343531), 2026-10-28, commit `13cea5a`**. The migration is locked with its unchanged normalized hash. Both suites passed with **88 fresh / 91 restore-mode pgTAP checks** and **33 tenant tables**. Hosted-target restore, managed backup/PITR and deployed UI flows not exercised by those runs remain **unverified**. See [the verification record](./CHUNK_2B_VERIFICATION.md). This records the earlier Chunk 2B milestone.
 
@@ -20,6 +22,8 @@ pnpm dev
 ```
 
 Open `http://localhost:3000`. Supabase local development sends magic links to its local Inbucket email viewer. Apply migrations with `pnpm exec supabase db reset`.
+
+To review a supplier file, sign in as an owner or manager, open **Price Lists → Review a supplier file**, choose an XLSX/CSV/TSV file, confirm the suggested sheet, header and eight field mappings, and select **Review mapped file**. The result lists every detected issue and previews up to 50 source rows. A supplier/file-type template can be saved and reloaded for the same headers. Downloaded issue and preview CSVs neutralize formula-like cells. The file is processed in memory and is not retained; no business rows are imported.
 
 ## Verification
 
@@ -91,7 +95,7 @@ The import is single-use per tenant, limited to 2 MB, and recomputes quote margi
 
 ## Current limits and deferred work
 
-- Phase 1 includes foundation pages for Dashboard, Price Lists, Quoting, and Rebates. Advanced price import/publishing, supplier file comparison, full quote configuration, rebate claim workflows, and ERP/CRM sync remain Phase 2 or later.
+- The four main pages remain Dashboard, Price Lists, Quoting, and Rebates. Chunk 3A reviews supplier files and mappings; committed supplier-file import/publishing, supplier price comparison, full quote configuration, rebate claims, and ERP/CRM sync are still later work.
 - There is no managed Supabase project or production credentials in this workspace. Live email delivery, hosted auth, deployment, and a managed-database restore drill remain operator setup items.
 - Local database/pgTAP checks require Docker. The checks and CI workflow are included; the local test result is explicitly **unverified** until the workflow or local Supabase run completes successfully.
 - The virus-scan adapter is a placeholder. Files are processed in memory and not stored; connect a managed scanner before enabling persisted uploads.

@@ -1,0 +1,9 @@
+export const IMPORT_FIELDS = ["sku","description","unit","cost","price","supplier","date","quantity"] as const;
+export type ImportField = typeof IMPORT_FIELDS[number];
+export type ColumnMapping = Partial<Record<ImportField, number>>;
+export type Cell = { value: string; kind: "text" | "number" | "date" | "boolean" | "formula" | "error" };
+export type UploadRow = { row: number; cells: Cell[] };
+export type UploadIssue = { code: string; row: number; column: string; message: string; sheet: string };
+export type ParsedUpload = { fileType: "xlsx" | "csv" | "tsv"; sheets: { id: string; name: string; hidden: boolean }[]; sheetId: string; sheetName: string; headerRow: number; headers: string[]; mapping: ColumnMapping; rows: UploadRow[]; issues: UploadIssue[]; sourceHash: string };
+export type UploadPreview = Omit<ParsedUpload,"rows"> & { rows: UploadRow[]; totalRows: number; jobId: string; headersFingerprint: string; limits: string };
+export const UPLOAD_LIMITS = { bytes: 2*1024*1024, rows: 2000, columns: 64, cells: 50000, cellChars: 2000, issues: 8000, zipEntries: 128, expandedBytes: 12*1024*1024, partBytes: 4*1024*1024 } as const;

@@ -71,14 +71,15 @@ test("Chunk 2A runtime quote queries and prototype import statements execute in 
 
     const customerId = (await db.query("SELECT id FROM customer WHERE tenant_id=$1 ORDER BY account_no LIMIT 1", [tenantId])).rows[0].id;
     const product = (await db.query("SELECT id,uom FROM product WHERE tenant_id=$1 ORDER BY sku LIMIT 1", [tenantId])).rows[0];
+    const today = (await db.query("SELECT current_date::text AS value")).rows[0].value;
     const quote = await calculateServerQuote(db as any, tenantId, customerId, [{
       productId: product.id, qty: 2, uom: product.uom, discountPct: 0, rebatePct: 0, accessory: 0,
-    }], new Date().toISOString().slice(0,10), "USD");
+    }], today, "USD");
     assert.equal(quote.currency, "USD");
     assert.equal(quote.normalizedLines[0].qty, 2);
     assert.equal(quote.math.valid, true);
     await db.query("INSERT INTO customer_price(tenant_id,customer_id,product_id,rule_kind,contract_ref,price,currency,effective_from,source) VALUES($1,$2,$3,'contract','TEST-C',99,'USD',current_date,'Signed test contract')",[tenantId,customerId,product.id]);
-    const contractQuote=await calculateServerQuote(db as any,tenantId,customerId,[{productId:product.id,qty:2,uom:product.uom,discountPct:0,rebatePct:0,accessory:0}]);
+    const contractQuote=await calculateServerQuote(db as any,tenantId,customerId,[{productId:product.id,qty:2,uom:product.uom,discountPct:0,rebatePct:0,accessory:0}],today);
     assert.equal(contractQuote.math.lines[0].unitPrice,99);
     assert.equal(contractQuote.math.lines[0].pricingExplanation.source,'Signed test contract');
     assert.throws(()=>assertQuotedPricesCurrent([{quotedUnitPrice:98}],contractQuote.math),/approved price changed/);
@@ -143,7 +144,6 @@ test("Chunk 2A runtime quote queries and prototype import statements execute in 
     assert.equal(waterfall.month, "2026-10");
     assert.ok(waterfall.dataQualityIssues.length > 0, "the pre-cost-history orders must be reported as data-quality issues");
 
-    const today = new Date().toISOString().slice(0,10);
     const beforeCost = new Date(`${today}T00:00:00Z`);
     beforeCost.setUTCDate(beforeCost.getUTCDate() - 1);
     await assert.rejects(
@@ -153,7 +153,7 @@ test("Chunk 2A runtime quote queries and prototype import statements execute in 
       (error: any) => error.status === 422,
       "A transaction before the first cost-history range must fail and record a data-quality issue.",
     );
-    assert.equal((await db.query("SELECT count(*)::int AS n FROM data_quality_issue WHERE tenant_id=$1 AND issue_code='cost_history_gap' AND occurred_on=$2", [tenantId,beforeCost.toISOString().slice(0,10)])).rows[0].n, 1);
+    assert.equal((await db.query("SELECT count(*)::int AS n FROM data_quality_issue WHERE tenant_id=$1 AND issue_code='cost_history_gap' AND occurred_on=$2 AND entity_type='product' AND entity_id=$3", [tenantId,beforeCost.toISOString().slice(0,10),product.id])).rows[0].n, 1);
 
     await assert.rejects(
       calculateServerQuote(db as any, tenantId, customerId, [{
@@ -162,7 +162,7 @@ test("Chunk 2A runtime quote queries and prototype import statements execute in 
       (error: any) => error.status === 422,
       "A missing transaction-date FX rate must fail and record a data-quality issue.",
     );
-    assert.equal((await db.query("SELECT count(*)::int AS n FROM data_quality_issue WHERE tenant_id=$1 AND issue_code='fx_rate_missing' AND occurred_on=$2", [tenantId,today])).rows[0].n, 1);
+    assert.equal((await db.query("SELECT count(*)::int AS n FROM data_quality_issue WHERE tenant_id=$1 AND issue_code='fx_rate_missing' AND occurred_on=$2 AND entity_type='product' AND entity_id=$3", [tenantId,today,product.id])).rows[0].n, 1);
 
     await db.query(`INSERT INTO fx_rate(tenant_id,rate_date,from_currency,to_currency,rate,source)
       VALUES($1,$2,'USD','EUR',0.92,'PGlite runtime test')`, [tenantId,today]);

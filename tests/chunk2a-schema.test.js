@@ -147,7 +147,8 @@ test("Chunk 2A migration backfills a database that already contains Phase 1 tena
     assert.equal(cost.rows[0].cost, "17.2500");
     assert.equal(cost.rows[0].basis, "standard");
     assert.equal(cost.rows[0].currency, "EUR");
-    assert.equal(cost.rows[0].effective_from, new Date().toISOString().slice(0,10));
+    const databaseToday = (await db.query("SELECT current_date::text AS value")).rows[0].value;
+    assert.equal(cost.rows[0].effective_from, databaseToday);
     const inherited = await db.query(`
       SELECT (SELECT currency FROM public.price_list WHERE id=$1) AS price_list_currency,
         (SELECT currency FROM public.price_list_item WHERE price_list_id=$1) AS item_currency,
