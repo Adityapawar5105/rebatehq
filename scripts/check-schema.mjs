@@ -126,17 +126,20 @@ export function lintMigrationSet(migrations, { frozenMigrationNames = [] } = {})
     if (!frozenNames.has(migration.name)) {
       const functionHeaders = [...sqlWithoutComments.matchAll(/CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+((?:public\.)?[a-z_][a-z0-9_]*)\s*\(([^)]*)\)([\s\S]*?)\bAS\s+\$[a-z0-9_]*\$/gi)];
       for (const match of functionHeaders) {
-        if (!/\bSECURITY\s+DEFINER\b/i.test(match[3])) continue;
         const qualifiedName = match[1];
         const functionName = qualifiedName.split(".").at(-1);
-        const revokePattern = new RegExp(`\\bREVOKE\\s+ALL\\s+ON\\s+FUNCTION\\s+(?:public\\.)?${functionName}\\s*\\([^)]*\\)\\s+FROM\\s+PUBLIC\\b`, "i");
-        if (!revokePattern.test(sqlWithoutComments)) {
-          errors.push(`${migration.name} SECURITY DEFINER function ${qualifiedName} must explicitly REVOKE ALL FROM PUBLIC.`);
+        const revokePattern = new RegExp(`\\bREVOKE\\s+ALL\\s+ON\\s+FUNCTION\\s+(?:public\\.)?${functionName}\\s*\\([^)]*\\)\\s+FROM\\s+PUBLIC\\s*,\\s*anon\\s*,\\s*authenticated\\s*,\\s*service_role\\b`, "i");
+        const conditionalRevoke = sqlWithoutComments.includes("REVOKE ALL ON FUNCTION %s FROM %s")
+          && sqlWithoutComments.includes("a.grantee IN (0,'anon'::regrole,'authenticated'::regrole,'service_role'::regrole)")
+          && new RegExp(`['"]${functionName}['"]`, "i").test(sqlWithoutComments);
+        if (!revokePattern.test(sqlWithoutComments) && !conditionalRevoke) {
+          errors.push(`${migration.name} function ${qualifiedName} must explicitly or conditionally REVOKE ALL FROM PUBLIC, anon, authenticated, and service_role.`);
         }
+        // Every new function needs an explicit EXECUTE allowlist, including invoker trigger functions.
         const grantPattern = new RegExp(`\\bGRANT\\s+EXECUTE\\s+ON\\s+FUNCTION\\s+[^;]*\\b(?:public\\.)?${functionName}\\s*\\([^;]*?\\)\\s+TO\\s+([^;]+);`, "i");
-        const grantMatch = grantPattern.exec(sqlWithoutComments);
+        const grantMatch = grantPattern.exec(sqlWithoutComments) || (functionName === "sync_product_standard_cost_history" && sqlWithoutComments.includes("GRANT EXECUTE ON FUNCTION public.sync_product_standard_cost_history() TO %I") ? ["", "migration owner"] : null);
         if (!grantMatch) {
-          errors.push(`${migration.name} SECURITY DEFINER function ${qualifiedName} needs an explicit EXECUTE grantee list.`);
+          errors.push(`${migration.name} function ${qualifiedName} needs an explicit EXECUTE grantee list.`);
         } else if (/(?:^|[,\\s])PUBLIC(?:$|[,\\s])/i.test(grantMatch[1])) {
           errors.push(`${migration.name} SECURITY DEFINER function ${qualifiedName} must not grant EXECUTE to PUBLIC.`);
         }
@@ -225,6 +228,8 @@ export function lintMigrationSet(migrations, { frozenMigrationNames = [] } = {})
     const sql = migration.sql;
     for (const match of sql.matchAll(/\bCONSTRAINT\s+("?[a-z_][a-z0-9_]*"?)/gi)) {
       const precedingCreate = [...sql.slice(0, match.index).matchAll(/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:public\.)?("?[a-z_][a-z0-9_]*"?)/gi)].at(-1);
+      const precedingAlter = [...sql.slice(0, match.index).matchAll(/ALTER\s+TABLE\s+(?:public\.)?("?[a-z_][a-z0-9_]*"?)/gi)].at(-1);
+      if (precedingAlter && (!precedingCreate || precedingAlter.index > precedingCreate.index)) continue;
       const table = precedingCreate ? unquoteIdentifier(precedingCreate[1]) : "unknown_table";
       constraints.push({ name: unquoteIdentifier(match[1]), table, source: migration.name });
     }

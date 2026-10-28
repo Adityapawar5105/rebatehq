@@ -20,8 +20,12 @@
     "202610250001_revoke_platform_public_privileges.sql",
     "202610250002_revoke_platform_function_privileges.sql"
   ],
-  "pendingOrder": [],
-  "pendingMigrations": {},
+  "pendingOrder": [
+    "202610280001_chunk2a_cost_units_currency.sql"
+  ],
+  "pendingMigrations": {
+    "202610280001_chunk2a_cost_units_currency.sql": "f4888808046c959dde4bd107c7e782eee0282348f792705c9b77c27e531988de"
+  },
   "appliedMigrationEvidence": {
     "202610250001_revoke_platform_public_privileges.sql": {
       "date": "2026-10-26",

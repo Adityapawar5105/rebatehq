@@ -1,6 +1,8 @@
-# MarginDesk Phase 1 security verification
+# MarginDesk security verification
 
 **Status as of 2026-10-26:** Phase 1 is complete. [MarginDesk CI #24](https://github.com/Adityapawar5105/margindesk/actions/runs/40290388651/job/121463801598) passed on commit `aabfb20` with all local migration, role, security, unit, typecheck, and build gates. [MarginDesk Restore Drill #8](https://github.com/Adityapawar5105/margindesk/actions/runs/40291362616/job/121466953508) passed the local-mode fresh-target restore, strict source/target comparisons, sentinel/runtime checks, and restored-data RLS suite. Both runs finished successfully on 2026-10-26. Hosted-Supabase restore mode and Supabase-managed backup/PITR recovery were not exercised and remain **unverified**.
+
+**Chunk 2A status as of 2026-10-28:** The new cost, UOM, FX, and data-quality migration is pending in `migrations.lock`. It has not run in a green GitHub Actions job. Local PGlite checks execute the actual migration against a clean foundation and against populated Phase 1 tenant data, and execute the complete fresh and restore-mode pgTAP SQL with local auth/role/pgTAP stubs. These results are local evidence only; all Chunk 2A CI and restore-drill items below remain **unverified** until a green run exercises them.
 
 | Acceptance item | Status | Evidence |
 |---|---|---|
@@ -18,6 +20,22 @@
 | Backup/restore dump, fresh target, sentinel, restored-data isolation, and repeated post-restore tests | **verified in CI run [MarginDesk Restore Drill #8](https://github.com/Adityapawar5105/margindesk/actions/runs/40291362616/job/121466953508), 2026-10-26** | Local-mode logical restore and all post-restore checks passed |
 | Hosted-Supabase restore mode | **unverified** | Run #8 used local Supabase stacks; hosted project mode was skipped |
 | Supabase-managed backup/PITR recovery | **unverified** | The logical dump/restore workflow does not exercise platform-managed backup recovery |
+
+### Chunk 2A: pending migration security review
+
+| Acceptance item | Status | Local evidence / limitation |
+|---|---|---|
+| Pending migration lock, fresh application, and populated Phase 1 backfill | **unverified in CI** | PGlite executes the migration on a fresh foundation and on seeded EUR tenant data; pending normalized SHA-256 is recorded in `migrations.lock` |
+| `cost_history`, `uom`, `uom_conversion`, `fx_rate`, and `data_quality_issue` tenant IDs, indexes, forced RLS, operation policies, audit coverage, and exact ACLs | **unverified in CI** | PGlite schema checks and the full pgTAP SQL stub run pass locally; real PostgreSQL role/RLS behavior is not yet proven for this migration |
+| New helper function owner, pinned search path, and EXECUTE allowlists | **unverified in CI** | Static migration lint and PGlite catalog/privilege checks pass locally |
+| Cost effective-date, gap/overlap, unit conversion, rounding, and FX math | **unverified in CI** | Phase 0 golden tests and Chunk 2A engine/PGlite tests pass locally |
+| Fresh and restore-mode plans (70 / 73 checks), repeatability, and source/target table/function ACL/count comparisons | **unverified in CI** | PGlite executes the complete pgTAP SQL in fresh and populated restore mode; the workflow-level Postgres comparison and repeatability commands have not run for Chunk 2A |
+
+The pending migration adds five tables: `cost_history`, `uom`, `uom_conversion`, `fx_rate`, and `data_quality_issue`. Each has tenant-scoped indexes, forced RLS, operation-specific `margindesk_app` policies, exact grants, and audit coverage; `data_quality_issue` writes go through `record_data_quality_issue` rather than direct INSERT. The migration-owned helpers are `record_data_quality_issue` and `convert_quantity` (SECURITY DEFINER, pinned `public,pg_temp`, app EXECUTE allowlist), plus `sync_product_standard_cost_history` (SECURITY DEFINER, pinned `public,pg_temp`, owner-only EXECUTE). The last helper runs only as the product trigger so it can capture `auth.uid()` without granting the app role access to schema `auth`.
+
+The range guarantees use `btree_gist` exclusion constraints for `(tenant_id, product_id, basis, effective date)` cost ranges and price-list-item ranges. The migration requests this extension in Supabase's existing `extensions` schema and does not change grants on that schema. PGlite's installed `btree_gist` module executes both constraints locally; the clean Supabase stack still needs to prove the extension is available and migration applies without a warning-gate finding.
+
+The restore inventory discovers application tables from the dump and compares all public functions and ACLs, so it includes the five new tables and helper functions automatically. The RLS/fixture/repeatability minimum is now 29 tenant tables. CI plans 70 checks on a fresh database and 73 when restored sentinel/count/isolation controls are enabled. Neither plan is marked verified for Chunk 2A yet.
 
 ### Current pgTAP check ledger
 
@@ -96,7 +114,7 @@ Fresh-mode checks 1–53 passed in [MarginDesk CI #24](https://github.com/Aditya
 
 Restore Drill #7 restored the source data and passed comparisons, but its restored-database suite failed on `approval_tenant_id_quote_id_fkey`. The former helper independently selected arbitrary rows from restored Tenant B data, so an approval could refer to a different quote than the one selected for cloning. The CI failure identified the FK violation; its log did not record the selected source IDs. A PGlite regression test now reproduces the mismatch with multiple existing quotes/approvals and confirms the old pattern fails with SQLSTATE 23503.
 
-The suite now creates the Tenant A and B fixture graph explicitly, with collision-checked fresh UUIDs and dependency-ordered rows for all 24 tenant tables. It captures only known suite-created primary keys, verifies tenant ownership and complete table coverage, uses no `ON CONFLICT DO NOTHING`, and rolls back the entire fixture transaction. The PGlite regression test executes the fixture graph twice against multi-row existing data and verifies per-table counts are unchanged after rollback. Restore-only checks compare the sentinel content hash and tenant counts, then verify isolation from the real restored sentinel tenant. These database assertions and the repeatability check passed in [MarginDesk CI #24](https://github.com/Adityapawar5105/margindesk/actions/runs/40290388651/job/121463801598) and [MarginDesk Restore Drill #8](https://github.com/Adityapawar5105/margindesk/actions/runs/40291362616/job/121466953508), 2026-10-26.
+The suite now creates the Tenant A and B fixture graph explicitly, with collision-checked fresh UUIDs and dependency-ordered rows for all 29 current tenant tables (24 in the original Phase 1 baseline plus five Chunk 2A tables). It captures only known suite-created primary keys, verifies tenant ownership and complete table coverage, uses no `ON CONFLICT DO NOTHING`, and rolls back the entire fixture transaction. The PGlite regression test executes the fixture graph twice against multi-row existing data and verifies per-table counts are unchanged after rollback. Restore-only checks compare the sentinel content hash and tenant counts, then verify isolation from the real restored sentinel tenant. These fixture checks and repeatability check passed for the locked Phase 1 schema in [MarginDesk CI #24](https://github.com/Adityapawar5105/margindesk/actions/runs/40290388651/job/121463801598) and [MarginDesk Restore Drill #8](https://github.com/Adityapawar5105/margindesk/actions/runs/40291362616/job/121466953508), 2026-10-26. The 29-table Chunk 2A fixture expansion remains **unverified in CI**.
 
 ## 1. Connection role and RLS context
 
@@ -212,3 +230,5 @@ pnpm test:db
 ```
 
 Local verification on 2026-10-26: `pnpm test`, `pnpm typecheck`, and `pnpm build` pass. The PGlite fixture regression reproduces the previous approval/quote FK failure and passes with the explicit fixture graph twice, with unchanged counts. There is no local Docker or `psql`, so full PostgreSQL/RLS execution is evidenced by [MarginDesk CI #24](https://github.com/Adityapawar5105/margindesk/actions/runs/40290388651/job/121463801598) and [MarginDesk Restore Drill #8](https://github.com/Adityapawar5105/margindesk/actions/runs/40291362616/job/121466953508). Hosted-Supabase restore mode and platform-managed backup/PITR recovery remain **unverified**.
+
+Chunk 2A local verification on 2026-10-28: `pnpm test` passed 54 JavaScript and 10 TypeScript tests; `pnpm typecheck` and `pnpm build` passed. PGlite executed the complete pending migration on a clean baseline and on populated Phase 1 data, including the btree_gist install/verification SQL, and executed all 70 fresh / 73 restore-mode pgTAP assertions using local auth/role/pgTAP stubs. A runtime integration test also executed the prototype-import database path, quote calculation with cost/UOM/FX lookups, missing-cost and missing-FX issue recording, monthly waterfall queries, product/quote/approval/send SQL, and all 29 tenant export queries against that schema. These results do not count as a real Supabase/PostgreSQL CI run. Docker and `psql` are unavailable, so the pending migration's real RLS behavior, restore comparison, and database repeatability remain **unverified** until green CI and restore runs pass.

@@ -70,3 +70,79 @@ test('margin zones use the configured policy', () => {
   assert.equal(MarginEngine.classify(24, policy), 'yellow');
   assert.equal(MarginEngine.classify(17.9, policy), 'red');
 });
+
+test('effective-dated cost uses the cost active on the transaction date', () => {
+  const p = { id: 'p1', listPrice: 100, cost: 40, currency: 'USD' };
+  const customerRow = { tier: 'standard' };
+  const costHistory = [
+    { product_id: 'p1', cost: '40', basis: 'standard', effective_from: '2026-01-01', effective_to: '2026-07-01', currency: 'USD' },
+    { product_id: 'p1', cost: '55', basis: 'standard', effective_from: '2026-07-01', effective_to: null, currency: 'USD' }
+  ];
+  const before = MarginEngine.calculateLine({ product: p, customer: customerRow, qty: 2, transactionDate: '2026-06-30', transactionCurrency: 'USD', costHistory });
+  const after = MarginEngine.calculateLine({ product: p, customer: customerRow, qty: 2, transactionDate: '2026-07-01', transactionCurrency: 'USD', costHistory });
+  assert.equal(before.valid, true);
+  assert.equal(after.valid, true);
+  closeTo(before.cogs, 80);
+  closeTo(after.cogs, 110);
+});
+
+test('a cost history gap or overlap invalidates the result with a data quality issue', () => {
+  const p = { id: 'p1', listPrice: 100, cost: 40, currency: 'USD' };
+  const customerRow = { tier: 'standard' };
+  const gap = MarginEngine.calculateLine({ product: p, customer: customerRow, qty: 1, transactionDate: '2026-05-01', transactionCurrency: 'USD', costHistory: [] });
+  assert.equal(gap.valid, false);
+  assert.equal(gap.issues[0].code, 'cost_history_gap');
+  const overlap = MarginEngine.calculateLine({ product: p, customer: customerRow, qty: 1, transactionDate: '2026-05-01', transactionCurrency: 'USD', costHistory: [
+    { product_id: 'p1', cost: 10, basis: 'standard', effective_from: '2026-01-01', effective_to: null, currency: 'USD' },
+    { product_id: 'p1', cost: 20, basis: 'standard', effective_from: '2026-04-01', effective_to: null, currency: 'USD' }
+  ] });
+  assert.equal(overlap.valid, false);
+  assert.equal(overlap.issues[0].code, 'cost_history_overlap');
+});
+
+test('FX uses latest direct rate or inverse, rounds to four places, and reports missing rates', () => {
+  const rates = [
+    { from_currency: 'USD', to_currency: 'EUR', rate: '0.92345', rate_date: '2026-01-01' },
+    { from_currency: 'USD', to_currency: 'EUR', rate: '0.90000', rate_date: '2026-04-01' }
+  ];
+  const direct = MarginEngine.convertMoney(10, 'USD', 'EUR', rates, '2026-05-01');
+  assert.equal(direct.valid, true);
+  closeTo(direct.value, 9);
+  const inverse = MarginEngine.convertMoney(9, 'EUR', 'USD', rates, '2026-02-01');
+  assert.equal(inverse.valid, true);
+  closeTo(inverse.value, 9.7461);
+  const missing = MarginEngine.convertMoney(10, 'USD', 'INR', rates, '2026-05-01');
+  assert.equal(missing.valid, false);
+  assert.equal(missing.issue.code, 'fx_rate_missing');
+});
+
+test('margin calculations convert catalog price, freight, terms, and dated cost into transaction currency', () => {
+  const p = { id: 'fx-product', listPrice: 10, cost: 4, freight: 1, termsCost: 0.5, currency: 'USD' };
+  const result = MarginEngine.calculateLine({
+    product: p,
+    customer: { tier: 'standard' },
+    qty: 2,
+    transactionDate: '2026-05-01',
+    transactionCurrency: 'EUR',
+    costHistory: [{ product_id: 'fx-product', cost: 4, basis: 'standard', effective_from: '2026-01-01', effective_to: null, currency: 'USD' }],
+    fxRates: [{ rate_date: '2026-04-01', from_currency: 'USD', to_currency: 'EUR', rate: '0.9' }],
+  });
+  assert.equal(result.valid, true);
+  closeTo(result.list, 18);
+  closeTo(result.freight, 1.8);
+  closeTo(result.terms, 0.9);
+  closeTo(result.cogs, 7.2);
+  closeTo(result.margin, 8.1);
+
+  const missing = MarginEngine.calculateLine({
+    product: p,
+    customer: { tier: 'standard' },
+    qty: 1,
+    transactionDate: '2026-05-01',
+    transactionCurrency: 'GBP',
+    costHistory: [{ product_id: 'fx-product', cost: 4, basis: 'standard', effective_from: '2026-01-01', effective_to: null, currency: 'USD' }],
+    fxRates: [],
+  });
+  assert.equal(missing.valid, false);
+  assert.ok(missing.issues.some(issue => issue.code === 'fx_rate_missing'));
+});

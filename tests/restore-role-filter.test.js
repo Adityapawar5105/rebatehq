@@ -93,6 +93,10 @@ test("restore workflow filters roles, snapshots source before shutdown, and keep
   assert.match(workflow, /inspect-restore-dump\.mjs/);
   assert.match(workflow, /Restore owned roles and application schema \(local\)/);
   assert.match(workflow, /Restore owned roles and application schema \(hosted\)/);
+  const extensionIndex = workflow.indexOf("Install and verify required range-constraint extension");
+  const schemaRestoreIndex = workflow.indexOf("Restore owned roles and application schema (local)");
+  assert.ok(extensionIndex >= 0 && extensionIndex < schemaRestoreIndex, "btree_gist must be present before restoring its public exclusion constraints.");
+  assert.match(workflow, /CREATE EXTENSION IF NOT EXISTS btree_gist WITH SCHEMA extensions/);
   assert.match(workflow, /Apply current application ACL migrations to restored schema \(local\)/);
   assert.match(workflow, /Apply current application ACL migrations to restored schema \(hosted\)/);
   assert.match(workflow, /prepare-restore-auth-users\.mjs/);
@@ -130,7 +134,7 @@ test("restore dump schema builder permits only public and rejects a storage-incl
 });
 
 test("restore dump inspection parses application tables and redacts COPY payload near line 448", async () => {
-  const { parseDumpTableNames, redactDataDumpContext } = await import("../scripts/inspect-restore-dump.mjs");
+  const { parseDumpTableNames, redactDataDumpContext, assertApplicationTableMinimum } = await import("../scripts/inspect-restore-dump.mjs");
   const schema = "CREATE TABLE public.alpha (id uuid);\nCREATE TABLE public.beta (id uuid);";
   const data = "COPY public.alpha (id) FROM stdin;\nsecret-user-row\n\\.\nCOPY public.beta (id) FROM stdin;\nother-secret\n\\.";
   assert.deepEqual(parseDumpTableNames(schema, "schema"), [
@@ -144,4 +148,7 @@ test("restore dump inspection parses application tables and redacts COPY payload
   const context = redactDataDumpContext(data, 2, 1);
   assert.match(context.lines.join("\n"), /\[COPY DATA REDACTED\]/);
   assert.doesNotMatch(context.lines.join("\n"), /secret-user-row|other-secret/);
+  const tenantTables = Array.from({ length: 29 }, (_, index) => ({ schema: "public", table: `tenant_table_${index}` }));
+  assert.equal(assertApplicationTableMinimum(tenantTables), 29);
+  assert.throws(() => assertApplicationTableMinimum(tenantTables.slice(0, 28)), /expected at least 29 after Chunk 2A/);
 });

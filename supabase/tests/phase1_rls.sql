@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT extensions.plan(53 + CASE WHEN current_setting('app.restore_test_mode',true)='true' THEN 3 ELSE 0 END);
+SELECT extensions.plan(70 + CASE WHEN current_setting('app.restore_test_mode',true)='true' THEN 3 ELSE 0 END);
 SELECT set_config('app.phase1_migration_owner',current_user,true);
 
 -- The runner replaces every named fixture ID with an independent fresh UUID
@@ -24,7 +24,7 @@ ORDER BY c.oid;
 DO $$ DECLARE t text; n integer; v_sentinel jsonb; v_expected_hash text; v_actual_hash text;
   v_count_match boolean:=true; v_sentinel_present boolean:=false; v_detail text:=''; BEGIN
   SELECT count(*) INTO n FROM pg_temp.phase1_rls_tables;
-  IF n<24 THEN RAISE EXCEPTION 'Expected at least 24 application tenant tables; found %',n; END IF;
+  IF n<29 THEN RAISE EXCEPTION 'Expected at least 29 application tenant tables; found %',n; END IF;
   IF current_setting('app.restore_test_mode',true)='true' THEN
     v_expected_hash:=current_setting('app.restore_sentinel_content_hash');
     SELECT jsonb_build_object('tenant_id',p.tenant_id::text,'id',p.id::text,
@@ -87,12 +87,39 @@ INSERT INTO public.membership(tenant_id,user_id,email,role) VALUES
  ('__PHASE1_TENANT_B_ID__','__PHASE1_USER_B_ID__','phase1-b-__PHASE1_USER_B_ID__@example.invalid','owner'),
  ('__PHASE1_TENANT_B_ID__','__PHASE1_USER_REP_ID__','phase1-rep-__PHASE1_USER_REP_ID__@example.invalid','rep');
 
+INSERT INTO public.uom(id,tenant_id,code,display_name) VALUES
+ ('__PHASE1_UOM_A_ID__','__PHASE1_TENANT_A_ID__','EA','Each'),
+ ('__PHASE1_UOM_B_ID__','__PHASE1_TENANT_B_ID__','EA','Each');
+INSERT INTO public.uom(id,tenant_id,code,display_name) VALUES
+ ('__PHASE1_UOM_BOX_A_ID__','__PHASE1_TENANT_A_ID__','BOX','Box'),
+ ('__PHASE1_UOM_CASE_A_ID__','__PHASE1_TENANT_A_ID__','CASE','Case'),
+ ('__PHASE1_UOM_BOX_B_ID__','__PHASE1_TENANT_B_ID__','BOX','Box'),
+ ('__PHASE1_UOM_CASE_B_ID__','__PHASE1_TENANT_B_ID__','CASE','Case');
+
 INSERT INTO public.customer(tenant_id,id,account_no,name,assigned_rep_id) VALUES
  ('__PHASE1_TENANT_A_ID__','__PHASE1_CUSTOMER_A_ID__','A-001','Tenant A customer','__PHASE1_USER_A_ID__'),
  ('__PHASE1_TENANT_B_ID__','__PHASE1_CUSTOMER_B_ID__','B-001','Tenant B customer','__PHASE1_USER_REP_ID__');
-INSERT INTO public.product(tenant_id,id,sku,name,category,list_price,unit_cost) VALUES
- ('__PHASE1_TENANT_A_ID__','__PHASE1_PRODUCT_A_ID__','A-SKU','Tenant A product','Test',100,60),
- ('__PHASE1_TENANT_B_ID__','__PHASE1_PRODUCT_B_ID__','B-SKU','Tenant B product','Test',100,60);
+INSERT INTO public.product(tenant_id,id,sku,name,category,list_price,unit_cost,uom) VALUES
+ ('__PHASE1_TENANT_A_ID__','__PHASE1_PRODUCT_A_ID__','A-SKU','Tenant A product','Test',100,60,'EA'),
+ ('__PHASE1_TENANT_B_ID__','__PHASE1_PRODUCT_B_ID__','B-SKU','Tenant B product','Test',100,60,'EA');
+UPDATE public.product SET unit_cost=75 WHERE tenant_id='__PHASE1_TENANT_A_ID__' AND id='__PHASE1_PRODUCT_A_ID__';
+INSERT INTO public.cost_history(tenant_id,product_id,cost,basis,effective_from,effective_to,source,currency) VALUES
+ ('__PHASE1_TENANT_A_ID__','__PHASE1_PRODUCT_A_ID__',55,'standard',current_date-30,current_date,'pgTAP prior cost','USD');
+INSERT INTO public.cost_history(tenant_id,id,product_id,cost,basis,effective_from,effective_to,source,currency) VALUES
+ ('__PHASE1_TENANT_A_ID__','__PHASE1_COST_HISTORY_A_ID__','__PHASE1_PRODUCT_A_ID__',55,'average',current_date-30,NULL,'pgTAP fixture','USD'),
+ ('__PHASE1_TENANT_B_ID__','__PHASE1_COST_HISTORY_B_ID__','__PHASE1_PRODUCT_B_ID__',55,'average',current_date-30,NULL,'pgTAP fixture','USD');
+INSERT INTO public.uom_conversion(tenant_id,id,product_id,from_uom_id,to_uom_id,factor,direction) VALUES
+ ('__PHASE1_TENANT_A_ID__','__PHASE1_UOM_CONVERSION_A_ID__','__PHASE1_PRODUCT_A_ID__','__PHASE1_UOM_A_ID__','__PHASE1_UOM_BOX_A_ID__',2.5,'multiply'),
+ ('__PHASE1_TENANT_B_ID__','__PHASE1_UOM_CONVERSION_B_ID__','__PHASE1_PRODUCT_B_ID__','__PHASE1_UOM_B_ID__','__PHASE1_UOM_BOX_B_ID__',2.5,'multiply');
+INSERT INTO public.uom_conversion(tenant_id,id,product_id,from_uom_id,to_uom_id,factor,direction) VALUES
+ ('__PHASE1_TENANT_A_ID__','__PHASE1_UOM_CONVERSION_TENANT_A_ID__',NULL,'__PHASE1_UOM_A_ID__','__PHASE1_UOM_BOX_A_ID__',12,'multiply'),
+ ('__PHASE1_TENANT_B_ID__','__PHASE1_UOM_CONVERSION_TENANT_B_ID__',NULL,'__PHASE1_UOM_B_ID__','__PHASE1_UOM_BOX_B_ID__',12,'multiply');
+INSERT INTO public.fx_rate(tenant_id,id,rate_date,from_currency,to_currency,rate,source) VALUES
+ ('__PHASE1_TENANT_A_ID__','__PHASE1_FX_RATE_A_ID__',current_date-1,'USD','EUR',0.9,'pgTAP fixture'),
+ ('__PHASE1_TENANT_B_ID__','__PHASE1_FX_RATE_B_ID__',current_date-1,'USD','EUR',0.9,'pgTAP fixture');
+INSERT INTO public.data_quality_issue(tenant_id,id,issue_code,entity_type,entity_id,occurred_on,details) VALUES
+ ('__PHASE1_TENANT_A_ID__','__PHASE1_DQI_A_ID__','cost_history_gap','product','fixture-a',current_date-1,'{"source":"fixture"}'),
+ ('__PHASE1_TENANT_B_ID__','__PHASE1_DQI_B_ID__','cost_history_gap','product','fixture-b',current_date-1,'{"source":"fixture"}');
 INSERT INTO public.invite(id,tenant_id,email,role,token_hash,invited_by,expires_at) VALUES
  ('__PHASE1_INVITE_A_ID__','__PHASE1_TENANT_A_ID__','new-a@example.invalid','rep',replace('__PHASE1_INVITE_A_ID__','-',''),'__PHASE1_USER_A_ID__',now()+interval '7 days'),
  ('__PHASE1_INVITE_B_ID__','__PHASE1_TENANT_B_ID__','new-b@example.invalid','rep',replace('__PHASE1_INVITE_B_ID__','-',''),'__PHASE1_USER_B_ID__',now()+interval '7 days');
@@ -102,9 +129,9 @@ INSERT INTO public.price_list(tenant_id,id,name) VALUES
 INSERT INTO public.price_list_version(tenant_id,id,price_list_id,version_no,status,created_by) VALUES
  ('__PHASE1_TENANT_A_ID__','__PHASE1_PRICE_LIST_VERSION_A_ID__','__PHASE1_PRICE_LIST_A_ID__',1,'draft','__PHASE1_USER_A_ID__'),
  ('__PHASE1_TENANT_B_ID__','__PHASE1_PRICE_LIST_VERSION_B_ID__','__PHASE1_PRICE_LIST_B_ID__',1,'draft','__PHASE1_USER_B_ID__');
-INSERT INTO public.price_list_item(tenant_id,id,price_list_id,product_id,unit_price,version_id) VALUES
- ('__PHASE1_TENANT_A_ID__','__PHASE1_PRICE_LIST_ITEM_A_ID__','__PHASE1_PRICE_LIST_A_ID__','__PHASE1_PRODUCT_A_ID__',100,'__PHASE1_PRICE_LIST_VERSION_A_ID__'),
- ('__PHASE1_TENANT_B_ID__','__PHASE1_PRICE_LIST_ITEM_B_ID__','__PHASE1_PRICE_LIST_B_ID__','__PHASE1_PRODUCT_B_ID__',100,'__PHASE1_PRICE_LIST_VERSION_B_ID__');
+INSERT INTO public.price_list_item(tenant_id,id,price_list_id,product_id,unit_price,version_id,effective_from,currency) VALUES
+ ('__PHASE1_TENANT_A_ID__','__PHASE1_PRICE_LIST_ITEM_A_ID__','__PHASE1_PRICE_LIST_A_ID__','__PHASE1_PRODUCT_A_ID__',100,'__PHASE1_PRICE_LIST_VERSION_A_ID__',current_date-1,'USD'),
+ ('__PHASE1_TENANT_B_ID__','__PHASE1_PRICE_LIST_ITEM_B_ID__','__PHASE1_PRICE_LIST_B_ID__','__PHASE1_PRODUCT_B_ID__',100,'__PHASE1_PRICE_LIST_VERSION_B_ID__',current_date-1,'USD');
 INSERT INTO public.margin_policy(tenant_id,id,scope_type,scope_key,target_margin_pct,floor_margin_pct,walkaway_margin_pct,updated_by) VALUES
  ('__PHASE1_TENANT_A_ID__','__PHASE1_MARGIN_POLICY_A_ID__','global','',30,22,18,'__PHASE1_USER_A_ID__'),
  ('__PHASE1_TENANT_B_ID__','__PHASE1_MARGIN_POLICY_B_ID__','global','',30,22,18,'__PHASE1_USER_B_ID__');
@@ -112,39 +139,39 @@ INSERT INTO public.margin_policy(tenant_id,id,scope_type,scope_key,target_margin
 INSERT INTO public.quote(tenant_id,id,customer_id,created_by,status,pocket_price,cogs_total,pocket_margin,margin_pct,margin_zone,headroom) VALUES
  ('__PHASE1_TENANT_A_ID__','__PHASE1_QUOTE_A_ID__','__PHASE1_CUSTOMER_A_ID__','__PHASE1_USER_A_ID__','pending_approval',100,60,40,40,'green',22),
  ('__PHASE1_TENANT_B_ID__','__PHASE1_QUOTE_B_ID__','__PHASE1_CUSTOMER_B_ID__','__PHASE1_USER_B_ID__','pending_approval',100,60,40,40,'green',22);
-INSERT INTO public.quote_line(tenant_id,id,quote_id,product_id,quantity,list_price,pocket_price,cogs_total,pocket_margin,margin_pct) VALUES
- ('__PHASE1_TENANT_A_ID__','__PHASE1_QUOTE_LINE_A_ID__','__PHASE1_QUOTE_A_ID__','__PHASE1_PRODUCT_A_ID__',1,100,100,60,40,40),
- ('__PHASE1_TENANT_B_ID__','__PHASE1_QUOTE_LINE_B_ID__','__PHASE1_QUOTE_B_ID__','__PHASE1_PRODUCT_B_ID__',1,100,100,60,40,40);
+INSERT INTO public.quote_line(tenant_id,id,quote_id,product_id,quantity,list_price,pocket_price,cogs_total,pocket_margin,margin_pct,currency,uom_code) VALUES
+ ('__PHASE1_TENANT_A_ID__','__PHASE1_QUOTE_LINE_A_ID__','__PHASE1_QUOTE_A_ID__','__PHASE1_PRODUCT_A_ID__',1,100,100,60,40,40,'USD','EA'),
+ ('__PHASE1_TENANT_B_ID__','__PHASE1_QUOTE_LINE_B_ID__','__PHASE1_QUOTE_B_ID__','__PHASE1_PRODUCT_B_ID__',1,100,100,60,40,40,'USD','EA');
 INSERT INTO public.approval(tenant_id,id,quote_id,requested_by,status,margin_pct_at_decision,policy_version) VALUES
  ('__PHASE1_TENANT_A_ID__','__PHASE1_APPROVAL_A_ID__','__PHASE1_QUOTE_A_ID__','__PHASE1_USER_A_ID__','pending',40,1),
  ('__PHASE1_TENANT_B_ID__','__PHASE1_APPROVAL_B_ID__','__PHASE1_QUOTE_B_ID__','__PHASE1_USER_B_ID__','pending',40,1);
-INSERT INTO public.sales_order(tenant_id,id,source_id,customer_id,product_id,quantity,month_key) VALUES
- ('__PHASE1_TENANT_A_ID__','__PHASE1_SALES_ORDER_A_ID__','A-SO-1','__PHASE1_CUSTOMER_A_ID__','__PHASE1_PRODUCT_A_ID__',1,'2026-10'),
- ('__PHASE1_TENANT_B_ID__','__PHASE1_SALES_ORDER_B_ID__','B-SO-1','__PHASE1_CUSTOMER_B_ID__','__PHASE1_PRODUCT_B_ID__',1,'2026-10');
-INSERT INTO public.rebate_agreement(tenant_id,id,party_type,party_id,name,rate_pct,threshold_amount,period_start,period_end) VALUES
- ('__PHASE1_TENANT_A_ID__','__PHASE1_REBATE_AGREEMENT_A_ID__','vendor','A-VENDOR','A rebate',2,1000,'2026-01-01','2026-12-31'),
- ('__PHASE1_TENANT_B_ID__','__PHASE1_REBATE_AGREEMENT_B_ID__','vendor','B-VENDOR','B rebate',2,1000,'2026-01-01','2026-12-31');
-INSERT INTO public.rebate_progress(tenant_id,id,agreement_id,period_start,period_end,eligible_spend,modeled_amount,recorded_credits) VALUES
- ('__PHASE1_TENANT_A_ID__','__PHASE1_REBATE_PROGRESS_A_ID__','__PHASE1_REBATE_AGREEMENT_A_ID__','2026-01-01','2026-12-31',1000,20,10),
- ('__PHASE1_TENANT_B_ID__','__PHASE1_REBATE_PROGRESS_B_ID__','__PHASE1_REBATE_AGREEMENT_B_ID__','2026-01-01','2026-12-31',1000,20,10);
+INSERT INTO public.sales_order(tenant_id,id,source_id,customer_id,product_id,quantity,month_key,transaction_date,currency,uom_code) VALUES
+ ('__PHASE1_TENANT_A_ID__','__PHASE1_SALES_ORDER_A_ID__','A-SO-1','__PHASE1_CUSTOMER_A_ID__','__PHASE1_PRODUCT_A_ID__',1,'2026-10','2026-10-01','USD','EA'),
+ ('__PHASE1_TENANT_B_ID__','__PHASE1_SALES_ORDER_B_ID__','B-SO-1','__PHASE1_CUSTOMER_B_ID__','__PHASE1_PRODUCT_B_ID__',1,'2026-10','2026-10-01','USD','EA');
+INSERT INTO public.rebate_agreement(tenant_id,id,party_type,party_id,name,rate_pct,threshold_amount,period_start,period_end,currency) VALUES
+ ('__PHASE1_TENANT_A_ID__','__PHASE1_REBATE_AGREEMENT_A_ID__','vendor','A-VENDOR','A rebate',2,1000,'2026-01-01','2026-12-31','USD'),
+ ('__PHASE1_TENANT_B_ID__','__PHASE1_REBATE_AGREEMENT_B_ID__','vendor','B-VENDOR','B rebate',2,1000,'2026-01-01','2026-12-31','USD');
+INSERT INTO public.rebate_progress(tenant_id,id,agreement_id,period_start,period_end,eligible_spend,modeled_amount,recorded_credits,currency) VALUES
+ ('__PHASE1_TENANT_A_ID__','__PHASE1_REBATE_PROGRESS_A_ID__','__PHASE1_REBATE_AGREEMENT_A_ID__','2026-01-01','2026-12-31',1000,20,10,'USD'),
+ ('__PHASE1_TENANT_B_ID__','__PHASE1_REBATE_PROGRESS_B_ID__','__PHASE1_REBATE_AGREEMENT_B_ID__','2026-01-01','2026-12-31',1000,20,10,'USD');
 INSERT INTO public.invoice(tenant_id,id,customer_id,invoice_date,source_ref) VALUES
  ('__PHASE1_TENANT_A_ID__','__PHASE1_INVOICE_A_ID__','__PHASE1_CUSTOMER_A_ID__','2026-10-01','A-INV-1'),
  ('__PHASE1_TENANT_B_ID__','__PHASE1_INVOICE_B_ID__','__PHASE1_CUSTOMER_B_ID__','2026-10-01','B-INV-1');
-INSERT INTO public.invoice_line(tenant_id,id,invoice_id,product_id,quantity,net_sales) VALUES
- ('__PHASE1_TENANT_A_ID__','__PHASE1_INVOICE_LINE_A_ID__','__PHASE1_INVOICE_A_ID__','__PHASE1_PRODUCT_A_ID__',1,100),
- ('__PHASE1_TENANT_B_ID__','__PHASE1_INVOICE_LINE_B_ID__','__PHASE1_INVOICE_B_ID__','__PHASE1_PRODUCT_B_ID__',1,100);
-INSERT INTO public.cost_component(tenant_id,id,invoice_line_id,component_type,amount) VALUES
- ('__PHASE1_TENANT_A_ID__','__PHASE1_COST_COMPONENT_A_ID__','__PHASE1_INVOICE_LINE_A_ID__','freight',5),
- ('__PHASE1_TENANT_B_ID__','__PHASE1_COST_COMPONENT_B_ID__','__PHASE1_INVOICE_LINE_B_ID__','freight',5);
-INSERT INTO public.supplier_credit(tenant_id,id,vendor_name,credit_date,amount,reference) VALUES
- ('__PHASE1_TENANT_A_ID__','__PHASE1_SUPPLIER_CREDIT_A_ID__','A vendor','2026-10-02',5,'A-CREDIT'),
- ('__PHASE1_TENANT_B_ID__','__PHASE1_SUPPLIER_CREDIT_B_ID__','B vendor','2026-10-02',5,'B-CREDIT');
+INSERT INTO public.invoice_line(tenant_id,id,invoice_id,product_id,quantity,net_sales,currency,uom_code) VALUES
+ ('__PHASE1_TENANT_A_ID__','__PHASE1_INVOICE_LINE_A_ID__','__PHASE1_INVOICE_A_ID__','__PHASE1_PRODUCT_A_ID__',1,100,'USD','EA'),
+ ('__PHASE1_TENANT_B_ID__','__PHASE1_INVOICE_LINE_B_ID__','__PHASE1_INVOICE_B_ID__','__PHASE1_PRODUCT_B_ID__',1,100,'USD','EA');
+INSERT INTO public.cost_component(tenant_id,id,invoice_line_id,component_type,amount,currency) VALUES
+ ('__PHASE1_TENANT_A_ID__','__PHASE1_COST_COMPONENT_A_ID__','__PHASE1_INVOICE_LINE_A_ID__','freight',5,'USD'),
+ ('__PHASE1_TENANT_B_ID__','__PHASE1_COST_COMPONENT_B_ID__','__PHASE1_INVOICE_LINE_B_ID__','freight',5,'USD');
+INSERT INTO public.supplier_credit(tenant_id,id,vendor_name,credit_date,amount,reference,currency) VALUES
+ ('__PHASE1_TENANT_A_ID__','__PHASE1_SUPPLIER_CREDIT_A_ID__','A vendor','2026-10-02',5,'A-CREDIT','USD'),
+ ('__PHASE1_TENANT_B_ID__','__PHASE1_SUPPLIER_CREDIT_B_ID__','B vendor','2026-10-02',5,'B-CREDIT','USD');
 INSERT INTO public.alert(tenant_id,id,severity,message) VALUES
  ('__PHASE1_TENANT_A_ID__','__PHASE1_ALERT_A_ID__','review','Tenant A fixture alert'),
  ('__PHASE1_TENANT_B_ID__','__PHASE1_ALERT_B_ID__','review','Tenant B fixture alert');
-INSERT INTO public.margin_snapshot(tenant_id,id,entity_type,entity_id,period_month,order_count,pocket_revenue,pocket_margin,margin_pct) VALUES
- ('__PHASE1_TENANT_A_ID__','__PHASE1_MARGIN_SNAPSHOT_A_ID__','company','__PHASE1_TENANT_A_ID__','2026-10-01',1,100,40,40),
- ('__PHASE1_TENANT_B_ID__','__PHASE1_MARGIN_SNAPSHOT_B_ID__','company','__PHASE1_TENANT_B_ID__','2026-10-01',1,100,40,40);
+INSERT INTO public.margin_snapshot(tenant_id,id,entity_type,entity_id,period_month,order_count,pocket_revenue,pocket_margin,margin_pct,currency) VALUES
+ ('__PHASE1_TENANT_A_ID__','__PHASE1_MARGIN_SNAPSHOT_A_ID__','company','__PHASE1_TENANT_A_ID__','2026-10-01',1,100,40,40,'USD'),
+ ('__PHASE1_TENANT_B_ID__','__PHASE1_MARGIN_SNAPSHOT_B_ID__','company','__PHASE1_TENANT_B_ID__','2026-10-01',1,100,40,40,'USD');
 INSERT INTO public.connector_secret(tenant_id,id,provider,ciphertext,nonce,auth_tag,created_by) VALUES
  ('__PHASE1_TENANT_A_ID__','__PHASE1_CONNECTOR_SECRET_A_ID__','netsuite','ciphertext','nonce','tag','__PHASE1_USER_A_ID__'),
  ('__PHASE1_TENANT_B_ID__','__PHASE1_CONNECTOR_SECRET_B_ID__','netsuite','ciphertext','nonce','tag','__PHASE1_USER_B_ID__');
@@ -190,10 +217,15 @@ INSERT INTO pg_temp.phase1_rls_fixture_keys(sort_order,table_name,key_column,ten
  (21,'margin_snapshot','id','__PHASE1_MARGIN_SNAPSHOT_A_ID__','__PHASE1_MARGIN_SNAPSHOT_B_ID__'),
  (22,'connector_secret','id','__PHASE1_CONNECTOR_SECRET_A_ID__','__PHASE1_CONNECTOR_SECRET_B_ID__'),
  (23,'import_job','id','__PHASE1_IMPORT_JOB_A_ID__','__PHASE1_IMPORT_JOB_B_ID__'),
- (24,'audit_log','id','__PHASE1_AUDIT_A_ID__','__PHASE1_AUDIT_B_ID__');
+ (24,'audit_log','id','__PHASE1_AUDIT_A_ID__','__PHASE1_AUDIT_B_ID__'),
+ (25,'uom','id','__PHASE1_UOM_A_ID__','__PHASE1_UOM_B_ID__'),
+ (26,'cost_history','id','__PHASE1_COST_HISTORY_A_ID__','__PHASE1_COST_HISTORY_B_ID__'),
+ (27,'uom_conversion','id','__PHASE1_UOM_CONVERSION_A_ID__','__PHASE1_UOM_CONVERSION_B_ID__'),
+ (28,'fx_rate','id','__PHASE1_FX_RATE_A_ID__','__PHASE1_FX_RATE_B_ID__'),
+ (29,'data_quality_issue','id','__PHASE1_DQI_A_ID__','__PHASE1_DQI_B_ID__');
 DO $$ DECLARE v_fixture phase1_rls_fixture_keys%ROWTYPE; n integer; expected_count integer; BEGIN
   SELECT count(*) INTO expected_count FROM pg_temp.phase1_rls_tables;
-  IF expected_count<24 THEN RAISE EXCEPTION 'Explicit fixture graph needs at least 24 tenant tables; found %',expected_count; END IF;
+  IF expected_count<29 THEN RAISE EXCEPTION 'Explicit fixture graph needs at least 29 tenant tables; found %',expected_count; END IF;
   SELECT count(*) INTO n FROM pg_temp.phase1_rls_fixture_keys;
   IF n<>expected_count THEN RAISE EXCEPTION 'Explicit fixture key list covers % tables; public tenant table inventory has %',n,expected_count; END IF;
   FOR v_fixture IN SELECT * FROM pg_temp.phase1_rls_fixture_keys ORDER BY sort_order LOOP
@@ -285,7 +317,7 @@ WITH required AS (
   FROM pg_temp.phase1_rls_tables t
   CROSS JOIN (VALUES ('SELECT'),('INSERT'),('UPDATE'),('DELETE')) op(privilege)
   WHERE op.privilege='SELECT'
-     OR (op.privilege='INSERT' AND t.table_name NOT IN ('tenant','membership'))
+     OR (op.privilege='INSERT' AND t.table_name NOT IN ('tenant','membership','data_quality_issue'))
      OR (op.privilege='UPDATE' AND t.table_name<>'audit_log')
      OR (op.privilege='DELETE' AND t.table_name NOT IN ('tenant','audit_log'))
 ), missing AS (
@@ -391,7 +423,7 @@ WITH app_owners AS (
   SELECT DISTINCT p.proowner
   FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
   WHERE n.nspname='public'
-    AND p.proname=ANY(ARRAY['is_tenant_member','is_tenant_role','is_tenant_role_any_status','audit_row_change','prevent_audit_mutation','create_tenant_with_owner','accept_tenant_invite','record_failed_login'])
+    AND p.proname=ANY(ARRAY['is_tenant_member','is_tenant_role','is_tenant_role_any_status','audit_row_change','prevent_audit_mutation','create_tenant_with_owner','accept_tenant_invite','record_failed_login','record_data_quality_issue','convert_quantity','sync_product_standard_cost_history'])
 ), explicit_bad_defaults AS (
   SELECT 1
   FROM pg_default_acl d JOIN app_owners o ON o.owner_oid=d.defaclrole
@@ -522,7 +554,7 @@ END $$;
 
 DO $$ DECLARE t text; n integer; v_missing text:=''; v_state text; v_msg text; BEGIN
   SELECT count(*) INTO n FROM jsonb_object_keys(current_setting('app.phase1_tenant_a_fixtures')::jsonb);
-  IF n<24 THEN RAISE EXCEPTION 'Tenant A positive SELECT loop expected at least 24 tables; found %',n; END IF;
+  IF n<29 THEN RAISE EXCEPTION 'Tenant A positive SELECT loop expected at least 29 tables; found %',n; END IF;
   FOR t IN SELECT jsonb_object_keys(current_setting('app.phase1_tenant_a_fixtures')::jsonb) LOOP
     BEGIN
       EXECUTE format('SELECT count(*) FROM public.%I WHERE tenant_id=$1',t) INTO n USING '__PHASE1_TENANT_A_ID__'::uuid;
@@ -535,11 +567,12 @@ DO $$ DECLARE t text; n integer; v_missing text:=''; v_state text; v_msg text; B
   PERFORM set_config('app.phase1_positive_select_result',jsonb_build_object('passed',v_missing='','detail',COALESCE(v_missing,'none'))::text,true);
 END $$;
 
-DO $$ DECLARE t text; v_row jsonb; v_insert jsonb; v_state text; v_msg text; n integer; v_failed text:=''; BEGIN
-  SELECT count(*) INTO n FROM jsonb_each(current_setting('app.phase1_tenant_a_fixtures')::jsonb) WHERE key NOT IN ('tenant','membership');
-  IF n<22 THEN RAISE EXCEPTION 'Tenant A positive INSERT loop expected at least 22 policy-allowed tables; found %',n; END IF;
+DO $$ DECLARE t text; v_row jsonb; v_insert jsonb; v_state text; v_msg text; n integer; v_failed text:='';
+  v_currency_from text; v_currency_to text; BEGIN
+  SELECT count(*) INTO n FROM jsonb_each(current_setting('app.phase1_tenant_a_fixtures')::jsonb) WHERE key NOT IN ('tenant','membership','data_quality_issue');
+  IF n<26 THEN RAISE EXCEPTION 'Tenant A positive INSERT loop expected at least 26 policy-allowed tables; found %',n; END IF;
   FOR t,v_row IN SELECT key,value FROM jsonb_each(current_setting('app.phase1_tenant_a_fixtures')::jsonb)
-    WHERE key NOT IN ('tenant','membership') LOOP
+    WHERE key NOT IN ('tenant','membership','data_quality_issue') LOOP
     v_insert:=jsonb_set(v_row,'{id}',to_jsonb(gen_random_uuid()),true);
     IF t='customer' THEN v_insert:=jsonb_set(v_insert,'{account_no}',to_jsonb('A-positive-control'::text),true);
     ELSIF t='product' THEN v_insert:=jsonb_set(v_insert,'{sku}',to_jsonb('A-POSITIVE-CONTROL'::text),true);
@@ -547,10 +580,36 @@ DO $$ DECLARE t text; v_row jsonb; v_insert jsonb; v_state text; v_msg text; n i
       v_insert:=jsonb_set(v_insert,'{token_hash}',to_jsonb(replace(v_insert->>'id','-','')),true);
       v_insert:=jsonb_set(v_insert,'{email}',to_jsonb('phase1-positive-'||(v_insert->>'id')||'@example.invalid'),true);
     ELSIF t='price_list_version' THEN v_insert:=jsonb_set(v_insert,'{version_no}',to_jsonb((v_row->>'version_no')::integer+1),true);
+    ELSIF t='price_list_item' THEN
+      v_insert:=jsonb_set(v_insert,'{effective_from}',to_jsonb((current_date-100000)::text),true);
+      v_insert:=jsonb_set(v_insert,'{effective_to}',to_jsonb((current_date-99999)::text),true);
     ELSIF t='margin_policy' THEN v_insert:=jsonb_set(v_insert,'{scope_key}',to_jsonb('positive-control'::text),true);
     ELSIF t='sales_order' THEN v_insert:=jsonb_set(v_insert,'{source_id}',to_jsonb('A-POSITIVE-CONTROL'::text),true);
     ELSIF t='margin_snapshot' THEN v_insert:=jsonb_set(v_insert,'{entity_id}',to_jsonb('positive-control'::text),true);
     ELSIF t='connector_secret' THEN v_insert:=jsonb_set(v_insert,'{provider}',to_jsonb('positive-control'::text),true);
+    ELSIF t='cost_history' THEN
+      v_insert:=jsonb_set(v_insert,'{basis}',to_jsonb('landed'::text),true);
+      v_insert:=jsonb_set(v_insert,'{effective_from}',to_jsonb((current_date+100000)::text),true);
+      v_insert:=jsonb_set(v_insert,'{effective_to}','null'::jsonb,true);
+    ELSIF t='uom' THEN
+      v_insert:=jsonb_set(v_insert,'{code}',to_jsonb(upper('POS'||left(replace(v_insert->>'id','-',''),13))),true);
+      v_insert:=jsonb_set(v_insert,'{display_name}',to_jsonb('Positive unit'::text),true);
+    ELSIF t='uom_conversion' THEN
+      v_insert:=jsonb_set(v_insert,'{product_id}','null'::jsonb,true);
+      v_insert:=jsonb_set(v_insert,'{to_uom_id}',to_jsonb((SELECT id::text FROM public.uom WHERE tenant_id='__PHASE1_TENANT_A_ID__' AND code='CASE')),true);
+    ELSIF t='fx_rate' THEN
+      v_insert:=jsonb_set(v_insert,'{rate_date}',to_jsonb((current_date+100000)::text),true);
+      LOOP
+        v_currency_from:=chr(65+floor(random()*26)::integer)||chr(65+floor(random()*26)::integer)||chr(65+floor(random()*26)::integer);
+        v_currency_to:=chr(65+floor(random()*26)::integer)||chr(65+floor(random()*26)::integer)||chr(65+floor(random()*26)::integer);
+        EXIT WHEN v_currency_from<>v_currency_to AND NOT EXISTS (
+          SELECT 1 FROM public.fx_rate
+          WHERE tenant_id='__PHASE1_TENANT_A_ID__' AND rate_date=current_date+100000
+            AND from_currency=v_currency_from AND to_currency=v_currency_to
+        );
+      END LOOP;
+      v_insert:=jsonb_set(v_insert,'{from_currency}',to_jsonb(v_currency_from),true);
+      v_insert:=jsonb_set(v_insert,'{to_currency}',to_jsonb(v_currency_to),true);
     ELSIF t='audit_log' THEN
       v_insert:=jsonb_set(v_insert,'{actor_id}',to_jsonb('__PHASE1_USER_A_ID__'::uuid),true);
       v_insert:=jsonb_set(v_insert,'{action}',to_jsonb('test.positive_insert'::text),true);
@@ -623,7 +682,7 @@ END $$;
 
 DO $$ DECLARE t text; n integer; v_missing text:=''; v_state text; v_msg text; BEGIN
   SELECT count(*) INTO n FROM jsonb_object_keys(current_setting('app.phase1_tenant_b_fixtures')::jsonb);
-  IF n<24 THEN RAISE EXCEPTION 'Tenant B cross-SELECT loop expected at least 24 tables; found %',n; END IF;
+  IF n<29 THEN RAISE EXCEPTION 'Tenant B cross-SELECT loop expected at least 29 tables; found %',n; END IF;
   FOR t IN SELECT jsonb_object_keys(current_setting('app.phase1_tenant_b_fixtures')::jsonb) LOOP
     BEGIN
       EXECUTE format('SELECT count(*) FROM public.%I WHERE tenant_id=$1',t) INTO n USING '__PHASE1_TENANT_B_ID__'::uuid;
@@ -643,7 +702,7 @@ DO $$ DECLARE t text; n integer; expected_count integer; v_bad text:='';
   v_state text; v_msg text; BEGIN
   IF current_setting('app.restore_test_mode',true)='true' THEN
     SELECT count(*) INTO expected_count FROM jsonb_object_keys(current_setting('app.phase1_tenant_a_fixtures')::jsonb);
-    IF expected_count<24 THEN RAISE EXCEPTION 'Restore isolation check expected at least 24 tenant tables; found %',expected_count; END IF;
+    IF expected_count<29 THEN RAISE EXCEPTION 'Restore isolation check expected at least 29 tenant tables; found %',expected_count; END IF;
     FOR t IN SELECT jsonb_object_keys(current_setting('app.phase1_tenant_a_fixtures')::jsonb) LOOP
       BEGIN
         EXECUTE format('SELECT count(*) FROM public.%I WHERE tenant_id=$1',t)
@@ -708,12 +767,12 @@ DO $$ DECLARE t text; n integer; v_bad text:=''; v_state text; v_msg text; BEGIN
 END $$;
 
 DO $$ DECLARE t text; v_row jsonb; v_state text; v_msg text; v_bad text:=''; n integer; BEGIN
-  SELECT count(*) INTO n FROM jsonb_each(current_setting('app.phase1_tenant_b_fixtures')::jsonb) WHERE key NOT IN ('tenant','membership');
-  IF n<22 THEN
-    RAISE EXCEPTION 'Cross-tenant INSERT loop expected at least 22 eligible tables';
+  SELECT count(*) INTO n FROM jsonb_each(current_setting('app.phase1_tenant_b_fixtures')::jsonb) WHERE key NOT IN ('tenant','membership','data_quality_issue');
+  IF n<26 THEN
+    RAISE EXCEPTION 'Cross-tenant INSERT loop expected at least 26 eligible tables';
   END IF;
   FOR t,v_row IN SELECT key,value FROM jsonb_each(current_setting('app.phase1_tenant_b_fixtures')::jsonb)
-    WHERE key NOT IN ('tenant','membership') LOOP
+    WHERE key NOT IN ('tenant','membership','data_quality_issue') LOOP
     v_state:='00000'; v_msg:='';
     BEGIN
       EXECUTE format('INSERT INTO public.%I SELECT (jsonb_populate_record(NULL::public.%I,$1)).*',t,t) USING v_row;
@@ -778,6 +837,57 @@ DO $$ DECLARE v_update_state text:='00000'; v_delete_state text:='00000'; v_trun
     'update_state',v_update_state,'delete_state',v_delete_state,'truncate_state',v_truncate_state,
     'update_message',COALESCE(v_update_msg,''),'delete_message',COALESCE(v_delete_msg,''),'truncate_message',COALESCE(v_truncate_msg,'')
   )::text,true);
+END $$;
+
+-- Exercise effective history and conversions through the same app role used
+-- by the server. Results survive RESET ROLE for pgTAP assertions below.
+DO $$ DECLARE v_box numeric; v_each numeric; v_rounded numeric; v_missing numeric; v_issue_count integer; BEGIN
+  PERFORM set_config('request.jwt.claim.sub','__PHASE1_USER_A_ID__',true);
+  PERFORM set_config('request.jwt.claims','{"sub":"__PHASE1_USER_A_ID__","role":"authenticated"}',true);
+  SELECT public.convert_quantity('__PHASE1_TENANT_A_ID__','__PHASE1_PRODUCT_A_ID__',10,'EA','BOX',current_date) INTO v_box;
+  SELECT public.convert_quantity('__PHASE1_TENANT_A_ID__','__PHASE1_PRODUCT_A_ID__',10,'BOX','EA',current_date) INTO v_each;
+  SELECT public.convert_quantity('__PHASE1_TENANT_A_ID__','__PHASE1_PRODUCT_A_ID__',1.23456,'EA','EA',current_date) INTO v_rounded;
+  SELECT public.convert_quantity('__PHASE1_TENANT_A_ID__','__PHASE1_PRODUCT_A_ID__',1,'BOX','CASE',current_date) INTO v_missing;
+  SELECT count(*) INTO v_issue_count FROM public.data_quality_issue
+   WHERE tenant_id='__PHASE1_TENANT_A_ID__' AND issue_code='uom_conversion_missing'
+     AND entity_type='product' AND entity_id='__PHASE1_PRODUCT_A_ID__' AND occurred_on=current_date
+     AND details->>'from'='BOX' AND details->>'to'='CASE';
+  PERFORM set_config('app.phase2a_uom_result',jsonb_build_object(
+    'ea_to_box',v_box,'box_to_ea',v_each,'same_unit_rounded',v_rounded,
+    'missing_is_null',v_missing IS NULL,'missing_issue_count',v_issue_count
+  )::text,true);
+END $$;
+
+-- All five new tables have positive UPDATE and DELETE controls. The data
+-- quality issue insert path is the SECURITY DEFINER helper above; direct
+-- table INSERT remains intentionally absent from margindesk_app.
+DO $$ DECLARE v_rows integer; v_ok boolean:=true; v_detail text:=''; BEGIN
+  UPDATE public.cost_history SET cost=cost+1 WHERE id='__PHASE1_COST_HISTORY_A_ID__'; GET DIAGNOSTICS v_rows=ROW_COUNT;
+  v_ok:=v_ok AND v_rows=1; v_detail:=concat_ws(', ',v_detail,'cost_history update='||v_rows);
+  DELETE FROM public.cost_history WHERE id='__PHASE1_COST_HISTORY_A_ID__'; GET DIAGNOSTICS v_rows=ROW_COUNT;
+  v_ok:=v_ok AND v_rows=1; v_detail:=concat_ws(', ',v_detail,'cost_history delete='||v_rows);
+
+  UPDATE public.uom SET display_name='Positive update' WHERE tenant_id='__PHASE1_TENANT_A_ID__' AND code LIKE 'POS%'; GET DIAGNOSTICS v_rows=ROW_COUNT;
+  v_ok:=v_ok AND v_rows=1; v_detail:=concat_ws(', ',v_detail,'uom update='||v_rows);
+  DELETE FROM public.uom WHERE tenant_id='__PHASE1_TENANT_A_ID__' AND code LIKE 'POS%'; GET DIAGNOSTICS v_rows=ROW_COUNT;
+  v_ok:=v_ok AND v_rows=1; v_detail:=concat_ws(', ',v_detail,'uom delete='||v_rows);
+
+  UPDATE public.uom_conversion SET factor=factor+1 WHERE id='__PHASE1_UOM_CONVERSION_A_ID__'; GET DIAGNOSTICS v_rows=ROW_COUNT;
+  v_ok:=v_ok AND v_rows=1; v_detail:=concat_ws(', ',v_detail,'uom_conversion update='||v_rows);
+  DELETE FROM public.uom_conversion WHERE id='__PHASE1_UOM_CONVERSION_A_ID__'; GET DIAGNOSTICS v_rows=ROW_COUNT;
+  v_ok:=v_ok AND v_rows=1; v_detail:=concat_ws(', ',v_detail,'uom_conversion delete='||v_rows);
+
+  UPDATE public.fx_rate SET rate=rate+0.01 WHERE tenant_id='__PHASE1_TENANT_A_ID__' AND rate_date=current_date+100000; GET DIAGNOSTICS v_rows=ROW_COUNT;
+  v_ok:=v_ok AND v_rows=1; v_detail:=concat_ws(', ',v_detail,'fx_rate update='||v_rows);
+  DELETE FROM public.fx_rate WHERE tenant_id='__PHASE1_TENANT_A_ID__' AND rate_date=current_date+100000; GET DIAGNOSTICS v_rows=ROW_COUNT;
+  v_ok:=v_ok AND v_rows=1; v_detail:=concat_ws(', ',v_detail,'fx_rate delete='||v_rows);
+
+  UPDATE public.data_quality_issue SET details=jsonb_set(details,'{positive_update}','true'::jsonb)
+    WHERE id='__PHASE1_DQI_A_ID__'; GET DIAGNOSTICS v_rows=ROW_COUNT;
+  v_ok:=v_ok AND v_rows=1; v_detail:=concat_ws(', ',v_detail,'data_quality_issue update='||v_rows);
+  DELETE FROM public.data_quality_issue WHERE id='__PHASE1_DQI_A_ID__'; GET DIAGNOSTICS v_rows=ROW_COUNT;
+  v_ok:=v_ok AND v_rows=1; v_detail:=concat_ws(', ',v_detail,'data_quality_issue delete='||v_rows);
+  PERFORM set_config('app.phase2a_new_table_write_result',jsonb_build_object('passed',v_ok,'detail',v_detail)::text,true);
 END $$;
 RESET ROLE;
 
@@ -870,7 +980,10 @@ SELECT extensions.ok(
       ('prevent_audit_mutation()',false),
       ('create_tenant_with_owner(p_name text)',true),
       ('accept_tenant_invite(p_token text)',true),
-      ('record_failed_login(p_email text, p_ip text, p_user_agent text)',true)
+      ('record_failed_login(p_email text, p_ip text, p_user_agent text)',true),
+      ('record_data_quality_issue(p_tenant_id uuid, p_issue_code text, p_entity_type text, p_entity_id text, p_occurred_on date, p_details jsonb)',true),
+      ('convert_quantity(p_tenant_id uuid, p_product_id uuid, p_quantity numeric, p_from_code text, p_to_code text, p_occurred_on date)',true),
+      ('sync_product_standard_cost_history()',false)
     ), defs AS (
       SELECT p.oid,p.proowner,p.proname||'('||pg_get_function_identity_arguments(p.oid)||')' AS signature
       FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
@@ -1045,7 +1158,10 @@ WITH allowlist(signature,app_allowed) AS (VALUES
   ('prevent_audit_mutation()',false),
   ('create_tenant_with_owner(p_name text)',true),
   ('accept_tenant_invite(p_token text)',true),
-  ('record_failed_login(p_email text, p_ip text, p_user_agent text)',true)
+  ('record_failed_login(p_email text, p_ip text, p_user_agent text)',true),
+  ('record_data_quality_issue(p_tenant_id uuid, p_issue_code text, p_entity_type text, p_entity_id text, p_occurred_on date, p_details jsonb)',true),
+  ('convert_quantity(p_tenant_id uuid, p_product_id uuid, p_quantity numeric, p_from_code text, p_to_code text, p_occurred_on date)',true),
+  ('sync_product_standard_cost_history()',false)
 ), owned_functions AS (
   SELECT p.oid,p.proowner,p.proname||'('||pg_get_function_identity_arguments(p.oid)||')' AS signature
   FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
@@ -1074,7 +1190,7 @@ WITH allowlist(signature,app_allowed) AS (VALUES
     AND acl.grantee<>d.defaclrole
 )
 SELECT extensions.ok(
-  (SELECT count(*) FROM owned_functions)>=8
+  (SELECT count(*) FROM owned_functions)>=11
   AND NOT EXISTS (SELECT 1 FROM function_acl_errors)
   AND NOT EXISTS (SELECT 1 FROM missing_allowlist_functions)
   AND NOT EXISTS (SELECT 1 FROM unexpected_default_execute),
@@ -1110,7 +1226,9 @@ BEGIN
     'SELECT public.is_tenant_role_any_status(NULL::uuid,NULL::text[])',
     'SELECT public.create_tenant_with_owner(NULL::text)',
     'SELECT public.accept_tenant_invite(NULL::text)',
-    'SELECT public.record_failed_login(NULL::text,NULL::text,NULL::text)'
+    'SELECT public.record_failed_login(NULL::text,NULL::text,NULL::text)',
+    'SELECT public.record_data_quality_issue(NULL::uuid,NULL::text,NULL::text,NULL::text,NULL::date,NULL::jsonb)',
+    'SELECT public.convert_quantity(NULL::uuid,NULL::uuid,NULL::numeric,NULL::text,NULL::text,NULL::date)'
   ] LOOP
     v_tested:=v_tested+1;
     v_state:='00000';
@@ -1129,7 +1247,7 @@ END $$;
 RESET ROLE;
 SELECT extensions.ok(
   current_setting('app.phase1_anon_function_exec_result')::jsonb->>'effective_executable_count'='0'
-  AND current_setting('app.phase1_anon_function_exec_result')::jsonb->>'tested'='6'
+  AND current_setting('app.phase1_anon_function_exec_result')::jsonb->>'tested'='8'
   AND NOT EXISTS (
     SELECT 1 FROM jsonb_array_elements(current_setting('app.phase1_anon_function_exec_result')::jsonb->'attempts') AS attempts(attempt)
     WHERE attempt->>'sqlstate'<>'42501' OR attempt->>'message' NOT ILIKE '%permission denied for function%'
@@ -1156,7 +1274,9 @@ BEGIN
     'SELECT public.is_tenant_role_any_status(NULL::uuid,NULL::text[])',
     'SELECT public.create_tenant_with_owner(NULL::text)',
     'SELECT public.accept_tenant_invite(NULL::text)',
-    'SELECT public.record_failed_login(NULL::text,NULL::text,NULL::text)'
+    'SELECT public.record_failed_login(NULL::text,NULL::text,NULL::text)',
+    'SELECT public.record_data_quality_issue(NULL::uuid,NULL::text,NULL::text,NULL::text,NULL::date,NULL::jsonb)',
+    'SELECT public.convert_quantity(NULL::uuid,NULL::uuid,NULL::numeric,NULL::text,NULL::text,NULL::date)'
   ] LOOP
     v_tested:=v_tested+1;
     v_state:='00000';
@@ -1175,7 +1295,7 @@ END $$;
 RESET ROLE;
 SELECT extensions.ok(
   current_setting('app.phase1_authenticated_function_exec_result')::jsonb->>'effective_executable_count'='0'
-  AND current_setting('app.phase1_authenticated_function_exec_result')::jsonb->>'tested'='6'
+  AND current_setting('app.phase1_authenticated_function_exec_result')::jsonb->>'tested'='8'
   AND NOT EXISTS (
     SELECT 1 FROM jsonb_array_elements(current_setting('app.phase1_authenticated_function_exec_result')::jsonb->'attempts') AS attempts(attempt)
     WHERE attempt->>'sqlstate'<>'42501' OR attempt->>'message' NOT ILIKE '%permission denied for function%'
@@ -1194,10 +1314,146 @@ SELECT extensions.ok(
 ) WHERE current_setting('app.restore_test_mode',true)='true';
 SELECT extensions.ok(
   current_setting('app.phase1_restore_real_isolation_result')::jsonb->>'passed'='true'
-    AND (current_setting('app.phase1_restore_real_isolation_result')::jsonb->>'checked_tables')::integer>=24,
+    AND (current_setting('app.phase1_restore_real_isolation_result')::jsonb->>'checked_tables')::integer>=29,
   'Restore-only: synthetic Tenant A sees zero rows from the real restored sentinel tenant in every application table: '||
     (current_setting('app.phase1_restore_real_isolation_result')::jsonb->>'detail')
 ) WHERE current_setting('app.restore_test_mode',true)='true';
+
+-- New-table grants are exact allowlists. The owner retains ownership; the
+-- only direct non-owner grantee is margindesk_app with the listed operations.
+WITH target AS (SELECT 'cost_history'::text AS table_name), expected(privilege) AS (VALUES
+ ('DELETE'),('INSERT'),('SELECT'),('UPDATE')
+), actual AS (
+ SELECT c.relowner,acl.grantee,acl.privilege_type
+ FROM target t JOIN pg_class c ON c.oid=format('public.%I',t.table_name)::regclass
+ CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) acl
+)
+SELECT extensions.ok(
+ NOT EXISTS(SELECT 1 FROM actual WHERE grantee NOT IN(relowner,'margindesk_app'::regrole))
+ AND NOT EXISTS(SELECT privilege_type FROM actual WHERE grantee='margindesk_app'::regrole EXCEPT SELECT privilege FROM expected)
+ AND NOT EXISTS(SELECT privilege FROM expected EXCEPT SELECT privilege_type FROM actual WHERE grantee='margindesk_app'::regrole)
+ AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.cost_history'::regclass AND attnum>0 AND NOT attisdropped AND attacl IS NOT NULL),
+ 'cost_history ACL is owner plus margindesk_app CRUD only, with no column grants'
+);
+WITH target AS (SELECT 'uom'::text AS table_name), expected(privilege) AS (VALUES
+ ('DELETE'),('INSERT'),('SELECT'),('UPDATE')
+), actual AS (
+ SELECT c.relowner,acl.grantee,acl.privilege_type
+ FROM target t JOIN pg_class c ON c.oid=format('public.%I',t.table_name)::regclass
+ CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) acl
+)
+SELECT extensions.ok(
+ NOT EXISTS(SELECT 1 FROM actual WHERE grantee NOT IN(relowner,'margindesk_app'::regrole))
+ AND NOT EXISTS(SELECT privilege_type FROM actual WHERE grantee='margindesk_app'::regrole EXCEPT SELECT privilege FROM expected)
+ AND NOT EXISTS(SELECT privilege FROM expected EXCEPT SELECT privilege_type FROM actual WHERE grantee='margindesk_app'::regrole)
+ AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.uom'::regclass AND attnum>0 AND NOT attisdropped AND attacl IS NOT NULL),
+ 'uom ACL is owner plus margindesk_app CRUD only, with no column grants'
+);
+WITH target AS (SELECT 'uom_conversion'::text AS table_name), expected(privilege) AS (VALUES
+ ('DELETE'),('INSERT'),('SELECT'),('UPDATE')
+), actual AS (
+ SELECT c.relowner,acl.grantee,acl.privilege_type
+ FROM target t JOIN pg_class c ON c.oid=format('public.%I',t.table_name)::regclass
+ CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) acl
+)
+SELECT extensions.ok(
+ NOT EXISTS(SELECT 1 FROM actual WHERE grantee NOT IN(relowner,'margindesk_app'::regrole))
+ AND NOT EXISTS(SELECT privilege_type FROM actual WHERE grantee='margindesk_app'::regrole EXCEPT SELECT privilege FROM expected)
+ AND NOT EXISTS(SELECT privilege FROM expected EXCEPT SELECT privilege_type FROM actual WHERE grantee='margindesk_app'::regrole)
+ AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.uom_conversion'::regclass AND attnum>0 AND NOT attisdropped AND attacl IS NOT NULL),
+ 'uom_conversion ACL is owner plus margindesk_app CRUD only, with no column grants'
+);
+WITH target AS (SELECT 'fx_rate'::text AS table_name), expected(privilege) AS (VALUES
+ ('DELETE'),('INSERT'),('SELECT'),('UPDATE')
+), actual AS (
+ SELECT c.relowner,acl.grantee,acl.privilege_type
+ FROM target t JOIN pg_class c ON c.oid=format('public.%I',t.table_name)::regclass
+ CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) acl
+)
+SELECT extensions.ok(
+ NOT EXISTS(SELECT 1 FROM actual WHERE grantee NOT IN(relowner,'margindesk_app'::regrole))
+ AND NOT EXISTS(SELECT privilege_type FROM actual WHERE grantee='margindesk_app'::regrole EXCEPT SELECT privilege FROM expected)
+ AND NOT EXISTS(SELECT privilege FROM expected EXCEPT SELECT privilege_type FROM actual WHERE grantee='margindesk_app'::regrole)
+ AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.fx_rate'::regclass AND attnum>0 AND NOT attisdropped AND attacl IS NOT NULL),
+ 'fx_rate ACL is owner plus margindesk_app CRUD only, with no column grants'
+);
+WITH target AS (SELECT 'data_quality_issue'::text AS table_name), expected(privilege) AS (VALUES
+ ('DELETE'),('SELECT'),('UPDATE')
+), actual AS (
+ SELECT c.relowner,acl.grantee,acl.privilege_type
+ FROM target t JOIN pg_class c ON c.oid=format('public.%I',t.table_name)::regclass
+ CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) acl
+)
+SELECT extensions.ok(
+ NOT EXISTS(SELECT 1 FROM actual WHERE grantee NOT IN(relowner,'margindesk_app'::regrole))
+ AND NOT EXISTS(SELECT privilege_type FROM actual WHERE grantee='margindesk_app'::regrole EXCEPT SELECT privilege FROM expected)
+ AND NOT EXISTS(SELECT privilege FROM expected EXCEPT SELECT privilege_type FROM actual WHERE grantee='margindesk_app'::regrole)
+ AND NOT has_table_privilege('margindesk_app','public.data_quality_issue','INSERT')
+ AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.data_quality_issue'::regclass AND attnum>0 AND NOT attisdropped AND attacl IS NOT NULL),
+ 'data_quality_issue grants manager CRUD except INSERT; issue creation is function-only'
+);
+
+SELECT extensions.ok(
+ (SELECT pg_get_userbyid(p.proowner)=current_setting('app.phase1_migration_owner')
+   AND has_function_privilege('margindesk_app',p.oid,'EXECUTE')
+   AND p.prosecdef
+   AND EXISTS(SELECT 1 FROM unnest(COALESCE(p.proconfig,ARRAY[]::text[])) cfg(setting) WHERE cfg.setting='search_path=public, pg_temp')
+   AND NOT EXISTS(SELECT 1 FROM aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) a WHERE a.grantee NOT IN(p.proowner,'margindesk_app'::regrole))
+  FROM pg_proc p WHERE p.oid='public.record_data_quality_issue(uuid,text,text,text,date,jsonb)'::regprocedure),
+ 'record_data_quality_issue is migration-owned, pinned, SECURITY DEFINER, and executable only by owner/app'
+);
+SELECT extensions.ok(
+ (SELECT pg_get_userbyid(p.proowner)=current_setting('app.phase1_migration_owner')
+   AND has_function_privilege('margindesk_app',p.oid,'EXECUTE')
+   AND p.prosecdef
+   AND EXISTS(SELECT 1 FROM unnest(COALESCE(p.proconfig,ARRAY[]::text[])) cfg(setting) WHERE cfg.setting='search_path=public, pg_temp')
+   AND NOT EXISTS(SELECT 1 FROM aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) a WHERE a.grantee NOT IN(p.proowner,'margindesk_app'::regrole))
+  FROM pg_proc p WHERE p.oid='public.convert_quantity(uuid,uuid,numeric,text,text,date)'::regprocedure),
+ 'convert_quantity is migration-owned, pinned, SECURITY DEFINER, and executable only by owner/app'
+);
+SELECT extensions.ok(
+ (SELECT pg_get_userbyid(p.proowner)=current_setting('app.phase1_migration_owner')
+   AND p.prosecdef
+   AND EXISTS(SELECT 1 FROM unnest(COALESCE(p.proconfig,ARRAY[]::text[])) cfg(setting) WHERE cfg.setting='search_path=public, pg_temp')
+   AND NOT has_function_privilege('margindesk_app',p.oid,'EXECUTE')
+   AND NOT EXISTS(SELECT 1 FROM aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) a WHERE a.grantee<>p.proowner)
+  FROM pg_proc p WHERE p.oid='public.sync_product_standard_cost_history()'::regprocedure),
+ 'sync_product_standard_cost_history is migration-owned and executable only by its owner'
+);
+
+SELECT extensions.ok(
+ (SELECT h.cost=55 FROM public.cost_history h WHERE h.tenant_id='__PHASE1_TENANT_A_ID__'
+   AND h.product_id='__PHASE1_PRODUCT_A_ID__' AND h.basis='standard'
+   AND h.effective_from<=current_date-1 AND (h.effective_to IS NULL OR current_date-1<h.effective_to))
+ AND (SELECT h.cost=75 FROM public.cost_history h WHERE h.tenant_id='__PHASE1_TENANT_A_ID__'
+   AND h.product_id='__PHASE1_PRODUCT_A_ID__' AND h.basis='standard'
+   AND h.effective_from<=current_date AND (h.effective_to IS NULL OR current_date<h.effective_to)),
+ 'The same product resolves to its prior and current standard costs on the matching transaction dates'
+);
+SELECT extensions.throws_ok($test$INSERT INTO public.cost_history(tenant_id,product_id,cost,basis,effective_from,source,currency)
+ VALUES('__PHASE1_TENANT_A_ID__','__PHASE1_PRODUCT_A_ID__',88,'standard',current_date,'overlap probe','USD')$test$,
+ '23P01',NULL,'Overlapping cost-history ranges are rejected by the exclusion constraint');
+SELECT extensions.throws_ok($test$INSERT INTO public.price_list_item(tenant_id,id,price_list_id,product_id,unit_price,effective_from,currency)
+ VALUES('__PHASE1_TENANT_A_ID__','__PHASE1_PRICE_LIST_ITEM_OVERLAP_ID__','__PHASE1_PRICE_LIST_A_ID__','__PHASE1_PRODUCT_A_ID__',200,current_date-1,'USD')$test$,
+ '23P01',NULL,'Overlapping price-list item ranges are rejected by the exclusion constraint');
+SELECT extensions.ok(EXISTS (
+ SELECT 1 FROM public.fx_rate WHERE tenant_id='__PHASE1_TENANT_A_ID__'
+  AND id='__PHASE1_FX_RATE_A_ID__' AND rate_date=current_date-1
+  AND from_currency='USD' AND to_currency='EUR' AND rate=0.9 AND source='pgTAP fixture'
+), 'Tenant-scoped FX fixture stores a numeric dated source rate');
+SELECT extensions.ok((current_setting('app.phase2a_uom_result')::jsonb->>'ea_to_box')::numeric=25,
+ 'Product-specific EA-to-BOX conversion overrides the tenant-wide factor');
+SELECT extensions.ok((current_setting('app.phase2a_uom_result')::jsonb->>'box_to_ea')::numeric=4,
+ 'The same product-specific BOX-to-EA conversion uses the inverse factor');
+SELECT extensions.ok((current_setting('app.phase2a_uom_result')::jsonb->>'same_unit_rounded')::numeric=1.2346,
+ 'Same-unit quantity conversion rounds to four decimal places');
+SELECT extensions.ok(
+ current_setting('app.phase2a_uom_result')::jsonb->>'missing_is_null'='true'
+ AND current_setting('app.phase2a_uom_result')::jsonb->>'missing_issue_count'='1',
+ 'Missing BOX-to-CASE conversion returns NULL and records exactly one data_quality_issue'
+);
+SELECT extensions.ok(current_setting('app.phase2a_new_table_write_result')::jsonb->>'passed'='true',
+ 'Tenant A has positive UPDATE and DELETE controls for every new table: '||(current_setting('app.phase2a_new_table_write_result')::jsonb->>'detail'));
 
 SELECT * FROM extensions.finish();
 ROLLBACK;

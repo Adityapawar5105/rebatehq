@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import pg from "pg";
 import { APPLICATION_SCHEMAS, EXCLUDED_SUPABASE_SCHEMAS } from "./restore-dump-scope.mjs";
 
@@ -30,6 +30,12 @@ export function parseDumpTableNames(sql, kind) {
     if (relation) found.set(`${relation.schema}.${relation.table}`, relation);
   }
   return [...found.values()].sort((a, b) => `${a.schema}.${a.table}`.localeCompare(`${b.schema}.${b.table}`));
+}
+
+export function assertApplicationTableMinimum(tables, expected = 29) {
+  const count = tables.filter(table => table.schema === "public").length;
+  assert.ok(count >= expected, `Restore inventory found ${count} public application tables; expected at least ${expected} after Chunk 2A.`);
+  return count;
 }
 
 export function redactDataDumpContext(sql, lineNumber = 448, radius = 5) {
@@ -83,6 +89,7 @@ async function main() {
   const schemaTables = parseDumpTableNames(schemaSql, "schema");
   const dataTables = parseDumpTableNames(dataSql, "data");
   assert.ok(schemaTables.length > 0, "Schema dump contains no CREATE TABLE statements; refusing a vacuous restore inventory.");
+  assertApplicationTableMinimum(schemaTables);
   assert.ok(dataTables.length > 0, "Data dump contains no COPY table statements; refusing a vacuous restore inventory.");
   for (const table of [...schemaTables, ...dataTables]) {
     assert.ok(APPLICATION_SCHEMAS.includes(table.schema), `Dump contains non-application schema ${table.schema}.${table.table}.`);
@@ -96,16 +103,20 @@ async function main() {
   try {
     const authUsersPresent = (await pool.query("SELECT to_regclass('auth.users') IS NOT NULL AS present")).rows[0].present;
     assert.equal(authUsersPresent, true, "Source Supabase database must contain auth.users for dependency inspection.");
-    const migration = readFileSync("supabase/migrations/202610240001_phase1_foundation.sql", "utf8");
-    const hasAuthTrigger = [...migration.matchAll(/CREATE\s+TRIGGER\b[\s\S]*?;/gi)].some(match => /\bON\s+auth\./i.test(match[0]));
-    assert.equal(hasAuthTrigger, false, "The application baseline must not install triggers on Supabase-managed auth tables.");
+    const migrationFiles = readdirSync("supabase/migrations").filter(file => file.endsWith(".sql")).sort();
+    assert.ok(migrationFiles.length > 0, "No MarginDesk migrations found for restore inventory inspection.");
+    const migrations = migrationFiles.map(file => ({ name: file, sql: readFileSync(`supabase/migrations/${file}`, "utf8") }));
+    const migrationSql = migrations.map(item => item.sql).join("\n");
+    const hasAuthTrigger = migrations.some(({ sql }) => [...sql.matchAll(/CREATE\s+TRIGGER\b[\s\S]*?;/gi)].some(match => /\bON\s+auth\./i.test(match[0])));
+    assert.equal(hasAuthTrigger, false, "Application migrations must not install triggers on Supabase-managed auth tables.");
     const migrationFootprint = {
+      migrations: migrationFiles,
       applicationSchemas: ["public"],
-      createsApplicationSchema: /CREATE\s+SCHEMA\b/i.test(migration),
-      extensionStatements: [...migration.matchAll(/CREATE\s+EXTENSION[^;]*;/gi)].map(match => match[0].replace(/\s+/g, " ").trim()),
+      createsApplicationSchema: /CREATE\s+SCHEMA\b/i.test(migrationSql),
+      extensionStatements: [...migrationSql.matchAll(/CREATE\s+EXTENSION[^;]*;/gi)].map(match => match[0].replace(/\s+/g, " ").trim()),
       createsAuthTableTriggers: hasAuthTrigger,
     };
-    assert.equal(migrationFootprint.createsApplicationSchema, false, "Baseline unexpectedly creates another schema; update the explicit dump allowlist only after review.");
+    assert.equal(migrationFootprint.createsApplicationSchema, false, "Application migrations unexpectedly create another schema; update the explicit dump allowlist only after review.");
 
     const authFkResult = await pool.query(`
       SELECT tn.nspname AS table_schema, tc.relname AS table_name, con.conname AS constraint_name,
@@ -191,7 +202,7 @@ async function main() {
         "",
         `- Included schemas: ${APPLICATION_SCHEMAS.join(", ")}`,
         `- Excluded Supabase-managed schemas: ${EXCLUDED_SUPABASE_SCHEMAS.join(", ")}; all schemas outside the allowlist are excluded.`,
-        `- Source schema dump tables: ${schemaTables.length}; data dump COPY tables: ${dataTables.length}.`,
+        `- Source schema dump tables: ${schemaTables.length} (minimum 29); data dump COPY tables: ${dataTables.length}.`,
         "- Source counts are for application-owned public tables only.",
         "",
         "| Table | Source rows | In data dump |",

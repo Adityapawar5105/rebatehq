@@ -1,4 +1,6 @@
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const test = require("node:test");
 
 test("restore table ACL comparison accepts identical owners and grants", async () => {
@@ -103,4 +105,11 @@ test("restore function ACL comparison fails when a target function is missing", 
   const diff = compareFunctionAclSections(source, []);
   assert.equal(diff["public.is_tenant_member(uuid)"]["<function>"].sourceOnly[0].function, "public.is_tenant_member(uuid)");
   assert.throws(() => assertFunctionAclSectionsEqual(source, []), /missing|is_tenant_member/i);
+});
+
+test("restore inventory requires all 29 tenant tables and compares every discovered public function", () => {
+  const script = fs.readFileSync(path.join(__dirname, "..", "scripts", "verify-restore-equivalence.mjs"), "utf8");
+  assert.match(script, /inventory\.schemaTables\.length >= 29/);
+  assert.match(script, /Object\.keys\(tenantRowCounts\)\.length >= 29/);
+  assert.match(script, /WHERE n\.nspname='public'/, "The function inventory is discovered from pg catalogs rather than a fixed function list.");
 });

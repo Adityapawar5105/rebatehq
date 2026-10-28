@@ -119,10 +119,10 @@ test("migration lint rejects privilege changes on Supabase-managed schemas", asy
   }
 });
 
-test("new SECURITY DEFINER functions need an explicit revoke and grantee allowlist", async () => {
+test("new functions need guarded revokes from every platform role and an explicit grantee allowlist", async () => {
   const sql = `CREATE FUNCTION public.future_helper() RETURNS boolean
 LANGUAGE sql SECURITY DEFINER SET search_path=public,pg_temp AS $$ SELECT true $$;`;
-  await assertLintFailure(sql, /SECURITY DEFINER function public\.future_helper must explicitly REVOKE ALL FROM PUBLIC/);
-  await assertLintFailure(sql, /needs an explicit EXECUTE grantee list/);
-  await assertLintFailure(`${sql}\nREVOKE ALL ON FUNCTION public.future_helper() FROM PUBLIC;\nGRANT EXECUTE ON FUNCTION public.future_helper() TO PUBLIC;`, /must not grant EXECUTE to PUBLIC/);
+  await assertLintFailure(sql, /function public\.future_helper must explicitly or conditionally REVOKE ALL/);
+  await assertLintFailure(sql, /function public\.future_helper needs an explicit EXECUTE grantee list/);
+  await assertLintFailure(`${sql}\nREVOKE ALL ON FUNCTION public.future_helper() FROM PUBLIC, anon, authenticated, service_role;\nGRANT EXECUTE ON FUNCTION public.future_helper() TO PUBLIC;`, /must not grant EXECUTE to PUBLIC/);
 });

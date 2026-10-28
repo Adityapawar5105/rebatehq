@@ -274,6 +274,8 @@ async function snapshot(pool, applicationTableNames, authUserIds) {
   const authUserCount = authUserIds.length
     ? Number((await pool.query("SELECT count(*)::int AS count FROM auth.users WHERE id=ANY($1::uuid[])", [authUserIds])).rows[0].count)
     : 0;
+  assert.ok(Object.keys(tenantRowCounts).length >= 29,
+    `Restore equivalence found only ${Object.keys(tenantRowCounts).length} tenant tables; expected at least 29 after Chunk 2A.`);
   assert.equal(authUserCount, authUserIds.length, "A referenced auth.users ID is missing from the source or restored target.");
   const sentinelResult = await pool.query(`
     SELECT p.tenant_id::text,p.id::text,md5(jsonb_build_object(
@@ -317,7 +319,8 @@ async function main() {
   if (!databaseUrl) throw new Error(`${mode === "--snapshot" ? "RESTORE_TEST_SOURCE_DATABASE_URL" : "RESTORE_TEST_TARGET_DATABASE_URL"} is required.`);
   const inventory = JSON.parse(readFileSync(inventoryPath, "utf8"));
   assert.deepEqual(inventory.applicationSchemas, ["public"], "Restore equivalence only accepts the reviewed public application schema allowlist.");
-  assert.ok(Array.isArray(inventory.schemaTables) && inventory.schemaTables.length > 0, "Dump inventory must contain application tables.");
+  assert.ok(Array.isArray(inventory.schemaTables) && inventory.schemaTables.length >= 29,
+    `Dump inventory contains ${inventory.schemaTables?.length ?? 0} application tables; expected at least 29 after Chunk 2A.`);
   const applicationTableNames = inventory.schemaTables.map(item => {
     assert.equal(item.schema, "public", `Unexpected non-application table ${item.schema}.${item.table}.`);
     return item.table;

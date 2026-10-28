@@ -29,13 +29,13 @@ pnpm test:db
 
 `pnpm test` runs the Phase 0 margin-engine golden tests, role/import/CSV/secrets/rep-response tests, a static migration guard, and a scan for service-role credentials in user-facing code. `pnpm test:db` runs the pgTAP isolation and audit suite. It uses `TEST_DATABASE_URL` when set (including hosted disposable restore targets); otherwise it delegates to `supabase test db` for the local stack. `pnpm check:db-role` connects through `APP_DATABASE_URL`, checks the actual pool login and effective app role, and verifies that a request without user context sees zero tenants.
 
-### Phase 1 verification status — 2026-10-24
+### Phase 1 verification status — 2026-10-26
 
-- TypeScript, unit/security checks, schema checks, and production build: **passed** in this workspace.
-- GitHub Actions database workflow: **unverified** until a passing run is linked here. It starts a fresh local Supabase stack, runs `supabase db reset` to apply every migration, derives `SEED_DATABASE_URL` and `TEST_DATABASE_URL` from `supabase status`, creates a random non-bypass app login, checks the runtime pool role, and runs `pnpm test:db`. It needs no GitHub secrets.
-- Local Postgres RLS integration tests: **unverified**. This workspace has no Docker/Postgres; a previous `pnpm test:db` attempt stopped before SQL with `ECONNREFUSED 127.0.0.1:54322`.
-- Runtime connection-role check: **unverified** in a real database run; it is included in CI with a locally generated restricted login.
-- Restore drill: **unverified** until the manual restore workflow has a passing run linked here. The default local mode dumps the migrated and seeded local DB, discards it, starts a fresh Supabase stack, restores roles/schema/data, checks the sentinel, and re-runs app-role and pgTAP checks. See [`OPERATIONS.md`](./OPERATIONS.md).
+Phase 1 is proven. [MarginDesk CI #24](https://github.com/Adityapawar5105/margindesk/actions/runs/40290388651/job/121463801598) passed on commit `aabfb20`, including migration, runtime role, unit/security, typecheck, build, and 53 fresh-mode pgTAP checks. [MarginDesk Restore Drill #8](https://github.com/Adityapawar5105/margindesk/actions/runs/40291362616/job/121466953508) passed end to end in local Supabase mode, including source/target comparisons and 56 restore-mode checks. Both test suites passed repeatability checks. Hosted-Supabase restore mode and managed backup/PITR remain **unverified**.
+
+### Chunk 2A verification status — 2026-10-28
+
+Migration `202610280001_chunk2a_cost_units_currency.sql` is pending in `migrations.lock` and has not been verified in CI. Local checks execute it in PGlite against both an empty Phase 1 schema and seeded Phase 1 data; the full fresh and restore-mode pgTAP SQL also executes there with local auth/role/pgTAP stubs. A PGlite runtime integration test covers the new quote, conversion, import, waterfall, and export database paths. These local checks do not verify real Supabase/Postgres RLS or restore behavior. The expected plans are 70 fresh checks and 73 restore-mode checks. See [`SECURITY_CHECK.md`](./SECURITY_CHECK.md) and [`OPERATIONS.md`](./OPERATIONS.md); do not treat the pending migration as applied.
 
 #### Run the database checks locally (Windows PowerShell)
 

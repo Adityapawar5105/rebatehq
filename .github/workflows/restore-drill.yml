@@ -169,6 +169,22 @@ jobs:
         env:
           RESTORE_TEST_TARGET_DATABASE_URL: ${{ secrets.RESTORE_TEST_TARGET_DATABASE_URL }}
         run: pnpm check:restore-target
+      - name: Install and verify required range-constraint extension (local)
+        if: inputs.target == 'local'
+        shell: bash
+        run: |
+          docker exec "$RESTORE_DB_CONTAINER" psql -U postgres -d postgres --set ON_ERROR_STOP=1 \
+            --command 'CREATE EXTENSION IF NOT EXISTS btree_gist WITH SCHEMA extensions;' \
+            --command "DO \$verify\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_extension e JOIN pg_namespace n ON n.oid=e.extnamespace WHERE e.extname='btree_gist' AND n.nspname='extensions') THEN RAISE EXCEPTION 'btree_gist is not installed in schema extensions'; END IF; END \$verify\$;"
+      - name: Install and verify required range-constraint extension (hosted)
+        if: inputs.target == 'hosted'
+        env:
+          RESTORE_TEST_TARGET_DATABASE_URL: ${{ secrets.RESTORE_TEST_TARGET_DATABASE_URL }}
+        shell: bash
+        run: |
+          docker run --rm postgres:17-alpine psql "$RESTORE_TEST_TARGET_DATABASE_URL" --set ON_ERROR_STOP=1 \
+            --command 'CREATE EXTENSION IF NOT EXISTS btree_gist WITH SCHEMA extensions;' \
+            --command "DO \$verify\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_extension e JOIN pg_namespace n ON n.oid=e.extnamespace WHERE e.extname='btree_gist' AND n.nspname='extensions') THEN RAISE EXCEPTION 'btree_gist is not installed in schema extensions'; END IF; END \$verify\$;"
       - name: Restore owned roles and application schema (local)
         if: inputs.target == 'local'
         shell: bash
