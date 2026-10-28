@@ -1,6 +1,6 @@
 # MarginDesk Phase 1
 
-**Chunk 2B status — unverified in CI:** pricing precedence and tiered rebate audit are implemented locally. The new migration is pending; current working-tree plans are 88 fresh / 91 restore checks with a 33-table minimum. Prior green CI #27 / Restore Drill #10 prove Chunk 2A only. See OPERATIONS.md and SECURITY_CHECK.md for local SQL execution and remaining verification. No Chunk 2C work.
+**Chunk 2B status — verified:** pricing precedence and tiered rebate audit are **verified in [MarginDesk CI #29](https://github.com/Adityapawar5105/margindesk/actions/runs/40729384500) and [MarginDesk Restore Drill #11](https://github.com/Adityapawar5105/margindesk/actions/runs/40730343531), 2026-10-28, commit `13cea5a`**. The migration is locked with its unchanged normalized hash. Both suites passed with **88 fresh / 91 restore-mode pgTAP checks** and **33 tenant tables**. Hosted-target restore, managed backup/PITR and deployed UI flows not exercised by those runs remain **unverified**. See [the verification record](./CHUNK_2B_VERIFICATION.md). No Chunk 2C work.
 
 
 MarginDesk is being moved from a browser-local prototype to a multi-tenant app for mid-market distributors. Phase 1 adds the production foundation: Supabase Auth magic links, tenant and role enforcement, PostgreSQL RLS, audit logging, and a safe prototype import/export path. It does not add new pricing, rebate, or ERP features.
@@ -38,7 +38,7 @@ Phase 1 is proven. [MarginDesk CI #24](https://github.com/Adityapawar5105/margin
 
 ### Chunk 2A verification status — 2026-10-28
 
-Chunk 2A and the restore-platform-ACL-cleanup procedure are **verified in [MarginDesk CI #27](https://github.com/Adityapawar5105/margindesk/actions/runs/40711121913) and [MarginDesk Restore Drill #10](https://github.com/Adityapawar5105/margindesk/actions/runs/40711768732), 2026-10-28, commit `d4c907c`**. Migration `202610280001_chunk2a_cost_units_currency.sql` is locked in `migrations.lock` with its existing normalized hash. The current database plans are 70 fresh and 73 restore-mode checks across at least 29 tenant tables. The local-target restore passed strict ACL/count comparisons, four function ACL checkpoints, sentinel/runtime checks and repeatability. Hosted-target restore, managed backup/PITR and deployed UI flows not exercised by these jobs remain **unverified**. See [`SECURITY_CHECK.md`](./SECURITY_CHECK.md) and [`OPERATIONS.md`](./OPERATIONS.md).
+Chunk 2A and the restore-platform-ACL-cleanup procedure are **verified in [MarginDesk CI #27](https://github.com/Adityapawar5105/margindesk/actions/runs/40711121913) and [MarginDesk Restore Drill #10](https://github.com/Adityapawar5105/margindesk/actions/runs/40711768732), 2026-10-28, commit `d4c907c`**. Migration `202610280001_chunk2a_cost_units_currency.sql` is locked in `migrations.lock` with its existing normalized hash. The historical Chunk 2A plans were 70 fresh and 73 restore-mode checks across at least 29 tenant tables. The local-target restore passed strict ACL/count comparisons, four function ACL checkpoints, sentinel/runtime checks and repeatability. Hosted-target restore, managed backup/PITR and deployed UI flows not exercised by these jobs remain **unverified**. See [`SECURITY_CHECK.md`](./SECURITY_CHECK.md) and [`OPERATIONS.md`](./OPERATIONS.md).
 
 #### Run the database checks locally (Windows PowerShell)
 

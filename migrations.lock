@@ -8,26 +8,24 @@
   "hashUpdateReason": "Windows CRLF versus CI LF caused different raw-byte hashes; normalized hash matches the CI content hash.",
   "sqlContentUnchangedSinceBaselineRun": true,
   "lockUpdateDate": "2026-10-28",
-  "lockUpdateReason": "Chunk 2A promoted from pending to locked after MarginDesk CI #27 and local Restore Drill #10 passed on d4c907c; normalized hash and SQL content unchanged.",
-  "appliedThrough": "202610280001_chunk2a_cost_units_currency.sql",
+  "lockUpdateReason": "Chunk 2B promoted from pending to locked after MarginDesk CI #29 and local Restore Drill #11 passed on 13cea5a; normalized hash and SQL content unchanged.",
+  "appliedThrough": "20261028162156_chunk2b_pricing_rebate_tiers.sql",
   "appliedMigrations": {
     "202610240001_phase1_foundation.sql": "8faa57997119f29b3921b0e15b4b9e964edbc7fa2ecd8b52fbe32392be38c3bb",
     "202610250001_revoke_platform_public_privileges.sql": "d4b48072fac75e3d5a6683fe4b13e00042c9feb5a6a65a9e5576e44ecb9214a2",
     "202610250002_revoke_platform_function_privileges.sql": "39965a95a99202f8e47fa0af55dcda66ff408a226a216643cccf3fa18afcf970",
-    "202610280001_chunk2a_cost_units_currency.sql": "f4888808046c959dde4bd107c7e782eee0282348f792705c9b77c27e531988de"
+    "202610280001_chunk2a_cost_units_currency.sql": "f4888808046c959dde4bd107c7e782eee0282348f792705c9b77c27e531988de",
+    "20261028162156_chunk2b_pricing_rebate_tiers.sql": "4f5e2795ffa22974e69cb3d2c3fc745a78653ff81bfa4385494884aa8f0b413a"
   },
   "appliedOrder": [
     "202610240001_phase1_foundation.sql",
     "202610250001_revoke_platform_public_privileges.sql",
     "202610250002_revoke_platform_function_privileges.sql",
-    "202610280001_chunk2a_cost_units_currency.sql"
-  ],
-  "pendingOrder": [
+    "202610280001_chunk2a_cost_units_currency.sql",
     "20261028162156_chunk2b_pricing_rebate_tiers.sql"
   ],
-  "pendingMigrations": {
-    "20261028162156_chunk2b_pricing_rebate_tiers.sql": "4f5e2795ffa22974e69cb3d2c3fc745a78653ff81bfa4385494884aa8f0b413a"
-  },
+  "pendingOrder": [],
+  "pendingMigrations": {},
   "appliedMigrationEvidence": {
     "202610250001_revoke_platform_public_privileges.sql": {
       "date": "2026-10-26",
@@ -46,6 +44,12 @@
       "commit": "d4c907c67e8bb7600c51bd2c0a18fc09f7e4579b",
       "ciRun": "https://github.com/Adityapawar5105/margindesk/actions/runs/40711121913",
       "restoreRun": "https://github.com/Adityapawar5105/margindesk/actions/runs/40711768732"
+    },
+    "20261028162156_chunk2b_pricing_rebate_tiers.sql": {
+      "date": "2026-10-28",
+      "commit": "13cea5a7d17c614e8bd9ccd18bacf2d97b6bd12a",
+      "ciRun": "https://github.com/Adityapawar5105/margindesk/actions/runs/40729384500",
+      "restoreRun": "https://github.com/Adityapawar5105/margindesk/actions/runs/40730343531"
     }
   }
 }
