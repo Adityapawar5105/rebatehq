@@ -1,12 +1,22 @@
 # Chunk 3C verification
 
-**Status: implemented, unverified in GitHub Actions.** No new passing CI or restore run is claimed. Earlier 3A/3B/capacity/close-out runs remain historical baselines. Phase 4 has not started. Implementation began 2026-10-29.
+**Chunk 3C and Phase 3: verified in [MarginDesk CI #39](https://github.com/Adityapawar5105/margindesk/actions/runs/40937330833) and [MarginDesk Restore Drill #13](https://github.com/Adityapawar5105/margindesk/actions/runs/40938982321), 2026-10-30 (Asia/Calcutta), commit `2f8b06de5b50564c186a2bf2c38a7ba884ca0958`.** GitHub run metadata, step results and downloaded job logs were inspected for this close-out. Actions timestamps are 2026-10-29 UTC, corresponding to 2026-10-30 locally. Implementation began 2026-10-29. Phase 4 has not started.
+
+| Acceptance | Verified evidence |
+|---|---|
+| Clean migration/security gates | CI #39: migration hashes/schema/service-role gates, typecheck, 107 unit/security tests, build, Supabase reset, ignored-privilege warning gate and restricted runtime/no-context check. |
+| Fresh database suite | CI #39: **162 checks**, planned = ran, twice with unchanged table counts. |
+| Local-target restore | Restore Drill #13: owned-role filtering, scoped schema/data restore with ON_ERROR_STOP, synthetic auth references, strict ACL/count/column/evidence/ingestion-hash comparisons, sentinel and runtime/no-context checks. |
+| Restored database suite | Restore Drill #13: **165 checks**, planned = ran, twice with unchanged counts; **38 tenant tables**. |
+| 10,000-row real-Postgres benchmark | CI #39: `commitImport` **11,605 ms**, `undoImport` **3,442 ms**, PostgreSQL **17.11**, restricted **`margindesk_app`**, audit/exact-restoration/no-residue checks passed. |
+
+Benchmark timings exclude **parsing, setup, network and durable COMMIT/WAL flush**. This is a disposable fresh-catalog measurement and **not a serverless latency guarantee**. Prior 3A/3B/capacity/close-out evidence remains historical; the benchmark numbers are from CI #39, not CI #37.
 
 ## What changed
 
 | Area | Files and behavior |
 |---|---|
-| Invoice evidence | Pending `20261029175710_chunk3c_invoice_actual_cost.sql`: nullable numeric line-total actual cost plus source, paired/non-negative/non-NaN constraints, and an invoice-component lookup index. No fabricated backfill. |
+| Invoice evidence | Locked `20261029175710_chunk3c_invoice_actual_cost.sql`: nullable numeric line-total actual cost plus source, paired/non-negative/non-NaN constraints, and an invoice-component lookup index. No fabricated backfill. |
 | Readiness | `lib/readiness.ts`, `components/DataReadiness.tsx`, dashboard/loading/error: cost-role-only completeness counts, visible formula, missing counts and specific improvement steps. No margin-engine changes. |
 | Safe Sheets fetch | `lib/sheets-fetch.ts`: narrow HTTPS host/path allowlists, every-address DNS checks, pinned fresh TLS connections, redirect/deadline/streamed-size controls and CSV content validation. No credentials/cookies forwarded. |
 | Scheduled staging | `lib/ingestion.ts`, `/api/ingestion`, `scripts/run-scheduled-ingestion.ts`: existing mapping/sync/import tables, due claims/leases, safe failure records, edit/pause/resume/manual run and an operator CLI. Editing preserves a paused schedule. Fetch success stages a review; it never commits catalog data. |
@@ -14,7 +24,7 @@
 | Flags/stubs | `.env.example`: all three server flags default false. Email uses tenant-specific `.invalid` addresses and SFTP uses preview paths. No receiving servers or upload endpoints exist. |
 | Restore and CI | Column metadata plus evidence/mapping/sync content-hash comparison, stronger source seed, 162/165 plans, and a new real-Postgres 10,000-row benchmark step with job-summary timings. |
 
-No new table or public SQL function was needed. Existing `import_job`, `column_mapping_template`, `connector_sync_run`, UOM and data-quality helpers are reused. The table minimum stays **38**, function ACL manifest is unchanged, and all six locked migration SQL files and hashes remain unchanged. Only the new migration is pending, with normalized SHA-256:
+No new table or public SQL function was needed. Existing `import_job`, `column_mapping_template`, `connector_sync_run`, UOM and data-quality helpers are reused. The table minimum stays **38**, function ACL manifest is unchanged, and all six earlier locked migration SQL files/hashes/evidence remain unchanged. The Chunk 3C migration is now promoted from pending to **locked**, with the same normalized SHA-256 recorded by CI #39 / Restore Drill #13:
 
 `c5d8c6da2caf5018ace042ed8ff79e988781c096af51a9b3776ef68c1930a353`
 
@@ -41,7 +51,7 @@ The dashboard shows the exact sentence: “First insights in minutes from files;
 
 Fresh cases stage a new product; populated cases update an existing product/cost history. Per-column hashes identify the exact changed header letters without storing raw headers. Older fingerprint-only templates are rejected for scheduling with an explicit re-save instruction; manual template loading remains compatible.
 
-The six added pgTAP checks prove actual-cost field types; missing-source and negative-amount rejection; own-row reads/writes with one audit per row; cross-tenant invisibility/reassignment RLS `42501`; and rep read/write denial. They run outside the app role only for assertions, preserving the existing restricted-role capture structure. New plans are **162 fresh / 165 restore mode**, planned = ran. The full PGlite SQL harness ran twice fresh and twice with restored-style source data, with unchanged counts. Its platform auth/roles/pgTAP functions are minimal local stubs; real Supabase acceptance remains unverified.
+The six added pgTAP checks prove actual-cost field types; missing-source and negative-amount rejection; own-row reads/writes with one audit per row; cross-tenant invisibility/reassignment RLS `42501`; and rep read/write denial. They run outside the app role only for assertions, preserving the existing restricted-role capture structure. Plans are **162 fresh / 165 restore mode**, planned = ran, verified in CI #39 / Restore Drill #13. The earlier local PGlite harness also ran twice fresh and twice with restored-style source data, with unchanged counts; its auth/roles/pgTAP stubs are local evidence, separate from the now-passing real Supabase/Postgres acceptance.
 
 ## Every new SQL statement executed locally
 
@@ -64,15 +74,28 @@ A temporary local HTTP/PGlite harness mounted the actual readiness/workspace/ing
 
 A separate read-only smoke used the sample spreadsheet linked in [Google's official Node quickstart](https://developers.google.com/workspace/sheets/api/quickstart/nodejs). The production fetcher followed a **307** to an allowed `doc-…-sheets.googleusercontent.com` export host, received **200**, and parsed **1,408 bytes / 30 data rows**. Only status/counts were printed; no cells or redirect tokens were logged. This is local smoke evidence, not a CI or private-Sheets/OAuth test. Google documents publication/sharing limits in its [publishing guide](https://support.google.com/docs/answer/183965?hl=en); private/confidential files should use manual upload here. Transport behavior was checked against [Node HTTPS](https://nodejs.org/api/https.html) and [DNS](https://nodejs.org/api/dns.html) documentation.
 
-## Commands and acceptance limits
+## Original implementation local commands
 
 - `pnpm test`: **passed twice, 67 JavaScript + 40 TypeScript tests (107 total)**; includes margin goldens, existing upload/import regressions, all new tests and schema/lock/service-role gates. The latest TypeScript phase took about 385.7 seconds.
 - Targeted ingestion/review tests were rerun after the final populated-data, header-column and paused-edit changes: six tests passed.
 - `pnpm typecheck`: passed after the final UI and schedule-edit changes.
 - `pnpm build`: passed, including `/api/ingestion` and the dashboard loading/error paths.
-- `pnpm check:migrations-lock`: passed, six locked/applied and one pending; all prior hashes unchanged.
-- Docker and psql are unavailable locally. No real-Postgres timing or new actual Supabase/restore result is claimed.
+- `pnpm check:migrations-lock`: passed at implementation time with six locked/applied and one pending; the close-out below now locks all seven without changing SQL or hashes.
+- Docker and psql were unavailable locally. Real-Postgres timing and actual Supabase/restore results above come from the downloaded CI #39 / Restore Drill #13 logs, not a local Postgres run.
 
-CI now runs `pnpm benchmark:import` with the existing disposable database connection/setup. It performs 10,000-row `commitImport`/`undoImport` work as the restricted app role, prints `REAL_POSTGRES_IMPORT_TIMING`, and writes a summary. Role/audit/exact restoration and all-table no-residue checks are mandatory. Fixture rollback excludes durable outer COMMIT/WAL flush; parsing/setup/network are outside the timing. It is not a deployed/serverless latency guarantee.
+`pnpm benchmark:import` passed in CI #39 using the existing disposable database setup. Its log reports `{"rows":10000,"commit_ms":11605,"undo_ms":3442,"postgres_version":"17.11","role":"margindesk_app"}`. Role/audit/exact restoration and all-table no-residue checks passed. Fixture rollback excludes durable outer COMMIT/WAL flush; parsing/setup/network are outside the timing. It is not a deployed/serverless latency guarantee.
 
-**Unverified until green Actions runs:** this chunk's migration and real 162/165-check acceptance; new end-to-end restore including content hashes; new real-Postgres 10,000-row timings. **Still unverified/deferred:** authenticated Next.js/deployed Supabase, private Sheets/OAuth, deployed recurring scheduling/worker contention/crash recovery, hosted-target restore/PITR, pre-backup journal undo after real restore, serverless limits and formal accessibility. Phase 1 audit-actor trust and failed-login bounds/rate limiting remain open in ASSUMPTIONS. No Phase 4 feature was started.
+**Still unverified:** authenticated Next.js behavior, the deployed Supabase app, hosted-target restore, serverless time limits, recurring schedule execution (requires an operator-configured runner), live email and SFTP ingestion, and browser UI beyond the local harness. Private Sheets/OAuth, worker contention/crash recovery, managed backup/PITR, pre-backup journal undo after real restore and formal accessibility are also unverified/deferred. Phase 1 audit-actor trust and failed-login bounds/rate limiting remain open in ASSUMPTIONS. Phase 3's automated scope is verified; no Phase 4 feature was started.
+
+## Acceptance close-out local checks — 2026-10-30
+
+Only the seven requested Markdown records and `migrations.lock` changed. No application code, test logic, migration SQL or earlier lock hashes/evidence changed.
+
+| Command | Result |
+|---|---|
+| `pnpm test` | Passed: **67 JavaScript + 40 TypeScript tests (107 total)**, zero failures/skips. TypeScript phase: about **425.7 seconds**; includes margin goldens, fresh/populated capacity and rollback tests, security and SQL execution inventories. |
+| `pnpm typecheck` | Passed. |
+| `pnpm build` | Passed: production Next.js build. |
+| `pnpm check:migrations-lock` | Passed: **seven locked/applied, zero pending**. Chunk 3C uses its existing normalized hash; all six previous hashes and evidence entries were compared with HEAD and are unchanged. |
+
+`git diff --check` passed; no migration SQL is modified. These local commands do not exercise the authenticated/deployed/hosted behaviors listed above or create a new real-Postgres benchmark; the real benchmark is the CI #39 evidence recorded at the top.

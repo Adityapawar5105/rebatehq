@@ -1,6 +1,20 @@
-# Import capacity follow-up — 2026-10-29
+# Import capacity verification — updated 2026-10-30
 
-This record describes the CI #37 capacity milestone. Chunk 3C now adds a real-Postgres timing step, still unverified until a green run; see [CHUNK_3C_VERIFICATION.md](./CHUNK_3C_VERIFICATION.md). No real-Postgres timing values are retroactively attributed to CI #37.
+**Chunk 3C and Phase 3 are verified in [MarginDesk CI #39](https://github.com/Adityapawar5105/margindesk/actions/runs/40937330833) and [MarginDesk Restore Drill #13](https://github.com/Adityapawar5105/margindesk/actions/runs/40938982321), 2026-10-30 (Asia/Calcutta), commit `2f8b06d`.** Current acceptance is **162 fresh / 165 restore-mode checks**, planned = ran with two-run repeatability, **38 tenant tables** and seven locked migrations. Restore Drill #13 used a local target. Phase 4 has not started. See [CHUNK_3C_VERIFICATION.md](./CHUNK_3C_VERIFICATION.md).
+
+## Real-Postgres 10,000-row timing — verified in CI #39
+
+Downloaded CI #39 job logs report `REAL_POSTGRES_IMPORT_TIMING {"rows":10000,"commit_ms":11605,"undo_ms":3442,"postgres_version":"17.11","role":"margindesk_app"}`:
+
+| Rows | PostgreSQL | Effective role | commitImport | undoImport |
+|---:|---|---|---:|---:|
+| 10,000 | 17.11 | `margindesk_app` | **11,605 ms** | **3,442 ms** |
+
+This benchmark executes the real import modules in a disposable fresh catalog as the non-superuser/non-bypass app role, with business/audit triggers active. Audit/exact-restoration and all-table no-residue checks passed. Timings exclude **parsing, setup, network and durable COMMIT/WAL flush**: the fixture transaction is rolled back. **This is not a serverless latency guarantee**, a deployed throughput claim, or a measurement of populated-history/concurrent workloads.
+
+**Still unverified:** authenticated Next.js behavior, the deployed Supabase app, hosted-target restore, serverless time limits, recurring schedule execution (requires an operator-configured runner), live email and SFTP ingestion, and browser UI beyond the local harness. Independent-session contention, formal accessibility, managed backup/PITR and pre-backup journal undo after real restore also remain unverified.
+
+The rest of this record preserves the earlier CI #37 capacity milestone and original local measurements. No real-Postgres timing values are retroactively attributed to CI #37.
 
 **Verified in [MarginDesk CI #37 on `32aff35`](https://github.com/Adityapawar5105/margindesk/commit/32aff35cd2842723206272a4147769779aa5a0d3/checks), 2026-10-29; CI job duration: 10m 24s.** The configurable **10,000-row** `MAX_IMPORT_DATA_ROWS`, batched commit/undo with exact restoration, and later-batch rollback passed the fresh/populated PGlite tests. This supersedes the former 200-row capacity evidence from [CI #35](https://github.com/Adityapawar5105/margindesk/actions/runs/40844679109), commit `87d7d90`. No Restore Drill was run because no migration or restore inventory changed. Chunk 3C had not started at that milestone; its current status is recorded in CHUNK_3C_VERIFICATION.md.
 
@@ -8,9 +22,9 @@ This record describes the CI #37 capacity milestone. Chunk 3C now adds a real-Po
 
 The user confirmed CI #37 was green on commit `32aff35` and supplied the **10m 24s** job duration. The citation links to that commit's checks page: the exact run URL was not supplied, the connector only lists pull-request runs, and Windows browser URL-policy support prevented direct log inspection. The job log was not independently downloaded for this documentation update.
 
-The checked-in workflow runs `pnpm test`, typecheck, build and migration-lock/schema/service-role gates, then starts local Supabase, applies migrations, verifies the restricted runtime pool/no-context behavior and runs the existing repeated **156-check fresh pgTAP suite**. `pnpm test` includes **67 JavaScript + 27 TypeScript tests**, with the capacity/batch/rollback coverage described below. All six migrations remain locked, the inventory remains **38 tenant tables**, and the **159 restore-mode** checks retain their earlier Restore Drill #12 evidence.
+At CI #37, the workflow ran `pnpm test`, typecheck, build and migration-lock/schema/service-role gates, then started local Supabase, applied migrations, verified the restricted runtime pool/no-context behavior and ran the repeated **156-check fresh pgTAP suite**. Its `pnpm test` included **67 JavaScript + 27 TypeScript tests**, with the capacity/batch/rollback coverage described below. That milestone had six locked migrations and **38 tenant tables**, with the **159 restore-mode** checks retaining earlier Restore Drill #12 evidence. The current seven-migration/162-fresh/165-restore baseline is verified by CI #39 / Restore Drill #13 above.
 
-**Real-Postgres commit and undo timings were not captured by the workflow.** `tests/import-capacity.test.ts` creates PGlite and emits `IMPORT_CAPACITY_TIMING` there; the separate real-Postgres pgTAP/repeatability scripts do not benchmark `commitImport` or `undoImport`. The 10m 24s job duration is not import latency. Local PGlite timings below remain local measurements; no CI or real-Postgres timing values are inferred from them.
+**Real-Postgres commit and undo timings were not captured in CI #37.** `tests/import-capacity.test.ts` creates PGlite and emits `IMPORT_CAPACITY_TIMING` there; the real-Postgres pgTAP/repeatability scripts do not benchmark `commitImport` or `undoImport`. The separate `pnpm benchmark:import` step added for Chunk 3C now provides the CI #39 real-Postgres timings above. CI #37's 10m 24s job duration is not import latency. Local PGlite timings below remain local measurements; no real-Postgres timing values are inferred from them.
 
 ## Implementation
 
@@ -78,4 +92,4 @@ For this CI #37 acceptance documentation update on 2026-10-29, all four commands
 
 A temporary local HTTP/PGlite browser harness mounted the actual wizard/actions/history components. At 200 rows it passed full issue download, issue/change paging, conflicts saved on both pages, one catalog job, commit/undo counts, inert malicious markup, one primary action, 44px buttons and a 390px layout without horizontal overflow. Desktop/mobile screenshots were inspected. The harness used a fixed test actor; it did not exercise actual Next.js authentication or deployed Supabase.
 
-**Unverified:** authenticated Next.js behavior; the deployed Supabase app; serverless time limits; browser UI beyond the local harness, including 10,000-row rendering/network behavior; hosted throughput, memory and independent-session contention; hosted-target restore; undo of a pre-backup journal after a real restore; formal accessibility testing. CI #37 verifies the automated capacity/batching/rollback tests, not these deployed behaviors. No new restore run was performed because migrations and restore inventory are unchanged.
+**Unverified:** authenticated Next.js behavior; the deployed Supabase app; serverless time limits; browser UI beyond the local harness, including 10,000-row rendering/network behavior; hosted throughput, memory and independent-session contention; hosted-target restore; recurring schedule execution without an operator-configured runner; live email and SFTP ingestion; undo of a pre-backup journal after a real restore; formal accessibility testing. CI #37 verifies automated capacity/batching/rollback tests, not these deployed behaviors. No restore was run for that capacity-only milestone; the later local-target Restore Drill #13 and CI #39 results are recorded above.
