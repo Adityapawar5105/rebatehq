@@ -7,5 +7,6 @@ export type ImportDiff = {
 export type ImportPlan = {
  id:string;filename:string;currency:string;rows:ImportDiff[];counts:Record<ImportDiff["state"],number>;
  conflicts:number;canCommit:boolean;expiresAt:string;warnings:string[];
+ totalRows:number;offset:number;pageSize:number;
 };
 export type ImportHistory = {id:string;filename:string;status:string;who:string;when:string;accepted:number;rejected:number;unchanged:number;undoneAt:string|null;canUndo:boolean};

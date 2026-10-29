@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {randomUUID} from "node:crypto";
 import {readFileSync,readdirSync} from "node:fs";
-import {exportLifeline,previewImport,commitImport,undoImport,importHistory,decimal,perBaseUnit,ImportOptions} from "../lib/import-lifecycle";
+import {exportLifeline,previewImport,commitImport,undoImport,importHistory,decimal,perBaseUnit,ImportOptions,importPlanPage,resolveImportChoices} from "../lib/import-lifecycle";
+import {MAX_IMPORT_DATA_ROWS} from "../lib/import-config";
 import {parseUpload} from "../lib/upload-parser";
 import {csvDocument} from "../lib/csv";
 import {calculateServerQuote} from "../lib/margin";
@@ -57,6 +58,9 @@ test("catalog lifecycle is isolated, audited, conflict-aware and exactly reversi
    const conflict=await previewImport(db,tenant,user,"edited.csv",edited,options(date));
    assert.equal(conflict.conflicts,1);assert.equal(conflict.canCommit,false);
    assert.equal(conflict.rows[0].conflict!.baseline.description,"Original");assert.equal(conflict.rows[0].conflict!.app.description,"App name");assert.equal(conflict.rows[0].conflict!.file.description,"File name");
+   assert.equal((await importPlanPage(db,tenant,conflict.id)).totalRows,2);
+   const resolved=await resolveImportChoices(db,tenant,conflict.id,{"2":"file"});assert.equal(resolved.conflicts,0);assert.equal(resolved.canCommit,true);
+   await resolveImportChoices(db,tenant,conflict.id,{"2":"review"});
    await assert.rejects(commitImport(db,tenant,user,conflict.id),denied(409));
    const keep=await previewImport(db,tenant,user,"edited.csv",edited,options(date,{decisions:{"2":"app"}}));assert.equal(keep.rows[0].state,"unchanged");
    assert.deepEqual(await domain(db,tenant),baseline,"dry runs never mutate business rows");
@@ -150,7 +154,8 @@ test("same-day updates, future gaps, explicit unit conversion and stale/key cont
   const removed=structuredClone(exported);removed.headers[1]="renamed";await assert.rejects(previewImport(db,tenant,user,"tamper.csv",removed,options(date)),denied(422));
   const mapped=structuredClone(exported);mapped.mapping.sku=0;await assert.rejects(previewImport(db,tenant,user,"tamper.csv",mapped,options(date)),denied(422));
   const wrongCase=structuredClone(exported);wrongCase.headers[0]="MD_ROW_ID";await assert.rejects(previewImport(db,tenant,user,"tamper.csv",wrongCase,options(date)),denied(422));
-  await assert.rejects(previewImport(db,tenant,user,"large.csv",parse("SKU,Unit,Cost,Price\n"+Array.from({length:201},(_,i)=>`N${i},EA,1,2`).join("\n")),options(date)),denied(422));
+  const overflow=structuredClone(input);overflow.rows=Array.from({length:MAX_IMPORT_DATA_ROWS+1},(_,i)=>({...input.rows[0],row:i+2}));
+  await assert.rejects(previewImport(db,tenant,user,"large.csv",overflow,options(date)),denied(422));
   const caseUnit=randomUUID();await db.query("INSERT INTO public.uom(id,tenant_id,code,display_name) VALUES($1,$2,'CASE','Case')",[caseUnit,tenant]);
   const newCase=await previewImport(db,tenant,user,"case.csv",parse("SKU,Description,Unit,Cost,Price\nNEWCASE,New case,CASE,1,2"),options(date));
   await db.exec("SAVEPOINT removed_unit;");await db.query("DELETE FROM public.uom WHERE tenant_id=$1 AND id=$2",[tenant,caseUnit]);await assert.rejects(commitImport(db,tenant,user,newCase.id),denied(409));await db.exec("ROLLBACK TO SAVEPOINT removed_unit;");
@@ -176,7 +181,7 @@ test("decimal approval is explicit and price-per-base-unit arithmetic never uses
 });
 test("every new runtime SQL statement executed locally in PGlite",()=>{
  let found=0;
- for(const file of ["lib/import-lifecycle.ts","lib/catalog-values.ts","lib/margin.ts"]){
+ for(const file of ["lib/import-lifecycle.ts","lib/import-batches.ts","lib/catalog-values.ts","lib/margin.ts"]){
   const source=ts.createSourceFile(file,readFileSync(file,"utf8"),ts.ScriptTarget.Latest,true);
   const visit=(node:ts.Node)=>{
    if(ts.isCallExpression(node)&&ts.isPropertyAccessExpression(node.expression)&&node.expression.name.text==="query"){

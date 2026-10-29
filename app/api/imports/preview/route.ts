@@ -10,7 +10,8 @@ import {UPLOAD_LIMITS} from "@/lib/upload-types";
 import {ImportOptions,previewImport} from "@/lib/import-lifecycle";
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
-const Options=z.object({sheetId:z.string().max(4),headerRow:z.number().int().min(1).max(2000),mapping:z.record(z.string(),z.number().int().min(0).max(63)),rules:ImportOptions}).strict();
+export const maxDuration=300;
+const Options=z.object({sheetId:z.string().max(4),headerRow:z.number().int().min(1).max(UPLOAD_LIMITS.rows),mapping:z.record(z.string(),z.number().int().min(0).max(63)),rules:ImportOptions}).strict();
 export async function POST(request:Request){try{
  const context=await getAppContext(request.headers);assertPermission(context,"files.review");
  if(!(await rateLimit(request,"import-plan",30,60*60_000)).ok)throw new HttpError(429,"Too many import previews. Try again later.");

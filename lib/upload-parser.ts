@@ -2,6 +2,7 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
 import { HttpError } from "./authz";
+import {MAX_IMPORT_DATA_ROWS,IMPORT_HEADER_SCAN_ROWS} from "./import-config";
 import { workbookParts,parseXml,list,xmlText } from "./upload-archive";
 import { IMPORT_FIELDS,UPLOAD_LIMITS as L,type ColumnMapping,type ParsedUpload,type UploadIssue,type UploadRow,type Cell,type ImportField } from "./upload-types";
 export const columnName=(index:number):string=>{let s="";for(let n=index+1;n>0;n=Math.floor((n-1)/26))s=String.fromCharCode(65+(n-1)%26)+s;return s;};
@@ -23,7 +24,7 @@ export function validateMapping(value:unknown,columns:number):ColumnMapping {
 export function parseDelimited(text:string,delimiter:string):UploadRow[] {
  const rows:UploadRow[]=[];let values:string[]=[],value="",quoted=false,closed=false,line=1,start=1,cells=0;
  const field=()=>{if(value.length>L.cellChars)reject("A cell exceeds the 2,000-character limit.");values.push(value);if(values.length>L.columns)reject("This file has more than 64 columns.");value="";closed=false;};
- const row=()=>{field();cells+=values.length;if(cells>L.cells)reject("This file has too many cells.");rows.push({row:start,cells:values.map(value=>({value,kind:"text"}))});if(rows.length>L.rows)reject("This file has more than 2,000 rows.");values=[];start=line+1;};
+ const row=()=>{field();cells+=values.length;if(cells>L.cells)reject("This file has too many cells.");rows.push({row:start,cells:values.map(value=>({value,kind:"text"}))});if(rows.length>L.rows)reject(`This file exceeds the ${MAX_IMPORT_DATA_ROWS.toLocaleString("en-US")}-data-row limit plus header/preamble allowance.`);values=[];start=line+1;};
  for(let i=0;i<text.length;i++){
   const c=text[i];
   if(quoted){if(c==='"'){if(text[i+1]==='"'){value+='"';i++;}else{quoted=false;closed=true;}}else{value+=c;if(c==='\n')line++;}continue;}
@@ -39,10 +40,10 @@ export function parseDelimited(text:string,delimiter:string):UploadRow[] {
 }
 export type ParseOptions={sheetId?:string;headerRow?:number;mapping?:ColumnMapping};
 function parseUploadInner(filename:string,bytes:Uint8Array,options:ParseOptions={}):ParsedUpload {
- if(!bytes.length)reject("This file is empty.");if(bytes.length>L.bytes)throw new HttpError(413,"This file is larger than 2 MB. Split it into smaller files.");
+ if(!bytes.length)reject("This file is empty.");if(bytes.length>L.bytes)throw new HttpError(413,`This file exceeds the ${L.bytes.toLocaleString("en-US")}-byte upload limit. Split it into smaller files.`);
  const ext=path.extname(filename).toLowerCase().slice(1);if(!["xlsx","csv","tsv"].includes(ext))throw new HttpError(415,"Choose an .xlsx, .csv or .tsv file. Macro-enabled files are not accepted.");
  const issues:UploadIssue[]=[];let rows:UploadRow[]=[];let sheets:ParsedUpload["sheets"]=[],sheetId="text",sheetName="Text file";
- const issue=(code:string,row:number,column:string,message:string)=>{if(issues.length>=L.issues)reject("This file has more than 8,000 issues. Split it into smaller files to review every issue.");issues.push({code,row,column,message,sheet:sheetName});};
+ const issue=(code:string,row:number,column:string,message:string)=>{if(issues.length>=L.issues)reject(`This file has more than ${L.issues.toLocaleString("en-US")} issues. Split it to review every issue.`);issues.push({code,row,column,message,sheet:sheetName});};
  if(ext!=="xlsx"){
   let text:string;try{text=new TextDecoder("utf-8",{fatal:true}).decode(bytes);}catch{reject("Save this CSV/TSV as UTF-8 text before uploading.");}
   if(/[\x00-\x08\x0b\x0c\x0e-\x1f]/.test(text!)||/^\s*(?:PK\x03\x04|<\?xml|<!DOCTYPE|<html|\{|\[)/i.test(text!))reject("The file contents are not a CSV/TSV table.");
@@ -83,11 +84,11 @@ function parseUploadInner(filename:string,bytes:Uint8Array,options:ParseOptions=
   const formats=list<any>(styles?.cellXfs?.xf),custom=list<any>(styles?.numFmts?.numFmt);
   let count=0,lastRow=0;
   for(const row of list<any>(sheet.sheetData?.row)){
-   const rn=Number(row["@r"]);if(!Number.isInteger(rn)||rn<=lastRow||rn>L.rows)reject("Workbook rows must have ordered row numbers within 1–2,000.");lastRow=rn;
+   const rn=Number(row["@r"]);if(!Number.isInteger(rn)||rn<=lastRow||rn>L.rows)reject(`Workbook rows must be ordered and within 1–${L.rows.toLocaleString("en-US")}.`);lastRow=rn;
    const cells:Cell[]=[];let previous=-1;
    if(row["@hidden"]==="1"||row["@hidden"]==="true")issue("hidden_row",rn,"A","This row is hidden in Excel; review it before using it.");
    for(const cell of list<any>(row.c)){
-    const match=/^([A-Z]+)([1-9][0-9]*)$/.exec(cell["@r"]||"");if(!match||Number(match[2])!==rn)reject("A workbook cell has an invalid row/column address.");const c=colIndex(match[1]);if(c<=previous||c>=L.columns||++count>L.cells)reject("Workbook cells exceed the 64-column/50,000-cell limit or repeat an address.");previous=c;
+    const match=/^([A-Z]+)([1-9][0-9]*)$/.exec(cell["@r"]||"");if(!match||Number(match[2])!==rn)reject("A workbook cell has an invalid row/column address.");const c=colIndex(match[1]);if(c<=previous||c>=L.columns||++count>L.cells)reject(`Workbook cells exceed the ${L.columns}-column/${L.cells.toLocaleString("en-US")}-cell limit or repeat an address.`);previous=c;
     while(cells.length<c)cells.push({value:"",kind:"text"});
     const type=cell["@t"]||"n";let value=xmlText(cell.v),kind:Cell["kind"]="text";
     if(cell.f!==undefined){kind="formula";value="="+xmlText(cell.f);issue("formula",rn,columnName(c),"This cell contains an Excel formula. It was not evaluated and its cached value is not used. Replace it with an approved value.");}
@@ -111,12 +112,13 @@ function parseUploadInner(filename:string,bytes:Uint8Array,options:ParseOptions=
  if(!rows.length)reject("The selected sheet has no rows.");
  let header=options.headerRow;
  if(header!==undefined&&(!Number.isInteger(header)||!rows.some(r=>r.row===header)))reject("Choose an existing header row.");
- if(header===undefined){let score=-1;for(const row of rows.slice(0,25)){const s=Object.keys(suggestMapping(row.cells.map(c=>c.value))).length*100+row.cells.filter(c=>c.value.trim()).length;if(s>score){score=s;header=row.row;}}}
+ if(header===undefined){let score=-1;for(const row of rows.slice(0,IMPORT_HEADER_SCAN_ROWS)){const s=Object.keys(suggestMapping(row.cells.map(c=>c.value))).length*100+row.cells.filter(c=>c.value.trim()).length;if(s>score){score=s;header=row.row;}}}
  const headers=rows.find(r=>r.row===header)!.cells.map(c=>c.value);const width=Math.max(...rows.map(r=>r.cells.length));while(headers.length<width)headers.push("");
  const mapping=options.mapping===undefined?suggestMapping(headers):validateMapping(options.mapping,width);
  if(options.headerRow===undefined)issue("header_suggestion",header!,"A","This header row was suggested. Confirm it or choose another row; rows above it are not treated as records.");
  for(let i=0;i<headers.length;i++){if(!headers[i].trim())issue("missing_header",header!,columnName(i),"This column has no header. Map it explicitly or leave it unused.");if(headers[i]&&headers.indexOf(headers[i])!==i)issue("duplicate_header",header!,columnName(i),"This header repeats another column. Confirm the mapping by column letter.");}
  const dataRows=rows.filter(r=>r.row>header!&&r.cells.some(c=>c.value!==""));const seen=new Map<string,number>();
+ if(dataRows.length>MAX_IMPORT_DATA_ROWS)reject(`This file has more than ${MAX_IMPORT_DATA_ROWS.toLocaleString("en-US")} data rows.`);
  for(const row of rows){for(let c=0;c<row.cells.length;c++){
   const cell=row.cells[c],v=cell.value;
   if(v.includes("\uFEFF"))issue("bom_text",row.row,columnName(c),"This cell contains a byte-order-mark character inside its text. It was not removed.");

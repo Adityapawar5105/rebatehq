@@ -7,10 +7,20 @@ import { readBytesLimited } from "@/lib/request";
 import { rateLimit } from "@/lib/rate-limit";
 import { parseUpload } from "@/lib/upload-parser";
 import { UPLOAD_LIMITS } from "@/lib/upload-types";
-import { createImportReview } from "@/lib/import-review";
+import { createImportReview,importReviewIssues } from "@/lib/import-review";
+import {IMPORT_PREVIEW_PAGE_SIZE} from "@/lib/import-config";
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
-const Options=z.object({sheetId:z.string().max(4).optional(),headerRow:z.number().int().min(1).max(2000).optional(),mapping:z.record(z.string(),z.number().int().min(0).max(63)).optional()}).strict();
+export const maxDuration=300;
+const Options=z.object({sheetId:z.string().max(4).optional(),headerRow:z.number().int().min(1).max(UPLOAD_LIMITS.rows).optional(),mapping:z.record(z.string(),z.number().int().min(0).max(63)).optional()}).strict();
+export async function GET(request:Request){try{
+ const context=await getAppContext(request.headers);assertPermission(context,"files.review");
+ const params=new URL(request.url).searchParams;
+ const input=z.object({id:z.uuid(),offset:z.coerce.number().int().min(0).max(UPLOAD_LIMITS.issues),limit:z.coerce.number().int().min(1).max(IMPORT_PREVIEW_PAGE_SIZE*10)}).safeParse({id:params.get("job"),offset:params.get("offset")||0,limit:params.get("limit")||IMPORT_PREVIEW_PAGE_SIZE});
+ if(!input.success)throw new HttpError(400,"Choose a valid review issue page.");
+ const data=await withDatabase(databaseContext(context,request.headers),db=>importReviewIssues(db,context.tenantId,input.data.id,input.data.offset,input.data.limit));
+ return NextResponse.json(data,{headers:{"cache-control":"no-store"}});
+}catch(error){return errorResponse(error);}}
 export async function POST(request:Request){try{
  const context=await getAppContext(request.headers);assertPermission(context,"files.review");
  if(!(await rateLimit(request,"supplier-file-review",30,60*60_000)).ok)throw new HttpError(429,"Too many file reviews. Try again in an hour.");

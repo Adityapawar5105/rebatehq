@@ -5,9 +5,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
 import { parseUpload,parseDelimited,suggestMapping } from "../lib/upload-parser";
 import { UPLOAD_LIMITS } from "../lib/upload-types";
+import {MAX_IMPORT_DATA_ROWS} from "../lib/import-config";
 import { csvDocument } from "../lib/csv";
 import { readBytesLimited } from "../lib/request";
-import { workbook,stringCell } from "./helpers/upload-fixture";
+import { workbook,stringCell,numberCell } from "./helpers/upload-fixture";
 const bytes=(s:string)=>new TextEncoder().encode(s);
 const rejects=(f:()=>unknown)=>assert.throws(f,e=>typeof e==='object'&&e!==null&&'status'in e&&[400,413,415,422].includes(Number(e.status)));
 test('messy XLSX fixture keeps every value and identifies every known problem by row and column',()=>{
@@ -23,6 +24,15 @@ test('sheet and header are explicit choices, and header similarity suggests all 
  rejects(()=>parseUpload('x.xlsx',b,{sheetId:'99'}));rejects(()=>parseUpload('x.xlsx',b,{headerRow:2}));
  assert.deepEqual(suggestMapping(['Part Number','Product Description','UOM','Unit Cost','Selling Price','Vendor','Effective Date','Qty']),{sku:0,description:1,unit:2,cost:3,price:4,supplier:5,date:6,quantity:7});
 });
+test('native XLSX accepts 200 and the configured maximum data rows, rejects one over, and excludes its header',async()=>{
+ for(const count of [200,MAX_IMPORT_DATA_ROWS,MAX_IMPORT_DATA_ROWS+1]){
+  const header=stringCell("A1","SKU")+stringCell("B1","Unit")+stringCell("C1","Cost")+stringCell("D1","Price");
+  const rows=Array.from({length:count},(_,i)=>{const r=i+2;return `<row r="${r}">${stringCell("A"+r,"P-"+i)}${stringCell("B"+r,"EA")}${numberCell("C"+r,"12")}${numberCell("D"+r,"25")}</row>`;}).join("");
+  const data=await workbook({"xl/worksheets/sheet1.xml":`<worksheet><sheetData><row r="1">${header}</row>${rows}</sheetData></worksheet>`});
+  if(count>MAX_IMPORT_DATA_ROWS)rejects(()=>parseUpload("native.xlsx",data,{headerRow:1}));
+  else assert.equal(parseUpload("native.xlsx",data,{headerRow:1}).rows.length,count);
+ }
+});
 test('UTF-8 BOM, semicolon CSV, comma decimals, TSV and multiline quoted cells retain source locations',()=>{
  const r=parseUpload('x.csv',readFileSync('tests/fixtures/messy-supplier.csv'));
  assert.equal(r.rows[0].cells[2].value,'12,50');assert.ok(r.issues.some(i=>i.code==='bom'&&i.row===1&&i.column==='A'));
@@ -36,7 +46,7 @@ test('size, content, extension, column, row and cell limits fail closed without 
  rejects(()=>parseUpload('x.csv',bytes('<html><body>not a table</body></html>')));rejects(()=>parseUpload('x.csv',new Uint8Array([255,254,0,1])));
  rejects(()=>parseUpload('x.xlsm',readFileSync('tests/fixtures/messy-supplier.xlsx')));
  rejects(()=>parseUpload('x.csv',bytes(Array(65).fill('column').join(',')+'\n'+Array(65).fill('1;2').join(','))));
- rejects(()=>parseUpload('x.csv',bytes('A,B\n'+'1,2\n'.repeat(2000))));rejects(()=>parseUpload('x.csv',bytes('A,B\n'+"x".repeat(2001)+',a')));
+ rejects(()=>parseUpload('x.csv',bytes('A,B\n'+'1,2\n'.repeat(MAX_IMPORT_DATA_ROWS+1)),{headerRow:1}));rejects(()=>parseUpload('x.csv',bytes('A,B\n'+"x".repeat(2001)+',a')));
  rejects(()=>parseUpload('x.csv',bytes('A,B\n1,"unclosed')));
 });
 test('macros, XML entities, unsafe paths, external links and both honest/lying zip bombs are blocked',async()=>{

@@ -7,13 +7,14 @@ import {csvDocument} from "./csv";
 import {columnName} from "./upload-parser";
 import type {ParsedUpload} from "./upload-types";
 import type {ImportDiff,ImportValue,ImportPlan,ImportHistory} from "./import-lifecycle-types";
+import {MAX_IMPORT_DATA_ROWS,MAX_IMPORT_JOURNAL_BYTES,IMPORT_PREVIEW_PAGE_SIZE,importBatches} from "./import-config";
+import {applyImportBatch,undoImportBatch,importInput} from "./import-batches";
 type DB=Pick<PoolClient,"query">;
 type RecordRow=Record<string,any>;
-type Graph={product:RecordRow;costs:RecordRow[];prices:RecordRow[]};
-type StoredRow={diff:ImportDiff;before:Graph|null;expected:string;input:ImportValue;conversion?:{from:string;to:string;factor:string;date:string}};
-type Journal={version:1;currency:string;plan:ImportPlan;rows:StoredRow[];listId:string|null;createdList:boolean;after?:Record<string,Graph>;committedAt?:string;committedBy?:string;undoneAt?:string;undoneBy?:string};
+export type Graph={product:RecordRow;costs:RecordRow[];prices:RecordRow[]};
+export type StoredRow={diff:ImportDiff;before:Graph|null;expected:string;input?:ImportValue;conversion?:{from:string;to:string;factor:string;date:string}};
+type Journal={version:1;currency:string;plan:ImportPlan;rows:StoredRow[];listId:string|null;createdList:boolean;warningsAcknowledged?:boolean;after?:Record<string,Graph|string>;committedAt?:string;committedBy?:string;undoneAt?:string;undoneBy?:string};
 const IMPORT="catalog_import_v1",EXPORT="catalog_export_v1",LIST="MarginDesk file imports";
-const maxRows=200,maxJournalBytes=8*1024*1024;
 export const ImportOptions=z.object({
  numericFormat:z.enum(["dot","comma"]).default("dot"),approveTextNumbers:z.boolean().default(false),
  approveUnits:z.boolean().default(false),acknowledgeWarnings:z.boolean().default(false),
@@ -22,7 +23,7 @@ export const ImportOptions=z.object({
 }).strict();
 type Options=z.infer<typeof ImportOptions>;
 const fail=(status:number,message:string):never=>{throw new HttpError(status,message);};
-function json(value:unknown){const s=JSON.stringify(value);if(Buffer.byteLength(s)>maxJournalBytes)fail(422,"This import has too much history to review safely. Split the file into smaller files.");return s;}
+function json(value:unknown){const s=JSON.stringify(value);if(Buffer.byteLength(s)>MAX_IMPORT_JOURNAL_BYTES)fail(422,"This import has too much history to review safely. Split the file into smaller files.");return s;}
 function stable(value:any):string {if(Array.isArray(value))return "["+value.map(stable).join(",")+"]";if(value&&typeof value==="object")return "{"+Object.keys(value).sort().map(k=>JSON.stringify(k)+":"+stable(value[k])).join(",")+"}";return JSON.stringify(value);}
 const hash=(value:unknown)=>createHash("sha256").update(stable(value)).digest("hex");
 // Logical restore changes physical tuple revisions. Undo compares all business
@@ -44,6 +45,7 @@ export function perBaseUnit(value:string,factor:string):string{
  return decimal((rounded/BigInt(10000)).toString()+"."+(rounded%BigInt(10000)).toString().padStart(4,"0"));
 }
 async function lock(db:DB,tenantId:string){
+ await db.query("SELECT set_config('statement_timeout','60000',true)");
  await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1::text,0))",[tenantId]);
  const t=(await db.query("SELECT currency::text,current_date::text AS today FROM public.tenant WHERE tenant_id=$1",[tenantId])).rows[0];
  if(!t)fail(404,"Workspace was not found.");return t as {currency:string;today:string};
@@ -53,7 +55,7 @@ async function listId(db:DB,tenantId:string):Promise<string|null>{
  if(rows.some(r=>!r.currency_matches))fail(409,"The import list currency differs from the workspace. Review the list before importing.");
  if(rows.length>1)fail(409,"More than one file-import price list exists. Resolve the duplicate lists before importing.");return rows[0]?.id||null;
 }
-async function graphs(db:DB,tenantId:string,ids:string[]):Promise<Map<string,Graph>>{
+async function graphBatch(db:DB,tenantId:string,ids:string[]):Promise<Map<string,Graph>>{
  if(!ids.length)return new Map();
  // Parent locks block new FK children; child locks protect existing dated rows.
  await db.query("SELECT id FROM public.product WHERE tenant_id=$1 AND id=ANY($2::uuid[]) ORDER BY id FOR UPDATE",[tenantId,ids]);
@@ -69,6 +71,11 @@ async function graphs(db:DB,tenantId:string,ids:string[]):Promise<Map<string,Gra
  FROM public.product p WHERE p.tenant_id=$1 AND p.id=ANY($2::uuid[]) ORDER BY p.id FOR UPDATE OF p`,[tenantId,[...new Set(ids)]]);
  return new Map(result.rows.map(r=>[r.graph.product.id,r.graph]));
 }
+async function graphs(db:DB,tenantId:string,ids:string[]):Promise<Map<string,Graph>>{
+ const result=new Map<string,Graph>();
+ for(const batch of importBatches([...new Set(ids)].sort()))for(const [id,graph] of await graphBatch(db,tenantId,batch))result.set(id,graph);
+ return result;
+}
 function view(g:Graph,date:string,list:string|null):ImportValue{
  const p=g.product,cost=g.costs.find(c=>c.basis==="standard"&&c.effective_from<=date&&(!c.effective_to||c.effective_to>date));
  const price=g.prices.find(i=>i.price_list_id===list&&i.effective_from<=date&&(!i.effective_to||i.effective_to>date));
@@ -76,10 +83,10 @@ function view(g:Graph,date:string,list:string|null):ImportValue{
 }
 export async function exportLifeline(db:DB,tenantId:string,userId:string,supplier?:string){
  const tenant=await lock(db,tenantId),list=await listId(db,tenantId);
- const ids=(await db.query("SELECT id FROM public.product WHERE tenant_id=$1 AND active=true AND ($2::text IS NULL OR supplier=$2) ORDER BY sku LIMIT 2000",[tenantId,supplier||null])).rows.map(r=>r.id);
- if(ids.length>=2000)fail(422,"Export up to 1,999 products at a time. Filter by supplier.");
+ const ids=(await db.query("SELECT id FROM public.product WHERE tenant_id=$1 AND active=true AND ($2::text IS NULL OR supplier=$2) ORDER BY sku LIMIT $3",[tenantId,supplier||null,MAX_IMPORT_DATA_ROWS+1])).rows.map(r=>r.id);
+ if(ids.length>MAX_IMPORT_DATA_ROWS)fail(422,`Export up to ${MAX_IMPORT_DATA_ROWS.toLocaleString("en-US")} products at a time. Filter by supplier.`);
  const states=await graphs(db,tenantId,ids),id=randomUUID();
- const summary={version:1,exportedOn:tenant.today,listId:list,rows:Object.fromEntries([...states].map(([key,g])=>[key,{stamp:hash(g),graph:g}]))};
+ const summary={version:1,exportedOn:tenant.today,listId:list,rows:Object.fromEntries([...states].map(([key,g])=>[key,{stamp:hash(g),value:view(g,tenant.today,list)}]))};
  await db.query("INSERT INTO public.import_job(id,tenant_id,import_type,status,source_name,accepted_rows,summary,created_by) VALUES($1,$2,$3,'dry_run','catalog-lifeline.csv',$4,$5::jsonb,$6)",[id,tenantId,EXPORT,ids.length,json(summary),userId]);
  const rows=ids.map(key=>{const g=states.get(key)!,v=view(g,tenant.today,list);return [key,id+":"+hash(g),v.sku,v.description,v.unit,v.cost??"",v.price,v.supplier,v.date];});
  return csvDocument(["md_row_id","md_version","SKU","Description","Unit","Cost","Price","Supplier","Date"],rows);
@@ -93,7 +100,7 @@ function metadata(parsed:ParsedUpload){
 }
 export async function previewImport(db:DB,tenantId:string,userId:string,filename:string,parsed:ParsedUpload,rawOptions:Options):Promise<ImportPlan>{
  const options=ImportOptions.parse(rawOptions);if(!validDate(options.effectiveDate))fail(422,"Choose a valid effective date.");
- if(parsed.rows.length>maxRows)fail(422,"Review and commit at most 200 data rows at a time. Split this file.");
+ if(parsed.rows.length>MAX_IMPORT_DATA_ROWS)fail(422,`Review and commit at most ${MAX_IMPORT_DATA_ROWS.toLocaleString("en-US")} data rows per file.`);
  if(parsed.mapping.sku===undefined)fail(422,"Map the SKU column before making an import plan.");
  const tenant=await lock(db,tenantId),list=await listId(db,tenantId),id=randomUUID();
  const [idCol,versionCol]=metadata(parsed),exports=new Map<string,any>();
@@ -101,18 +108,42 @@ export async function previewImport(db:DB,tenantId:string,userId:string,filename
  const skus=parsed.rows.map(r=>r.cells[parsed.mapping.sku!]?.value||"");
  const products=(await db.query("SELECT id,sku FROM public.product WHERE tenant_id=$1 AND (sku=ANY($2::text[]) OR id=ANY($3::uuid[])) ORDER BY sku",[tenantId,skus,candidates])).rows;
  const bySku=new Map(products.map(p=>[p.sku,p.id])),states=await graphs(db,tenantId,products.map(p=>p.id));
+ const stateHashes=new Map([...states].map(([key,g])=>[key,hash(g)]));
  const registeredUnits=new Set((await db.query("SELECT code FROM public.uom WHERE tenant_id=$1",[tenantId])).rows.map(r=>r.code));
  const keyColumns=new Set([idCol,versionCol].filter(i=>i>=0));
  for(const index of Object.values(parsed.mapping))if(keyColumns.has(index!))fail(422,"Protected metadata columns cannot be mapped to business fields.");
  const names=new Map<string,number>();for(const r of parsed.rows){const sku=r.cells[parsed.mapping.sku!]?.value||"";names.set(sku,(names.get(sku)||0)+1);}
  const warnings=parsed.issues.filter(i=>["merged_cell","hidden_column","hidden_row","hidden_sheet","bom","header_suggestion","missing_header","duplicate_header","row_width","bom_text","unsafe_text"].includes(i.code)).map(i=>`${i.sheet}, row ${i.row}, column ${i.column}: ${i.message}`);
  const stored:StoredRow[]=[];
+ const exportIds=new Set(parsed.rows.map(r=>versionCol<0?"":(r.cells[versionCol]?.value||"").split(":")[0]).filter(v=>z.uuid().safeParse(v).success));
+ let baselineBytes=0;
+ for(const key of exportIds){
+  const baseline=(await db.query("SELECT summary->'rows' AS rows FROM public.import_job WHERE tenant_id=$1 AND id=$2 AND import_type=$3",[tenantId,key,EXPORT])).rows[0]?.rows||null;
+  baselineBytes+=Buffer.byteLength(JSON.stringify(baseline));
+  if(baselineBytes>MAX_IMPORT_JOURNAL_BYTES)fail(422,"The combined export baselines are too large. Use a fresh export.");
+  exports.set(key,baseline);
+ }
+ const unitFactors=new Map<number,string|null>();
+ const unitInputs=parsed.rows.flatMap(r=>{
+  const date=parsed.mapping.date===undefined?options.effectiveDate:r.cells[parsed.mapping.date]?.value||options.effectiveDate;if(!validDate(date))return [];
+  const sku=r.cells[parsed.mapping.sku!]?.value||"",rid=idCol<0?"":r.cells[idCol]?.value||"";
+  const productId=states.has(rid)?rid:bySku.get(sku)||null;
+  const unit=parsed.mapping.unit===undefined?"":r.cells[parsed.mapping.unit]?.value||"";
+  return [{row:r.row,product_id:productId,from:unit,to:productId?states.get(productId)?.product.uom||"":unit,date}];
+ });
+ for(const batch of importBatches(unitInputs)){
+  const factors=(await db.query(`SELECT x.row,public.convert_quantity($1::uuid,x.product_id,1::numeric,x."from",x."to",x.date)::text AS factor
+   FROM jsonb_to_recordset($2::jsonb) AS x(row integer,product_id uuid,"from" text,"to" text,date date)`,[tenantId,JSON.stringify(batch)])).rows;
+  for(const f of factors)unitFactors.set(f.row,f.factor);
+ }
+ const blockedRows=new Set(parsed.issues.filter(i=>["formula","formula_text","invalid_number","negative_number","bad_date","sku_whitespace"].includes(i.code)).map(i=>i.row));
+ const missingUnits:Array<{row:number;date:string;column:string;from:string;to:string}>=[];
  // Only staging metadata is written before commit. UOM issue rows refer here.
  await db.query("INSERT INTO public.import_job(id,tenant_id,import_type,status,source_name,source_hash,created_by) VALUES($1,$2,$3,'dry_run',$4,$5,$6)",[id,tenantId,IMPORT,filename.replace(/[\x00-\x1f\x7f]/g,"").slice(0,255),parsed.sourceHash,userId]);
  for(const r of parsed.rows){
   const get=(field:keyof typeof parsed.mapping)=>parsed.mapping[field]===undefined?undefined:r.cells[parsed.mapping[field]!] ;
   const sku=get("sku")?.value||"",rid=idCol>=0?r.cells[idCol]?.value||"":"",stamp=versionCol>=0?r.cells[versionCol]?.value||"":"";
-  let productId=bySku.get(sku)||randomUUID(),before=states.get(productId)||null,baseline:Graph|null=null;
+  let productId=bySku.get(sku)||randomUUID(),before=states.get(productId)||null,baseline:ImportValue|null=null,baselineStamp:string|null=null;
   const messages:string[]=[];let rejected=false;let conversion:StoredRow["conversion"];
   const reject=(message:string)=>{rejected=true;messages.push(message.includes("column")?message:message.replace(`Row ${r.row}:`,`Row ${r.row}, column ${columnName(parsed.mapping.sku!)}:`));};
   if(!sku||sku!==sku.trim()||sku.length>100)reject(`Row ${r.row}, column ${columnName(parsed.mapping.sku!)}: use a nonempty SKU without surrounding spaces (100 characters maximum).`);
@@ -121,11 +152,9 @@ export async function previewImport(db:DB,tenantId:string,userId:string,filename
    const m=/^([0-9a-f-]{36}):([0-9a-f]{64})$/.exec(stamp);
    if(!z.uuid().safeParse(rid).success||!m||!z.uuid().safeParse(m[1]).success)reject(`Row ${r.row}: the protected ID or version stamp is missing or was edited.`);
    else{
-    const key=m[1]+":"+rid;
-    if(!exports.has(key))exports.set(key,(await db.query("SELECT summary->'rows'->$3::text AS baseline FROM public.import_job WHERE tenant_id=$1 AND id=$2 AND import_type=$4",[tenantId,m[1],rid,EXPORT])).rows[0]?.baseline||null);
-    const base=exports.get(key);
+    const base=exports.get(m[1])?.[rid];
     if(!base||base.stamp!==m[2])reject(`Row ${r.row}: the protected row ID/version does not match an export from this workspace.`);
-    else{baseline=base.graph;productId=rid;before=states.get(rid)||null;if(baseline!.product.sku!==sku)reject(`Row ${r.row}: SKU is protected. Keep the exported SKU; create a separate new row for a new product.`);if(!before)reject(`Row ${r.row}: this exported product was deleted. Restore or review it in the app first.`);}
+    else{baseline=base.value??view(base.graph,options.effectiveDate,list);baselineStamp=base.stamp;productId=rid;before=states.get(rid)||null;if(baseline!.sku!==sku)reject(`Row ${r.row}: SKU is protected. Keep the exported SKU; create a separate new row for a new product.`);if(!before)reject(`Row ${r.row}: this exported product was deleted. Restore or review it in the app first.`);}
    }
   }else if(idCol>=0&&before)reject(`Row ${r.row}: an existing product needs its exported md_row_id and md_version.`);
   const date=get("date")?.value||options.effectiveDate;
@@ -148,14 +177,14 @@ export async function previewImport(db:DB,tenantId:string,userId:string,filename
   if(!input.unit||input.unit.length>16)reject(`Row ${r.row}, column ${parsed.mapping.unit===undefined?"A":columnName(parsed.mapping.unit)}: provide a registered unit of 16 characters or fewer.`);
   if(before&&!before.product.active)reject(`Row ${r.row}: this product is inactive.`);
   if(before&&!previous?.unit)reject(`Row ${r.row}, column ${parsed.mapping.unit===undefined?"A":columnName(parsed.mapping.unit)}: this catalog product has no base unit; resolve it before importing.`);
-  if(parsed.issues.some(i=>i.row===r.row&&["formula","formula_text","invalid_number","negative_number","bad_date","sku_whitespace"].includes(i.code)))reject(`Row ${r.row}: resolve the formula, numeric, date or SKU issue in the source file.`);
+  if(blockedRows.has(r.row))reject(`Row ${r.row}: resolve the formula, numeric, date or SKU issue in the source file.`);
   if(get("quantity")?.value)messages.push(`Row ${r.row}: quantity is reviewed only; this catalog import does not write inventory or invoices.`);
   if(validDate(date)){
    const target=before?(previous?.unit||""):input.unit;
-   const found=(await db.query("SELECT public.convert_quantity($1::uuid,$2::uuid,1::numeric,$3::text,$4::text,$5::date)::text AS factor",[tenantId,before?productId:null,input.unit,target,date])).rows[0].factor as string|null;
+   const found=unitFactors.get(r.row)??null;
    const factor=!input.unit||(before&&!previous?.unit)||(!before&&!registeredUnits.has(input.unit))?null:found;
    if(factor===null){
-    await db.query("SELECT public.record_data_quality_issue($1::uuid,'uom_conversion_missing','import_job',$2::text,$3::date,$4::jsonb)",[tenantId,id+":"+r.row,date,JSON.stringify({job_id:id,row:r.row,column:parsed.mapping.unit===undefined?"A":columnName(parsed.mapping.unit),from:input.unit,to:target})]);
+    missingUnits.push({row:r.row,date,column:parsed.mapping.unit===undefined?"A":columnName(parsed.mapping.unit),from:input.unit,to:target});
     reject(`Row ${r.row}, column ${parsed.mapping.unit===undefined?"A":columnName(parsed.mapping.unit)}: missing registered base unit or approved unit conversion; a data-quality issue was recorded. New base units must match the registered code exactly.`);
    }else if(input.unit!==target){
     conversion={from:input.unit,to:target,factor,date};
@@ -164,8 +193,8 @@ export async function previewImport(db:DB,tenantId:string,userId:string,filename
    }
   }
   let conflict:ImportDiff["conflict"];
-  if(baseline&&before&&hash(baseline)!==hash(before)){
-   const choice=options.decisions[String(r.row)]||"review";conflict={baseline:view(baseline,date,list),app:previous!,file:input,choice};
+  if(baseline&&before&&baselineStamp!==stateHashes.get(productId)){
+   const choice=options.decisions[String(r.row)]||"review";conflict={baseline,app:previous!,file:input,choice};
   }
   const after=conflict?.choice==="app"?previous:input;
   const state:ImportDiff["state"]=rejected?"rejected":!before?"new":stable(previous)===stable(after)?"unchanged":"changed";
@@ -176,13 +205,16 @@ export async function previewImport(db:DB,tenantId:string,userId:string,filename
    const end=current?.effective_to??entries?.filter(e=>e.effective_from>date).map(e=>e.effective_from).sort()[0]??null;
    messages.push(`Row ${r.row}, column ${parsed.mapping[field]===undefined?"A":columnName(parsed.mapping[field])}: ${field} applies from ${date}${end?` until ${end} (exclusive)`:" onward"}. Earlier history and scheduled later values are retained.`);
   }
-  stored.push({diff:{row:r.row,productId,state,before:previous,after:rejected?null:after,messages,conflict},before,expected:before?hash(before):"missing",input:after!,conversion});
+  stored.push({diff:{row:r.row,productId,state,before:previous,after:rejected?null:after,messages,conflict},before,expected:before?stateHashes.get(productId)!:"missing",conversion});
  }
+ for(const batch of importBatches(missingUnits))await db.query(`SELECT public.record_data_quality_issue($1::uuid,'uom_conversion_missing','import_job',
+  $2::text||':'||x.row::text,x.date,jsonb_build_object('job_id',$2::text,'row',x.row,'column',x."column",'from',x."from",'to',x."to"))
+  FROM jsonb_to_recordset($3::jsonb) AS x(row integer,date date,"column" text,"from" text,"to" text)`,[tenantId,id,JSON.stringify(batch)]);
  const counts={new:0,changed:0,unchanged:0,rejected:0};for(const r of stored)counts[r.diff.state]++;
  const conflicts=stored.filter(r=>r.diff.conflict?.choice==="review"&&r.diff.state!=="rejected").length;
- const plan:ImportPlan={id,filename,currency:tenant.currency,rows:stored.map(r=>r.diff),counts,conflicts,canCommit:conflicts===0&&(warnings.length===0||options.acknowledgeWarnings)&&(counts.new+counts.changed>0),expiresAt:new Date(Date.now()+30*60_000).toISOString(),warnings};
+ const plan:ImportPlan={id,filename,currency:tenant.currency,rows:stored.slice(0,IMPORT_PREVIEW_PAGE_SIZE).map(r=>r.diff),counts,conflicts,canCommit:conflicts===0&&(warnings.length===0||options.acknowledgeWarnings)&&(counts.new+counts.changed>0),expiresAt:new Date(Date.now()+30*60_000).toISOString(),warnings,totalRows:stored.length,offset:0,pageSize:IMPORT_PREVIEW_PAGE_SIZE};
  if(warnings.length&&!options.acknowledgeWarnings)warnings.push("Confirm that you reviewed the structural/text warnings before creating a commit-ready plan.");
- const journal:Journal={version:1,currency:tenant.currency,plan,rows:stored,listId:list,createdList:false};
+ const journal:Journal={version:1,currency:tenant.currency,plan:{...plan,rows:[]},rows:stored,listId:list,createdList:false,warningsAcknowledged:options.acknowledgeWarnings||warnings.length===0};
  await db.query("UPDATE public.import_job SET summary=$3::jsonb,rejected_rows=$4 WHERE tenant_id=$1 AND id=$2",[tenantId,id,json(journal),counts.rejected]);
  return plan;
 }
@@ -190,29 +222,42 @@ async function loadJob(db:DB,tenantId:string,id:string){
  const job=(await db.query("SELECT id,status,summary FROM public.import_job WHERE tenant_id=$1 AND id=$2 AND import_type=$3 FOR UPDATE",[tenantId,id,IMPORT])).rows[0];
  if(!job)fail(404,"Import was not found in this workspace.");if(job.summary?.version!==1)fail(409,"This import needs a new dry run.");return job as {id:string;status:string;summary:Journal};
 }
-// Split one interval at the reviewed date; preserve already scheduled future rows.
-async function writeDated(db:DB,tenantId:string,productId:string,list:string|null,value:ImportValue,userId:string,jobId:string,writeCost:boolean,writePrice:boolean){
- if(writeCost&&value.cost!==null){
-  const same=(await db.query("SELECT id,effective_from::text,effective_to::text,cost::text FROM public.cost_history WHERE tenant_id=$1 AND product_id=$2 AND basis='standard' AND effective_from<=$3::date AND (effective_to IS NULL OR effective_to>$3::date) FOR UPDATE",[tenantId,productId,value.date])).rows[0];
-  if(same&&same.effective_from===value.date)await db.query("UPDATE public.cost_history SET cost=$3::numeric,source=$4,created_by=$5 WHERE tenant_id=$1 AND id=$2",[tenantId,same.id,value.cost,"import:"+jobId,userId]);
-  else{
-   if(same)await db.query("UPDATE public.cost_history SET effective_to=$3::date WHERE tenant_id=$1 AND id=$2",[tenantId,same.id,value.date]);
-   const end=same?.effective_to??(await db.query("SELECT min(effective_from)::text AS value FROM public.cost_history WHERE tenant_id=$1 AND product_id=$2 AND basis='standard' AND effective_from>$3::date",[tenantId,productId,value.date])).rows[0].value;
-   await db.query("INSERT INTO public.cost_history(tenant_id,product_id,cost,basis,effective_from,effective_to,source,created_by,currency) SELECT $1,$2,$3::numeric,'standard',$4::date,$5::date,$6,$7,currency FROM public.tenant WHERE tenant_id=$1",[tenantId,productId,value.cost,value.date,end,"import:"+jobId,userId]);
-  }
+export async function importPlanPage(db:DB,tenantId:string,id:string,offset=0):Promise<ImportPlan>{
+ if(!Number.isInteger(offset)||offset<0||offset>MAX_IMPORT_DATA_ROWS)fail(400,"Choose a valid preview page.");
+ const result=(await db.query(`SELECT (j.summary->'plan')-'rows' AS plan,j.status,
+  jsonb_array_length(j.summary->'rows') AS total_rows,
+  COALESCE((SELECT jsonb_agg(x.value->'diff' ORDER BY x.ordinality)
+   FROM jsonb_array_elements(j.summary->'rows') WITH ORDINALITY x(value,ordinality)
+   WHERE x.ordinality>$3::integer AND x.ordinality<=$3::integer+$4::integer),'[]'::jsonb) AS rows
+  FROM public.import_job j WHERE j.tenant_id=$1 AND j.id=$2 AND j.import_type=$5 AND j.summary->>'version'='1'`,
+ [tenantId,id,offset,IMPORT_PREVIEW_PAGE_SIZE,IMPORT])).rows[0];
+ if(!result)fail(404,"Import preview was not found in this workspace.");
+ return {...result.plan,rows:result.rows,totalRows:result.total_rows,offset,pageSize:IMPORT_PREVIEW_PAGE_SIZE,
+  canCommit:result.status==="dry_run"&&result.plan.canCommit&&Date.parse(result.plan.expiresAt)>=Date.now()};
+}
+export async function resolveImportChoices(db:DB,tenantId:string,id:string,choices:Record<string,"app"|"file"|"review">,offset=0){
+ if(Object.keys(choices).length>IMPORT_PREVIEW_PAGE_SIZE)fail(422,"Resolve one preview page at a time.");
+ await lock(db,tenantId);
+ const job=await loadJob(db,tenantId,id),j=job.summary;
+ if(job.status!=="dry_run"||Date.parse(j.plan.expiresAt)<Date.now())fail(409,"Create a fresh dry run before resolving conflicts.");
+ const byRow=new Map(j.rows.map(r=>[String(r.diff.row),r]));
+ for(const [key,choice] of Object.entries(choices)){
+  const r=byRow.get(key);if(!r||!r.diff.conflict||r.diff.state==="rejected"||!["app","file","review"].includes(choice))throw new HttpError(422,"Choose an existing, valid conflict row.");
+  r.diff.conflict.choice=choice;r.diff.after=choice==="app"?r.diff.before:r.diff.conflict.file;
+  r.diff.state=stable(r.diff.before)===stable(r.diff.after)?"unchanged":"changed";delete r.input;
  }
- if(!writePrice)return;
- const same=(await db.query("SELECT id,effective_from::text,effective_to::text FROM public.price_list_item WHERE tenant_id=$1 AND product_id=$2 AND price_list_id=$3 AND effective_from<=$4::date AND (effective_to IS NULL OR effective_to>$4::date) FOR UPDATE",[tenantId,productId,list,value.date])).rows[0];
- if(same?.effective_from===value.date)await db.query("UPDATE public.price_list_item SET unit_price=$3::numeric WHERE tenant_id=$1 AND id=$2",[tenantId,same.id,value.price]);
- else{
-  if(same)await db.query("UPDATE public.price_list_item SET effective_to=$3::date WHERE tenant_id=$1 AND id=$2",[tenantId,same.id,value.date]);
-  const end=same?.effective_to??(await db.query("SELECT min(effective_from)::text AS value FROM public.price_list_item WHERE tenant_id=$1 AND product_id=$2 AND price_list_id=$3 AND effective_from>$4::date",[tenantId,productId,list,value.date])).rows[0].value;
-  await db.query("INSERT INTO public.price_list_item(tenant_id,price_list_id,product_id,unit_price,effective_from,effective_to,currency) SELECT $1,$2,$3,$4::numeric,$5::date,$6::date,currency FROM public.price_list WHERE tenant_id=$1 AND id=$2",[tenantId,list,productId,value.price,value.date,end]);
+ if(Object.keys(choices).length){
+  const counts={new:0,changed:0,unchanged:0,rejected:0};for(const r of j.rows)counts[r.diff.state]++;
+  const conflicts=j.rows.filter(r=>r.diff.conflict?.choice==="review"&&r.diff.state!=="rejected").length;
+  j.plan={...j.plan,rows:[],counts,conflicts,canCommit:conflicts===0&&(j.warningsAcknowledged??j.plan.warnings.length===0)&&(counts.new+counts.changed>0)};
+  await db.query("UPDATE public.import_job SET summary=$3::jsonb WHERE tenant_id=$1 AND id=$2 AND status='dry_run'",[tenantId,id,json(j)]);
  }
+ return importPlanPage(db,tenantId,id,offset);
 }
 export async function commitImport(db:DB,tenantId:string,userId:string,id:string,acknowledgeRejected=false){
  const tenant=await lock(db,tenantId),job=await loadJob(db,tenantId,id),j=job.summary;
  if(job.status!=="dry_run"||j.undoneAt)fail(409,"This import has already been committed or undone.");
+ if(j.rows.length>MAX_IMPORT_DATA_ROWS)fail(409,"The configured row maximum changed. Create a smaller import file.");
  if(tenant.currency!==j.currency)fail(409,"The workspace currency changed. Run a fresh preview.");
  if(!j.plan.canCommit||Date.parse(j.plan.expiresAt)<Date.now())fail(409,"Resolve conflicts or create a fresh dry run before committing.");
  if(j.plan.counts.rejected&&!acknowledgeRejected)fail(422,"Confirm that only valid rows will be committed; rejected rows will be skipped.");
@@ -220,24 +265,31 @@ export async function commitImport(db:DB,tenantId:string,userId:string,id:string
  // Lock unit definitions (FK parents) and conversions before the factor check.
  const units=new Set((await db.query("SELECT id,code FROM public.uom WHERE tenant_id=$1 ORDER BY id FOR UPDATE",[tenantId])).rows.map(r=>r.code));
  await db.query("SELECT id FROM public.uom_conversion WHERE tenant_id=$1 ORDER BY id FOR UPDATE",[tenantId]);
+ const existingSkus=new Set<string>();
+ for(const batch of importBatches(writes.filter(r=>!r.before).map(r=>importInput(r).sku))){
+  for(const p of (await db.query("SELECT sku FROM public.product WHERE tenant_id=$1 AND sku=ANY($2::text[])",[tenantId,batch])).rows)existingSkus.add(p.sku);
+ }
+ const factors=new Map<number,string|null>();
+ for(const batch of importBatches(j.rows.flatMap(r=>r.conversion?[{row:r.diff.row,product_id:r.diff.productId,...r.conversion}]:[]))){
+  const result=(await db.query(`SELECT x.row,public.convert_quantity($1::uuid,x.product_id,1::numeric,x."from",x."to",x.date)::text AS factor
+   FROM jsonb_to_recordset($2::jsonb) AS x(row integer,product_id uuid,"from" text,"to" text,date date)`,[tenantId,JSON.stringify(batch)])).rows;
+  for(const f of result)factors.set(f.row,f.factor);
+ }
  for(const r of j.rows.filter(r=>r.diff.state!=="rejected")){
   if((current.has(r.diff.productId)?hash(current.get(r.diff.productId)):"missing")!==r.expected)fail(409,`Row ${r.diff.row} changed in the app after this dry run. Review a new diff.`);
-  if(!r.before&&(await db.query("SELECT id FROM public.product WHERE tenant_id=$1 AND sku=$2",[tenantId,r.input.sku])).rows.length)fail(409,`Row ${r.diff.row}: this SKU was created after the dry run.`);
-  if(!r.before&&!units.has(r.input.unit))fail(409,`Row ${r.diff.row}: the registered base unit changed. Run a fresh preview.`);
-  if(r.conversion){const c=r.conversion;const factor=(await db.query("SELECT public.convert_quantity($1::uuid,$2::uuid,1::numeric,$3::text,$4::text,$5::date)::text AS factor",[tenantId,r.diff.productId,c.from,c.to,c.date])).rows[0].factor;if(factor!==c.factor)fail(409,`Row ${r.diff.row}: the unit conversion changed. Run a fresh preview.`);}
+  if(!r.before&&existingSkus.has(importInput(r).sku))fail(409,`Row ${r.diff.row}: this SKU was created after the dry run.`);
+  if(!r.before&&!units.has(importInput(r).unit))fail(409,`Row ${r.diff.row}: the registered base unit changed. Run a fresh preview.`);
+  if(r.conversion&&factors.get(r.diff.row)!==r.conversion.factor)fail(409,`Row ${r.diff.row}: the unit conversion changed. Run a fresh preview.`);
  }
+ current.clear();
  const currentList=await listId(db,tenantId);if(currentList!==j.listId)fail(409,"The import price list changed. Run a fresh preview.");
- if(!j.listId&&writes.some(r=>!r.before||r.input.price!==r.diff.before?.price)){j.listId=randomUUID();j.createdList=true;await db.query("INSERT INTO public.price_list(id,tenant_id,name,currency) VALUES($1,$2,$3,$4)",[j.listId,tenantId,LIST,tenant.currency]);}
- for(const r of writes){
-  const v=r.input;
-  if(!r.before){
-   await db.query("INSERT INTO public.product(id,tenant_id,sku,name,category,supplier,uom,unit_cost,list_price) VALUES($1,$2,$3,$4,'Imported',$5,$6,$7::numeric,$8::numeric)",[r.diff.productId,tenantId,v.sku,v.description,v.supplier||null,v.unit,v.cost,v.price]);
-   // Replace this new product's trigger-created cost with its reviewed date.
-   await db.query("DELETE FROM public.cost_history WHERE tenant_id=$1 AND product_id=$2",[tenantId,r.diff.productId]);
-  }else await db.query("UPDATE public.product SET name=$3,supplier=$4 WHERE tenant_id=$1 AND id=$2",[tenantId,r.diff.productId,v.description,v.supplier||null]);
-  await writeDated(db,tenantId,r.diff.productId,j.listId,v,userId,id,!r.before||v.cost!==r.diff.before?.cost,!r.before||v.price!==r.diff.before?.price);
+ if(!j.listId&&writes.some(r=>!r.before||importInput(r).price!==r.diff.before?.price)){j.listId=randomUUID();j.createdList=true;await db.query("INSERT INTO public.price_list(id,tenant_id,name,currency) VALUES($1,$2,$3,$4)",[j.listId,tenantId,LIST,tenant.currency]);}
+ j.after={};
+ for(const batch of importBatches(writes)){
+  await applyImportBatch(db,tenantId,userId,id,j.listId,batch,tenant.currency);
+  for(const [key,graph] of await graphs(db,tenantId,batch.map(r=>r.diff.productId)))j.after[key]=businessHash(graph);
  }
- j.after=Object.fromEntries(await graphs(db,tenantId,writes.map(r=>r.diff.productId)));j.committedAt=new Date().toISOString();j.committedBy=userId;
+ j.committedAt=new Date().toISOString();j.committedBy=userId;
  await db.query("UPDATE public.import_job SET status='committed',accepted_rows=$3,summary=$4::jsonb WHERE tenant_id=$1 AND id=$2",[tenantId,id,writes.length,json(j)]);
  return {id,accepted:writes.length,rejected:j.plan.counts.rejected};
 }
@@ -247,23 +299,15 @@ export async function undoImport(db:DB,tenantId:string,userId:string,id:string){
  if(tenant.currency!==j.currency)fail(409,"The workspace currency changed. Review it before undoing.");
  const after=j.after!;
  const writes=j.rows.filter(r=>["new","changed"].includes(r.diff.state)),current=await graphs(db,tenantId,writes.map(r=>r.diff.productId));
- for(const r of writes)if(!current.has(r.diff.productId)||businessHash(current.get(r.diff.productId)!)!==businessHash(after[r.diff.productId]))fail(409,`Row ${r.diff.row} changed after the import. Undo was blocked to preserve that edit.`);
+ for(const r of writes){const saved=after[r.diff.productId];if(!saved||!current.has(r.diff.productId)||businessHash(current.get(r.diff.productId)!)!==(typeof saved==="string"?saved:businessHash(saved)))fail(409,`Row ${r.diff.row} changed after the import. Undo was blocked to preserve that edit.`);}
+ current.clear();
  if(j.listId&&(await listId(db,tenantId))!==j.listId)fail(409,"The import price list changed. Review it before undoing.");
  if(j.createdList){
   const extra=(await db.query("SELECT count(*)::int AS n FROM public.price_list_item WHERE tenant_id=$1 AND price_list_id=$2 AND NOT(product_id=ANY($3::uuid[]))",[tenantId,j.listId,writes.map(r=>r.diff.productId)])).rows[0].n;
   const versions=(await db.query("SELECT count(*)::int AS n FROM public.price_list_version WHERE tenant_id=$1 AND price_list_id=$2",[tenantId,j.listId])).rows[0].n;
   if(extra||versions)fail(409,"This import's price list is now used by later work. Undo that work first.");
  }
- for(const r of writes){
-  await db.query("DELETE FROM public.price_list_item WHERE tenant_id=$1 AND product_id=$2",[tenantId,r.diff.productId]);
-  await db.query("DELETE FROM public.cost_history WHERE tenant_id=$1 AND product_id=$2",[tenantId,r.diff.productId]);
-  if(!r.before)await db.query("DELETE FROM public.product WHERE tenant_id=$1 AND id=$2",[tenantId,r.diff.productId]);
-  else{
-   const p=r.before.product;await db.query("UPDATE public.product SET name=$3,supplier=$4 WHERE tenant_id=$1 AND id=$2",[tenantId,p.id,p.name,p.supplier]);
-   for(const c of r.before.costs)await db.query("INSERT INTO public.cost_history(id,tenant_id,product_id,cost,basis,effective_from,effective_to,source,created_by,created_at,currency) VALUES($1,$2,$3,$4::numeric,$5,$6::date,$7::date,$8,$9,$10::timestamptz,$11)",[c.id,tenantId,p.id,c.cost,c.basis,c.effective_from,c.effective_to,c.source,c.created_by,c.created_at,c.currency]);
-   for(const v of r.before.prices)await db.query("INSERT INTO public.price_list_item(id,tenant_id,price_list_id,product_id,unit_price,effective_from,effective_to,version_id,currency) VALUES($1,$2,$3,$4,$5::numeric,$6::date,$7::date,$8,$9)",[v.id,tenantId,v.price_list_id,p.id,v.unit_price,v.effective_from,v.effective_to,v.version_id,v.currency]);
-  }
- }
+ for(const batch of importBatches(writes))await undoImportBatch(db,tenantId,batch);
  if(j.createdList)await db.query("DELETE FROM public.price_list WHERE tenant_id=$1 AND id=$2",[tenantId,j.listId]);
  j.undoneAt=new Date().toISOString();j.undoneBy=userId;
  await db.query("UPDATE public.import_job SET summary=$3::jsonb WHERE tenant_id=$1 AND id=$2",[tenantId,id,json(j)]);

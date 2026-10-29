@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync,readdirSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { createImportReview,saveMappingTemplate,loadMappingTemplate,headersFingerprint } from "../lib/import-review";
+import { createImportReview,saveMappingTemplate,loadMappingTemplate,headersFingerprint,importReviewIssues } from "../lib/import-review";
 import { parseUpload } from "../lib/upload-parser";
 import { can } from "../lib/permissions";
 import { csvDocument } from "../lib/csv";
@@ -36,6 +36,7 @@ test('file reviews and per-supplier templates run as restricted tenant users twi
    const role=(await db.query('SELECT current_user AS role,rolsuper,rolbypassrls FROM pg_roles WHERE rolname=current_user')).rows[0];assert.equal(role.role,'margindesk_app');assert.equal(role.rolsuper,false);assert.equal(role.rolbypassrls,false);
    const parsed=parseUpload('messy.xlsx',readFileSync('tests/fixtures/messy-supplier.xlsx'));
    const review=await createImportReview(db,ta,ua,parsed);
+   assert.equal((await importReviewIssues(db,ta,review.jobId)).totalIssues,review.totalIssues);
    assert.ok(review.issues.some(i=>i.code==='unit_mismatch'&&i.row===5&&i.column==='C'));
    assert.ok(review.issues.some(i=>i.code==='missing_conversion'&&i.row===5&&i.column==='C'));
    const dq=(await db.query("SELECT details FROM public.data_quality_issue WHERE tenant_id=$1 AND entity_type='import_job' AND entity_id=$2",[ta,review.jobId+':5:C'])).rows;assert.equal(dq.length,1);assert.equal(dq[0].details.row,5);assert.equal(dq[0].details.column,'C');
@@ -55,6 +56,7 @@ test('file reviews and per-supplier templates run as restricted tenant users twi
    assert.equal(await loadMappingTemplate(db,tb,key),null);
    await db.exec('SAVEPOINT foreign_write;');await assert.rejects(saveMappingTemplate(db,tb,ua,payload),(e:any)=>e.code==='42501'&&/row-level security/i.test(e.message));await db.exec('ROLLBACK TO SAVEPOINT foreign_write;');
    await db.query("SELECT set_config('request.jwt.claim.sub',$1,true),set_config('app.real_actor_id',$1,true)",[ub]);
+   await assert.rejects(importReviewIssues(db,ta,review.jobId),(e:any)=>e.status===404);
    assert.equal(await loadMappingTemplate(db,ta,key),null);const other=await saveMappingTemplate(db,tb,ub,{...payload,fields:{sku:0}});assert.notEqual(other.id,first.id);
    assert.deepEqual((await loadMappingTemplate(db,tb,key))!.fields,{sku:0});
    await db.exec('RESET ROLE;ROLLBACK;');assert.deepEqual(await snapshot(),baseline,'Every fixture, review, template and audit row rolls back');

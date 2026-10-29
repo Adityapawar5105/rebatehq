@@ -1,6 +1,7 @@
 "use client";
 import {useEffect,useState,useCallback} from "react";
 import type {ImportHistory as History} from "@/lib/import-lifecycle-types";
+import {MAX_IMPORT_DATA_ROWS} from "@/lib/import-config";
 export function ImportHistory(){
  const [rows,setRows]=useState<History[]>([]),[busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState(""),[supplier,setSupplier]=useState(""),[confirm,setConfirm]=useState<string|null>(null);
  const load=useCallback(async()=>{setBusy(true);setError("");try{const r=await fetch("/api/imports",{cache:"no-store"}),data=await r.json();if(!r.ok)throw new Error(data.error||"History is unavailable.");setRows(data.history);}catch(e){setError((e as Error).message);}finally{setBusy(false);}},[]);
@@ -17,7 +18,7 @@ export function ImportHistory(){
  }
  return <section className="app-card import-wizard" aria-busy={busy}>
   <h2>Excel lifeline and import history</h2>
-  <p>Export a CSV for Excel, edit values, then re-upload above. Keep the ID, version, SKU and base-unit columns. Export up to 1,999 products; commit up to 200 edited rows per file. No omitted row is deleted.</p>
+  <p>Export a CSV for Excel, edit values, then re-upload above. Keep the ID, version, SKU and base-unit columns. Export or import up to {MAX_IMPORT_DATA_ROWS.toLocaleString("en-US")} data rows per file. No omitted row is deleted.</p>
   <div className="import-controls"><label>Filter export by exact supplier (optional)<input value={supplier} maxLength={200} disabled={busy} onChange={e=>setSupplier(e.target.value)}/></label><button type="button" disabled={busy} onClick={()=>action("export")}>Export for Excel</button><button type="button" disabled={busy} onClick={load}>Refresh history</button></div>
   {busy?<p role="status">Loading…</p>:null}{error?<p role="alert" className="import-issue">⚠ {error}</p>:null}{notice?<p role="status" className="success-note">{notice}</p>:null}
   {!rows.length&&!busy&&!error?<p>No imports yet. Review a supplier file above to begin.</p>:null}
