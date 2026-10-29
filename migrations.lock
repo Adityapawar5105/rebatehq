@@ -26,8 +26,12 @@
     "20261028162156_chunk2b_pricing_rebate_tiers.sql",
     "20261028173257_chunk2c_foundation_tables.sql"
   ],
-  "pendingOrder": [],
-  "pendingMigrations": {},
+  "pendingOrder": [
+    "20261029175710_chunk3c_invoice_actual_cost.sql"
+  ],
+  "pendingMigrations": {
+    "20261029175710_chunk3c_invoice_actual_cost.sql": "c5d8c6da2caf5018ace042ed8ff79e988781c096af51a9b3776ef68c1930a353"
+  },
   "appliedMigrationEvidence": {
     "202610250001_revoke_platform_public_privileges.sql": {
       "date": "2026-10-26",

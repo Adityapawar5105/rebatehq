@@ -235,7 +235,7 @@ export async function importPlanPage(db:DB,tenantId:string,id:string,offset=0):P
  return {...result.plan,rows:result.rows,totalRows:result.total_rows,offset,pageSize:IMPORT_PREVIEW_PAGE_SIZE,
   canCommit:result.status==="dry_run"&&result.plan.canCommit&&Date.parse(result.plan.expiresAt)>=Date.now()};
 }
-export async function resolveImportChoices(db:DB,tenantId:string,id:string,choices:Record<string,"app"|"file"|"review">,offset=0){
+export async function resolveImportChoices(db:DB,tenantId:string,id:string,choices:Record<string,"app"|"file"|"review">,offset=0,acknowledgeWarnings=false){
  if(Object.keys(choices).length>IMPORT_PREVIEW_PAGE_SIZE)fail(422,"Resolve one preview page at a time.");
  await lock(db,tenantId);
  const job=await loadJob(db,tenantId,id),j=job.summary;
@@ -246,7 +246,8 @@ export async function resolveImportChoices(db:DB,tenantId:string,id:string,choic
   r.diff.conflict.choice=choice;r.diff.after=choice==="app"?r.diff.before:r.diff.conflict.file;
   r.diff.state=stable(r.diff.before)===stable(r.diff.after)?"unchanged":"changed";delete r.input;
  }
- if(Object.keys(choices).length){
+ if(Object.keys(choices).length||acknowledgeWarnings){
+  if(acknowledgeWarnings)j.warningsAcknowledged=true;
   const counts={new:0,changed:0,unchanged:0,rejected:0};for(const r of j.rows)counts[r.diff.state]++;
   const conflicts=j.rows.filter(r=>r.diff.conflict?.choice==="review"&&r.diff.state!=="rejected").length;
   j.plan={...j.plan,rows:[],counts,conflicts,canCommit:conflicts===0&&(j.warningsAcknowledged??j.plan.warnings.length===0)&&(counts.new+counts.changed>0)};

@@ -65,7 +65,7 @@ test('file reviews and per-supplier templates run as restricted tenant users twi
 });
 test('only owner and manager can access upload APIs, which derive the tenant from authenticated context',()=>{
  for(const role of ['owner','manager','analyst','rep'] as const)assert.equal(can(role,'files.review'),role==='owner'||role==='manager');
- for(const file of ['app/api/import-preview/route.ts','app/api/mapping-templates/route.ts','app/api/imports/route.ts','app/api/imports/preview/route.ts']){
+ for(const file of ['app/api/import-preview/route.ts','app/api/mapping-templates/route.ts','app/api/imports/route.ts','app/api/imports/preview/route.ts','app/api/ingestion/route.ts']){
   const source=readFileSync(file,'utf8');assert.match(source,/assertPermission\(context,"files.review"\)/);assert.match(source,/databaseContext\(context,request.headers\)/);assert.match(source,/context.tenantId/);assert.ok(!/console\.|request\.json\(|arrayBuffer\(/.test(source));
  }
  const ui=readFileSync('components/ImportWizard.tsx','utf8');assert.ok(!/dangerouslySetInnerHTML|innerHTML/.test(ui));assert.match(ui,/csvDocument\(headers,rows\)/);

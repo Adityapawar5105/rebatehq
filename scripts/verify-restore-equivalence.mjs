@@ -3,6 +3,41 @@ import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import pg from "pg";
 
 const { Pool } = pg;
+export const applicationColumnsSql=`
+ SELECT c.relname::text AS table_name,a.attname::text AS column_name,
+  format_type(a.atttypid,a.atttypmod) AS data_type,a.attnotnull AS not_null,
+  pg_get_expr(d.adbin,d.adrelid) AS default_expression
+ FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+ JOIN pg_attribute a ON a.attrelid=c.oid AND a.attnum>0 AND NOT a.attisdropped
+ LEFT JOIN pg_attrdef d ON d.adrelid=c.oid AND d.adnum=a.attnum
+ WHERE n.nspname='public' AND c.relkind IN ('r','p') AND c.relname=ANY($1::text[])
+ ORDER BY c.relname,a.attnum`;
+export function assertApplicationColumnsEqual(source,restored){
+ assert.ok(Array.isArray(source)&&source.length>0&&Array.isArray(restored)&&restored.length>0,"Application column inventory is missing or empty.");
+ const byKey=rows=>new Map(rows.map(row=>[`${row.table_name}.${row.column_name}`,row]));
+ const a=byKey(source),b=byKey(restored),diff=[];
+ for(const key of [...new Set([...a.keys(),...b.keys()])].sort()){
+  if(JSON.stringify(a.get(key))!==JSON.stringify(b.get(key)))diff.push({column:key,source:a.get(key)??null,restored:b.get(key)??null});
+ }
+ if(diff.length)throw new Error("Application column inventory mismatch: "+JSON.stringify(diff,null,2));
+ return true;
+}
+// Compare evidence contents without printing supplier cells, source links or
+// actual amounts. Timestamp rendering is pinned to UTC inside the hash input.
+export const ingestionEvidenceSql=`
+ SELECT
+ (SELECT md5(COALESCE(string_agg(jsonb_build_object('id',id,'tenant',tenant_id,
+  'amount',actual_cost_amount::text,'source',actual_cost_source)::text,'|' ORDER BY tenant_id,id),''))
+  FROM public.invoice_line) AS invoice_actuals,
+ (SELECT md5(COALESCE(string_agg(jsonb_build_object('id',id,'tenant',tenant_id,
+  'name',name,'type',import_type,'version',version,'mapping',column_mapping,'creator',created_by)::text,'|' ORDER BY tenant_id,id),''))
+  FROM public.column_mapping_template) AS mapping_schedules,
+ (SELECT md5(COALESCE(string_agg(jsonb_build_object('id',id,'tenant',tenant_id,'provider',provider,
+  'direction',direction,'status',status,'processed',processed_count::text,'failed',failed_count::text,'creator',created_by,
+  'started',to_char(started_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US'),
+  'finished',to_char(finished_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US'),
+  'created',to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US'))::text,'|' ORDER BY tenant_id,id),''))
+  FROM public.connector_sync_run) AS sync_runs`;
 
 export function compareApplicationTableAcls(sourceTables, restoredTables) {
   const sourceByName = new Map(sourceTables.map(table => [table.object_name, table]));
@@ -252,6 +287,8 @@ async function snapshot(pool, applicationTableNames, authUserIds) {
   const role = (await pool.query(roleStateSql)).rows[0];
   assert.ok(role, "margindesk_app must exist in both source and restored databases.");
   const applicationTables = (await pool.query(applicationTableAclSql, [applicationTableNames])).rows;
+  const applicationColumns=(await pool.query(applicationColumnsSql,[applicationTableNames])).rows;
+  const ingestionEvidence=(await pool.query(ingestionEvidenceSql)).rows[0];
   const functions = (await pool.query(publicFunctionAclSql)).rows;
   const securityDefiners = functions.filter(fn => fn.security_type === "DEFINER");
   const schemas = (await pool.query(schemaAclSql)).rows;
@@ -290,7 +327,7 @@ async function snapshot(pool, applicationTableNames, authUserIds) {
     ORDER BY p.tenant_id,p.id
   `, ["61000000-0000-4000-8000-000000000001", "62000000-0000-4000-8000-000000000001"]);
   const sentinel = sentinelResult.rows.length === 1 ? sentinelResult.rows[0] : null;
-  return { role, applicationTableNames: [...applicationTableNames].sort(), applicationTables, securityDefiners, functions, schemas, defaultPrivileges, applicationRows, tenantRowCounts, authUserCount, sentinel };
+  return { role, applicationTableNames: [...applicationTableNames].sort(), applicationTables, applicationColumns, ingestionEvidence, securityDefiners, functions, schemas, defaultPrivileges, applicationRows, tenantRowCounts, authUserCount, sentinel };
 }
 
 function comparableAcl(items) {
@@ -397,6 +434,8 @@ async function main() {
     }, failures);
     reportSection("public schema ACL", () => assert.deepEqual(comparableAcl(sourceState.schemas), comparableAcl(targetState.schemas), "Public schema ACL differs."), failures);
     reportSection("application table inventory", () => assert.deepEqual(sourceState.applicationTableNames, targetState.applicationTableNames, "Application table inventory differs."), failures);
+    reportSection("application column inventory including invoice actual evidence",()=>assertApplicationColumnsEqual(sourceState.applicationColumns,targetState.applicationColumns),failures);
+    reportSection("invoice actuals and ingestion metadata content hashes",()=>assert.deepEqual(sourceState.ingestionEvidence,targetState.ingestionEvidence,"Invoice actuals, mappings/schedules or sync-run contents differ (hashes only)."),failures);
     reportSection("application row counts", () => assert.deepEqual(sourceState.applicationRows, targetState.applicationRows, "Application row counts differ."), failures);
     reportSection("per-tenant row counts", () => assert.deepEqual(sourceState.tenantRowCounts, targetState.tenantRowCounts, "Per-tenant row counts differ."), failures);
     reportSection("referenced auth.users IDs", () => assert.equal(targetState.authUserCount, sourceState.authUserCount, "Referenced auth.users IDs differ."), failures);
@@ -420,6 +459,8 @@ async function main() {
         "",
         "- Restricted `margindesk_app` attributes and empty membership state matched.",
         `- Matched ACLs for ${sourceState.applicationTables.length} application tables, all ${sourceState.functions.length} public functions (${sourceState.securityDefiners.length} SECURITY DEFINER), and the public schema.`,
+        `- Matched ${sourceState.applicationColumns.length} application column names/types/nullability/defaults, including invoice actual-cost evidence; existing template/sync-run data is covered by strict row counts.`,
+        "- Matched content hashes for invoice actuals, mappings/schedules and sync runs; source cells and links are never printed.",
         `- Verified ${targetState.authUserCount} synthetic or existing target auth.users IDs required by application foreign keys. No source credential fields were copied.`,
         `- Restored sentinel tenant/product identity and content hash matched: \`${JSON.stringify(targetState.sentinel)}\`.`,
         "- Application table row counts:",

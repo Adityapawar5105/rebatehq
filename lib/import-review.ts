@@ -14,7 +14,7 @@ export async function saveMappingTemplate(db:DB,tenantId:string,userId:string,in
  const {supplier,fileType,headers}=parsed.data;const fields=validateMapping(parsed.data.fields,headers.length);
  if(!Object.keys(fields).length)throw new HttpError(422,"Map at least one column before saving a template.");
  const name="supplier-file:"+createHash("sha256").update(JSON.stringify([supplier,fileType])).digest("hex");
- const mapping={supplier,fileType,fields,headersFingerprint:headersFingerprint(headers),schemaVersion:1};
+ const mapping={supplier,fileType,fields,headersFingerprint:headersFingerprint(headers),headerHashes:headers.map(header=>headersFingerprint([header])),schemaVersion:1};
  const result=await db.query<{id:string}>(`INSERT INTO public.column_mapping_template(tenant_id,name,import_type,version,column_mapping,created_by)
  VALUES($1,$2,'supplier_file_mapping_v1',1,$3::jsonb,$4)
  ON CONFLICT(tenant_id,name,version) DO UPDATE SET column_mapping=EXCLUDED.column_mapping

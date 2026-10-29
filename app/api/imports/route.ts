@@ -15,7 +15,7 @@ const Action=z.discriminatedUnion("action",[
  z.object({action:z.literal("commit"),id:z.uuid(),acknowledgeRejected:z.boolean()}).strict(),
  z.object({action:z.literal("undo"),id:z.uuid()}).strict(),
  z.object({action:z.literal("resolve"),id:z.uuid(),offset:z.number().int().min(0).max(MAX_IMPORT_DATA_ROWS),
-  choices:z.record(z.string().regex(/^\d+$/),z.enum(["app","file","review"])).refine(v=>Object.keys(v).length<=IMPORT_PREVIEW_PAGE_SIZE)}).strict()
+  choices:z.record(z.string().regex(/^\d+$/),z.enum(["app","file","review"])).refine(v=>Object.keys(v).length<=IMPORT_PREVIEW_PAGE_SIZE),acknowledgeWarnings:z.boolean().optional()}).strict()
 ]);
 export async function GET(request:Request){try{
  const context=await getAppContext(request.headers);assertPermission(context,"files.review");
@@ -38,7 +38,7 @@ export async function POST(request:Request){let actionName="";try{
  const data=await withDatabase(databaseContext(context,request.headers),async db=>{
   if(input.action==="export")return exportLifeline(db,context.tenantId,context.userId,input.supplier);
   if(input.action==="commit")return commitImport(db,context.tenantId,context.userId,input.id,input.acknowledgeRejected);
-  if(input.action==="resolve")return {plan:await resolveImportChoices(db,context.tenantId,input.id,input.choices,input.offset)};
+  if(input.action==="resolve")return {plan:await resolveImportChoices(db,context.tenantId,input.id,input.choices,input.offset,input.acknowledgeWarnings)};
   return undoImport(db,context.tenantId,context.userId,input.id);
  });
  if(typeof data==="string")return new Response(data,{headers:{"content-type":"text/csv;charset=utf-8","content-disposition":'attachment; filename="margindesk-lifeline.csv"',"cache-control":"no-store","x-content-type-options":"nosniff"}});

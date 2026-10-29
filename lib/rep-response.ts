@@ -1,7 +1,7 @@
 import type { Role } from "@/lib/permissions";
 
 const forbiddenRepKeys = new Set([
-  "unitcost", "freightcost", "paymenttermscost", "cogs", "cogstotal",
+  "unitcost", "actualcostamount", "actualcostsource", "freightcost", "paymenttermscost", "cogs", "cogstotal",
   "pocketprice", "pocketmargin", "margin", "margindollar", "margindollars",
   "marginamount", "marginvalue", "freight", "terms", "costcomponent", "costcomponents"
 ]);

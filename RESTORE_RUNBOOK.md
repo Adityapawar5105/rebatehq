@@ -83,3 +83,13 @@ Chunk 3A reuses the existing import-job, mapping-template and data-quality table
 Import/export baselines, dry runs and undo journals reuse `import_job.summary`. No schema, function, ACL or inventory changed, so the same strict dump/restore and 38-table minimum apply; do not replay historical migrations. The existing row-count/ACL comparison includes all journal rows, and plans remain 156 fresh / 159 restore mode. A run containing Chunk 3B is **unverified** until green CI/restore evidence exists.
 
 After logical restore, create fresh lifeline exports and dry runs: their physical revision stamps may differ from pre-backup values. Undo compares recorded business values/IDs instead of physical revisions, but an end-to-end undo of a pre-backup journal on an actual Supabase restore remains **unverified**. Preserve the recorded journal and all audit events; never remove conflict checks to force an undo. Restore-only platform cleanup remains the only post-schema cleanup step.
+
+## Chunk 3C inventory additions — unverified until a green drill
+
+The new pending `20261029175710_chunk3c_invoice_actual_cost.sql` must be applied to the source before dumping it. Keep the existing procedure: restore the complete dumped schema/grants, use only restore-platform ACL cleanup, then restore data with ON_ERROR_STOP. Never replay historical migrations on that restored schema.
+
+The source seeder now includes sourced invoice actual cost/freight/rebate evidence, a disabled Sheets schedule, its actual CSV-mapping parent and a terminal sync run. Fixed sentinel tenant/product IDs are preserved; all additional fixture IDs are generated in dependency order. An existing sentinel causes a clear collision failure; use a clean disposable source.
+
+Source/target comparison now also requires identical application column names/types/nullability/defaults (including the two invoice actual-cost fields) and content hashes for invoice actuals, mappings/schedules and sync runs. Values/URLs are not printed. Existing table/function/schema ACL, membership, counts, auth dependencies and sentinel checks remain strict. The table minimum stays 38 because no tables/functions were added. The post-restore suite now plans **165 checks** (fresh: **162**) and must pass twice with unchanged counts.
+
+Expect the job summary to report the new column inventory and evidence/metadata hash sections alongside all previous sections. The updated local-target restore, real-Postgres tests, hosted-target mode and pre-backup journal undo after real restore remain **unverified** until green runs exercise them. Local PGlite results are in [CHUNK_3C_VERIFICATION.md](./CHUNK_3C_VERIFICATION.md).

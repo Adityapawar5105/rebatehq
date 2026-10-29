@@ -56,6 +56,8 @@ jobs:
         run: pnpm check:db-role
       - name: Run RLS, tenant isolation, role, and append-only database tests
         run: pnpm test:db:repeat
+      - name: Time a 10,000-row audited commit and undo on real Postgres
+        run: pnpm benchmark:import
       - name: Stop local Supabase services
         if: always()
         run: pnpm exec supabase stop --no-backup

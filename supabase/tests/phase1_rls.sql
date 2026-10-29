@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT extensions.plan(156 + CASE WHEN current_setting('app.restore_test_mode',true)='true' THEN 3 ELSE 0 END);
+SELECT extensions.plan(162 + CASE WHEN current_setting('app.restore_test_mode',true)='true' THEN 3 ELSE 0 END);
 SELECT set_config('app.phase1_migration_owner',current_user,true);
 -- INCLUDE FUNCTION ACL ALLOWLIST
 
@@ -2371,6 +2371,67 @@ DO $$ DECLARE t text; n integer; checked integer:=0; message text; v_row jsonb; 
 END $$;
 RESET ROLE;
 SELECT extensions.ok(current_setting('app.chunk2c_manager_governance')='true','Only owners may mutate approval rules and plan features; managers can read');
+
+-- Chunk 3C adds evidence columns only; existing invoice-line RLS/ACL/audit
+-- coverage stays intact. Capture restricted results before pgTAP assertions.
+SELECT extensions.ok((SELECT count(*)=2 FROM pg_attribute
+ WHERE attrelid='public.invoice_line'::regclass AND attnum>0 AND NOT attisdropped
+ AND ((attname='actual_cost_amount' AND format_type(atttypid,atttypmod)='numeric(18,4)' AND NOT attnotnull)
+ OR (attname='actual_cost_source' AND atttypid='text'::regtype AND NOT attnotnull))),
+ 'Chunk 3C: nullable numeric actual cost and separate source evidence columns exist');
+SELECT extensions.throws_ok($c$UPDATE public.invoice_line SET actual_cost_amount=1,actual_cost_source=NULL
+ WHERE tenant_id='__PHASE1_TENANT_B_ID__'$c$,'23514',NULL,'Chunk 3C: actual invoice cost requires a source');
+SELECT extensions.throws_ok($c$UPDATE public.invoice_line SET actual_cost_amount=-1,actual_cost_source='bill'
+ WHERE tenant_id='__PHASE1_TENANT_B_ID__'$c$,'23514',NULL,'Chunk 3C: negative invoice actual cost is rejected');
+SELECT set_config('app.chunk3c_audit_before',(SELECT count(*)::text FROM public.audit_log
+ WHERE tenant_id='__PHASE1_TENANT_B_ID__' AND action='invoice_line.update'),true);
+SET LOCAL ROLE margindesk_app;
+SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_B_ID__',true),
+ set_config('request.jwt.claims','{"sub":"__PHASE1_USER_B_ID__","role":"authenticated"}',true),
+ set_config('app.real_actor_id','__PHASE1_USER_B_ID__',true);
+DO $$ DECLARE n integer; BEGIN
+ IF current_user<>'margindesk_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe Chunk 3C actual-cost test role'; END IF;
+ UPDATE public.invoice_line SET actual_cost_amount=0,actual_cost_source='checked-vendor-bill'
+ WHERE tenant_id='__PHASE1_TENANT_B_ID__';
+ GET DIAGNOSTICS n=ROW_COUNT; IF n<1 THEN RAISE EXCEPTION 'Actual-cost positive UPDATE control is empty'; END IF;
+ IF NOT EXISTS(SELECT 1 FROM public.invoice_line WHERE tenant_id='__PHASE1_TENANT_B_ID__' AND actual_cost_amount=0 AND actual_cost_source='checked-vendor-bill') THEN RAISE EXCEPTION 'Actual-cost SELECT control failed'; END IF;
+ PERFORM set_config('app.chunk3c_own_rows',n::text,true);
+END $$;
+RESET ROLE;
+SELECT extensions.ok(current_setting('app.chunk3c_own_rows')::integer>0 AND
+ (SELECT count(*) FROM public.audit_log WHERE tenant_id='__PHASE1_TENANT_B_ID__' AND action='invoice_line.update')
+ =current_setting('app.chunk3c_audit_before')::integer+current_setting('app.chunk3c_own_rows')::integer,
+ 'Chunk 3C: app role reads/writes its own sourced zero actuals and every write is audited');
+SET LOCAL ROLE margindesk_app;
+DO $$ DECLARE n integer; message text; BEGIN
+ IF current_user<>'margindesk_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe Chunk 3C isolation test role'; END IF;
+ SELECT count(*) INTO n FROM public.invoice_line WHERE tenant_id='__PHASE1_TENANT_A_ID__';
+ IF n<>0 THEN RAISE EXCEPTION 'Foreign invoice actuals visible'; END IF;
+ UPDATE public.invoice_line SET actual_cost_amount=3,actual_cost_source='forbidden' WHERE tenant_id='__PHASE1_TENANT_A_ID__';
+ GET DIAGNOSTICS n=ROW_COUNT;IF n<>0 THEN RAISE EXCEPTION 'Foreign actual-cost UPDATE succeeded'; END IF;
+ BEGIN
+  UPDATE public.invoice_line SET tenant_id='__PHASE1_TENANT_A_ID__' WHERE tenant_id='__PHASE1_TENANT_B_ID__';
+  RAISE EXCEPTION 'Actual-cost tenant reassignment was allowed';
+ EXCEPTION WHEN insufficient_privilege THEN GET STACKED DIAGNOSTICS message=MESSAGE_TEXT;
+  IF position('row-level security' in lower(message))=0 THEN RAISE EXCEPTION 'Wrong actual-cost denial: %',message; END IF;
+ END;
+ PERFORM set_config('app.chunk3c_actuals_isolation','true',true);
+END $$;
+RESET ROLE;
+SELECT extensions.ok(current_setting('app.chunk3c_actuals_isolation')='true','Chunk 3C: cross-tenant actuals are invisible and reassignment fails with RLS 42501');
+SET LOCAL ROLE margindesk_app;
+SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_REP_ID__',true),
+ set_config('request.jwt.claims','{"sub":"__PHASE1_USER_REP_ID__","role":"authenticated"}',true);
+DO $$ DECLARE n integer; BEGIN
+ IF current_user<>'margindesk_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe Chunk 3C rep test role'; END IF;
+ SELECT count(actual_cost_amount) INTO n FROM public.invoice_line WHERE tenant_id='__PHASE1_TENANT_B_ID__';
+ IF n<>0 THEN RAISE EXCEPTION 'Rep can read invoice actual costs'; END IF;
+ UPDATE public.invoice_line SET actual_cost_amount=3,actual_cost_source='forbidden' WHERE tenant_id='__PHASE1_TENANT_B_ID__';
+ GET DIAGNOSTICS n=ROW_COUNT;IF n<>0 THEN RAISE EXCEPTION 'Rep can update invoice actual costs'; END IF;
+ PERFORM set_config('app.chunk3c_actuals_rep','true',true);
+END $$;
+RESET ROLE;
+SELECT extensions.ok(current_setting('app.chunk3c_actuals_rep')='true','Chunk 3C: rep cannot read or mutate invoice actual cost evidence');
 
 SELECT * FROM extensions.finish();
 ROLLBACK;

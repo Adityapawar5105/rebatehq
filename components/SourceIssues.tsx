@@ -3,7 +3,7 @@ import {useState} from "react";
 import {csvDocument} from "@/lib/csv";
 import {IMPORT_PREVIEW_PAGE_SIZE} from "@/lib/import-config";
 import type {UploadIssue,UploadPreview} from "@/lib/upload-types";
-export function SourceIssues({preview,expanded}:{preview:UploadPreview;expanded:boolean}){
+export function SourceIssues({preview,expanded}:{preview:Pick<UploadPreview,"jobId"|"issues"|"totalIssues">;expanded:boolean}){
  const total=preview.totalIssues??preview.issues.length;
  const [issues,setIssues]=useState(preview.issues),[offset,setOffset]=useState(0),[busy,setBusy]=useState(false),[error,setError]=useState("");
  async function page(start:number,limit=IMPORT_PREVIEW_PAGE_SIZE){
@@ -27,7 +27,7 @@ export function SourceIssues({preview,expanded}:{preview:UploadPreview;expanded:
   <p className="import-issue">⚠ Review every source issue. Changes require explicit approvals and a final commit.</p>
   <details open={expanded}><summary>All {total.toLocaleString("en-US")} issues — paged</summary>
    <p>Issues {offset+1}–{Math.min(offset+issues.length,total)} of {total.toLocaleString("en-US")}</p>
-   <div className="data-table import-issues"><table><caption>Issues by original sheet, row and column</caption><thead><tr><th>Location</th><th>Issue</th></tr></thead><tbody>{issues.map((i,n)=><tr key={n}><td>{i.sheet} · Row {i.row}, column {i.column}</td><td>⚠ {i.message}</td></tr>)}</tbody></table></div>
+   <div className="data-table import-issues" tabIndex={0} aria-label="Source issues"><table><caption>Issues by original sheet, row and column</caption><thead><tr><th>Location</th><th>Issue</th></tr></thead><tbody>{issues.map((i,n)=><tr key={n}><td>{i.sheet} · Row {i.row}, column {i.column}</td><td>⚠ {i.message}</td></tr>)}</tbody></table></div>
    <div className="import-controls"><button type="button" disabled={busy||offset===0} onClick={()=>load(Math.max(0,offset-IMPORT_PREVIEW_PAGE_SIZE))}>Previous issues</button><button type="button" disabled={busy||offset+issues.length>=total} onClick={()=>load(offset+IMPORT_PREVIEW_PAGE_SIZE)}>Next issues</button></div>
   </details>
   <button type="button" disabled={busy} onClick={download}>Download all {total.toLocaleString("en-US")} issues</button>

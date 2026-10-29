@@ -30,7 +30,7 @@ test("the restricted-role pgTAP checks capture results and run assertions after 
 });
 
 test("RLS fixtures prove tenant-positive paths, exact RLS write failures, and TRUNCATE protection", () => {
-  assert.match(sql, /extensions\.plan\(156 \+ CASE WHEN current_setting\('app\.restore_test_mode',true\)='true' THEN 3 ELSE 0 END\)/, "Fresh runs plan 156 checks; restored-data runs add three restore-only checks.");
+  assert.match(sql, /extensions\.plan\(162 \+ CASE WHEN current_setting\('app\.restore_test_mode',true\)='true' THEN 3 ELSE 0 END\)/, "Fresh runs plan 162 checks; restored-data runs add three restore-only checks.");
   assert.match(sql, /phase1_tenant_a_fixtures/, "Every application table must have a Tenant A fixture row.");
   assert.match(sql, /CREATE TEMP TABLE phase1_rls_fixture_keys/, "Fixture rows must be enumerated explicitly by table and generated primary key.");
   assert.match(sql, /replace\('__PHASE1_INVITE_A_ID__','-',''\)/, "Fixture invite tokens must be unique to generated fixture IDs.");
@@ -84,8 +84,8 @@ test("RLS fixtures prove tenant-positive paths, exact RLS write failures, and TR
   assert.match(sql, /app\.phase1_anon_function_exec_result/);
   assert.match(sql, /app\.phase1_authenticated_function_exec_result/);
   assert.match(sql, /has_function_privilege\(current_user,p\.oid,'EXECUTE'\)/);
-  assert.match(runner, /expectedFixturePlan = 156/);
-  assert.match(runner, /restoreFixturePlan = 159/);
+  assert.match(runner, /expectedFixturePlan = 162/);
+  assert.match(runner, /restoreFixturePlan = 165/);
   assert.match(runner, /planned !== expectedPlan/);
   assert.match(runner, /all \$\{expectedPlan\} checks passing/);
   assert.match(runner, /materializeFixtureIds/);

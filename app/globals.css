@@ -19,3 +19,9 @@
 .import-wizard summary{cursor:pointer;padding:10px;font-weight:650}
 .import-commit{border-top:1px solid var(--line);margin-top:20px;padding-top:12px}.import-consents{display:grid;gap:8px}.import-consents label,.import-check{display:flex!important;flex-direction:row!important;align-items:center;gap:12px;min-height:44px}.import-wizard input[type=checkbox]{width:24px;min-width:24px;height:24px;min-height:24px}.import-commit .import-issue{margin:8px 0}
 .import-wizard .data-table{max-height:640px;overflow:auto}.import-wizard .import-issues{max-height:380px}.import-wizard .data-table thead{position:sticky;top:0;background:#f5f8fa;z-index:1}
+
+.readiness summary,#ingestion summary,.import-workspace button,#ingestion button,#ingestion input,#ingestion select{min-height:44px}.readiness .grid-4{grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr))}.readiness-action{display:inline-flex;align-items:center;min-height:44px;margin-top:12px;padding:10px 14px;border:1px solid var(--line);border-radius:9px;color:var(--teal);font-weight:650}#ingestion input[type=checkbox]{width:24px;min-width:24px;height:24px;min-height:24px}#ingestion code{overflow-wrap:anywhere}.ingestion-schedules{padding:0;list-style:none}.ingestion-schedules>li{padding:12px 0;border-bottom:1px solid var(--line)}.import-workspace button[aria-pressed=true]{border-color:var(--teal);background:var(--teal2)}
+
+.readiness button{min-height:44px}
+
+.readiness-score strong{font-size:32px;letter-spacing:-.04em}

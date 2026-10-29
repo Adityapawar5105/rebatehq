@@ -1,6 +1,8 @@
 # Import capacity follow-up — 2026-10-29
 
-**Verified in [MarginDesk CI #37 on `32aff35`](https://github.com/Adityapawar5105/margindesk/commit/32aff35cd2842723206272a4147769779aa5a0d3/checks), 2026-10-29; CI job duration: 10m 24s.** The configurable **10,000-row** `MAX_IMPORT_DATA_ROWS`, batched commit/undo with exact restoration, and later-batch rollback passed the fresh/populated PGlite tests. This supersedes the former 200-row capacity evidence from [CI #35](https://github.com/Adityapawar5105/margindesk/actions/runs/40844679109), commit `87d7d90`. No Restore Drill was run because no migration or restore inventory changed. Chunk 3C has not started.
+This record describes the CI #37 capacity milestone. Chunk 3C now adds a real-Postgres timing step, still unverified until a green run; see [CHUNK_3C_VERIFICATION.md](./CHUNK_3C_VERIFICATION.md). No real-Postgres timing values are retroactively attributed to CI #37.
+
+**Verified in [MarginDesk CI #37 on `32aff35`](https://github.com/Adityapawar5105/margindesk/commit/32aff35cd2842723206272a4147769779aa5a0d3/checks), 2026-10-29; CI job duration: 10m 24s.** The configurable **10,000-row** `MAX_IMPORT_DATA_ROWS`, batched commit/undo with exact restoration, and later-batch rollback passed the fresh/populated PGlite tests. This supersedes the former 200-row capacity evidence from [CI #35](https://github.com/Adityapawar5105/margindesk/actions/runs/40844679109), commit `87d7d90`. No Restore Drill was run because no migration or restore inventory changed. Chunk 3C had not started at that milestone; its current status is recorded in CHUNK_3C_VERIFICATION.md.
 
 ## CI #37 evidence and limits
 

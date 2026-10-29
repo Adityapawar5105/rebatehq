@@ -42,7 +42,7 @@ test("every rep-accessible data API enforces response redaction",()=>{
   for(const file of permissionBoundRoutes)assert.match(readFileSync(path.join(process.cwd(),file),"utf8"),/assertRepResponseSafe\(context\.role/,`${file} has a rep permission and must guard its response`);
   assert.ok(permissionBoundRoutes.size>=5,"The scan should cover the current rep permission-bound API routes.");
   const protectedExamples=[
-    {unit_cost:50},{freightCost:4},{payment_terms_cost:2},{cogs:10},{cogs_total:10},
+    {unit_cost:50},{actual_cost_amount:50},{actual_cost_source:"vendor-bill"},{freightCost:4},{payment_terms_cost:2},{cogs:10},{cogs_total:10},
     {pocket_price:90},{pocketMargin:20},{margin:20},{margin_dollars:20},{cost_components:[{amount:2}]},{terms:2}
   ];
   for(const payload of protectedExamples)assert.throws(()=>assertRepResponseSafe("rep",payload));
