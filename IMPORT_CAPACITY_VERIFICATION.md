@@ -1,6 +1,14 @@
 # Import capacity follow-up — 2026-10-29
 
-**GitHub Actions status: unverified.** These changes follow Chunk 3B's [CI #35](https://github.com/Adityapawar5105/margindesk/actions/runs/40844679109), commit `87d7d90`; that run proved the earlier 200-row implementation. No new Actions or restore run is claimed. Chunk 3C has not started.
+**Verified in [MarginDesk CI #37 on `32aff35`](https://github.com/Adityapawar5105/margindesk/commit/32aff35cd2842723206272a4147769779aa5a0d3/checks), 2026-10-29; CI job duration: 10m 24s.** The configurable **10,000-row** `MAX_IMPORT_DATA_ROWS`, batched commit/undo with exact restoration, and later-batch rollback passed the fresh/populated PGlite tests. This supersedes the former 200-row capacity evidence from [CI #35](https://github.com/Adityapawar5105/margindesk/actions/runs/40844679109), commit `87d7d90`. No Restore Drill was run because no migration or restore inventory changed. Chunk 3C has not started.
+
+## CI #37 evidence and limits
+
+The user confirmed CI #37 was green on commit `32aff35` and supplied the **10m 24s** job duration. The citation links to that commit's checks page: the exact run URL was not supplied, the connector only lists pull-request runs, and Windows browser URL-policy support prevented direct log inspection. The job log was not independently downloaded for this documentation update.
+
+The checked-in workflow runs `pnpm test`, typecheck, build and migration-lock/schema/service-role gates, then starts local Supabase, applies migrations, verifies the restricted runtime pool/no-context behavior and runs the existing repeated **156-check fresh pgTAP suite**. `pnpm test` includes **67 JavaScript + 27 TypeScript tests**, with the capacity/batch/rollback coverage described below. All six migrations remain locked, the inventory remains **38 tenant tables**, and the **159 restore-mode** checks retain their earlier Restore Drill #12 evidence.
+
+**Real-Postgres commit and undo timings were not captured by the workflow.** `tests/import-capacity.test.ts` creates PGlite and emits `IMPORT_CAPACITY_TIMING` there; the separate real-Postgres pgTAP/repeatability scripts do not benchmark `commitImport` or `undoImport`. The 10m 24s job duration is not import latency. Local PGlite timings below remain local measurements; no CI or real-Postgres timing values are inferred from them.
 
 ## Implementation
 
@@ -10,7 +18,7 @@ Commit and undo process **250-row batches** using typed `jsonb_to_recordset` sta
 
 Export baselines store normalized values and hashes. Journals retain exact original rows and committed business hashes, avoiding duplicate full after-graphs. Older graph-based exports/journals are still read. Diffs/issues are paged at 100 rows; issue downloads fetch up to 1,000 at a time. Conflict choices save in the same job across pages. No SQL function, table, role, policy, grant, migration, migration hash or dependency changes. Table minimum remains **38**, pgTAP plans **156 fresh / 159 restore mode**.
 
-## Boundary and atomicity tests
+## Boundary and atomicity tests — verified in CI #37
 
 `tests/import-capacity.test.ts` applies **all six locked migrations** in PGlite, with `pgcrypto`, `btree_gist`, minimal `auth.users`/`auth.uid()` and platform roles. Lifecycle assertions run as `margindesk_app`, asserting NOSUPERUSER/NOBYPASSRLS. No lifecycle SQL, policies, grants, conversion helpers or audit triggers are stubbed.
 
@@ -51,9 +59,11 @@ Every new or changed runtime SQL statement executed in PGlite. The lifecycle AST
 6. Undo dependency/list guards; batched cost/price/product deletion and original product/history restoration, including original IDs/timestamps/currencies; final committed/undone journal writes and history reads.
 7. Explicit fixtures, generated UUIDs, dependency-ordered seeding, native second-batch SQL failure/savepoint rollback, all-table counts and exact business-content hashes.
 
-No changed SQL remained unexecuted locally. The existing pgTAP SQL also runs in the older PGlite harness, which stubs platform auth/roles/pgTAP assertions; this does not replace an actual Supabase/Postgres Actions run.
+No changed SQL remained unexecuted locally, and the same execution inventory passed in CI #37. The existing pgTAP SQL also runs in the older PGlite harness, which stubs platform auth/roles/pgTAP assertions; the separate Supabase/Postgres workflow step runs the real security suite. The import capacity lifecycle itself is exercised in PGlite, not through authenticated Next.js or a deployed Supabase app.
 
 ## Local commands and browser check
+
+Original implementation results:
 
 | Check | Local result |
 |---|---|
@@ -62,6 +72,8 @@ No changed SQL remained unexecuted locally. The existing pgTAP SQL also runs in 
 | `pnpm build` | Passed: production Next.js build. |
 | `pnpm check:migrations-lock` | Passed: six locked/applied, zero pending; hashes unchanged. |
 
+For this CI #37 acceptance documentation update on 2026-10-29, all four commands were rerun and passed. `pnpm test` passed **67 JavaScript + 27 TypeScript tests (94 total)**; the TypeScript suite took 425.3 seconds. Typecheck, production build and the migration-lock check passed. Only documentation changed; application/test code, all migration SQL and `migrations.lock` are unchanged. The earlier local timing table above is preserved as its original measurement, not replaced with inferred CI/Postgres timings.
+
 A temporary local HTTP/PGlite browser harness mounted the actual wizard/actions/history components. At 200 rows it passed full issue download, issue/change paging, conflicts saved on both pages, one catalog job, commit/undo counts, inert malicious markup, one primary action, 44px buttons and a 390px layout without horizontal overflow. Desktop/mobile screenshots were inspected. The harness used a fixed test actor; it did not exercise actual Next.js authentication or deployed Supabase.
 
-**Unverified:** this follow-up in GitHub Actions; actual authenticated Next.js and deployed Supabase flows; 10,000-row browser rendering/network behavior beyond the paged local harness; hosted throughput, memory and independent-session contention; hosted-target restore; undo of a pre-backup journal after a real restore; formal accessibility testing. Earlier CI/restore evidence remains historical and does not verify these changes. No new restore run was performed; migrations and restore inventory are unchanged.
+**Unverified:** authenticated Next.js behavior; the deployed Supabase app; serverless time limits; browser UI beyond the local harness, including 10,000-row rendering/network behavior; hosted throughput, memory and independent-session contention; hosted-target restore; undo of a pre-backup journal after a real restore; formal accessibility testing. CI #37 verifies the automated capacity/batching/rollback tests, not these deployed behaviors. No new restore run was performed because migrations and restore inventory are unchanged.
