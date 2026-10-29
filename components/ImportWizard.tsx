@@ -1,7 +1,8 @@
 "use client";
-import { useRef,useState } from "react";
+import { useEffect,useRef,useState } from "react";
 import { csvDocument } from "@/lib/csv";
 import { IMPORT_FIELDS,UPLOAD_LIMITS,type ColumnMapping,type UploadPreview } from "@/lib/upload-types";
+import { ImportActions } from "@/components/ImportActions";
 const labels={sku:"SKU",description:"Description",unit:"Unit",cost:"Cost",price:"Price",supplier:"Supplier",date:"Date",quantity:"Quantity"};
 const letter=(index:number)=>{let s="";for(let n=index+1;n>0;n=Math.floor((n-1)/26))s=String.fromCharCode(65+(n-1)%26)+s;return s;};
 async function responseData(response:Response){const body=await response.json();if(!response.ok)throw new Error(body.error||"We couldn't complete this review. Try again.");return body;}
@@ -9,6 +10,7 @@ function download(name:string,headers:string[],rows:unknown[][]){const url=URL.c
 export function ImportWizard(){
  const [file,setFile]=useState<File|null>(null),[preview,setPreview]=useState<UploadPreview|null>(null),[mapping,setMapping]=useState<ColumnMapping>({}),[step,setStep]=useState(0),[supplier,setSupplier]=useState(""),[busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState("");
  const heading=useRef<HTMLHeadingElement>(null);
+ useEffect(()=>{const changed=()=>setNotice("Catalog updated. The source preview below describes the file that was reviewed; see import history for the saved result.");window.addEventListener("margindesk-import",changed);return()=>window.removeEventListener("margindesk-import",changed);},[]);
  async function review(options:{sheetId?:string;headerRow?:number;mapping?:ColumnMapping}={},nextStep=1){
   if(!file)return;setBusy(true);setError("");setNotice("");
   try{const data:UploadPreview=await responseData(await fetch("/api/import-preview",{method:"POST",headers:{"content-type":"application/octet-stream","x-file-name":encodeURIComponent(file.name),"x-import-options":JSON.stringify(options)},body:file}));setPreview(data);setMapping(data.mapping);setStep(nextStep);setNotice(nextStep===2?"Review complete. No business data was imported.":"File read. Confirm the sheet, header and column mapping.");requestAnimationFrame(()=>heading.current?.focus());}
@@ -30,7 +32,7 @@ export function ImportWizard(){
  }
  return <section className="app-card import-wizard" aria-busy={busy}>
   <h2 ref={heading} tabIndex={-1}>Review a supplier file</h2>
-  <p>1. Choose a file → 2. Match columns → 3. Review issues. No product, price or cost data will be imported.</p>
+  <p>1. Choose a file → 2. Match columns → 3. Review issues and preview changes. Catalog changes require an explicit commit.</p>
   <p className="small">XLSX, CSV or TSV · UTF-8 text · 2 MB · 2,000 rows · 64 columns · 50,000 cells. Files are processed in memory and are not stored.</p>
   {error?<p role="alert" className="import-issue"><span aria-hidden="true">⚠ </span>{error}</p>:null}
   <p role="status" aria-live="polite">{busy?"Working on your file…":notice||(!file?"Choose a supplier file to start.":"")}</p>
@@ -50,7 +52,8 @@ export function ImportWizard(){
    <h3>{step===2?"Review results":"Source preview"}</h3><p>{preview.totalRows} data rows · {preview.issues.length} issues · Header row {preview.headerRow} · {preview.sheetName}</p><p>{preview.limits}</p>
    {preview.issues.length?<><p className="import-issue"><span aria-hidden="true">⚠ </span>Resolve or explicitly review these issues before a later import. Nothing has been corrected automatically.</p><details open={step===2}><summary>All {preview.issues.length} issues</summary><div className="data-table import-issues"><table><caption>Issues by original sheet, row and column</caption><thead><tr><th>Location</th><th>Issue</th></tr></thead><tbody>{preview.issues.map((item,i)=><tr key={i}><td>{item.sheet} · Row {item.row}, column {item.column}</td><td><span aria-hidden="true">⚠ </span>{item.message}</td></tr>)}</tbody></table></div></details></>:<p role="status">No issues found by these checks. This is a file review, not an approval of supplier terms.</p>}
    <div className="data-table"><table><caption>First {preview.rows.length} source rows; all cell text is inert</caption><thead><tr><th>Row</th>{preview.headers.map((h,i)=><th key={i}>{letter(i)} · {h||"(no header)"}</th>)}</tr></thead><tbody>{preview.rows.map(row=><tr key={row.row}><th scope="row">{row.row}</th>{preview.headers.map((_,i)=><td key={i}>{row.cells[i]?.value||""}</td>)}</tr>)}</tbody></table></div>
-   <div className="import-controls"><button type="button" onClick={()=>download("file-issues.csv",["Sheet","Row","Column","Issue"],preview.issues.map(i=>[i.sheet,i.row,i.column,i.message]))}>Download issues</button><button type="button" onClick={()=>download("source-preview.csv",["Row",...preview.headers],preview.rows.map(r=>[r.row,...preview.headers.map((_,i)=>r.cells[i]?.value||"")]))}>Download preview rows</button>{step===2?<button type="button" disabled={busy} onClick={()=>setStep(1)}>Edit mapping</button>:null}<button type="button" className={step===2?"primary":""} disabled={busy} onClick={()=>{setStep(0);setPreview(null);setFile(null);setMapping({});setError("");setNotice("");}}>Review another file</button></div>
+   <div className="import-controls"><button type="button" onClick={()=>download("file-issues.csv",["Sheet","Row","Column","Issue"],preview.issues.map(i=>[i.sheet,i.row,i.column,i.message]))}>Download issues</button><button type="button" onClick={()=>download("source-preview.csv",["Row",...preview.headers],preview.rows.map(r=>[r.row,...preview.headers.map((_,i)=>r.cells[i]?.value||"")]))}>Download preview rows</button>{step===2?<button type="button" disabled={busy} onClick={()=>setStep(1)}>Edit mapping</button>:null}<button type="button" disabled={busy} onClick={()=>{setStep(0);setPreview(null);setFile(null);setMapping({});setError("");setNotice("");}}>Review another file</button></div>
+   {step===2&&file?<ImportActions key={preview.jobId} file={file} preview={preview}/>:null}
   </>:null}
  </section>;
 }

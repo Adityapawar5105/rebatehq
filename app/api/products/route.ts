@@ -4,6 +4,7 @@ import { withDatabase } from "@/lib/db";
 import { assertPermission, errorResponse } from "@/lib/authz";
 import { can } from "@/lib/permissions";
 import { assertRepResponseSafe } from "@/lib/rep-response";
+import { currentImportPrices,currentStandardCosts } from "@/lib/catalog-values";
 
 export const runtime = "nodejs";
 
@@ -21,6 +22,9 @@ export async function GET(request: Request) {
          AND ($2='' OR sku ILIKE $3 OR name ILIKE $3 OR category ILIKE $3) ORDER BY sku LIMIT 500`,
         [context.tenantId, query, `%${query}%`],
       )).rows;
+      const prices=await currentImportPrices(db,context.tenantId,products.map((p:any)=>p.id));
+      const costs=can(context.role,"costs.read")?await currentStandardCosts(db,context.tenantId,products.map((p:any)=>p.id)):new Map();
+      for(const p of products){p.list_price=prices.get(p.id)??p.list_price;if(can(context.role,"costs.read"))p.unit_cost=costs.get(p.id)??null;}
       const conversions = products.length ? (await db.query<{ product_id: string | null; code: string }>(
         `SELECT c.product_id,u.code FROM uom_conversion c
          JOIN uom u ON u.tenant_id=c.tenant_id AND u.id IN (c.from_uom_id,c.to_uom_id)

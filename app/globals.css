@@ -17,3 +17,4 @@
 .import-wizard caption{text-align:left;padding:10px;font-weight:650}.import-wizard td,.import-wizard th{overflow-wrap:anywhere;max-width:360px;white-space:pre-wrap}
 .import-issues{max-height:380px;overflow:auto;background:#fff8ef;color:#793b00}
 .import-wizard summary{cursor:pointer;padding:10px;font-weight:650}
+.import-commit{border-top:1px solid var(--line);margin-top:20px;padding-top:12px}.import-consents{display:grid;gap:8px}.import-consents label,.import-check{display:flex!important;flex-direction:row!important;align-items:center;gap:12px;min-height:44px}.import-wizard input[type=checkbox]{width:24px;min-width:24px;height:24px;min-height:24px}.import-commit .import-issue{margin:8px 0}

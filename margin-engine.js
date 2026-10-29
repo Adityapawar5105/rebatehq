@@ -67,6 +67,17 @@
       }
     }
     const tier = product?.tiers?.[customer?.tier];
+    if (tier == null && product?.listHistory?.length) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return { valid: false, issue: { code: 'pricing_date_missing' } };
+      const matches = product.listHistory.filter(row => String(row.effective_from).slice(0,10) <= day &&
+        (row.effective_to == null || day < String(row.effective_to).slice(0,10)));
+      if (matches.length > 1) return { valid: false, issue: { code: 'pricing_overlap', productId: product?.id, kind: 'list' } };
+      if (matches.length) {
+        const row = matches[0];
+        return { valid: true, price: number(row.unit_price), currency: row.currency || product?.currency,
+          explanation: { rule: 'list', ruleId: row.id, source: 'Approved file import', from: row.effective_from, to: row.effective_to } };
+      }
+    }
     return { valid: true, price: number(tier ?? product?.listPrice), currency: product?.currency,
       explanation: { rule: tier != null ? 'tier' : 'list', source: tier != null ? `Catalog tier: ${customer.tier}` : 'Product catalog', from: null, to: null } };
   }

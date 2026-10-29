@@ -3,9 +3,9 @@ import MarginEngineModule from "../margin-engine.js";
 const MarginEngine = MarginEngineModule as any;
 
 export type QuoteLineInput = { productId: string; qty: number; uom?: string; discountPct: number; rebatePct: number; accessory: number };
-export type DbProduct = { id:string;sku:string;name:string;category:string;supplier:string|null;uom:string|null;currency?:string;unit_cost:string|number;freight_cost:string|number;payment_terms_cost:string|number;list_price:string|number;tier_prices:Record<string,number> };
+export type DbProduct = { id:string;sku:string;name:string;category:string;supplier:string|null;uom:string|null;currency?:string;unit_cost:string|number;freight_cost:string|number;payment_terms_cost:string|number;list_price:string|number;tier_prices:Record<string,number>;list_history?:unknown[] };
 export function engineProduct(row:DbProduct) {
-  return { id:row.id, sku:row.sku, name:row.name, category:row.category, supplier:row.supplier, uom:row.uom, currency:row.currency, cost:Number(row.unit_cost), freight:Number(row.freight_cost), termsCost:Number(row.payment_terms_cost), listPrice:Number(row.list_price), tiers:row.tier_prices||{} };
+  return { id:row.id, sku:row.sku, name:row.name, category:row.category, supplier:row.supplier, uom:row.uom, currency:row.currency, cost:Number(row.unit_cost), freight:Number(row.freight_cost), termsCost:Number(row.payment_terms_cost), listPrice:Number(row.list_price), tiers:row.tier_prices||{},listHistory:row.list_history||[] };
 }
 export async function calculateServerQuote(db:PoolClient,tenantId:string,customerId:string,lines:QuoteLineInput[],transactionDate=new Date().toISOString().slice(0,10),transactionCurrency?:string) {
   const tenantResult=await db.query<{currency:string;default_cost_basis:string}>("SELECT currency,default_cost_basis FROM tenant WHERE tenant_id=$1",[tenantId]);
@@ -15,7 +15,12 @@ export async function calculateServerQuote(db:PoolClient,tenantId:string,custome
   const customerResult=await db.query("SELECT id,name,account_no,tier,group_id,assigned_rep_id FROM customer WHERE tenant_id=$1 AND id=$2",[tenantId,customerId]);
   const customer=customerResult.rows[0];if(!customer)throw Object.assign(new Error("Customer was not found or is not assigned to you."),{status:404});
   const ids=[...new Set(lines.map(line=>line.productId))];
-  const productResult=await db.query<DbProduct>("SELECT id,sku,name,category,supplier,uom,unit_cost,freight_cost,payment_terms_cost,list_price,tier_prices,$3::char(3) AS currency FROM product WHERE tenant_id=$1 AND id=ANY($2::uuid[]) AND active=true",[tenantId,ids,tenant.currency]);
+  const productResult=await db.query<DbProduct>(`SELECT p.id,p.sku,p.name,p.category,p.supplier,p.uom,p.unit_cost,p.freight_cost,p.payment_terms_cost,p.list_price,p.tier_prices,$3::char(3) AS currency,
+   COALESCE((SELECT jsonb_agg(jsonb_build_object('id',i.id,'unit_price',i.unit_price::text,'currency',i.currency,
+    'effective_from',i.effective_from::text,'effective_to',i.effective_to::text) ORDER BY i.effective_from)
+    FROM public.price_list_item i JOIN public.price_list pl ON pl.tenant_id=i.tenant_id AND pl.id=i.price_list_id
+    WHERE i.tenant_id=p.tenant_id AND i.product_id=p.id AND pl.name='MarginDesk file imports' AND pl.active=true),'[]'::jsonb) AS list_history
+   FROM public.product p WHERE p.tenant_id=$1 AND p.id=ANY($2::uuid[]) AND p.active=true`,[tenantId,ids,tenant.currency]);
   if(productResult.rows.length!==ids.length)throw Object.assign(new Error("One or more products are unavailable in this workspace."),{status:422});
   const products=productResult.rows.map(engineProduct);
   const productById=new Map(products.map(product=>[product.id,product]));
