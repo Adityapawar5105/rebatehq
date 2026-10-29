@@ -1,6 +1,20 @@
 # Chunk 3B verification — 2026-10-29
 
-**Status: implemented and locally tested; unverified in GitHub Actions.** CI #33 proves the earlier Chunk 3A commit `7b27ba4`; it does not exercise these changes. Chunk 3C has not started.
+**Status: verified in [MarginDesk CI #35](https://github.com/Adityapawar5105/margindesk/actions/runs/40844679109), 2026-10-29, commit `87d7d90`**, for the automated checks listed below. Imports are currently limited to **200 total data rows per file, including unchanged rows**. The run completed successfully at 2026-10-29 08:51:21 UTC (14:21:21 Asia/Calcutta). Chunk 3C has not started.
+
+No Restore Drill was run because no migration or restore inventory changed. The **159 restore-mode** checks remain proven by Phase 2 [Restore Drill #12](https://github.com/Adityapawar5105/margindesk/actions/runs/40740709133); CI #35 passed the existing **156 fresh** checks twice across **38 tenant tables**. Authenticated Next.js behavior, the deployed Supabase app, hosted restore and browser UI beyond the local harness remain **unverified**.
+
+## CI #35 evidence
+
+The [verify job log](https://github.com/Adityapawar5105/margindesk/actions/runs/40844679109/job/123349158802) confirms these tests passed:
+
+- Catalog lifecycle tenant isolation, audit entries, app/file conflicts and exact commit/undo restoration, twice on fresh and populated PGlite fixtures.
+- Same-day updates, future gaps, explicit unit conversion, protected keys, expired/stale plans, changed settings and late-created SKU controls.
+- Explicit decimal approval and integer arithmetic for price per base unit.
+- Execution coverage for every new runtime SQL statement in PGlite.
+- Imported list prices at half-open date boundaries beneath contract/customer/group/tier precedence, plus all existing margin golden and upload-security tests.
+
+The job passed **67 JavaScript + 24 TypeScript tests (91 total)**, typecheck, build, migration-lock/schema/service-role gates (101 user-facing files), clean migration application, restricted app-login setup, runtime pool/no-context checks, and the repeated 156-check fresh pgTAP suite. This does not turn the local browser harness into CI evidence or exercise the lifecycle through authenticated Next.js routes.
 
 ## Changes
 
@@ -22,11 +36,11 @@ Lifeline exports contain product UUIDs plus a baseline stamp. The server validat
 
 Undo compares all committed business values and relevant related rows before restoring exact prior product metadata, cost/price IDs, dates, sources, currencies and counts. It refuses later changes, new quote/invoice references, or later use of a newly created price list. Audits and import/issue history remain retained. The existing row audit triggers cover every mutation; journal state changes are also audited.
 
-## SQL executed locally
+## SQL executed in PGlite — locally and in CI #35
 
 `tests/import-lifecycle.test.ts` boots PGlite with **all six actual locked migrations**, `pgcrypto`, `btree_gist`, and minimal Supabase `auth.users`, `auth.uid()` and platform-role setup. It switches to the actual restricted `margindesk_app` role and asserts NOSUPERUSER/NOBYPASSRLS. No production grants are widened and no pgTAP assertions are stubbed in the new lifecycle test.
 
-Every new runtime SQL statement was executed. A TypeScript AST inventory extracts literal `db.query` statements from `lib/import-lifecycle.ts`, `lib/catalog-values.ts`, and the new quote product/list-history query, and fails if any is absent from the PGlite execution trace. This includes:
+Every new runtime SQL statement was executed locally and in CI #35. A TypeScript AST inventory extracts literal `db.query` statements from `lib/import-lifecycle.ts`, `lib/catalog-values.ts`, and the new quote product/list-history query, and fails if any is absent from the PGlite execution trace. This includes:
 
 1. Tenant advisory lock/date/currency lookup; price-list lookup/lock; product, cost, price and UOM/conversion row locks; graph/physical-revision snapshots; supplier-filtered export selection and one-row baseline lookup.
 2. Import/export job insert, dry-run journal/count update, locked job lookup, committed state/actor/time update, undo state update, and history projection including actor and counts.
@@ -37,13 +51,13 @@ Every new runtime SQL statement was executed. A TypeScript AST inventory extract
 
 The main lifecycle test runs **twice on fresh data and twice with pre-existing import/export rows**. It proves conflicts, all four row states, explicit rejected-row approval, duplicate commit/undo rejection, tenant isolation, audited writes, effective-cost/price usage by quotes, unsafe undo rejection, and exact business row restoration. Each transaction rolls back and compares counts for **all 38 tenant tables**, including journal/audit tables, against the baseline. A second test runs twice and covers same-day changes, interval splitting/gaps with scheduled future values, numeric/unit approvals, partial-column conversions, missing units, modified/missing keys, expired/stale plans and late SKU creation.
 
-The existing full pgTAP SQL also runs under the older PGlite auth/role/pgTAP harness as part of `pnpm test`. A real Supabase/Postgres execution of these new application paths, contention between separate database sessions and a full restore of a committed undo journal were **not** run locally and remain **unverified**.
+The existing full pgTAP SQL also runs under the older PGlite auth/role/pgTAP harness as part of `pnpm test`. CI #35 separately passed the existing fresh database suite and runtime-role check on local Supabase/Postgres. The new application lifecycle tests themselves run in PGlite: their execution through actual authenticated Next.js/deployed Supabase paths, contention between separate database sessions and a full restore of a committed undo journal remain **unverified**.
 
 ## Local browser check
 
 A temporary browser harness mounted the actual wizard/actions/history components and used the actual parser and lifecycle modules through local HTTP handlers over PGlite. It used a fixed test actor, not Supabase Auth or the actual Next.js routes. It passed Excel CSV export, mapped re-upload with app/file edits, three-way conflict display, keep-file selection, refreshed preview, explicit commit, history and undo with exact restored catalog counts. It also checked one primary action, 44px buttons and a 390px layout without page overflow. Desktop/mobile screenshots were visually reviewed. The temporary harness/screenshots were removed.
 
-This does **not** verify authenticated Next.js behavior, production Supabase or deployed browser behavior. Formal WCAG/assistive-technology testing remains **unverified**.
+The local harness did not run in CI #35. Authenticated Next.js behavior, the deployed Supabase app, hosted restore and browser UI beyond that local harness remain **unverified**, as does formal WCAG/assistive-technology testing.
 
 ## Final local gates
 
@@ -53,6 +67,8 @@ This does **not** verify authenticated Next.js behavior, production Supabase or 
 | `pnpm typecheck` | **Passed:** `tsc --noEmit`. |
 | `pnpm build` | **Passed:** production Next.js build, including `/api/imports` and `/api/imports/preview`. |
 | `pnpm check:migrations-lock` | **Passed:** six locked applied migrations, zero pending; all hashes unchanged. |
+
+All four commands were rerun successfully for this CI-acceptance documentation update on 2026-10-29, with the same 67 JavaScript / 24 TypeScript results. Only the five acceptance documents changed; application code, tests, migrations and `migrations.lock` were not changed.
 
 The manager-role regression caught an unnecessary tenant-row locking read: PostgreSQL applied the tenant's owner-only update policy and hid the row from managers. The final code uses a normal tenant read and rechecks workspace currency; product/history/price/UOM locks remain. No policy or privilege was widened. Every final runtime SQL statement passed the execution inventory. Real contention across independent sessions remains unverified.
 
