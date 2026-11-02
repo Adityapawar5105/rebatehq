@@ -19,6 +19,19 @@ Chunk 2C and Phase 2 are **verified in [MarginDesk CI #31](https://github.com/Ad
 
 MarginDesk is being moved from a browser-local prototype to a multi-tenant app for mid-market distributors. Phase 1 adds the production foundation: Supabase Auth magic links, tenant and role enforcement, PostgreSQL RLS, audit logging, and a safe prototype import/export path. It does not add new pricing, rebate, or ERP features.
 
+## Roadmap (Blueprint v2.2)
+
+[BLUEPRINT.md](./BLUEPRINT.md) v2.2 now governs the product: customer pricing data moves to the browser (DuckDB-Wasm in a Web Worker, encrypted OPFS), and this server becomes the control plane (identity, workspaces, licences, ciphertext relay). The verified records above describe the earlier server-side phases and stay as historical evidence. **The current code still stores business data server-side; no local-only privacy claim is made until the CI privacy gate passes.** [ARCHITECTURE_TRANSITION.md](./ARCHITECTURE_TRANSITION.md) classifies every route, module and table; [BLUEPRINT_EXECUTION_PLAN.md](./BLUEPRINT_EXECUTION_PLAN.md) holds the chunk prompts.
+
+| Repo phase | Blueprint phase | Chunks | Status |
+|---|---|---|---|
+| 0–3 | Foundations | 0, 1, 2A–2C, 3A–3C | Verified (CI #39, Restore Drill #13) |
+| 4 | Phase 1 core | 4.0 transition map · 4A spike · 4B vault · 4C-1/4C-2 Import Studio · 4D pocket-margin engine and margin intelligence · 4E pricing, export, backup | 4.0 done locally (2 Nov 2026); 4A next |
+| 5 | Phase 1b + control plane | 5A cleanup, cost basis, checklist, roles · 5B licences, retire server business-data paths, carried security fixes | Not started |
+| 6 | Pilot hardening + security | 6A real files · 6B security review and whitepaper → sellable v1 | Not started |
+| 7 | Phase 2 | 7A–7F | Not started |
+| 8 | Phase 3 | 8A–8D | Not started |
+
 ## Local app
 
 Requirements: Node.js 20.9 or newer, pnpm 10, and Docker for local Supabase database tests.
