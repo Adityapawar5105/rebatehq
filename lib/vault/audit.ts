@@ -26,7 +26,8 @@ export async function verifyAudit(engine: Engine) {
   const meta = (await engine.conn.query("SELECT audit_count::VARCHAR AS count,audit_tip FROM vault_meta WHERE id=1")).toArray()[0];
   async function* rows() {
     for (let after = BigInt(0);;) {
-      const batch = (await engine.conn.query(`SELECT sequence::VARCHAR AS sequence,id,occurred_at,action,details,previous_hash,hash FROM audit_log WHERE sequence>${after} ORDER BY sequence LIMIT 1000`)).toArray();
+      // ORDER BY must name the BIGINT column: the VARCHAR alias would sort "10" before "2".
+      const batch = (await engine.conn.query(`SELECT sequence::VARCHAR AS sequence,id,occurred_at,action,details,previous_hash,hash FROM audit_log WHERE audit_log.sequence>${after} ORDER BY audit_log.sequence LIMIT 1000`)).toArray();
       if (!batch.length) break;
       for (const row of batch) { after = BigInt(row.sequence); yield { ...row } as AuditEntry; }
     }

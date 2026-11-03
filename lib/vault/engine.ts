@@ -49,10 +49,10 @@ async function switchToWritable(engine: Engine) {
 export function startWarmup(engine: Engine) {
   if (engine.writable || engine.warming) return engine.warming;
   engine.warming = (async () => {
-    const conn = await engine.db.connect();
-    try { await copyToWritable(engine, conn); engine.warmReady = true; return true; }
-    catch { return false; }
-    finally { await conn.close().catch(() => undefined); engine.warmDone = true; }
+    let conn: duckdb.AsyncDuckDBConnection | null = null;
+    try { conn = await engine.db.connect(); await copyToWritable(engine, conn); engine.warmReady = true; return true; }
+    catch { return false; } // the first change then copies on the main connection
+    finally { await conn?.close().catch(() => undefined); engine.warmDone = true; }
   })();
   return engine.warming;
 }

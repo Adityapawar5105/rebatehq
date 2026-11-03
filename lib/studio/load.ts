@@ -112,7 +112,8 @@ export async function sampleIssues(engine: Engine, role: Role, ord: number, limi
   return (await engine.conn.query(`SELECT src_row::VARCHAR AS row, err FROM ${typed(role)} WHERE file_ord=${ord} AND err IS NOT NULL ORDER BY src_row LIMIT ${limit}`)).toArray().map(r => ({ row: Number(r.row), code: String(r.err) }));
 }
 export async function salesRanges(engine: Engine, replaces: string | null) {
-  const batch = (await engine.conn.query(`SELECT file_ord, min(sale_date)::VARCHAR AS a, max(sale_date)::VARCHAR AS b FROM ${typed("sales_history")} WHERE err IS NULL GROUP BY file_ord`)).toArray().map(r => ({ ord: Number(r.file_ord), from: String(r.a), to: String(r.b) }));
+  // Every row with a readable date counts, so re-imported (rejected) rows still show overlap.
+  const batch = (await engine.conn.query(`SELECT file_ord, min(sale_date)::VARCHAR AS a, max(sale_date)::VARCHAR AS b FROM ${typed("sales_history")} WHERE sale_date IS NOT NULL GROUP BY file_ord`)).toArray().map(r => ({ ord: Number(r.file_ord), from: String(r.a), to: String(r.b) }));
   const vault = (await engine.conn.query(`SELECT s.name, min(l.sale_date)::VARCHAR AS a, max(l.sale_date)::VARCHAR AS b FROM sales_lines l JOIN source_files s ON s.id=l.source_id WHERE ${replaces ? `l.source_id<>${sqlText(replaces)}` : "true"} GROUP BY s.name`)).toArray().map(r => ({ name: String(r.name), from: String(r.a), to: String(r.b) }));
   return { batch, vault };
 }

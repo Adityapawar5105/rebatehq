@@ -151,3 +151,17 @@ intermittent failure is gone; if the gate fails again, the uploaded diagnostics
 should identify the cause. CI #46's legacy server benchmark (commitImport
 12,480 ms / undoImport 3,834 ms) is back near CI #39's values, which supports
 reading CI #44's 24,410 ms as runner variance. Blueprint unchanged.
+
+## Chunk 4C-1 background warm-up — 3 Nov 2026
+
+The 4B open item (first change after unlock: 7.6 s at 1M lines, about 15 s at 2M) is addressed by starting the copy-on-write in the background right after unlock. Measured with `pnpm benchmark:vault` (`--full`) on the same machine:
+
+| | Chrome 156.0.8078.80 | Edge 156.0.4314.58 |
+|---|---:|---:|
+| Unlock to ready, 1M / 2M lines | 2,729 / 3,314 ms | 2,779 / 3,317 ms |
+| Background warm-up, 1M / 2M | 7,352 / 14,067 ms | 6,889 / 13,425 ms |
+| Read while warm-up runs, 1M / 2M | 144 / 124 ms | 98 / 110 ms |
+| First change after warm-up, 1M / 2M (committed + encrypted save) | **767** / 1,595 ms | **708** / 1,504 ms |
+| Max UI long task during first change | 0 ms | 0 ms |
+
+The target (first change after warm-up under 2 s at 1M lines) is met locally in both browsers. An import started during warm-up waits for it (up to about 7 s at 1M lines) while the UI stays responsive. The 2M startup still misses 3 s, so the Scale cap stays at 1M lines. CI evidence for 4C-1 is pending. Details: [CHUNK_4C1_VERIFICATION.md](./CHUNK_4C1_VERIFICATION.md).

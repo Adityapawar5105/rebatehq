@@ -70,7 +70,24 @@ async function worker(action, data = {}) {
 async function ready() { await page.getByRole("button", { name: /Create encrypted vault|Unlock vault/ }).waitFor(); }
 async function unlock() { await page.getByLabel("Vault passphrase").fill(secret); await page.getByRole("button", { name: "Unlock vault", exact: true }).click(); await page.getByRole("button", { name: "Lock vault", exact: true }).waitFor({ timeout: 45000 }); }
 const header = "line_id,product_id,customer_id,sale_date,quantity,list_amount,discount_amount,freight_amount,rebate_amount,cost_amount\n";
-function csv(rows) { const lines = []; for (let i = 1; i <= rows; i++) lines.push(`${i},${i % 20000 + 1},${i % 2000 + 1},2025-01-01,1,${numericMarker},0.50,0.25,0.00,8.00\n`); return Buffer.from(header + lines.join("")); }
+// 19,990 products leaves room under the Starter 20,000-product cap for the multi-format batch.
+function csv(rows, first = 1) { const lines = []; for (let i = first; i < first + rows; i++) lines.push(`${i},${i % 19990 + 1},${i % 2000 + 1},2025-01-01,1,${numericMarker},0.50,0.25,0.00,8.00\n`); return Buffer.from(header + lines.join("")); }
+// Import Studio flow: add files, review the batch report, optionally confirm.
+async function review(paths) {
+  await page.getByTestId("studio-files").setInputFiles(paths);
+  await page.getByRole("button", { name: "Review import" }).click();
+  await page.getByRole("heading", { name: "Batch report" }).waitFor({ timeout: 120000 });
+}
+async function importFiles(paths, lines, acknowledge = false) {
+  await review(paths);
+  if (acknowledge) await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "Confirm and import locally" }).click();
+  await page.getByTestId("line-count").filter({ hasText: new RegExp(`^${lines}$`) }).waitFor({ timeout: 120000 });
+}
+async function clearBatch() { await page.getByRole("button", { name: "Clear batch" }).click(); await page.getByRole("heading", { name: "Batch report" }).waitFor({ state: "detached" }); }
+// Synthetic multi-format fixtures (TSV, JSON, XML, XLSX) with the private marker in product_id.
+await build({ entryPoints: ["tests/helpers/studio-fixtures.ts"], outfile: "test-results/studio-fixtures.mjs", bundle: true, platform: "node", format: "esm" });
+const fixtures = await import(new URL("../test-results/studio-fixtures.mjs", import.meta.url).href);
 try {
   if (auth) await signInLocal(context, page, base);
   const response = await page.goto(base + route); assert.equal(response.status(), 200); assert.equal(response.headers()["cross-origin-embedder-policy"], "require-corp"); assert.ok(!response.headers()["content-security-policy"].includes("'unsafe-eval'"));
@@ -84,50 +101,65 @@ try {
   const fixture = await readFile("tests/fixtures/vault/v1.enc");
   results.checks.v1 = await worker("v1", { bytes: new Uint8Array(fixture) });
   results.checks.integrity = await worker("integrity");
+  results.checks.studio = await worker("studio");
+  results.checks.warmup = await worker("warmup");
   await page.getByLabel("Vault passphrase").fill(secret); await page.getByRole("button", { name: "Create encrypted vault", exact: true }).click();
   await page.getByRole("button", { name: "Lock vault", exact: true }).waitFor();
   await page.getByRole("link", { name: "Data Hub", exact: true }).click();
   const csvPath = path.resolve("test-results", marker + ".csv"); await writeFile(csvPath, csv(100000));
   await page.evaluate(() => { window.__vaultLongTasks = []; });
   const start = performance.now();
-  await page.getByTestId("csv-file").setInputFiles(csvPath);
-  await page.getByRole("button", { name: "Confirm and import locally" }).click();
-  await page.getByTestId("line-count").filter({ hasText: /^100000$/ }).waitFor({ timeout: 90000 });
+  await importFiles([csvPath], 100000);
   results.measurements.import100kMs = Math.round(performance.now() - start);
   const tasks = await page.evaluate(() => window.__vaultLongTasks); results.measurements.maxImportLongTaskMs = Math.max(0, ...tasks); assert.ok(results.measurements.maxImportLongTaskMs <= 200, "Import blocked main thread for over 200 ms");
   await page.getByRole("link", { name: "Reports", exact: true }).click(); await page.getByRole("button", { name: "Verify audit chain" }).click(); await page.getByRole("status").filter({ hasText: /Audit chain verified/ }).waitFor();
   await page.getByRole("link", { name: "Margin", exact: true }).click(); await page.getByRole("heading", { name: "Imported line totals" }).waitFor(); await page.locator("dt").filter({ hasText: /^margin$/i }).waitFor();
   await page.getByRole("link", { name: "Data Hub", exact: true }).click();
-  const capPath = path.resolve("test-results", "synthetic-over-cap.csv"); await writeFile(capPath, csv(100001));
-  await page.getByTestId("csv-file").setInputFiles(capPath); await page.getByRole("button", { name: "Confirm and import locally" }).click();
-  await page.getByRole("alert").filter({ hasText: /exceeds your starter limit/ }).waitFor(); assert.equal(await page.getByTestId("line-count").innerText(), "100000"); results.checks.capRollback = true;
+  const capPath = path.resolve("test-results", "synthetic-over-cap.csv"); await writeFile(capPath, csv(100001, 200001));
+  await review([capPath]);
+  await page.getByRole("alert").filter({ hasText: /exceeds your starter limit/ }).waitFor();
+  assert.ok(await page.getByRole("button", { name: "Confirm and import locally" }).isDisabled(), "Over-cap batch must not be importable");
+  assert.equal(await page.getByTestId("line-count").innerText(), "100000"); results.checks.capRollback = true; await clearBatch();
   const invalid = path.resolve("test-results", "synthetic-invalid.csv"); await writeFile(invalid, header + `1,1,1,2025-01-01,1,${marker},0.00,0.00,0.00,1.00\n`);
-  await page.getByTestId("csv-file").setInputFiles(invalid); await page.getByRole("button", { name: "Confirm and import locally" }).click();
-  await page.getByRole("alert").filter({ hasText: /Row 2, column F/ }).waitFor(); results.checks.invalidCellNoLeak = true;
+  await review([invalid]);
+  await page.getByText(/Row 2, column F: Use a non-negative amount/).waitFor(); await page.getByRole("alert").filter({ hasText: /No valid rows to load/ }).waitFor();
+  results.checks.invalidCellNoLeak = true; await clearBatch();
   const duplicate = path.resolve("test-results", "synthetic-duplicate.csv"), oneRow = csv(1).toString().slice(header.length);
-  await writeFile(duplicate, header + oneRow + oneRow); await page.getByTestId("csv-file").setInputFiles(duplicate); await page.getByRole("button", { name: "Confirm and import locally" }).click();
-  await page.getByRole("alert").filter({ hasText: /Row 3, column A: line_id is repeated/ }).waitFor(); assert.equal(await page.getByTestId("line-count").innerText(), "100000"); results.checks.locatedDuplicate = true;
-  const cancelPath = path.resolve("test-results", "synthetic-cancel.csv"); await writeFile(cancelPath, csv(1000000));
-  await page.getByTestId("csv-file").setInputFiles(cancelPath); await page.getByRole("button", { name: "Confirm and import locally" }).click();
+  await writeFile(duplicate, header + oneRow + oneRow); await review([duplicate]);
+  await page.getByText(/Row 2: Already loaded from another file/).waitFor(); await page.getByText(/Row 3: Exact copy of an earlier row/).waitFor();
+  assert.equal(await page.getByTestId("line-count").innerText(), "100000"); results.checks.locatedDuplicate = true; await clearBatch();
+  const cancelPath = path.resolve("test-results", "synthetic-cancel.csv"); await writeFile(cancelPath, csv(1000000, 300001));
+  await page.getByTestId("studio-files").setInputFiles(cancelPath); await page.getByRole("button", { name: "Review import" }).click();
   await page.getByRole("button", { name: "Cancel import" }).click(); await page.getByRole("alert").filter({ hasText: /Import cancelled/ }).waitFor();
-  assert.equal(await page.getByTestId("line-count").innerText(), "100000"); results.checks.cancelRollback = true;
+  assert.equal(await page.getByTestId("line-count").innerText(), "100000"); results.checks.cancelRollback = true; await clearBatch();
+  // Privacy gate across formats: the marker sits in product_id inside TSV, JSON, XML and XLSX files.
+  const marked = fixtures.markedSales(marker, 600001).map(f => ({ ...f, path: path.resolve("test-results", f.name) }));
+  for (const f of marked) await writeFile(f.path, f.bytes);
+  await review(marked.map(f => f.path));
+  const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Download all as ZIP" }).click()]);
+  assert.equal(download.suggestedFilename(), "margindesk-converted.zip"); assert.ok((await readFile(await download.path())).length > 100, "Converted ZIP is empty");
+  await page.getByRole("button", { name: "Confirm and import locally" }).click();
+  await page.getByTestId("line-count").filter({ hasText: /^100016$/ }).waitFor({ timeout: 120000 });
+  results.checks.multiFormatImport = { files: marked.map(f => f.name), lines: 16 };
   await page.getByRole("link", { name: "Settings", exact: true }).click(); await page.getByRole("button", { name: "Request persistent storage" }).click();
   await page.getByRole("status").filter({ hasText: /Storage status refreshed/ }).waitFor(); results.checks.storage = await worker("storage");
   results.checks.cipherOnly = await worker("cipherOnly");
   // A killed renderer cannot complete a pagehide save. Success must already be durable.
   const cdp = await context.newCDPSession(page); await Promise.race([cdp.send("Page.crash").catch(() => undefined), new Promise(resolve => setTimeout(resolve, 3000))]); await page.close().catch(() => undefined);
-  page = await openPage(); await page.goto(base + route); await ready(); await unlock(); assert.equal(await page.getByTestId("line-count").innerText(), "100000"); results.checks.killedTabRecovery = true;
+  page = await openPage(); await page.goto(base + route); await ready(); await unlock(); assert.equal(await page.getByTestId("line-count").innerText(), "100016"); results.checks.killedTabRecovery = true;
   await page.getByRole("button", { name: "Lock vault", exact: true }).click(); await ready();
   await page.getByLabel("Vault passphrase").fill("deliberately-wrong-passphrase"); await page.getByRole("button", { name: "Unlock vault", exact: true }).click(); await page.getByRole("alert").filter({ hasText: /Wrong passphrase/ }).waitFor(); results.checks.wrongPassphrase = true;
-  await unlock(); await page.reload(); await ready(); await unlock(); assert.equal(await page.getByTestId("line-count").innerText(), "100000"); results.checks.reload = true;
+  await unlock(); await page.reload(); await ready(); await unlock(); assert.equal(await page.getByTestId("line-count").innerText(), "100016"); results.checks.reload = true;
+  // First change straight after unlock: the import waits for the background warm-up instead of failing.
   await page.getByRole("link", { name: "Data Hub", exact: true }).click();
-  const afterReload = path.resolve("test-results", "synthetic-after-reload.csv"); await writeFile(afterReload, csv(1));
-  await page.getByTestId("csv-file").setInputFiles(afterReload); await page.getByRole("button", { name: "Confirm and import locally" }).click();
-  await page.getByTestId("line-count").filter({ hasText: /^100001$/ }).waitFor({ timeout: 45000 });
-  await page.reload(); await ready(); await unlock(); assert.equal(await page.getByTestId("line-count").innerText(), "100001"); results.checks.firstMutationAfterUnlock = true;
+  const afterReload = path.resolve("test-results", "synthetic-after-reload.csv"); await writeFile(afterReload, csv(1, 700001));
+  await importFiles([afterReload], 100017);
+  await page.reload(); await ready(); await unlock(); assert.equal(await page.getByTestId("line-count").innerText(), "100017"); results.checks.firstMutationAfterUnlock = true;
   await page.getByRole("button", { name: "Lock vault", exact: true }).click(); await ready();
   if (full) {
     assert.ok(!auth, "Synthetic benchmark must not reset an authenticated vault");
+    results.measurements.studio1M = await worker("studioBenchmark", { rows: 1000000 });
+    console.log(`Studio 1M CSV: convert+stage+validate ${results.measurements.studio1M.convertStageValidateMs} ms, commit+encrypted save ${results.measurements.studio1M.commitAndEncryptedSaveMs} ms.`);
     for (const rows of [1000000, 2000000]) {
       results.measurements[`seed${rows}`] = await worker("seed", { rows });
       await context.close(); context = await chromium.launchPersistentContext(profile, browserOptions); await configureContext();
@@ -141,8 +173,8 @@ try {
       const change = await worker("firstChange", { rows });
       const changeTasks = await page.evaluate(() => window.__vaultLongTasks);
       results.measurements[`firstChange${rows}`] = { ...change, maxMainThreadLongTaskMs: Math.max(0, ...changeTasks) };
-      results.checks[`firstChange${rows}OpenItem`] = change.overTenSeconds || Math.max(0, ...changeTasks) > 200;
-      console.log(`First change at ${rows} lines: rebuild ${change.rebuildMs} ms, committed/encrypted ${change.totalMs} ms, max observed UI long task ${Math.max(0, ...changeTasks)} ms.`);
+      results.checks[`firstChange${rows}Under2sAfterWarmup`] = change.underTwoSeconds && Math.max(0, ...changeTasks) <= 200;
+      console.log(`First change at ${rows} lines: background warm-up ${change.warmupMs} ms (read during warm-up ${change.readDuringWarmupMs} ms), post-warm-up first change committed/encrypted ${change.postWarmupFirstChangeMs} ms, max observed UI long task ${Math.max(0, ...changeTasks)} ms.`);
     }
   }
   await page.setViewportSize({ width: 390, height: 844 });

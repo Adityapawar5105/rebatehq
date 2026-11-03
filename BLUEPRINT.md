@@ -228,6 +228,9 @@ Goals, not promises. Benchmark on an 8 GB office laptop. "100M rows in a tab" cl
 - Save **converter recipes** per ERP or supplier for one-click repeat imports
 - Download converted CSVs individually or as one zip
 - Everything runs locally in a Web Worker
+- Spreadsheets (XLSX/XLSM/XLS/XLSB/ODS), JSON and XML are read whole in the browser, so they are capped at 300,000 rows (64 MiB); larger exports go in as CSV/TSV/TXT, which stream up to 256 MiB per file
+- Rebate agreement files are tagged, previewed and converted in Phase 1; loading them into the vault arrives with the customer rebate engine in Phase 2
+- In chunk 4C-1 columns align by canonical name (ignoring case, spaces and punctuation, any order); the ERP mapper for other header names follows in 4C-2
 
 **Scope guardrail:** business data files only (spreadsheets, text exports, tables). Not a general image, video or document converter.
 
@@ -537,3 +540,4 @@ Corrections after reviewing the repository and build history against v2.1. Produ
 7. **Roadmap (section 17)** maps blueprint phases to repo phases, adds the transition/spike and control-plane steps, gives realistic week ranges and a sellable-v1 window (11 Jan - 1 Feb 2027), and states the verification policy. Week 1 reuses the existing sign-in.
 8. **Open questions:** Q3 answered by `ARCHITECTURE_TRANSITION.md`; Q7 (encryption approach) added.
 9. **3 Nov 2026, chunk 4A — encryption fallback clarified (sections 5, 13 and 20).** The pinned offline Wasm build cannot write a natively encrypted OPFS database in the local probe. The chosen fallback is chunk-authenticated AES-256-GCM snapshots, PBKDF2-SHA256 (600k), and memory-only unlocked working/staging data. A plaintext OPFS database can survive a crash even if backups are encrypted, so "delete on lock/close" is insufficient. The spike's plaintext OPFS persistence experiment is restricted to generated synthetic data. This is a local feasibility decision, not CI evidence or a production-vault claim.
+10. **3 Nov 2026, chunk 4C-1 — Import Studio limits clarified (section 6A).** Spreadsheets, JSON and XML are parsed whole in the browser, so they are capped at 300,000 rows per sheet (64 MiB); CSV/TSV/TXT stream up to 256 MiB per file. Rebate agreement files are converted but not loaded until the Phase 2 rebate engine, because the Phase 1 data model has no rebate tables. Column alignment is by canonical name until the 4C-2 ERP mapper. Scope, tiers and prices are unchanged.

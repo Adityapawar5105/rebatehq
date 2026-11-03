@@ -33,6 +33,13 @@ type Entry = {
   bytes: Uint8Array | null; grid: Grid | null; sample: string[][]; sampleBytes: number; sampleRecords: number; notices: string[]; replaces: string | null; appliedRecipe: string | null;
 };
 const id = () => crypto.randomUUID();
+/** Size plus SHA-256 of the first and last 64 KiB: catches renamed or re-saved copies without hashing huge files. */
+export async function fileFingerprint(file: Blob) {
+  const edge = 65536, head = await file.slice(0, edge).arrayBuffer(), tail = file.size > edge ? await file.slice(Math.max(edge, file.size - edge)).arrayBuffer() : new ArrayBuffer(0);
+  const both = new Uint8Array(head.byteLength + tail.byteLength); both.set(new Uint8Array(head)); both.set(new Uint8Array(tail), head.byteLength);
+  const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", both));
+  return `${file.size}:${[...hash].map(b => b.toString(16).padStart(2, "0")).join("")}`;
+}
 const clip = (v: string) => v.length > 120 ? v.slice(0, 117) + "..." : v;
 export function safeName(name: string) { return name.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, "_").slice(0, 120) || "converted"; }
 
@@ -251,7 +258,7 @@ export class Studio {
         if (!headed) writer.header(headers);
         for (const issue of e.grid?.issues ?? []) normalizer.stats.issues.push(issue);
         normalizer.stats.issueCount += e.grid?.issues.length ?? 0;
-        const staged: StagedFile = { ord, role: e.role!, name: e.file.name, bytes: e.file.size, fingerprint: `${e.file.name}|${e.file.size}|${e.file.lastModified}`, alignment: align(e.role!, headers), settings: e.settings, keyed: !!e.grid?.keyed, headers, colOffset: e.grid?.colOffset ?? 0 };
+        const staged: StagedFile = { ord, role: e.role!, name: e.file.name, bytes: e.file.size, fingerprint: await fileFingerprint(e.file), alignment: align(e.role!, headers), settings: e.settings, keyed: !!e.grid?.keyed, headers, colOffset: e.grid?.colOffset ?? 0 };
         signal.throwIfAborted();
         await stageFile(engine, staged, writer.blob(), headers.length);
         files.push(staged); stats.set(ord, normalizer.stats);

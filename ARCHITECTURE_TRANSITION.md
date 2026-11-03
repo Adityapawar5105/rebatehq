@@ -123,6 +123,10 @@ Retiring any table needs a NEW migration, a restore-inventory update and the use
 
 Plan: when 4C-2 creates the Playground generator and 4D moves the golden cases to the decimal engine, move these files into `legacy/` and update those paths in the same change.
 
+## Progress notes
+
+- **Chunk 4C-1 (3 Nov 2026):** the browser Import Studio lives in `lib/studio/`. It was written fresh for the worker (streaming tokenizer, SheetJS, exact DuckDB validation) instead of porting `lib/upload-parser.ts`/`upload-archive.ts` line by line. The server modules keep the same safety rules: no formula evaluation, macro/ZIP/XML-entity protections, formula-safe CSV via the shared `lib/csv.ts`. The server import routes stay class C until 5B retires them.
+
 ## Known discrepancies recorded (not fixed here)
 
 - Blueprint v2.1 §2/§17 said "Phase 4 pocket-margin engine in progress"; it had not started. Corrected in blueprint v2.2.
