@@ -44,3 +44,6 @@ export const CAPS = {
 } as const;
 export const MAX_CSV_BYTES = 256 * 1024 * 1024;
 export const AUTO_LOCK_MS = 10 * 60 * 1000;
+// A closed or crashed tab's lease is released by the browser shortly after its
+// worker dies; wait this long before reporting that another tab holds the vault.
+export const LEASE_WAIT_MS = 10_000;

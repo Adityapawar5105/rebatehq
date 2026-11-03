@@ -74,9 +74,14 @@ async function integrity() {
   service.engine!.conn.query = query;
   assert(copyFailed && !service.engine!.writable && (await service.verify()).valid, "Failed first-change copy altered the readable snapshot");
   await makeWritable(service.engine!);
-  const extra = new VaultService(() => undefined); await extra.init(scope);
+  const extra = new VaultService(() => undefined, undefined, 500); await extra.init(scope);
   let blocked = false; try { await extra.unlock(secret); } catch (e) { blocked = (e as { code: string }).code === "OTHER_TAB"; }
   assert(blocked, "Second writer was not blocked");
+  // A tab reopened right after another closes or crashes waits for the lease instead of failing.
+  const waiting = new VaultService(() => undefined, undefined, 5000); await waiting.init(scope);
+  const takeover = waiting.unlock(secret); await new Promise(resolve => setTimeout(resolve, 200)); await service.lock();
+  await takeover; assert((await waiting.status()).state === "unlocked", "Waiting writer did not take over after the lease was released");
+  await waiting.lock(); await service.unlock(secret); await makeWritable(service.engine!);
   await service.engine!.conn.query("UPDATE audit_log SET details='tampered' WHERE sequence=1");
   assert(!(await verifyAudit(service.engine!)).valid, "Audit tampering was not detected");
   await service.lock();

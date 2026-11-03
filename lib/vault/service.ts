@@ -5,7 +5,7 @@ import { appendAudit, verifyAudit, GENESIS } from "./audit";
 import { V1_SQL, SCHEMA_VERSION, upgradeSql } from "./schema";
 import { ingest, estimateImport, type Progress } from "./ingest";
 import { sqlText } from "../spike/exact";
-import { AUTO_LOCK_MS, VaultError, type Scope, type Tier, type VaultStatus } from "./protocol";
+import { AUTO_LOCK_MS, LEASE_WAIT_MS, VaultError, type Scope, type Tier, type VaultStatus } from "./protocol";
 export class VaultService {
   engine: Engine | null = null;
   storage!: VaultStorage;
@@ -17,7 +17,7 @@ export class VaultService {
   private tier: Tier = "starter";
   private releaseLease: (() => void) | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
-  constructor(private onIdle: () => void, private idleMs = AUTO_LOCK_MS) {}
+  constructor(private onIdle: () => void, private idleMs = AUTO_LOCK_MS, private leaseWaitMs = LEASE_WAIT_MS) {}
   async init(scope: Scope) {
     if (this.storage) throw new VaultError("STATE", "Workspace is already selected. Reload to switch workspace.");
     if (!navigator.storage?.getDirectory || !navigator.locks) throw new VaultError("BROWSER", "Use a current Chrome or Edge browser with local storage and Web Locks enabled.");
@@ -25,11 +25,13 @@ export class VaultService {
   }
   private async lease() {
     if (this.releaseLease) return;
+    // Wait briefly instead of failing at once: right after a tab is closed or
+    // crashes, the browser may not yet have released that tab's lease.
+    const signal = AbortSignal.timeout(this.leaseWaitMs);
     await new Promise<void>((resolve, reject) => {
-      void navigator.locks.request(`margindesk-vault-${this.storage.scope}`, { ifAvailable: true }, async lock => {
-        if (!lock) { reject(new VaultError("OTHER_TAB", "This vault is open in another tab. Lock or close that tab first.")); return; }
+      navigator.locks.request(`margindesk-vault-${this.storage.scope}`, { signal }, async () => {
         await new Promise<void>(release => { this.releaseLease = release; resolve(); });
-      }).catch(reject);
+      }).catch(error => reject(signal.aborted ? new VaultError("OTHER_TAB", "This vault is open in another tab. Lock or close that tab first.") : error));
     });
   }
   touch() {

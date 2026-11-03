@@ -40,8 +40,25 @@ context.on("console", m => {
 await context.addInitScript(() => { window.__vaultLongTasks = []; new PerformanceObserver(list => { for (const e of list.getEntries()) window.__vaultLongTasks.push(e.duration); }).observe({ type: "longtask", buffered: true }); });
 }
 await configureContext();
-let page = await context.newPage();
-page.on("pageerror", () => failures.push("Unhandled page error"));
+// VAULT_TEST_CPU_THROTTLE (e.g. 4) slows each page to approximate a small CI runner.
+const throttle = Number(process.env.VAULT_TEST_CPU_THROTTLE || 0);
+async function openPage() {
+  const opened = await context.newPage();
+  opened.on("pageerror", () => failures.push("Unhandled page error"));
+  if (throttle > 1) await (await context.newCDPSession(opened)).send("Emulation.setCPUThrottlingRate", { rate: throttle });
+  return opened;
+}
+let page = await openPage();
+// On failure, record what the user would see. Diagnostics are scrubbed of fixture markers.
+async function diagnose() {
+  const scrub = text => markers.reduce((value, m) => value.split(m).join("[marker]"), String(text));
+  const diagnostics = {};
+  try { await page.screenshot({ path: `test-results/vault-${channel}${auth ? "-auth" : ""}-failure.png`, fullPage: true }); } catch { diagnostics.screenshot = "unavailable"; }
+  try { diagnostics.alerts = (await page.getByRole("alert").allInnerTexts()).map(scrub); diagnostics.status = (await page.getByRole("status").allInnerTexts()).map(scrub); } catch { diagnostics.alerts = "unavailable"; }
+  try { diagnostics.buttons = (await page.getByRole("button").allInnerTexts()).map(scrub); } catch { diagnostics.buttons = "unavailable"; }
+  try { diagnostics.locks = await page.evaluate(async () => { const q = await navigator.locks.query(); return { held: q.held.map(l => l.mode), pending: q.pending.map(l => l.mode) }; }); } catch { diagnostics.locks = "unavailable"; }
+  return diagnostics;
+}
 async function worker(action, data = {}) {
   return page.evaluate(({ action, data }) => new Promise((resolve, reject) => {
     const w = new Worker("/spike/vault-tests.js", { type: "module" });
@@ -99,7 +116,7 @@ try {
   results.checks.cipherOnly = await worker("cipherOnly");
   // A killed renderer cannot complete a pagehide save. Success must already be durable.
   const cdp = await context.newCDPSession(page); await Promise.race([cdp.send("Page.crash").catch(() => undefined), new Promise(resolve => setTimeout(resolve, 3000))]); await page.close().catch(() => undefined);
-  page = await context.newPage(); await page.goto(base + route); await ready(); await unlock(); assert.equal(await page.getByTestId("line-count").innerText(), "100000"); results.checks.killedTabRecovery = true;
+  page = await openPage(); await page.goto(base + route); await ready(); await unlock(); assert.equal(await page.getByTestId("line-count").innerText(), "100000"); results.checks.killedTabRecovery = true;
   await page.getByRole("button", { name: "Lock vault", exact: true }).click(); await ready();
   await page.getByLabel("Vault passphrase").fill("deliberately-wrong-passphrase"); await page.getByRole("button", { name: "Unlock vault", exact: true }).click(); await page.getByRole("alert").filter({ hasText: /Wrong passphrase/ }).waitFor(); results.checks.wrongPassphrase = true;
   await unlock(); await page.reload(); await ready(); await unlock(); assert.equal(await page.getByTestId("line-count").innerText(), "100000"); results.checks.reload = true;
@@ -114,7 +131,7 @@ try {
     for (const rows of [1000000, 2000000]) {
       results.measurements[`seed${rows}`] = await worker("seed", { rows });
       await context.close(); context = await chromium.launchPersistentContext(profile, browserOptions); await configureContext();
-      page = await context.newPage(); await page.goto(base + route); await ready(); await unlock();
+      page = await openPage(); await page.goto(base + route); await ready(); await unlock();
       assert.equal(await page.getByTestId("line-count").innerText(), String(rows));
       results.measurements[`navigationToUnlocked${rows}Ms`] = await page.evaluate(() => Math.round(performance.now()));
       results.checks[`startup${rows}Under3s`] = results.measurements[`navigationToUnlocked${rows}Ms`] < 3000;
@@ -133,5 +150,5 @@ try {
   await Promise.all(headerChecks); assert.deepEqual(failures, []); results.checks.privacy = true;
   results.requests = { count: requests.length, paths: [...new Set(requests)].filter(p => !p.startsWith("/_next/")) };
   results.status = "passed"; console.log(JSON.stringify({ status: "passed", auth, browser: results.browser, checks: Object.keys(results.checks), startupTargets: full ? { oneMillion: results.checks.startup1000000Under3s, twoMillion: results.checks.startup2000000Under3s } : undefined, measurements: results.measurements }, null, 2));
-} catch (error) { results.status = "failed"; results.error = error.message; throw error; }
+} catch (error) { results.status = "failed"; results.error = error.message; results.diagnostics = await diagnose(); console.error("Failure diagnostics:", JSON.stringify(results.diagnostics)); throw error; }
 finally { await writeFile(`test-results/vault-${channel}${auth ? "-auth" : ""}.json`, JSON.stringify(results, null, 2)); await context.close(); }

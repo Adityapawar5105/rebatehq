@@ -119,3 +119,31 @@ used to inspect the preserved work and test progress; they changed no files.
 The original command/SQL execution register and complete grouped file list are
 in [CHUNK_4B_VERIFICATION.md](./CHUNK_4B_VERIFICATION.md). The governing
 **blueprint is unchanged**, as are locked migrations and their hashes.
+
+## CI #45 privacy-gate failure and lease fix — 3 Nov 2026
+
+CI #45 (run 41665052784, docs-only commit `ea12b02`) failed in the required
+authenticated privacy gate: after the deliberate `Page.crash` killed-tab step,
+the new tab's unlock never reached the unlocked state within 45 s
+(`scripts/test-vault-browser.mjs:102`). The same code passed in CI #44.
+
+**Not reproduced locally:** 10 of 10 runs passed before the fix (installed
+Chrome and Playwright Chromium headless shell, CPU throttle up to 6x). The root
+cause is therefore **unproven**. The likely cause is that the vault requested its
+cross-tab Web Lock with `ifAvailable`, so it failed at once with "open in another
+tab" if the browser had not yet released the crashed tab's lease.
+
+Changes:
+- `lib/vault/service.ts`: the lease now waits up to `LEASE_WAIT_MS` (10 s) for the
+  lock before reporting `OTHER_TAB`. A genuinely open second tab is still blocked.
+- `tests/browser/vault-worker.ts`: the second-writer test uses a 500 ms wait; a new
+  test checks that a waiting writer takes over once the lease is released.
+- `scripts/test-vault-browser.mjs`: failure diagnostics (screenshot, scrubbed
+  alert/status/button text, Web Locks state) and optional `VAULT_TEST_CPU_THROTTLE`.
+- `.github/workflows/ci.yml`: uploads the screenshot and result JSON (not the
+  synthetic CSV fixtures) as an artifact when the privacy gate fails.
+
+After the fix: 6 of 6 local harness runs passed (Chromium x3 with throttle 0/4/6,
+Chrome x2, Edge x1), plus 123 tests, typecheck, build, migration lock and
+service-role scan. CI evidence for this fix is **pending**. If the gate fails
+again, the uploaded diagnostics should identify the cause. Blueprint unchanged.

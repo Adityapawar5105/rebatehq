@@ -81,6 +81,17 @@ jobs:
           let ready=false;for(let i=0;i<60;i++){try{if((await fetch('http://localhost:3000/login')).ok){ready=true;break}}catch{}await new Promise(r=>setTimeout(r,1000))}if(!ready)throw Error('App did not start for the privacy gate');
           JS
           pnpm test:vault:privacy --browser=chromium
+      - name: Upload privacy gate failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vault-privacy-gate-diagnostics
+          # Screenshot and scrubbed result JSON only; the synthetic CSV fixtures stay on the runner.
+          path: |
+            test-results/*.png
+            test-results/vault-*.json
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Stop local Supabase services
         if: always()
         run: pnpm exec supabase stop --no-backup
