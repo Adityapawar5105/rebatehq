@@ -1,7 +1,10 @@
-# Chunk 4B assumptions — 4B done locally; awaiting CI
+# Chunk 4B assumptions — 4B CI-verified (CI #44, c382f7d)
 
-- Close-out status: **4B done locally; awaiting CI**. The authenticated CI
-  privacy gate remains unverified until its real local-Supabase job passes.
+**Chunk 4B — CI-verified in [MarginDesk CI #44](https://github.com/Adityapawar5105/margindesk/actions/runs/41660146540), 3 November 2026, commit `c382f7d`.** The GitHub job API confirms step 18, "Required authenticated local-vault privacy gate", completed successfully (not skipped). Its log records `pnpm test:vault:privacy --browser=chromium`, `auth: true`, `status: passed`: **one authenticated harness with 14 named checks**, not a Playwright test-runner count. The separate unit suite passed **67 JavaScript + 56 TypeScript = 123 tests**.
+
+Privacy acceptance covers the **local vault flow only**. Legacy server business-data routes still exist; no app-wide "data never leaves your device" claim is made. **Unverified:** deployed Supabase sign-in, headed manual checks, physical crash/quota/multi-tab recovery, the historical storage-estimate discrepancy, and CI validation of the locally measured **~7.6 s / ~15–16 s first-change latency** (open item for 4C-1). Those timings remain local observations; Scale retains its 1M-line cap. 4C-1 has not started.
+
+- Close-out status: **4B CI-verified (CI #44, c382f7d)**. The authenticated local-vault privacy gate passed in CI #44.
   The deferred first-change rebuild is measured separately in `VAULT_RESULTS.md`;
   any UI blocking or total latency above 10 seconds is an open item for 4C-1,
   not a redesign in this chunk. 4C-1 has not started.
@@ -56,9 +59,10 @@
   normally and the UI showed that. See `STORAGE_FINDINGS.md`: the new path's
   estimate is close to file sizes; the historical 4A discrepancy remains unresolved.
 - Local Chrome/Edge results, exact timing methodology and command outcomes are
-  in `CHUNK_4B_VERIFICATION.md`. CI acceptance, the authenticated privacy gate,
-  deployed app, headed grants, physical crash/quota recovery and external review
-  remain **unverified**. No real local Supabase credentials/Docker/psql exist.
+  in `CHUNK_4B_VERIFICATION.md`. CI acceptance and the authenticated local-vault gate
+  are verified by CI #44; deployed app, headed grants, physical crash/quota/multi-tab
+  recovery and external review remain **unverified**. This workstation has no
+  real local Supabase credentials/Docker/psql.
   The public synthetic `/lab/vault` harness is default-off and requires
   `VAULT_LAB_ENABLED=true`; it never substitutes for authenticated `/home`.
 - CI derives real Auth/mail URLs and a public key from its local Supabase stack.

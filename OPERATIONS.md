@@ -1,6 +1,9 @@
 # MarginDesk operations (Phase 1)
 
-## Chunk 4B local vault — CI acceptance unverified
+## Chunk 4B local vault — CI-verified
+
+Verified in [MarginDesk CI #44](https://github.com/Adityapawar5105/margindesk/actions/runs/41660146540), 3 November 2026, commit `c382f7d`; the authenticated local-vault gate ran 14 named checks.
+See `CHUNK_4B_VERIFICATION.md` for scope and unverified deployment/recovery limits.
 
 Use the existing configured Supabase identity to open `/home`. A vault is
 scoped by browser origin, profile, user and workspace. Keep the passphrase safe;
@@ -24,8 +27,9 @@ restricted login are available. It exports real Auth/mail configuration,
 rebuilds the app with the public local key, starts production Next.js, obtains
 a genuine local PKCE magic link and runs `pnpm test:vault:privacy --browser=chromium`.
 Failures fail the job; it does not use mocked auth, a production limiter bypass
-or stored business data. Local Auth and CI acceptance are **unverified** until
-that job passes. No new Postgres migration or restore inventory was required.
+or stored business data. Local-stack Auth and the local-vault privacy gate are
+**verified in CI #44**; deployed sign-in and physical crash/quota/multi-tab
+recovery remain **unverified**. No new Postgres migration or restore inventory was required.
 See [CHUNK_4B_VERIFICATION.md](./CHUNK_4B_VERIFICATION.md) and
 [STORAGE_FINDINGS.md](./STORAGE_FINDINGS.md) for evidence and limitations.
 

@@ -2,13 +2,16 @@
 
 **Chunk 3C and Phase 3 are verified in [MarginDesk CI #39](https://github.com/Adityapawar5105/margindesk/actions/runs/40937330833) and [MarginDesk Restore Drill #13](https://github.com/Adityapawar5105/margindesk/actions/runs/40938982321), 2026-10-30 (Asia/Calcutta), commit `2f8b06d`.** Current acceptance is **162 fresh / 165 restore-mode checks**, planned = ran with two-run repeatability, **38 tenant tables** and seven locked migrations. Restore Drill #13 used a local target. Phase 4 has not started. See [CHUNK_3C_VERIFICATION.md](./CHUNK_3C_VERIFICATION.md).
 
-## Real-Postgres 10,000-row timing — verified in CI #39
+## Real-Postgres 10,000-row timing — CI #39 and CI #44 observations
 
 Downloaded CI #39 job logs report `REAL_POSTGRES_IMPORT_TIMING {"rows":10000,"commit_ms":11605,"undo_ms":3442,"postgres_version":"17.11","role":"margindesk_app"}`:
 
-| Rows | PostgreSQL | Effective role | commitImport | undoImport |
-|---:|---|---|---:|---:|
-| 10,000 | 17.11 | `margindesk_app` | **11,605 ms** | **3,442 ms** |
+| Run | Rows | PostgreSQL | Effective role | commitImport | undoImport |
+|---|---:|---|---|---:|---:|
+| CI #39 (linked above) | 10,000 | 17.11 | `margindesk_app` | **11,605 ms** | **3,442 ms** |
+| [CI #44](https://github.com/Adityapawar5105/margindesk/actions/runs/41660146540), `c382f7d`, 3 Nov 2026 | 10,000 | 17.11 | `margindesk_app` | **24,410 ms** | **7,011 ms** |
+
+CI #44's downloaded job log contains the latter `REAL_POSTGRES_IMPORT_TIMING` values. These are **runner-variance observations for the legacy server import path being retired**, not a local-vault benchmark or a performance guarantee. No investigation or optimisation was performed.
 
 This benchmark executes the real import modules in a disposable fresh catalog as the non-superuser/non-bypass app role, with business/audit triggers active. Audit/exact-restoration and all-table no-residue checks passed. Timings exclude **parsing, setup, network and durable COMMIT/WAL flush**: the fixture transaction is rolled back. **This is not a serverless latency guarantee**, a deployed throughput claim, or a measurement of populated-history/concurrent workloads.
 

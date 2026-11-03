@@ -1,6 +1,10 @@
 # MarginDesk
 
-**4B done locally; awaiting CI.**
+**Chunk 4B — CI-verified in [MarginDesk CI #44](https://github.com/Adityapawar5105/margindesk/actions/runs/41660146540), 3 November 2026, commit `c382f7d`.** The GitHub job API confirms step 18, "Required authenticated local-vault privacy gate", completed successfully (not skipped). Its log records `pnpm test:vault:privacy --browser=chromium`, `auth: true`, `status: passed`: **one authenticated harness with 14 named checks**, not a Playwright test-runner count. The separate unit suite passed **67 JavaScript + 56 TypeScript = 123 tests**.
+
+Privacy acceptance covers the **local vault flow only**. Legacy server business-data routes still exist; no app-wide "data never leaves your device" claim is made. **Unverified:** deployed Supabase sign-in, headed manual checks, physical crash/quota/multi-tab recovery, the historical storage-estimate discrepancy, and CI validation of the locally measured **~7.6 s / ~15–16 s first-change latency** (open item for 4C-1). Those timings remain local observations; Scale retains its 1M-line cap. 4C-1 has not started.
+
+**4B CI-verified (CI #44, c382f7d).**
 The signed-in `/home` shell now uses a single worker-hosted encrypted local
 vault, audited native CSV ingestion, atomic snapshot generations and inactivity
 locking. Phase 1 navigation is Home, Data Hub, Margin, Pricing, Reports and
@@ -8,8 +12,7 @@ Settings. Old server-backed screens are labelled **Legacy** under `/legacy/`.
 See [CHUNK_4B_VERIFICATION.md](./CHUNK_4B_VERIFICATION.md) for measurements,
 commands and limits, [VAULT_RESULTS.md](./VAULT_RESULTS.md) for startup and
 first-change timings, and [STORAGE_FINDINGS.md](./STORAGE_FINDINGS.md) for the quota
-investigation. The real authenticated privacy gate is a required CI step but
-has not run here; no app-wide privacy or deployment claim is made. **4C-1 has not started.**
+investigation. The real authenticated local-vault privacy gate passed in CI #44; no app-wide privacy or deployment claim is made. **4C-1 has not started.**
 
 **Chunk 4A — CI-verified in [MarginDesk CI #42](https://github.com/Adityapawar5105/margindesk/actions/runs/41613748478), 3 November 2026, commit `395154d`.** `/lab/spike` runs a
 self-hosted DuckDB-Wasm worker with synthetic OPFS persistence and memory-only
@@ -50,7 +53,7 @@ MarginDesk is being moved from a browser-local prototype to a multi-tenant app f
 | Repo phase | Blueprint phase | Chunks | Status |
 |---|---|---|---|
 | 0–3 | Foundations | 0, 1, 2A–2C, 3A–3C | Verified (CI #39, Restore Drill #13) |
-| 4 | Phase 1 core | 4.0 transition map · 4A spike · 4B vault · 4C-1/4C-2 Import Studio · 4D pocket-margin engine and margin intelligence · 4E pricing, export, backup | 4.0 committed; **4A CI-verified** ([CI #42](https://github.com/Adityapawar5105/margindesk/actions/runs/41613748478), 3 Nov 2026, `395154d`); **4B done locally; awaiting CI**; 4C-1 not started |
+| 4 | Phase 1 core | 4.0 transition map · 4A spike · 4B vault · 4C-1/4C-2 Import Studio · 4D pocket-margin engine and margin intelligence · 4E pricing, export, backup | 4.0 committed; **4A CI-verified** ([CI #42](https://github.com/Adityapawar5105/margindesk/actions/runs/41613748478), 3 Nov 2026, `395154d`); **4B CI-verified ([CI #44](https://github.com/Adityapawar5105/margindesk/actions/runs/41660146540), `c382f7d`)**; 4C-1 not started |
 | 5 | Phase 1b + control plane | 5A cleanup, cost basis, checklist, roles · 5B licences, retire server business-data paths, carried security fixes | Not started |
 | 6 | Pilot hardening + security | 6A real files · 6B security review and whitepaper → sellable v1 | Not started |
 | 7 | Phase 2 | 7A–7F | Not started |

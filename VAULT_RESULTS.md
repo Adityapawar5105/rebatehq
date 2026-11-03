@@ -1,6 +1,10 @@
-# Vault results — 4B done locally; awaiting CI
+# Vault results — 4B CI-verified (CI #44, c382f7d)
 
-3 November 2026. These are local measurements, not GitHub Actions evidence.
+**Chunk 4B — CI-verified in [MarginDesk CI #44](https://github.com/Adityapawar5105/margindesk/actions/runs/41660146540), 3 November 2026, commit `c382f7d`.** The GitHub job API confirms step 18, "Required authenticated local-vault privacy gate", completed successfully (not skipped). Its log records `pnpm test:vault:privacy --browser=chromium`, `auth: true`, `status: passed`: **one authenticated harness with 14 named checks**, not a Playwright test-runner count. The separate unit suite passed **67 JavaScript + 56 TypeScript = 123 tests**.
+
+Privacy acceptance covers the **local vault flow only**. Legacy server business-data routes still exist; no app-wide "data never leaves your device" claim is made. **Unverified:** deployed Supabase sign-in, headed manual checks, physical crash/quota/multi-tab recovery, the historical storage-estimate discrepancy, and CI validation of the locally measured **~7.6 s / ~15–16 s first-change latency** (open item for 4C-1). Those timings remain local observations; Scale retains its 1M-line cap. 4C-1 has not started.
+
+3 November 2026. The performance measurements below are local; CI acceptance above does not verify them.
 Machine: Ryzen 5 5600H, nominal 8 GB RAM, Windows 11 x64 build 10.0.26200.
 Chrome 156.0.8078.80 and Edge 156.0.4314.58 run headless against production
 Next.js on localhost. Browser versions for the resumed run are retained in JSON.
@@ -77,8 +81,8 @@ correctly in both browsers. That does not explain the historical 4A ~4.14 GB
 estimate against ~68 MB of named files: its cause remains **unresolved and
 unverified**. Details: [STORAGE_FINDINGS.md](./STORAGE_FINDINGS.md).
 
-The **authenticated CI privacy gate remains unverified until it runs in CI**
-against real local Supabase. There is no local Docker/Auth/mail configuration,
+The **authenticated local-vault privacy gate passed in CI #44** as recorded above.
+On this workstation there is no local Docker/Auth/mail configuration,
 and synthetic Supabase values or sessions are not used. Local Chrome/Edge
 vault/privacy checks exercise the default-off synthetic harness, with unique
 filename/money markers, complete request headers/body and console arguments.
@@ -87,7 +91,7 @@ recovery and production behavior remain unverified. A killed renderer, retained
 generation recovery and blocking a second writer were tested locally; this is
 not a complete crash/quota/multi-tab recovery certification.
 
-## Resumed command results
+## Historical local resumption command results (before CI #44)
 
 | Command | Result |
 |---|---|

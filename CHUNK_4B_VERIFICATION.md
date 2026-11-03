@@ -1,12 +1,35 @@
 # Chunk 4B — local vault and app shell
 
-**4B done locally; awaiting CI.**
+**Chunk 4B — CI-verified in [MarginDesk CI #44](https://github.com/Adityapawar5105/margindesk/actions/runs/41660146540), 3 November 2026, commit `c382f7d`.** The GitHub job API confirms step 18, "Required authenticated local-vault privacy gate", completed successfully (not skipped). Its log records `pnpm test:vault:privacy --browser=chromium`, `auth: true`, `status: passed`: **one authenticated harness with 14 named checks**, not a Playwright test-runner count. The separate unit suite passed **67 JavaScript + 56 TypeScript = 123 tests**.
 
-**3 November 2026. Local implementation and execution evidence; CI acceptance
-and the authenticated privacy gate remain unverified. No 4C-1 work started.**
+Privacy acceptance covers the **local vault flow only**. Legacy server business-data routes still exist; no app-wide "data never leaves your device" claim is made. **Unverified:** deployed Supabase sign-in, headed manual checks, physical crash/quota/multi-tab recovery, the historical storage-estimate discrepancy, and CI validation of the locally measured **~7.6 s / ~15–16 s first-change latency** (open item for 4C-1). Those timings remain local observations; Scale retains its 1M-line cap. 4C-1 has not started.
+
+**4B CI-verified (CI #44, c382f7d).**
+
+**3 November 2026. Local implementation measurements below are separate from the CI acceptance above. No 4C-1 work started.**
 Base commit: `03e22d4`. No Supabase migration, locked hash, `migrations.lock`,
 function ACL allowlist or Postgres restore inventory changed. The 17 new local
 DuckDB tables do not belong in the server's 38-table tenant inventory.
+
+## CI #44 evidence
+
+CI #44 evidence was read through the GitHub tools on 3 November 2026:
+[verify job / logs](https://github.com/Adityapawar5105/margindesk/actions/runs/41660146540/job/126000885095).
+Step 18 is `completed / success`, not skipped. The actual authenticated
+Chromium invocation logged results at 15:19:27 UTC, after starting at
+15:18:31 UTC. Its **14 named checks** were: `v1`, `integrity`, `capRollback`,
+`invalidCellNoLeak`, `locatedDuplicate`, `cancelRollback`, `storage`,
+`cipherOnly`, `killedTabRecovery`, `wrongPassphrase`, `reload`,
+`firstMutationAfterUnlock`, `mobile` and `privacy`. This is one procedural
+harness with assertions, not 14 separately registered Playwright tests; nested
+integrity assertions are not counted again. The log reports `auth: true`,
+`status: passed`, a 100k import of 1,851 ms and no observed main-thread long
+task >=50 ms. It did **not** run the full-size 1M/2M startup/first-change trials.
+
+The unit suite's **123 tests** (67 JavaScript + 56 TypeScript) are separate
+from those 14 checks. No Restore Drill was required or run for this data-plane
+chunk. These logs verify local-Supabase PKCE and the authenticated local vault
+flow, not deployed sign-in or privacy of the Legacy server routes.
 
 ## What changed
 
@@ -54,8 +77,7 @@ lazy copy-on-write. No pinned Wasm binary was patched and no assertion weakened.
 
 ## Local evidence by requirement
 
-All rows below are **unverified in GitHub Actions for 4B** until a passing run
-is cited. “Local pass” is narrower than a deployed-product claim.
+CI #44 passed the 14 named checks listed below. Full-size timing trials and failure-injection details remain local evidence; a CI pass is narrower than a deployed-product claim.
 
 | Requirement | Local result / scope |
 |---|---|
@@ -69,7 +91,7 @@ is cited. “Local pass” is narrower than a deployed-product claim.
 | First mutation after unlock | Pass; exact count becomes 100001, is saved, and survives another reload |
 | Memory-only plaintext | Unit RAM filesystem test and browser inspection of every named OPFS file pass; only encrypted payloads/pointers written |
 | Local marker privacy checks | Pass for URL, complete headers/body and console; external/API/non-GET requests after vault readiness fail the test |
-| Authenticated privacy gate | **Unverified:** no real local Supabase/Docker/psql here. Required CI step added, never skipped or mocked |
+| Authenticated privacy gate | **Verified in CI #44:** one real local-Supabase authenticated harness, 14 named checks; step 18 success, not skipped |
 | Persistent storage / Chrome and Edge | Permission requested from the window; both headless browsers report not granted; UI displays it |
 | Quota estimate investigation | New path is close to named file sizes; controlled sync-handle probe accounts correctly; old 4A discrepancy remains unresolved |
 | Main-thread responsiveness | 100k file selection/import measured; no observed long task of 50 ms or more in either final run |
@@ -144,7 +166,7 @@ bytes available to Playwright are checked. Unexpected API/external/non-GET
 traffic also fails, even if multipart contents are unavailable. Any failure
 fails the verify job. Deployment branch-protection settings are not changed.
 
-## Commands and SQL execution
+## Historical implementation commands and SQL execution (before CI #44)
 
 | Command / check | Result |
 |---|---|
@@ -205,7 +227,14 @@ to await the actual Margin field. Temporary public probe bundles were removed.
 
 ## Still unverified
 
-GitHub Actions acceptance for 4B; real authenticated Next.js behavior; production
+Documentation close-out, 3 November 2026: `pnpm test` passed 123 tests
+(67 JavaScript + 56 TypeScript), with no failures or skips;
+`pnpm typecheck`, `pnpm build` and `pnpm check:migrations-lock` passed locally.
+All seven locked migrations, their hashes, the governing blueprint and the
+workflows are unchanged. These reruns are local checks, separate from the
+downloaded CI #44 evidence above. Only documentation changed in this close-out.
+
+Deployed authenticated Next.js/Supabase sign-in (local-stack CI flow is verified); production
 email-form/rate-limit behavior; deployed Supabase app; headed manual use and
 persistence grants; physical power loss, eviction and genuine near-quota
 recovery; other machines and real ERP files; OS/heap forensic erasure; the

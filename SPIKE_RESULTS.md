@@ -211,9 +211,12 @@ remain unverified in CI. CI #42 does not turn the encrypted-startup target miss
 into a pass. No 4B code was started. Local command outcomes are recorded in
 [SPIKE_COMMANDS.md](./SPIKE_COMMANDS.md).
 
-## Chunk 4B follow-up — local measurements, CI acceptance unverified
+## Chunk 4B follow-up — local measurements, CI acceptance verified
 
-Close-out status: **4B done locally; awaiting CI**. The requested startup
+CI acceptance: [MarginDesk CI #44](https://github.com/Adityapawar5105/margindesk/actions/runs/41660146540), 3 November 2026, commit `c382f7d`, authenticated local-vault flow only.
+Performance measurements below remain local evidence, unverified in CI.
+
+Close-out status: **4B CI-verified (CI #44, c382f7d)**. The requested startup
 baseline (2.65/2.68 s at 1M, 3.16/3.18 s at 2M), resumed trials and separately
 measured deferred first-change latency are retained in
 [VAULT_RESULTS.md](./VAULT_RESULTS.md). At 2M, the first audited change and
