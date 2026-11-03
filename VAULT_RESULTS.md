@@ -145,5 +145,9 @@ Changes:
 
 After the fix: 6 of 6 local harness runs passed (Chromium x3 with throttle 0/4/6,
 Chrome x2, Edge x1), plus 123 tests, typecheck, build, migration lock and
-service-role scan. CI evidence for this fix is **pending**. If the gate fails
-again, the uploaded diagnostics should identify the cause. Blueprint unchanged.
+service-role scan. **MarginDesk CI #46 passed on `f1971c5`** (9m 41s), including
+the required authenticated privacy gate. One green run does not prove an
+intermittent failure is gone; if the gate fails again, the uploaded diagnostics
+should identify the cause. CI #46's legacy server benchmark (commitImport
+12,480 ms / undoImport 3,834 ms) is back near CI #39's values, which supports
+reading CI #44's 24,410 ms as runner variance. Blueprint unchanged.
