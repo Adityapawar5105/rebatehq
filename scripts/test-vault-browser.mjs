@@ -103,6 +103,8 @@ try {
   results.checks.integrity = await worker("integrity");
   results.checks.studio = await worker("studio");
   results.checks.warmup = await worker("warmup");
+  results.checks.mapper = await worker("mapper");
+  results.checks.playground = await worker("playground");
   await page.getByLabel("Vault passphrase").fill(secret); await page.getByRole("button", { name: "Create encrypted vault", exact: true }).click();
   await page.getByRole("button", { name: "Lock vault", exact: true }).waitFor();
   await page.getByRole("link", { name: "Data Hub", exact: true }).click();
@@ -155,6 +157,27 @@ try {
   const afterReload = path.resolve("test-results", "synthetic-after-reload.csv"); await writeFile(afterReload, csv(1, 700001));
   await importFiles([afterReload], 100017);
   await page.reload(); await ready(); await unlock(); assert.equal(await page.getByTestId("line-count").innerText(), "100017"); results.checks.firstMutationAfterUnlock = true;
+  // Real-world shaped export (InvoiceNo/StockCode/UnitPrice, M/D/YY dates, blank customers): mapping must be
+  // confirmed, rejected rows go to Fix Later, a bulk fix and group re-check loads them. Marker sits in StockCode.
+  await page.getByRole("link", { name: "Data Hub", exact: true }).click();
+  const retail = path.resolve("test-results", "retail-like.csv"); await writeFile(retail, fixtures.retailLike(marker).bytes);
+  await page.getByTestId("studio-files").setInputFiles(retail); await page.getByRole("button", { name: "Review import" }).click();
+  await page.getByRole("alert").filter({ hasText: /check the column mapping/ }).waitFor();
+  // The preview panel opens automatically for the file just added.
+  await page.getByRole("table", { name: /Column mapping for retail-like.csv/ }).waitFor();
+  assert.equal(await page.getByLabel("Source for list_amount").inputValue(), "unit:5", "UnitPrice x quantity should be suggested");
+  await page.getByLabel("I checked this mapping").check();
+  await page.getByRole("button", { name: "Review import" }).click(); await page.getByRole("heading", { name: "Batch report" }).waitFor();
+  await page.getByText(/sale_date: expanded two-digit years/).waitFor();
+  await page.getByRole("checkbox", { name: /Load the 20 valid rows/ }).check();
+  await page.getByRole("button", { name: "Confirm and import locally" }).click();
+  await page.getByTestId("line-count").filter({ hasText: /^100037$/ }).waitFor({ timeout: 120000 });
+  await page.getByLabel("New customer_id for all rows in this group").fill("CASH-SALE");
+  await page.getByRole("button", { name: "Set customer_id for all rows" }).click(); await page.getByRole("status").filter({ hasText: /Re-check the group/ }).waitFor();
+  await page.getByRole("button", { name: "Re-check and load customer_id rows" }).click();
+  await page.getByTestId("line-count").filter({ hasText: /^100039$/ }).waitFor({ timeout: 60000 });
+  await page.getByRole("heading", { name: /^Data health: \d+%$/ }).waitFor();
+  results.checks.mappingAndFixLater = { confirmedMapping: true, loaded: 20, fixedThenLoaded: 2 };
   await page.getByRole("button", { name: "Lock vault", exact: true }).click(); await ready();
   if (full) {
     assert.ok(!auth, "Synthetic benchmark must not reset an authenticated vault");

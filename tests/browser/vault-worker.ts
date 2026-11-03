@@ -43,7 +43,7 @@ async function testFixture(bytes: Uint8Array) {
   await closeMemory(probe);
   const service = new VaultService(() => undefined); await service.init(fixtureScope);
   const result = await service.unlock(secret);
-  assert(result.schemaVersion === "3" && result.lines === "1", "V1 snapshot did not upgrade with its row intact");
+  assert(result.schemaVersion === "4" && result.lines === "1", "V1 snapshot did not upgrade with its row intact");
   assert((await service.verify()).valid, "V1 upgraded chain failed"); await service.lock(); await service.unlock(secret); await service.lock(); await reset(fixtureScope); return result;
 }
 async function seed(rows: number) {
@@ -238,6 +238,10 @@ async function studio() {
   result.removeReplace = { removedRows: 10, replacedRows: "10 -> 5" };
   // 6. XLS item master, ODS customers, XLSB vendor costs, JSON prices and XML rebates in one batch.
   state = await service.studioAdd([fx.itemMasterXls(), fx.customersOds(), fx.vendorXlsb(), fx.priceJson(), fx.rebateXml()].map(fx.toFile));
+  // The JSON's nested "terms.qty_break" is a partial match for qty_break, so it must be confirmed.
+  const priceFile = state.files.find(f => f.kind === "json")!;
+  assert(priceFile.needsConfirmation && priceFile.fields.find(m => m.field === "qty_break")!.header === "terms.qty_break", "Partial header match should be suggested and need confirmation");
+  state = await service.studioUpdate(priceFile.id, {}, undefined, { confirmed: true });
   const roles = Object.fromEntries(state.files.map(f => [f.kind, f.role]));
   assert(roles.xls === "item_master" && roles.ods === "customer_list" && roles.xlsb === "vendor_cost" && roles.json === "price_list" && roles.xml === "rebate_agreement", `Role detection wrong: ${JSON.stringify(roles)}`);
   report = (await service.studioPlan(signal(), noop)).report!;
@@ -287,6 +291,87 @@ async function studio() {
   await service.lock(); await reset(scope);
   return result;
 }
+async function mapper() {
+  const scope = { userId: "test-" + crypto.randomUUID(), tenantId: "test-" + crypto.randomUUID() };
+  const service = new VaultService(() => undefined); await service.init(scope); await service.create(secret, "professional");
+  const q = (sql: string) => rowsOf(service, sql), result: Record<string, unknown> = {};
+  let state = await service.studioAdd([fx.toFile(fx.retailLike())]);
+  let file = state.files[0];
+  assert(file.role === "sales_history" && file.erp === "generic" && file.settings.dateFormat === "MM/DD/YYYY", `Retail-like export detected wrongly: ${file.role}/${file.erp}/${file.settings.dateFormat}`);
+  assert(file.needsConfirmation && !file.confirmed && !file.loadable, "An inferred mapping must be confirmed before import");
+  let blocked = false; try { await service.studioPlan(signal(), noop); } catch (e) { blocked = /confirm it/.test((e as Error).message); }
+  assert(blocked, "Planning must refuse an unconfirmed mapping");
+  state = await service.studioUpdate(file.id, {}, undefined, { confirmed: true }); file = state.files[0];
+  assert(file.loadable, "Confirmed mapping should be loadable");
+  const report = (await service.studioPlan(signal(), noop)).report!, rep = report.files[0];
+  // 20 good + 2 blank customers + 1 cancellation + 2 duplicates = 25 rows.
+  assert(rep.rowsRead === "25" && report.loaded === "20" && report.rejected === "5", `Retail-like counts wrong: ${rep.rowsRead}/${report.loaded}/${report.rejected}`);
+  const notes = rep.cleaned.map(c => `${c.field}:${c.note}`);
+  assert(notes.includes("sale_date:dropped the time of day") && notes.includes("sale_date:expanded two-digit years") && notes.some(n => n.startsWith("list_amount:removed currency")), `Cleanup notes missing: ${notes.join(" | ")}`);
+  await service.studioCommit(true, noop);
+  const line = (await q("SELECT invoice_id, product_id, sale_date::VARCHAR AS d, quantity::VARCHAR AS qty, list_cents::VARCHAR AS list, discount_cents::VARCHAR AS disc, cost_cents IS NULL AS no_cost FROM sales_lines WHERE source_row=2"))[0];
+  assert(line.invoice_id === "536365" && line.d === "2010-12-01" && line.qty === "1.0000" && line.list === "255" && line.disc === "0" && line.no_cost === true, `First line loaded wrongly: ${JSON.stringify(line)}`);
+  const big = (await q("SELECT list_cents::VARCHAR AS list FROM sales_lines WHERE source_row=4"))[0];
+  assert(big.list === "382500", "$1,275.00 x 3 should be exactly 3,825.00");
+  const tiny = (await q("SELECT list_cents::VARCHAR AS list FROM sales_lines WHERE source_row=5"))[0];
+  assert(tiny.list === "170", "0.425 x 4 should round to 1.70");
+  // Fix Later: three groups; bulk-fix blank customers, re-check only that group.
+  let groups = await service.fixGroups();
+  const byCode = Object.fromEntries(groups.map(g => [g.code, g]));
+  assert(byCode["customer_id:required"]?.count === "2" && byCode["quantity:negative"]?.count === "1" && byCode["duplicate_row"]?.count === "2", `Fix Later groups wrong: ${groups.map(g => g.code + "=" + g.count).join()}`);
+  const rows = await service.fixRows(byCode["customer_id:required"].sourceId, "customer_id:required");
+  assert(rows.length === 2 && rows[0].values.find(v => v.field === "customer_id")!.value === "", "Rejected rows should keep their cleaned values");
+  await service.fixSet(byCode["customer_id:required"].sourceId, "customer_id:required", "customer_id", "CASH-SALE");
+  const re = await service.fixRecheck(byCode["customer_id:required"].sourceId, "customer_id:required");
+  assert(re.loaded === "2" && re.status.lines === "22" && re.groups.some(g => g.code === "duplicate_row" && g.count === "2"), "Re-check must load only the fixed group and leave duplicates alone");
+  assert((await q("SELECT count(*)::VARCHAR AS n FROM sales_lines WHERE customer_id='CASH-SALE'"))[0].n === "2", "Fixed rows not loaded under CASH-SALE");
+  assert((await q("SELECT count(*)::VARCHAR AS n FROM import_issues WHERE status='open'"))[0].n === "3", "Issues of loaded rows should be gone");
+  const dismissed = await service.fixDismiss(byCode["quantity:negative"].sourceId, "quantity:negative");
+  assert(!dismissed.groups.some(g => g.code === "quantity:negative") && dismissed.status.lines === "22", "Dismiss should remove the group without loading it");
+  groups = await service.fixGroups();
+  const health = await service.health();
+  assert(health.components.find(c => c.key === "cost")!.score === 0 && health.components.find(c => c.key === "complete")!.score === 92 && health.score !== null, `Health wrong: ${JSON.stringify(health.components.map(c => [c.key, c.score]))}`);
+  result.health = { score: health.score, components: health.components.map(c => `${c.key}=${c.score}`) };
+  // Recipe keeps the confirmed mapping and applies it, confirmed, to the next export.
+  state = await service.studioAdd([new File([fx.retailLike("", 8).bytes as Uint8Array<ArrayBuffer>], "next-month.csv")]);
+  state = await service.studioUpdate(state.files[0].id, {}, undefined, { confirmed: true });
+  await service.recipeSave(state.files[0].id, "UK web shop export"); await service.studioClear();
+  state = await service.studioAdd([new File([fx.retailLike("", 8).bytes as Uint8Array<ArrayBuffer>], "month-3.csv")]);
+  assert(state.files[0].appliedRecipe === "UK web shop export" && state.files[0].confirmed && state.files[0].loadable, "Recipe mapping should apply as confirmed");
+  await service.studioClear();
+  // Removing the source clears its Fix Later rows too.
+  const src = (await service.sources())[0];
+  await service.sourceRemove(src.id);
+  assert((await q("SELECT count(*)::VARCHAR AS n FROM rejected_rows"))[0].n === "0" && (await service.status()).lines === "0", "Removing a source must remove its Fix Later rows");
+  assert((await service.verify()).valid, "Audit chain invalid after mapper/Fix Later operations");
+  await service.lock(); await reset(scope);
+  return result;
+}
+async function playground() {
+  const scope = { userId: "test-" + crypto.randomUUID(), tenantId: "test-" + crypto.randomUUID() };
+  const service = new VaultService(() => undefined); await service.init(scope); await service.create(secret, "starter");
+  const t0 = performance.now(), out = await service.playgroundLoad(noop), loadMs = Math.round(performance.now() - t0);
+  assert(out.status.lines === "120000" && out.status.products === "5000" && out.status.customers === "400", `Playground counts wrong: ${out.status.lines}/${out.status.products}/${out.status.customers}`);
+  assert(out.manifest.leaks.length === 5 && (await service.sources()).length === 5, "Playground manifest or sources wrong");
+  const sums = (await rowsOf(service, "SELECT (SELECT count(*) FROM vendor_costs)::VARCHAR AS v, (SELECT count(*) FROM price_matrix)::VARCHAR AS p, (SELECT count(*) FROM rejected_rows)::VARCHAR AS r, (SELECT count(DISTINCT tier) FROM customers)::VARCHAR AS tiers"))[0];
+  assert(sums.v === "5020" && sums.p === "200" && sums.r === "0" && sums.tiers === "50", `Playground tables wrong: ${JSON.stringify(sums)}`);
+  // Planted leak L3 is recomputed from the vault: flat $15.00 freight on lines under $100 list.
+  const l3 = (await rowsOf(service, "SELECT count(*)::VARCHAR AS n, sum(freight_cents)::VARCHAR AS c FROM sales_lines WHERE list_cents < 10000"))[0];
+  const m3 = out.manifest.leaks.find(l => l.type === "unrecovered_freight")!;
+  assert(l3.n === String(m3.lines) && l3.c === m3.cents, `L3 does not reconcile with the manifest: ${l3.n}/${l3.c} vs ${m3.lines}/${m3.cents}`);
+  const health = await service.health();
+  assert(health.components.find(c => c.key === "cost")!.score === 100 && health.components.find(c => c.key === "customers")!.score === 100, "Playground should be fully costed and tiered");
+  let refused = false; try { await service.playgroundLoad(noop); } catch { refused = true; }
+  assert(refused, "Loading the Playground twice must be refused");
+  const removed = await service.playgroundRemove();
+  assert(removed.removed === "5" && removed.status.lines === "0" && removed.status.products === "0" && removed.status.customers === "0", "Playground removal incomplete");
+  await service.studioAdd([fx.toFile(fx.monthlyCsvs()[0])]); await service.studioPlan(signal(), noop); await service.studioCommit(false, noop);
+  refused = false; try { await service.playgroundLoad(noop); } catch (e) { refused = /without your own files/.test((e as Error).message); }
+  assert(refused, "The Playground must never mix with real files");
+  assert((await service.verify()).valid, "Audit chain invalid after Playground");
+  await service.lock(); await reset(scope);
+  return { loadMs, under10s: loadMs < 10000, leaks: out.manifest.leaks.map(l => `${l.id}:${l.lines}:${l.dollars}`), health: health.score };
+}
 async function cipherOnly() {
   let files = 0;
   async function walk(dir: FileSystemDirectoryHandle) {
@@ -305,7 +390,7 @@ async function cipherOnly() {
 self.onmessage = async event => {
   try {
     const { action } = event.data;
-    const result = action === "fixture" ? await fixture() : action === "v1" ? await testFixture(event.data.bytes) : action === "seed" ? await seed(event.data.rows) : action === "firstChange" ? await firstChange(event.data.rows) : action === "integrity" ? await integrity() : action === "studio" ? await studio() : action === "studioBenchmark" ? await studioBenchmark(event.data.rows) : action === "warmup" ? await warmup() : action === "cipherOnly" ? await cipherOnly() : await storageStatus();
+    const result = action === "fixture" ? await fixture() : action === "v1" ? await testFixture(event.data.bytes) : action === "seed" ? await seed(event.data.rows) : action === "firstChange" ? await firstChange(event.data.rows) : action === "integrity" ? await integrity() : action === "studio" ? await studio() : action === "mapper" ? await mapper() : action === "playground" ? await playground() : action === "studioBenchmark" ? await studioBenchmark(event.data.rows) : action === "warmup" ? await warmup() : action === "cipherOnly" ? await cipherOnly() : await storageStatus();
     self.postMessage({ result });
   } catch (e) { self.postMessage({ error: e instanceof Error ? e.message : "test worker failed" }); }
 };
