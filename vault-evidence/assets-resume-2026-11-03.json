@@ -1,0 +1,10 @@
+{
+  "duckdbWasm": "1.32.0",
+  "scope": "Resumed Chrome/Edge full harness with first-change timing",
+  "files": {
+    "duckdb-eh.wasm": "4c221bfa59c11f24dbd750e70c90b9252eca6eec5633936e6a2ec766e55fd879",
+    "duckdb-browser-eh.worker.js": "38171611d530b85f09967860595a469a447d0c499ad2f7fd7393cac9a923d0bf",
+    "vault-ram-worker.js": "5074f880a861b3b9b4340300b985a203da630eb29f3acc4d058c82869c17a391",
+    "vault-worker.js": "6f5d678ecae017e69d74f59807bc21225cde7bf88eabaf0e6766848d7afde5c0"
+  }
+}

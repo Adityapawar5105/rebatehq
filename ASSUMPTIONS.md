@@ -1,3 +1,75 @@
+# Chunk 4B assumptions — 4B done locally; awaiting CI
+
+- Close-out status: **4B done locally; awaiting CI**. The authenticated CI
+  privacy gate remains unverified until its real local-Supabase job passes.
+  The deferred first-change rebuild is measured separately in `VAULT_RESULTS.md`;
+  any UI blocking or total latency above 10 seconds is an open item for 4C-1,
+  not a redesign in this chunk. 4C-1 has not started.
+  The resumed first change measured 7.586/7.611 seconds at 1M and
+  14.781/16.332 seconds at 2M (Chrome/Edge); no UI long task >=50 ms was
+  observed. The 2M latency is an explicit open item; Scale remains capped at 1M.
+
+- Only 4B is implemented. No 4C-1 converter/mapping work, licence enforcement,
+  server business-data retirement or new Supabase schema is included. All seven
+  locked migrations, their hashes and `migrations.lock` stay unchanged.
+- `/home` requires the existing verified Supabase identity and membership. Only
+  identity/workspace metadata is passed to the client. New business data stays
+  in a dedicated worker. The seven old business/audit pages are labelled Legacy
+  under `/legacy/`; their APIs remain until the reviewed retirement in 5B.
+  The local-shell privacy gate is not an app-wide server-path retirement claim.
+- One pinned single-thread EH instance runs per unlocked vault. Its sync-file
+  bridge is replaced in that child worker by private RAM blocks; it has no real
+  OPFS directory. The `opfs://` spelling is an internal DuckDB adapter path,
+  not a plaintext on-disk file. Only the outer worker can write OPFS, and it
+  writes authenticated ciphertext plus non-business generation pointers.
+- Unlock attaches the decrypted snapshot read-only from RAM in that instance.
+  Existing indexes are immediately usable. On the first change, a lazy copy in
+  fixed FK dependency order makes the working tables writable, in the SAME
+  instance. This shifts the rebuild cost to the first mutation; it is not free.
+  Direct reopening for writes hit the pinned build's write-mode error; eager
+  copying missed startup targets. Both experiments are retained in the record.
+- AES-256-GCM uses authenticated 1 MiB chunks, PBKDF2-SHA256 at 600,000
+  iterations, a per-vault random salt and random per-snapshot IV prefix. Keys
+  are non-extractable and held only in the worker. JavaScript cannot promise
+  forensic erasure of strings, heap copies, OS swap or a compromised device.
+- Immutable ciphertext is closed before an atomic `head.json` swap. The old
+  pointer and retained generations survive a failed save. The UI reports
+  success only after publication. Failed saves block further imports and offer
+  Retry Save. Close/pagehide is best effort; only the last unsaved mutation may
+  be lost. Auto-lock releases memory even if that pending save fails. Physical
+  power loss and browser eviction are unverified; persistent storage is not backup.
+- Local schema v1 is frozen with a committed encrypted synthetic fixture; v2
+  migrates forward. These DuckDB tables are not new Supabase tenant tables.
+  Mutation APIs append a hash chain with a tip/count inside the encrypted vault.
+  It detects tampering, truncation and reorder; it cannot prevent a device
+  owner rehashing a whole vault or rolling back to an older valid snapshot.
+- CSV ingest intentionally accepts the documented ten-column sales shape only.
+  IDs/quantities are positive whole numbers and line totals are exact cents.
+  Mapping, UoM/dated-cost resolution, file deduplication and other formats remain
+  later chunks. No master price/current cost is guessed from invoice totals.
+- Local profiles enforce Starter 20k products/200k lines, Professional 100k/1M,
+  Scale 200k/1M. Profile selection is a guardrail, not authoritative billing or
+  licensing. A 2M pre-existing synthetic vault can open for benchmarking; new
+  imports still obey the provisional 1M cap. The blueprint's tiers are unchanged.
+- `persist()` requires a window user action; all heavy work, storage enumeration
+  and queries remain in the worker. Both headless browsers denied persistence
+  normally and the UI showed that. See `STORAGE_FINDINGS.md`: the new path's
+  estimate is close to file sizes; the historical 4A discrepancy remains unresolved.
+- Local Chrome/Edge results, exact timing methodology and command outcomes are
+  in `CHUNK_4B_VERIFICATION.md`. CI acceptance, the authenticated privacy gate,
+  deployed app, headed grants, physical crash/quota recovery and external review
+  remain **unverified**. No real local Supabase credentials/Docker/psql exist.
+  The public synthetic `/lab/vault` harness is default-off and requires
+  `VAULT_LAB_ENABLED=true`; it never substitutes for authenticated `/home`.
+- CI derives real Auth/mail URLs and a public key from its local Supabase stack.
+  The required gate uses real SDK PKCE, a captured local email and the existing
+  callback, then verifies the session and creates only a disposable workspace.
+  It does not fake cookies/JWTs or relax the production email rate limiter.
+  The production email request endpoint itself is not exercised by this gate.
+- Phase 1 audit actor-setting trust, failed-login input bounds and rate limiting
+  remain open for 5B, alongside authoritative licences, legacy API retirement
+  and the complete application privacy review. This chunk does not close them.
+
 # Chunk 4A spike assumptions — CI-verified scope, 3 November 2026
 
 - Chunk 4A is **CI-verified in [MarginDesk CI #42](https://github.com/Adityapawar5105/margindesk/actions/runs/41613748478)**,

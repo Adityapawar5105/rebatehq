@@ -210,3 +210,40 @@ browser privacy checks and performance figures have local evidence only and
 remain unverified in CI. CI #42 does not turn the encrypted-startup target miss
 into a pass. No 4B code was started. Local command outcomes are recorded in
 [SPIKE_COMMANDS.md](./SPIKE_COMMANDS.md).
+
+## Chunk 4B follow-up — local measurements, CI acceptance unverified
+
+Close-out status: **4B done locally; awaiting CI**. The requested startup
+baseline (2.65/2.68 s at 1M, 3.16/3.18 s at 2M), resumed trials and separately
+measured deferred first-change latency are retained in
+[VAULT_RESULTS.md](./VAULT_RESULTS.md). At 2M, the first audited change and
+encrypted save took 14.781/16.332 seconds in Chrome/Edge, with no observed UI
+long task >=50 ms. Carry this >10-second delay to 4C-1; retain the 1M Scale cap.
+
+3 November 2026, same Ryzen 5 5600H / nominal 8 GB Windows laptop. The production
+vault now opens one EH instance, attaches its authenticated snapshot from RAM,
+and defers FK/index rebuilding until the first mutation in that same instance.
+There is no plaintext OPFS working file and no second engine.
+
+| Whole-browser restart: navigation → unlocked/ready | Chrome 156.0.8078.80 | Edge 156.0.4314.58 |
+|---|---:|---:|
+| Existing 1M-line vault | **2,837 ms — PASS <3s** | **2,660 ms — PASS <3s** |
+| Existing 2M-line vault | **3,163 ms — FAIL <3s** | **3,180 ms — FAIL <3s** |
+
+The 100k native CSV import, audit and encrypted save took 1,387 / 1,360 ms
+(Chrome/Edge), with no observed main-thread long task >=50 ms. Browser/profile
+asset caches are normal; human typing and real Supabase/network identity latency
+are excluded. The local harness is not authenticated-app evidence. The first
+mutation pays a copy cost that is intentionally deferred from startup.
+
+**Recommendation: retain the provisional Scale cap of 1M lines**, with 200k
+products; Professional stays 100k/1M and Starter 20k/200k. The 2M startup target
+still misses after whole-browser restart. These are local pilot guardrails,
+not changes to the blueprint or shipping guarantees. The complete methodology,
+earlier failed eager-copy measurements, local tests, pending authenticated CI
+gate and remaining limits are in [CHUNK_4B_VERIFICATION.md](./CHUNK_4B_VERIFICATION.md).
+
+The new ciphertext-only storage path estimates close to named file sizes, but
+the historical 4A discrepancy remains **unresolved/unverified**. See
+[STORAGE_FINDINGS.md](./STORAGE_FINDINGS.md). Headed manual checks, production
+sign-in/deployment and physical crash/quota recovery remain unverified.

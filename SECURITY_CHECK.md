@@ -1,5 +1,26 @@
 # MarginDesk security verification
 
+**Chunk 4B — local execution passed where recorded; CI acceptance unverified.**
+The `/home` local shell passes business inputs only to a typed worker. That
+worker's RAM database/staging and passphrase never enter an API request. OPFS
+contains chunk-authenticated AES-256-GCM snapshots and bounded pointer metadata.
+Local tests cover wrong keys, altered/truncated ciphertext, scope/sequence
+binding, failed pointer publication, audit tampering, auto-lock, concurrent
+writer rejection, exact cancel/cap rollback, reload and a killed renderer.
+The new required CI step exercises real local Supabase PKCE + the app callback,
+then checks every request's URL, complete headers/body and console for unique
+fixture markers. Its authenticated run is **unverified here**; no synthetic
+session or production auth/rate-limit exemption was introduced. The local
+unauthenticated harness is not a substitute. Details and caveats are in
+[CHUNK_4B_VERIFICATION.md](./CHUNK_4B_VERIFICATION.md).
+
+Legacy server business-data APIs remain for their labelled screens until 5B.
+Consequently this is not an app-wide “data never leaves your device” claim.
+Device compromise, complete audit rehash/old-snapshot rollback, physical power
+loss, eviction/quota recovery and deployed authentication remain unverified.
+Locked Supabase migrations/ACLs are unchanged. Historical evidence below stays
+limited to the runs it names.
+
 **Current Chunk 3C and Phase 3 status: verified in [MarginDesk CI #39](https://github.com/Adityapawar5105/margindesk/actions/runs/40937330833) and [MarginDesk Restore Drill #13](https://github.com/Adityapawar5105/margindesk/actions/runs/40938982321), 2026-10-30 (Asia/Calcutta), commit `2f8b06d`.** Acceptance is **162 fresh / 165 restore-mode pgTAP checks**, planned = ran with two-run repeatability, across **38 tenant tables**. Seven migrations are now locked. Phase 4 has not started. Scope and remaining unverified behavior are recorded in the Chunk 3C section below.
 
 **Earlier Chunk 3B status: verified in [MarginDesk CI #35](https://github.com/Adityapawar5105/margindesk/actions/runs/40844679109), 2026-10-29, commit `87d7d90`**, for the automated checks described below. That milestone used **200 data rows per file**; the current configurable maximum is **10,000**. Import commit/export/undo endpoints reuse owner/manager guards, the restricted transactional pool, existing RLS and audit triggers. No database objects or grants changed in 3B. See [Chunk 3B verification](./CHUNK_3B_VERIFICATION.md); its deployment limitations are not resolved by the later automated acceptance.

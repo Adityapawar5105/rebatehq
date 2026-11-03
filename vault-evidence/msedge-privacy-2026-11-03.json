@@ -1,0 +1,71 @@
+{
+  "date": "2026-11-03T12:04:12.544Z",
+  "auth": false,
+  "channel": "msedge",
+  "browser": "156.0.4314.58",
+  "machine": {
+    "cpu": "AMD Ryzen 5 5600H with Radeon Graphics         ",
+    "ram": "7887220736",
+    "os": "Windows_NT 10.0.26200"
+  },
+  "checks": {
+    "v1": {
+      "state": "unlocked",
+      "exists": true,
+      "dirty": false,
+      "recovered": false,
+      "lines": "1",
+      "products": "1",
+      "customers": "1",
+      "auditEntries": "3",
+      "schemaVersion": "2",
+      "generation": "2",
+      "tier": "starter",
+      "lastSaved": "2026-11-03T12:04:18.644Z"
+    },
+    "integrity": {
+      "autoLock": true,
+      "secondWriterBlocked": true,
+      "tamperDetected": true,
+      "wrongPassphraseRejected": true,
+      "autoLockAfterSaveFailure": true,
+      "firstChangeRollback": true,
+      "previousGenerationRecovery": true
+    },
+    "capRollback": true,
+    "invalidCellNoLeak": true,
+    "locatedDuplicate": true,
+    "cancelRollback": true,
+    "storage": {
+      "persistent": false,
+      "usage": "21260646",
+      "quota": "10758678886",
+      "namedOpfsBytes": "21259358",
+      "files": "4"
+    },
+    "cipherOnly": {
+      "cipherOnly": true,
+      "files": 4
+    },
+    "killedTabRecovery": true,
+    "wrongPassphrase": true,
+    "reload": true,
+    "firstMutationAfterUnlock": true,
+    "mobile": true,
+    "privacy": true
+  },
+  "measurements": {
+    "import100kMs": 1373,
+    "maxImportLongTaskMs": 0
+  },
+  "requests": {
+    "count": 69,
+    "paths": [
+      "/lab/vault",
+      "/spike/vault-worker.js",
+      "/spike/vault-tests.js",
+      "/spike/duckdb-eh.wasm"
+    ]
+  },
+  "status": "passed"
+}

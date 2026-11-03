@@ -1,0 +1,9 @@
+{
+  "duckdbWasm": "1.32.0",
+  "files": {
+    "duckdb-eh.wasm": "4c221bfa59c11f24dbd750e70c90b9252eca6eec5633936e6a2ec766e55fd879",
+    "duckdb-browser-eh.worker.js": "38171611d530b85f09967860595a469a447d0c499ad2f7fd7393cac9a923d0bf",
+    "vault-ram-worker.js": "0e81bea49feedf2f3c24a3cd5742e24c14ba8beb5d1bd3f04d03ef6363310d77",
+    "vault-worker.js": "0801bce6482f2ff47c2972b9db7362b690f43a1b50385b11a897bf5472e5550e"
+  }
+}

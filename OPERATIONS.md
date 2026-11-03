@@ -1,5 +1,34 @@
 # MarginDesk operations (Phase 1)
 
+## Chunk 4B local vault — CI acceptance unverified
+
+Use the existing configured Supabase identity to open `/home`. A vault is
+scoped by browser origin, profile, user and workspace. Keep the passphrase safe;
+there is no server recovery. Lock after use. A completed import is encrypted
+and published before success is shown; closing a tab cannot guarantee an
+asynchronous final save. If a save fails, keep the tab open and Retry Save.
+The previous encrypted generation remains safe; auto-lock can discard only
+the pending unsaved change. An OS/browser storage wipe can remove all local
+copies: persistent-storage permission is not a backup or a tested power-loss guarantee.
+
+Run `pnpm test:vault --browser=chrome` or `--browser=msedge` against a production
+server. For **synthetic local tests only**, set `VAULT_LAB_ENABLED=true` before
+starting `pnpm start --hostname 127.0.0.1 --port 3100`; that opt-in lab is not
+authentication evidence. Leave the flag unset in deployment. Do not invent
+Supabase URLs, keys or sessions to make a local run appear signed in.
+`pnpm benchmark:vault --browser=chrome` / `--browser=msedge` additionally measure
+1M/2M existing vaults after whole-browser restart on a fresh test profile.
+
+The required CI privacy gate starts after the real local Supabase stack and
+restricted login are available. It exports real Auth/mail configuration,
+rebuilds the app with the public local key, starts production Next.js, obtains
+a genuine local PKCE magic link and runs `pnpm test:vault:privacy --browser=chromium`.
+Failures fail the job; it does not use mocked auth, a production limiter bypass
+or stored business data. Local Auth and CI acceptance are **unverified** until
+that job passes. No new Postgres migration or restore inventory was required.
+See [CHUNK_4B_VERIFICATION.md](./CHUNK_4B_VERIFICATION.md) and
+[STORAGE_FINDINGS.md](./STORAGE_FINDINGS.md) for evidence and limitations.
+
 **Current Chunk 3C and Phase 3 status: verified in [MarginDesk CI #39](https://github.com/Adityapawar5105/margindesk/actions/runs/40937330833) and [MarginDesk Restore Drill #13](https://github.com/Adityapawar5105/margindesk/actions/runs/40938982321), 2026-10-30 (Asia/Calcutta), commit `2f8b06d`.** Both runs passed, including **162 fresh / 165 restore-mode checks**, planned = ran with repeatability, across **38 tenant tables**. Seven migrations are locked. Only the local restore target was exercised. Phase 4 has not started.
 
 **Earlier Chunk 3B status: verified in [MarginDesk CI #35](https://github.com/Adityapawar5105/margindesk/actions/runs/40844679109), 2026-10-29, commit `87d7d90`**, for automated lifecycle/security/SQL checks. That milestone used **200 data rows per file**; the current configurable maximum is **10,000**. No migration or restore inventory changed in 3B; its 156/159 plans and six locked migrations are historical. See the import lifecycle runbook below and [the verification record](./CHUNK_3B_VERIFICATION.md).

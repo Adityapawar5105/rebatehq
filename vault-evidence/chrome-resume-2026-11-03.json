@@ -1,0 +1,117 @@
+{
+  "date": "2026-11-03T14:47:15.965Z",
+  "auth": false,
+  "channel": "chrome",
+  "browser": "156.0.8078.80",
+  "machine": {
+    "cpu": "AMD Ryzen 5 5600H with Radeon Graphics         ",
+    "ram": "7887220736",
+    "os": "Windows_NT 10.0.26200"
+  },
+  "checks": {
+    "v1": {
+      "state": "unlocked",
+      "exists": true,
+      "dirty": false,
+      "recovered": false,
+      "lines": "1",
+      "products": "1",
+      "customers": "1",
+      "auditEntries": "3",
+      "schemaVersion": "2",
+      "generation": "2",
+      "tier": "starter",
+      "lastSaved": "2026-11-03T14:47:20.897Z"
+    },
+    "integrity": {
+      "autoLock": true,
+      "secondWriterBlocked": true,
+      "tamperDetected": true,
+      "wrongPassphraseRejected": true,
+      "autoLockAfterSaveFailure": true,
+      "firstChangeRollback": true,
+      "previousGenerationRecovery": true
+    },
+    "capRollback": true,
+    "invalidCellNoLeak": true,
+    "locatedDuplicate": true,
+    "cancelRollback": true,
+    "storage": {
+      "persistent": false,
+      "usage": "21260646",
+      "quota": "10758678886",
+      "namedOpfsBytes": "21259358",
+      "files": "4"
+    },
+    "cipherOnly": {
+      "cipherOnly": true,
+      "files": 4
+    },
+    "killedTabRecovery": true,
+    "wrongPassphrase": true,
+    "reload": true,
+    "firstMutationAfterUnlock": true,
+    "startup1000000Under3s": true,
+    "firstChange1000000OpenItem": false,
+    "startup2000000Under3s": false,
+    "firstChange2000000OpenItem": true,
+    "mobile": true,
+    "privacy": true
+  },
+  "measurements": {
+    "import100kMs": 1373,
+    "maxImportLongTaskMs": 0,
+    "seed1000000": {
+      "rows": "1000000",
+      "seedAndSaveMs": "7949",
+      "storage": {
+        "persistent": false,
+        "usage": "116682519",
+        "quota": "10854100759",
+        "namedOpfsBytes": "116681231",
+        "files": "4"
+      }
+    },
+    "navigationToUnlocked1000000Ms": 2665,
+    "firstChange1000000": {
+      "rows": "1000000",
+      "rebuildMs": 6879,
+      "totalMs": 7586,
+      "overTenSeconds": false,
+      "rowCountsUnchanged": true,
+      "auditedAndDurable": true,
+      "maxMainThreadLongTaskMs": 0
+    },
+    "seed2000000": {
+      "rows": "2000000",
+      "seedAndSaveMs": "15892",
+      "storage": {
+        "persistent": false,
+        "usage": "220755271",
+        "quota": "10958173511",
+        "namedOpfsBytes": "220753983",
+        "files": "4"
+      }
+    },
+    "navigationToUnlocked2000000Ms": 3204,
+    "firstChange2000000": {
+      "rows": "2000000",
+      "rebuildMs": 13331,
+      "totalMs": 14781,
+      "overTenSeconds": true,
+      "rowCountsUnchanged": true,
+      "auditedAndDurable": true,
+      "maxMainThreadLongTaskMs": 0
+    }
+  },
+  "requests": {
+    "count": 107,
+    "paths": [
+      "/lab/vault",
+      "/spike/vault-worker.js",
+      "/spike/vault-tests.js",
+      "/spike/duckdb-eh.wasm"
+    ]
+  },
+  "status": "passed"
+}

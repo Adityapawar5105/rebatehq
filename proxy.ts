@@ -10,8 +10,8 @@ export async function proxy(request:NextRequest){
  const requestHeaders=new Headers(request.headers);const nonce=randomBytes(18).toString("base64");
  const supabaseUrl=process.env.NEXT_PUBLIC_SUPABASE_URL||"";let connectOrigin="";try{connectOrigin=new URL(supabaseUrl).origin}catch{}
  const dev=process.env.NODE_ENV!=="production";
- // Header configuration only: local Wasm/workers on the isolated lab.
- const lab=request.nextUrl.pathname==="/lab/spike"||request.nextUrl.pathname.startsWith("/spike/");
+ // Header configuration only: local Wasm/workers on the lab and local shell.
+ const lab=["/lab/spike","/lab/vault","/home"].includes(request.nextUrl.pathname)||request.nextUrl.pathname.startsWith("/spike/");
  const policy=["default-src 'self'",`script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${dev?" 'unsafe-eval'":""}${lab?" 'wasm-unsafe-eval'":""}`,...(lab?["worker-src 'self' blob:"]:[]),"style-src 'self' 'unsafe-inline'","img-src 'self' data: blob:","font-src 'self' data:",`connect-src 'self' ${lab?"":connectOrigin}`.trim(),"object-src 'none'","base-uri 'self'","form-action 'self'","frame-ancestors 'none'",...(dev?[]:["upgrade-insecure-requests"])].join("; ");
  requestHeaders.set("x-nonce",nonce);requestHeaders.set("Content-Security-Policy",policy);
  let response=NextResponse.next({request:{headers:requestHeaders}});

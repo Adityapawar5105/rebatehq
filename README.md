@@ -1,14 +1,26 @@
 # MarginDesk
 
+**4B done locally; awaiting CI.**
+The signed-in `/home` shell now uses a single worker-hosted encrypted local
+vault, audited native CSV ingestion, atomic snapshot generations and inactivity
+locking. Phase 1 navigation is Home, Data Hub, Margin, Pricing, Reports and
+Settings. Old server-backed screens are labelled **Legacy** under `/legacy/`.
+See [CHUNK_4B_VERIFICATION.md](./CHUNK_4B_VERIFICATION.md) for measurements,
+commands and limits, [VAULT_RESULTS.md](./VAULT_RESULTS.md) for startup and
+first-change timings, and [STORAGE_FINDINGS.md](./STORAGE_FINDINGS.md) for the quota
+investigation. The real authenticated privacy gate is a required CI step but
+has not run here; no app-wide privacy or deployment claim is made. **4C-1 has not started.**
+
 **Chunk 4A — CI-verified in [MarginDesk CI #42](https://github.com/Adityapawar5105/margindesk/actions/runs/41613748478), 3 November 2026, commit `395154d`.** `/lab/spike` runs a
 self-hosted DuckDB-Wasm worker with synthetic OPFS persistence and memory-only
 user-file imports. Full-size Chrome/Edge measurements and the pending manual
 checklist are in [SPIKE_RESULTS.md](./SPIKE_RESULTS.md). CI passed 113 tests,
 typecheck, the frozen migration lock and the production/self-hosted asset build.
-The browser harness and its measurements remain local evidence; encrypted
-startup misses the three-second target. **Unverified:** headed manual checks,
-real Supabase sign-in, the production encrypted vault, crash/quota/multi-tab
-recovery and the storage-estimate discrepancy. 4B has not started. Reproduce with
+The 4A browser harness and its measurements remain local evidence; that spike's
+encrypted startup misses the three-second target. Those CI runs did not verify
+headed manual checks, real Supabase sign-in, the production encrypted vault,
+crash/quota/multi-tab recovery or the storage-estimate discrepancy. Current 4B
+local evidence and remaining limits are recorded above. Reproduce the 4A spike with
 `pnpm install --frozen-lockfile`, `pnpm build`, `pnpm start --hostname 127.0.0.1 --port 3100`,
 then `pnpm benchmark:spike --browser=chrome` or `--browser=msedge` in another terminal.
 
@@ -38,7 +50,7 @@ MarginDesk is being moved from a browser-local prototype to a multi-tenant app f
 | Repo phase | Blueprint phase | Chunks | Status |
 |---|---|---|---|
 | 0–3 | Foundations | 0, 1, 2A–2C, 3A–3C | Verified (CI #39, Restore Drill #13) |
-| 4 | Phase 1 core | 4.0 transition map · 4A spike · 4B vault · 4C-1/4C-2 Import Studio · 4D pocket-margin engine and margin intelligence · 4E pricing, export, backup | 4.0 committed; **4A CI-verified** ([CI #42](https://github.com/Adityapawar5105/margindesk/actions/runs/41613748478), 3 Nov 2026, `395154d`); 4B next, not started |
+| 4 | Phase 1 core | 4.0 transition map · 4A spike · 4B vault · 4C-1/4C-2 Import Studio · 4D pocket-margin engine and margin intelligence · 4E pricing, export, backup | 4.0 committed; **4A CI-verified** ([CI #42](https://github.com/Adityapawar5105/margindesk/actions/runs/41613748478), 3 Nov 2026, `395154d`); **4B done locally; awaiting CI**; 4C-1 not started |
 | 5 | Phase 1b + control plane | 5A cleanup, cost basis, checklist, roles · 5B licences, retire server business-data paths, carried security fixes | Not started |
 | 6 | Pilot hardening + security | 6A real files · 6B security review and whitepaper → sellable v1 | Not started |
 | 7 | Phase 2 | 7A–7F | Not started |

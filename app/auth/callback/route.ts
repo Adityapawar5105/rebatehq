@@ -16,5 +16,5 @@ export async function GET(request:Request){
   await withDatabase({userId:user.id,headers:request.headers},async db=>{const memberships=await db.query<{tenant_id:string}>("SELECT tenant_id FROM membership WHERE user_id=$1 AND status='active'",[user.id]);for(const item of memberships.rows)await appendAudit(db,{tenantId:item.tenant_id,actorId:user.id,action:"auth.login_succeeded",entityType:"auth_user",entityId:user.id,after:{method:"magic_link"}});});
  }catch(error){logSecurityEvent("auth.callback_membership_error",{reason:error instanceof Error?error.name:"unknown"});return NextResponse.redirect(new URL("/login?error=invite",url.origin));}
  const state=await withDatabase({userId:user.id,headers:request.headers},db=>db.query("SELECT 1 FROM membership WHERE user_id=$1 AND status='active' LIMIT 1",[user.id]));
- return NextResponse.redirect(new URL(state.rowCount?"/dashboard":"/setup",url.origin));
+ return NextResponse.redirect(new URL(state.rowCount?"/home":"/setup",url.origin));
 }

@@ -1,0 +1,120 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import vm from "node:vm";
+import { deriveKey, encrypt, decrypt } from "../lib/vault/crypto";
+import { VaultStorage } from "../lib/vault/storage";
+import { verifyEntries, auditPayload, GENESIS, type AuditEntry } from "../lib/vault/audit";
+import { digest } from "../lib/vault/crypto";
+import { CAPS } from "../lib/vault/protocol";
+import { estimateImport } from "../lib/vault/ingest";
+import { upgradeSql, TABLES, V1_SQL } from "../lib/vault/schema";
+import { closeMemory } from "../lib/vault/engine";
+class FakeDirectory {
+  files = new Map<string, Uint8Array>(); failName = "";
+  async getFileHandle(name: string, options?: { create?: boolean }) {
+    if (!this.files.has(name)) { if (!options?.create) throw new DOMException("missing", "NotFoundError"); this.files.set(name, new Uint8Array()); }
+    return {
+      getFile: async () => new File([new Uint8Array(this.files.get(name)!)], name),
+      createWritable: async () => {
+        const chunks: Uint8Array<ArrayBuffer>[] = [];
+        return {
+          write: async (value: string | Uint8Array) => { if (name === this.failName) throw new Error("simulated interrupted write"); chunks.push(typeof value === "string" ? new TextEncoder().encode(value) : new Uint8Array(value)); },
+          close: async () => { this.files.set(name, new Uint8Array(await new Blob(chunks).arrayBuffer())); },
+          abort: async () => undefined,
+        };
+      },
+    };
+  }
+  async *entries() { for (const name of this.files.keys()) yield [name, { kind: "file" }] as const; }
+  async removeEntry(name: string) { this.files.delete(name); }
+}
+test("vault lock terminates its engine worker even when connection close fails", async () => {
+  const calls: string[] = [];
+  const engine = { conn: { async close() { calls.push("close"); throw new Error("simulated damaged connection"); } }, db: { async terminate() { calls.push("database terminated"); } }, worker: { terminate() { calls.push("worker terminated"); } } };
+  await assert.rejects(closeMemory(engine as unknown as Parameters<typeof closeMemory>[0]), /damaged connection/);
+  assert.deepEqual(calls, ["close", "database terminated", "worker terminated"]);
+});
+test("vault snapshots authenticate scope, sequence, all chunks and key settings", async () => {
+  const directory = new FakeDirectory(), storage = new VaultStorage(directory as unknown as FileSystemDirectoryHandle, "unit-scope");
+  const key = await deriveKey("unit-vault-passphrase"), plain = new Uint8Array(1024 * 1024 + 7).fill(42);
+  const head = await storage.publish(plain, key, "1"), file = await storage.file(head.current);
+  assert.deepEqual((await decrypt(file, "unit-vault-passphrase", "unit-scope")).bytes, plain);
+  await assert.rejects(decrypt(file, "wrong-test-passphrase", "unit-scope"), /Wrong passphrase/);
+  await assert.rejects(decrypt(file, "unit-vault-passphrase", "other-scope"));
+  const bytes = new Uint8Array(await file.arrayBuffer()); bytes[bytes.length - 1] ^= 1;
+  await assert.rejects(decrypt(new Blob([bytes]), "unit-vault-passphrase", "unit-scope"));
+  await assert.rejects(decrypt(file.slice(0, -1), "unit-vault-passphrase", "unit-scope"));
+  const replaced = new Uint8Array(await file.arrayBuffer());
+  const length = new DataView(replaced.buffer).getUint32(8);
+  const header = new TextDecoder().decode(replaced.subarray(12, 12 + length));
+  replaced.set(new TextEncoder().encode(header.replace('"sequence":"1"', '"sequence":"2"')), 12);
+  await assert.rejects(decrypt(new Blob([replaced]), "unit-vault-passphrase", "unit-scope"));
+});
+test("snapshot publication preserves committed generations at every failed pointer/write step", async () => {
+  const directory = new FakeDirectory(), key = await deriveKey("unit-vault-passphrase");
+  const storage = new VaultStorage(directory as unknown as FileSystemDirectoryHandle, "unit-scope");
+  directory.failName = "head.json";
+  await assert.rejects(storage.publish(new Uint8Array([0]), key, "1"));
+  assert.equal(await storage.exists(), false, "Failed initial publication must permit a safe creation retry");
+  directory.failName = "";
+  const first = await storage.publish(new Uint8Array([1, 2, 3]), key, "1");
+  for (const name of ["head.previous.json", "head.json"]) {
+    directory.failName = name;
+    await assert.rejects(storage.publish(new Uint8Array([4, 5, 6]), key, "2"));
+    assert.equal((await storage.readHead())!.current, first.current);
+    assert.deepEqual((await decrypt(await storage.file(first.current), "unit-vault-passphrase", "unit-scope")).bytes, new Uint8Array([1, 2, 3]));
+    directory.failName = "";
+  }
+  const second = await storage.publish(new Uint8Array([7, 8, 9]), key, "2");
+  assert.equal(second.previous, first.current);
+  const current = directory.files.get(second.current)!; current[current.length - 1] ^= 1;
+  const candidates = await storage.candidates();
+  await assert.rejects(decrypt(await storage.file(candidates[0].name), "unit-vault-passphrase", "unit-scope"));
+  assert.deepEqual((await decrypt(await storage.file(candidates[1].name), "unit-vault-passphrase", "unit-scope")).bytes, new Uint8Array([1, 2, 3]));
+  directory.files.set("head.json", new TextEncoder().encode("interrupted pointer"));
+  assert.ok((await storage.candidates()).some(c => c.name === first.current && c.recovered));
+});
+test("audit chain rejects tampering, truncation and reordered entries", async () => {
+  const rows: AuditEntry[] = []; let previous = GENESIS;
+  for (let n = 1; n <= 3; n++) { const row = { sequence: String(n), id: `id-${n}`, occurred_at: "2026-11-03", action: "test", details: "{}", previous_hash: previous, hash: "" }; row.hash = await digest(auditPayload(row)); previous = row.hash; rows.push(row); }
+  async function* stream(values: AuditEntry[]) { yield* values; }
+  assert.ok((await verifyEntries(stream(rows), "3", previous)).valid);
+  assert.equal((await verifyEntries(stream(rows.slice(0, 2)), "3", previous)).valid, false);
+  assert.equal((await verifyEntries(stream([rows[1], rows[0], rows[2]]), "3", previous)).valid, false);
+  assert.equal((await verifyEntries(stream([{ ...rows[0], details: "changed" }, ...rows.slice(1)]), "3", previous)).valid, false);
+});
+test("RAM filesystem never delegates to OPFS and preserves exact random-access bytes", async () => {
+  const listeners: Array<(event: any) => void> = [], messages: any[] = [];
+  const context = vm.createContext({ navigator: { storage: { getDirectory: () => { throw new Error("real OPFS must never be called"); } } }, DOMException, Map, Uint8Array, Math, Number, Error, self: { addEventListener(_name: string, listener: (e: any) => void) { listeners.push(listener); }, postMessage(value: unknown) { messages.push(value); } } });
+  vm.runInContext(readFileSync("lib/vault/ram-filesystem.js", "utf8"), context);
+  const dir = await context.navigator.storage.getDirectory();
+  const file = await dir.getFileHandle("vault-ram.duckdb", { create: true }), handle = await file.createSyncAccessHandle();
+  handle.write(new Uint8Array([1, 2, 3]), { at: 1024 * 1024 - 1 });
+  const output = new Uint8Array(5); assert.equal(handle.read(output, { at: 1024 * 1024 - 2 }), 4); assert.deepEqual(output, new Uint8Array([0, 1, 2, 3, 0]));
+  listeners[0]({ data: { type: "vault-ram-export" }, stopImmediatePropagation() {} }); assert.equal(messages[0].bytes.length, 1024 * 1024 + 2);
+  handle.truncate(1); handle.truncate(5); const cleared = new Uint8Array(5); handle.read(cleared); assert.deepEqual(cleared, new Uint8Array(5));
+  handle.truncate(3 * 1024 * 1024);
+  listeners[0]({ data: { type: "vault-ram-export" }, stopImmediatePropagation() {} });
+  assert.equal(messages[1].bytes.length, 3 * 1024 * 1024); assert.ok(messages[1].bytes.every((byte: number) => byte === 0), "Unwritten sparse blocks must export as zeros");
+});
+test("committed encrypted v1 fixture stays frozen", () => {
+  assert.equal(createHash("sha256").update(readFileSync("tests/fixtures/vault/v1.enc")).digest("hex"), "4ef3fd0ae32310ec712f0763671c52d01f6e0ed47ad8442e2f04c24e4068b492");
+});
+test("schema inventory, forward-only migration, capacity and memory warning are explicit", () => {
+  assert.equal(TABLES.length, 17); for (const table of TABLES) assert.ok(V1_SQL.includes(`CREATE TABLE ${table}(`));
+  assert.ok(upgradeSql(1).includes("ALTER TABLE import_batches")); assert.equal(upgradeSql(2), ""); assert.throws(() => upgradeSql(3));
+  assert.equal(CAPS.scale.lines, 1000000); assert.equal(CAPS.starter.products, 20000);
+  assert.equal(estimateImport({ name: "sales.csv", size: 1000 }, "professional").estimatedMemoryBytes, "6000");
+  assert.throws(() => estimateImport({ name: "sales.xlsx", size: 1000 }, "starter"));
+  assert.throws(() => estimateImport({ name: "sales.csv", size: 257 * 1024 * 1024 }, "starter"));
+});
+test("local data paths contain no business API, raw SQL protocol, or real OPFS worker handle", () => {
+  const ui = readFileSync("components/local/VaultApp.tsx", "utf8"), engine = readFileSync("lib/vault/engine.ts", "utf8"), protocol = readFileSync("lib/vault/protocol.ts", "utf8");
+  assert.ok(!/\.query\(|fetch\(|JSON\.stringify/.test(ui));
+  assert.ok(!/sql:|query:/.test(protocol)); assert.ok(engine.includes('new URL("/spike/vault-ram-worker.js"'));
+  const workflow = readFileSync(".github/workflows/ci.yml", "utf8"); assert.ok(workflow.includes("pnpm test:vault:privacy")); assert.ok(!workflow.includes("continue-on-error"));
+  assert.ok(!readFileSync("scripts/vault-test-auth.mjs", "utf8").includes("setSession("));
+  assert.ok(readFileSync("app/lab/vault/page.tsx", "utf8").includes('process.env.VAULT_LAB_ENABLED !== "true"'));
+});
