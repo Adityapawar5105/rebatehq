@@ -1,4 +1,11 @@
-# Chunk 4A spike assumptions — 3 November 2026, local evidence only
+# Chunk 4A spike assumptions — CI-verified scope, 3 November 2026
+
+- Chunk 4A is **CI-verified in [MarginDesk CI #42](https://github.com/Adityapawar5105/margindesk/actions/runs/41613748478)**,
+  commit `395154d21efb45fb03397f5545c3ffd6a6f3ded4`, 3 November 2026.
+  The run passed 113 tests (including six spike tests and the margin golden
+  cases), frozen installation/migration gates, typecheck and the production
+  build with self-hosted assets. It did not execute the Chrome/Edge harness;
+  performance and browser privacy results remain local evidence, not CI proof.
 
 - Blueprint v2.2 and its execution plan govern. Only the spike is implemented:
   no 4B vault lifecycle, app-shell migration, control-plane retirement, licence
@@ -50,6 +57,10 @@
   either number as a total disk-footprint guarantee. Headless persistence was
   not granted. Manual headed Chrome/Edge, quota/crash/multi-tab recovery and
   the production memory-only encrypted vault remain unverified.
+- CI #42 does not verify headed manual checks, real Supabase sign-in, the
+  production encrypted vault, crash/quota/multi-tab recovery or resolution of
+  the storage-estimate discrepancy. These stay **unverified**. The local
+  encrypted-startup miss is unchanged; 4B has not started.
 
 # Phase 0 assumptions
 

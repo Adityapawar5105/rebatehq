@@ -2,7 +2,7 @@
 
 *Status review and prompt pack, written 2 Nov 2026; updated for blueprint v2.2 the same day. Governs nothing on its own: `BLUEPRINT.md` v2.2 is the source of truth; this file sequences the work.*
 
-**Progress:** chunk 4.0 is done locally (transition map, blueprint v2.2, README roadmap, `tsconfig.tsbuildinfo` untracked; all local checks passed) and awaits commit. **Next prompt: 4A.**
+**Progress:** chunk 4.0 is committed (`7387f11`); **4A is done and CI-verified** in [MarginDesk CI #42](https://github.com/Adityapawar5105/margindesk/actions/runs/41613748478), 3 November 2026, commit `395154d`. Browser measurements remain local evidence; the encrypted-startup target miss and unverified manual/vault/recovery items are recorded in `SPIKE_RESULTS.md`. **Next prompt: 4B**. 4B has not started.
 
 ---
 
@@ -135,6 +135,8 @@ pnpm test, pnpm typecheck and pnpm build pass; no migration or migrations.lock c
 ```
 
 ### Prompt 4A — Local-first prototype spike (blueprint §19)
+
+**Done — CI-verified in [MarginDesk CI #42](https://github.com/Adityapawar5105/margindesk/actions/runs/41613748478), 3 November 2026, commit `395154d`.** Scope and remaining unverified checks are recorded in `SPIKE_RESULTS.md`; the original prompt below is retained as history.
 
 ```
 [PREAMBLE]

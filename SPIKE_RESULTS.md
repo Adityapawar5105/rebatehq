@@ -1,7 +1,16 @@
 # Chunk 4A — local-first spike results
 
-**3 November 2026. Local evidence only, not CI verification.**
+**Chunk 4A — CI-verified in [MarginDesk CI #42](https://github.com/Adityapawar5105/margindesk/actions/runs/41613748478), 3 November 2026, commit `395154d21efb45fb03397f5545c3ffd6a6f3ded4`.**
 Base: `7387f11`. Only chunk 4A was built; 4B has not started.
+
+The passing run exercised frozen-lockfile installation, the seven-migration
+lock, typecheck, all **113 tests** (67 JS + 46 TS), and the production build,
+including the self-hosted worker/assets prebuild. Its six spike tests cover
+exact money, located parsing and safe CSV export, XLSX/formula/macro/XML
+security, encrypted snapshot round trip, wrong-key/tamper/KDF rejection, and
+the static worker/privacy boundary. The existing real-Postgres suite also ran.
+The workflow did **not** run the Chrome/Edge browser harness or benchmark;
+all browser measurements below remain **measured locally**, not CI timings.
 
 ## Machine and method
 
@@ -194,7 +203,10 @@ shipping recommendation, not evidence of an analytical-capacity failure.
 Lower caps may not solve the fixed cost of opening two engines; 4B should avoid
 that prototype path. Do not sell the 2M promise before pilot validation.
 
-CI, real Supabase sign-in, other machines/headed browsers, near-quota/crash/
-multi-tab behavior, real ERP files and the production memory-only vault remain
-**unverified**. No 4B code was started. Local command outcomes are recorded in
+**Unverified:** headed manual checks, real Supabase sign-in, the production
+encrypted memory-only vault, crash/quota/multi-tab recovery, the unresolved
+storage-estimate discrepancy and real ERP files. The full-size browser harness,
+browser privacy checks and performance figures have local evidence only and
+remain unverified in CI. CI #42 does not turn the encrypted-startup target miss
+into a pass. No 4B code was started. Local command outcomes are recorded in
 [SPIKE_COMMANDS.md](./SPIKE_COMMANDS.md).
