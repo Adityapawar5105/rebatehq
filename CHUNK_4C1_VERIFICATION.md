@@ -1,6 +1,6 @@
 # Chunk 4C-1 — Import Studio: multi-file and converter
 
-**3 Nov 2026. Local evidence only; CI evidence pending.** Built on 4B (CI #44, `c382f7d`) plus the vault-lease fix (CI #46, `f1971c5`).
+**3 Nov 2026. CI-verified in [MarginDesk CI #48](https://github.com/Adityapawar5105/margindesk/actions/runs/41690570143) on commit `ea4e5b6` (12m 14s).** That run passed `pnpm test` (including the new studio and schema tests), the build, the database suites, and the required authenticated local-vault privacy gate against local Supabase (1m 40s, Chromium). The gate now covers the studio flow and the TSV/JSON/XML/XLSX marker batch. The measurements below are local, not CI. Built on 4B (CI #44, `c382f7d`) plus the vault-lease fix (CI #46, `f1971c5`). CI #48's legacy server benchmark (commitImport 16,882 ms / undoImport 4,826 ms) is runner variance on a path being retired.
 
 ## What was built
 
@@ -57,4 +57,4 @@ The blueprint's "parse and load 1M rows under 10 s" is met for parsing and valid
 
 ## Still unverified
 
-GitHub Actions for this chunk, including the authenticated privacy gate against local Supabase. Also: headed manual checks, real ERP exports (4C-2), spreadsheets near the 300,000-row cap on an 8 GB laptop, physical crash, quota and multi-tab recovery during an import, and deployed Supabase sign-in.
+The `--full` warm-up and 1M-row benchmarks run locally only; CI runs the functional harness. Also unverified: headed manual checks, real ERP exports (4C-2), spreadsheets near the 300,000-row cap on an 8 GB laptop, physical crash, quota and multi-tab recovery during an import, and deployed Supabase sign-in.

@@ -164,4 +164,4 @@ The 4B open item (first change after unlock: 7.6 s at 1M lines, about 15 s at 2M
 | First change after warm-up, 1M / 2M (committed + encrypted save) | **767** / 1,595 ms | **708** / 1,504 ms |
 | Max UI long task during first change | 0 ms | 0 ms |
 
-The target (first change after warm-up under 2 s at 1M lines) is met locally in both browsers. An import started during warm-up waits for it (up to about 7 s at 1M lines) while the UI stays responsive. The 2M startup still misses 3 s, so the Scale cap stays at 1M lines. CI evidence for 4C-1 is pending. Details: [CHUNK_4C1_VERIFICATION.md](./CHUNK_4C1_VERIFICATION.md).
+The target (first change after warm-up under 2 s at 1M lines) is met locally in both browsers. An import started during warm-up waits for it (up to about 7 s at 1M lines) while the UI stays responsive. The 2M startup still misses 3 s, so the Scale cap stays at 1M lines. 4C-1 is CI-verified in [CI #48](https://github.com/Adityapawar5105/margindesk/actions/runs/41690570143) (`ea4e5b6`); these timings are local. Details: [CHUNK_4C1_VERIFICATION.md](./CHUNK_4C1_VERIFICATION.md).

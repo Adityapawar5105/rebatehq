@@ -51,5 +51,6 @@ Keep all applied migrations and their locked hashes unchanged. Follow
 gates, and distinguish local checks from passing CI/restore evidence.
 
 Do only the chunk the user's current prompt names; never start the next chunk on
-your own. Chunk 4.0 (transition map and housekeeping) was done on 2 November 2026;
-the next chunk is 4A, the local-first prototype spike.
+your own. Chunks 4.0, 4A, 4B and 4C-1 are done and CI-verified (4C-1: CI #48,
+`ea4e5b6`); the next chunk is 4C-2 (ERP mapper, resilient parser, Fix Later,
+health score, Playground). See `BLUEPRINT_EXECUTION_PLAN.md` for its prompt.

@@ -2,7 +2,7 @@
 
 *Status review and prompt pack, written 2 Nov 2026; updated for blueprint v2.2 the same day. Governs nothing on its own: `BLUEPRINT.md` v2.2 is the source of truth; this file sequences the work.*
 
-**Progress:** chunk 4.0 is committed (`7387f11`); 4A remains CI-verified in [CI #42](https://github.com/Adityapawar5105/margindesk/actions/runs/41613748478), commit `395154d`; **4B done and CI-verified** in [MarginDesk CI #44](https://github.com/Adityapawar5105/margindesk/actions/runs/41660146540), 3 November 2026, commit `c382f7d`, including the authenticated local-vault privacy gate (14 named checks). **4C-1 done locally (built in Claude Code), awaiting CI** — see `CHUNK_4C1_VERIFICATION.md`. Next prompt after its close-out: **4C-2**. Performance and remaining unverified items are recorded in `VAULT_RESULTS.md`.
+**Progress:** chunk 4.0 is committed (`7387f11`); 4A remains CI-verified in [CI #42](https://github.com/Adityapawar5105/margindesk/actions/runs/41613748478), commit `395154d`; **4B done and CI-verified** in [MarginDesk CI #44](https://github.com/Adityapawar5105/margindesk/actions/runs/41660146540), 3 November 2026, commit `c382f7d`, including the authenticated local-vault privacy gate (14 named checks). **4C-1 done and CI-verified** in [MarginDesk CI #48](https://github.com/Adityapawar5105/margindesk/actions/runs/41690570143), commit `ea4e5b6` (built in Claude Code), see `CHUNK_4C1_VERIFICATION.md`. **Next prompt: 4C-2.** Performance and remaining unverified items are recorded in `VAULT_RESULTS.md`.
 
 ---
 
