@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import JSZip from "jszip";
 import * as XLSX from "xlsx";
 import { CsvTokenizer, decodeChunks, detectDelimiter, detectEncoding, sampleRows, CHUNK_BYTES } from "../lib/studio/text";
-import { align, canonicalValue, classifyRow, detectDateFormat, detectDecimal, detectHeader, detectRole, fingerprint, headerNames, isoDate, kindOf, missingRequired, type Settings } from "../lib/studio/formats";
+import { align, canonicalValue, classifyRow, detectDateFormat, detectDecimal, detectHeader, fingerprint, headerNames, isoDate, kindOf, missingRequired, type Settings } from "../lib/studio/formats";
+import { detectRole } from "../lib/studio/mapper";
 import { checkZip, jsonGrid, sheetGrid, sheetNames, xmlGrid } from "../lib/studio/sheets";
 import { CsvWriter, Normalizer, streamGrid, streamText } from "../lib/studio/rows";
 import { issueColumn, issueMessage, output } from "../lib/studio/load";
@@ -169,8 +170,10 @@ test("issue messages and columns never include cell values", () => {
   assert.equal(issueColumn("list_amount:invalid", file), "F");
   assert.match(issueMessage("list_amount:invalid", base), /non-negative amount/);
   assert.equal(issueColumn("list_amount:invalid", { ...file, keyed: true }), "list_amount");
-  assert.equal(output(ROLE_FIELDS.sales_history[5]).name, "list_cents");
-  assert.equal(output(ROLE_FIELDS.item_master[4]).name, "current_cost");
+  const field = (role: keyof typeof ROLE_FIELDS, name: string) => ROLE_FIELDS[role].find(f => f.name === name)!;
+  assert.equal(output(field("sales_history", "list_amount")).name, "list_cents");
+  assert.equal(output(field("sales_history", "cost_amount")).name, "cost_cents");
+  assert.equal(output(field("item_master", "current_cost")).name, "current_cost");
 });
 test("recipe fingerprints depend on kind and normalized headers only", () => {
   assert.equal(fingerprint("csv", ["Line ID", "SKU"]), fingerprint("csv", ["line_id", "sku"]));

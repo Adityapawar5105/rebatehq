@@ -6,24 +6,29 @@ import { sqlText } from "../spike/exact";
 import { appendAudit } from "../vault/audit";
 import { CAPS, type Tier } from "../vault/protocol";
 import {
-  DATE_FORMATS, DELIMITERS, LOADABLE, ROLES, ROLE_FIELDS, ROLE_LABELS, SPREADSHEET, StudioError, TEXT, align, canonicalValue, columnLetter, detectDateFormat, detectDecimal,
-  detectHeader, detectRole, fingerprint, headerNames, kindOf, missingRequired, type FieldType, type Kind, type Role, type Settings, type StudioIssue,
+  DATE_FORMATS, DELIMITERS, LOADABLE, ROLES, ROLE_FIELDS, ROLE_LABELS, SPREADSHEET, StudioError, TEXT, canonicalValue, columnLetter, detectDateFormat, detectDecimal,
+  detectHeader, fingerprint, headerNames, kindOf, type FieldType, type Kind, type Role, type Settings, type StudioIssue,
 } from "./formats";
+import { ALTERNATIVES, PROFILES, PROFILE_IDS, detectProfile, detectRole, lineIdFor, mappingProblems, needsConfirmation, suggestMapping, type ErpProfile, type FieldSource, type MappedField } from "./mapper";
+import { NOTE_TEXT, cleanDate, cleanId, cleanNumber, lineTotal, type CleanNote } from "./clean";
 import { bomLength, detectDelimiter, detectEncoding, sampleRows } from "./text";
 import { MAX_DOC_BYTES, MAX_SHEET_BYTES, checkZip, jsonGrid, sheetGrid, sheetNames, xmlGrid, type Grid } from "./sheets";
 import { CsvWriter, Normalizer, emptyStats, streamGrid, streamText, type Stats } from "./rows";
 import { CODES, capUsage, commitSql, counts, createStage, finishRemovalSql, issueColumn, issueMessage, removeChildrenSql, resetStage, salesRanges, sampleIssues, stageFile, validate, type StagedFile } from "./load";
 
 export const MAX_TEXT_BYTES = 256 * 1024 * 1024, MAX_FILES = 64, SAMPLE_BYTES = 256 * 1024;
-export type Recipe = { id: string; name: string; profile: string; settings: Settings & { kind: Kind; role: Role | null } };
+export type Recipe = { id: string; name: string; profile: string; settings: Settings & { kind: Kind; role: Role | null; erp?: ErpProfile; mapping?: Record<string, FieldSource> } };
+/** One canonical field's mapping as shown to the user. `options` lists allowed non-column sources. */
+export type FieldMapView = { field: string; required: boolean; source: FieldSource; header: string | null; column: string | null; confidence: number; reason: string; options: FieldSource["kind"][] };
 export type FileView = {
   id: string; name: string; bytes: string; kind: Kind; sheets: string[]; settings: Settings; role: Role | null; roleConfidence: number;
   roleScores: Record<Role, number>; headers: string[]; mapped: { field: string; header: string; column: string }[]; missing: string[]; ignored: string[];
+  fields: FieldMapView[]; erp: ErpProfile; erpOptions: { id: ErpProfile; label: string; note: string }[]; needsConfirmation: boolean; confirmed: boolean;
   preview: { row: number; cells: string[] }[]; headerRowNumber: number; headerRowOptions: { index: number; row: number }[]; notices: string[];
   issues: StudioIssue[]; loadable: boolean; reason: string | null; estimatedRows: string; recipe: { id: string; name: string } | null;
   appliedRecipe: string | null; replaces: string | null; fixedLayout: boolean; textFormat: boolean; columnLabels: string[];
 };
-export type FileReport = { id: string; name: string; role: Role; rowsRead: string; rowsLoaded: string; rowsRejected: string; rowsSkipped: string; issueCount: string; issues: StudioIssue[]; dateRange: { from: string; to: string } | null };
+export type FileReport = { id: string; name: string; role: Role; rowsRead: string; rowsLoaded: string; rowsRejected: string; rowsSkipped: string; issueCount: string; issues: StudioIssue[]; dateRange: { from: string; to: string } | null; cleaned: { field: string; note: string; count: string }[] };
 export type BatchReport = { files: FileReport[]; warnings: string[]; loaded: string; rejected: string; capOk: boolean; capMessage: string | null; replaces: string | null };
 export type StudioState = { files: FileView[]; report: BatchReport | null; recipes: { id: string; name: string; role: Role | null }[] };
 export type SourceView = { id: string; name: string; role: string; importedAt: string; rowsLoaded: string; rowsRejected: string; issues: string };
@@ -31,7 +36,45 @@ export type Progress = (stage: string, done: string, total: string) => void;
 type Entry = {
   id: string; file: File; kind: Kind; settings: Settings; role: Role | null; roleManual: boolean; sheets: string[]; zipNotices: string[];
   bytes: Uint8Array | null; grid: Grid | null; sample: string[][]; sampleBytes: number; sampleRecords: number; notices: string[]; replaces: string | null; appliedRecipe: string | null;
+  erp: ErpProfile; overrides: Record<string, FieldSource>; confirmed: boolean;
 };
+type Notes = Map<string, Map<CleanNote, number>>;
+function note(notes: Notes, field: string, list: CleanNote[]) {
+  if (!list.length) return;
+  let m = notes.get(field); if (!m) notes.set(field, m = new Map());
+  for (const n of list) m.set(n, (m.get(n) ?? 0) + 1);
+}
+function clean(type: FieldType, value: string, settings: Settings, notes: Notes, field: string) {
+  const r = type === "date" ? cleanDate(value, settings.dateFormat) : type === "amount" || type.startsWith("quantity") ? cleanNumber(value, settings.decimal) : type === "id" || type === "line_id" ? cleanId(value) : { value, notes: [] };
+  note(notes, field, r.notes); return r.value;
+}
+/**
+ * Build one canonical row (ROLE_FIELDS order) from source cells using the mapping:
+ * cleaned values, unit x quantity totals, zero/unknown defaults and generated line IDs.
+ */
+function canonicalRow(role: Role, mapping: Record<string, FieldSource>, settings: Settings, cells: string[], row: number, invoiceLines: Map<string, number>, notes: Notes) {
+  const fields = ROLE_FIELDS[role], values = new Map<string, string>();
+  const cell = (s: FieldSource) => s.kind === "column" || s.kind === "unit" ? cells[s.index] ?? "" : "";
+  const order = [...fields].sort((a, b) => Number(mapping[a.name]?.kind === "unit" || mapping[a.name]?.kind === "generate") - Number(mapping[b.name]?.kind === "unit" || mapping[b.name]?.kind === "generate"));
+  for (const f of order) {
+    const s = mapping[f.name] ?? { kind: "none" as const };
+    if (s.kind === "column") values.set(f.name, clean(f.type, cell(s), settings, notes, f.name));
+    else if (s.kind === "zero") values.set(f.name, "0");
+    else if (s.kind === "none") values.set(f.name, "");
+    else if (s.kind === "unit") {
+      const unit = clean("amount", cell(s), settings, notes, f.name), total = lineTotal(unit, values.get("quantity") ?? "");
+      values.set(f.name, total ?? unit);
+    } else {
+      const invoice = values.get("invoice_id") ?? "";
+      let key: string;
+      if (!invoice) key = `row\u0001${row}`;
+      else if (s.lineNo !== null) key = `${invoice}\u0001${cleanId(cells[s.lineNo] ?? "").value}`;
+      else { const k = (invoiceLines.get(invoice) ?? 0) + 1; invoiceLines.set(invoice, k); key = `${invoice}\u0001#${k}`; }
+      values.set(f.name, lineIdFor(key));
+    }
+  }
+  return fields.map(f => values.get(f.name) ?? "");
+}
 const id = () => crypto.randomUUID();
 /** Size plus SHA-256 of the first and last 64 KiB: catches renamed or re-saved copies without hashing huge files. */
 export async function fileFingerprint(file: Blob) {
@@ -69,7 +112,7 @@ export class Studio {
     if (file.name.length > 200 || file.size < 1) throw new StudioError(`${file.name}: choose a non-empty file with a name under 200 characters.`);
     const limit = TEXT.includes(kind) ? MAX_TEXT_BYTES : SPREADSHEET.includes(kind) ? MAX_SHEET_BYTES : MAX_DOC_BYTES;
     if (file.size > limit) throw new StudioError(`${file.name} is larger than ${Math.round(limit / 1048576)} MiB.${TEXT.includes(kind) ? " Split it or import a shorter date range." : " Save it as CSV and import the CSV instead."}`);
-    const entry: Entry = { id: id(), file, kind, role: null, roleManual: false, sheets: [], zipNotices: [], bytes: null, grid: null, sample: [], sampleBytes: 0, sampleRecords: 1, notices: [], replaces, appliedRecipe: null,
+    const entry: Entry = { id: id(), file, kind, role: null, roleManual: false, sheets: [], zipNotices: [], bytes: null, grid: null, sample: [], sampleBytes: 0, sampleRecords: 1, notices: [], replaces, appliedRecipe: null, erp: "generic", overrides: {}, confirmed: false,
       settings: { sheet: null, headerRow: 0, headerDepth: 1, delimiter: kind === "tsv" ? "\t" : ",", encoding: "utf-8", decimal: "dot", dateFormat: "YYYY-MM-DD" } };
     try {
       if (TEXT.includes(kind)) {
@@ -113,8 +156,21 @@ export class Studio {
     const date = detectDateFormat(data);
     entry.settings.dateFormat = date.format;
     entry.notices = date.ambiguous ? [`Dates such as 03/04/2025 could be day-first or month-first. ${date.format} was assumed; confirm the date format below.`] : [];
-    if (!entry.roleManual) entry.role = detectRole(entry.file.name, this.headers(entry)).role;
+    const headers = this.headers(entry);
+    if (!entry.roleManual) entry.role = detectRole(entry.file.name, headers).role;
+    entry.erp = detectProfile(headers); entry.overrides = {}; entry.confirmed = false;
   }
+  /** Suggested mapping for the current role/headers/ERP profile, with the user's choices applied. */
+  private mapping(entry: Entry): MappedField[] {
+    if (!entry.role) return [];
+    const headers = this.headers(entry);
+    return suggestMapping(entry.role, headers, entry.erp).map(m => {
+      const o = entry.overrides[m.field];
+      if (!o || ((o.kind === "column" || o.kind === "unit") && o.index >= headers.length)) return m;
+      return { ...m, source: o, confidence: 1, reason: "Chosen by you" };
+    });
+  }
+  private mappingOf(entry: Entry) { return Object.fromEntries(this.mapping(entry).map(m => [m.field, m.source])) as Record<string, FieldSource>; }
   private headers(entry: Entry) {
     const rows = this.rows(entry);
     return rows.length ? headerNames(rows, Math.min(entry.settings.headerRow, rows.length - 1), entry.settings.headerDepth) : [];
@@ -131,13 +187,23 @@ export class Studio {
     return null;
   }
   private applySettings(entry: Entry, recipe: Recipe) {
-    const { kind: _kind, role, ...settings } = recipe.settings;
+    const { kind: _kind, role, erp, mapping, ...settings } = recipe.settings;
     entry.settings = { ...entry.settings, ...settings, sheet: entry.settings.sheet };
     if (role) { entry.role = role; entry.roleManual = true; }
+    if (erp && PROFILE_IDS.includes(erp)) entry.erp = erp;
+    // A saved recipe was checked when it was saved, so its mapping counts as confirmed.
+    entry.overrides = mapping ? { ...mapping } : {}; entry.confirmed = !!mapping;
     entry.appliedRecipe = recipe.name;
   }
-  async update(fileId: string, patch: Partial<Settings> & { role?: Role | null }) {
+  async update(fileId: string, patch: Partial<Settings> & { role?: Role | null; erp?: ErpProfile; field?: { name: string; source: FieldSource }; confirmed?: boolean }) {
     const entry = this.get(fileId), before = entry.settings;
+    if (patch.erp && PROFILE_IDS.includes(patch.erp)) { entry.erp = patch.erp; entry.overrides = {}; entry.confirmed = false; }
+    if (patch.field) { this.setField(entry, patch.field.name, patch.field.source); entry.confirmed = false; }
+    if (patch.confirmed !== undefined) {
+      if (patch.confirmed && entry.role && mappingProblems(entry.role, this.mappingOf(entry)).length) throw new StudioError("Map every required field before confirming.");
+      entry.confirmed = patch.confirmed;
+    }
+    if (patch.erp || patch.field || patch.confirmed !== undefined) { entry.appliedRecipe = null; this.invalidate(); return; }
     const next: Settings = { ...before };
     if (patch.sheet !== undefined && entry.sheets.includes(String(patch.sheet))) next.sheet = String(patch.sheet);
     if (patch.encoding && ["utf-8", "utf-16le", "utf-16be", "windows-1252"].includes(patch.encoding)) next.encoding = patch.encoding;
@@ -151,25 +217,45 @@ export class Studio {
     else if (TEXT.includes(entry.kind) && (next.encoding !== before.encoding || next.delimiter !== before.delimiter)) entry.sample = sampleRows(await this.sampleText(entry), next.delimiter, 60);
     if (patch.role !== undefined) { entry.role = patch.role && ROLES.includes(patch.role) ? patch.role : null; entry.roleManual = true; }
     else if (!entry.roleManual) entry.role = detectRole(entry.file.name, this.headers(entry)).role;
+    // Column indexes or the role may have changed: drop column choices and re-check.
+    const moved = next.sheet !== before.sheet || next.headerRow !== before.headerRow || next.headerDepth !== before.headerDepth || next.delimiter !== before.delimiter || next.encoding !== before.encoding || patch.role !== undefined;
+    if (moved) { entry.overrides = {}; entry.confirmed = false; if (patch.role === undefined) entry.erp = detectProfile(this.headers(entry)); }
     entry.appliedRecipe = null; this.invalidate();
+  }
+  private setField(entry: Entry, name: string, source: FieldSource) {
+    if (!entry.role) throw new StudioError("Choose what this file contains first.");
+    const field = ROLE_FIELDS[entry.role].find(f => f.name === name), width = this.headers(entry).length;
+    if (!field) throw new StudioError("Unknown field for this file type.");
+    const allowed = ALTERNATIVES[entry.role]?.[name] ?? [];
+    const ok = source.kind === "column" ? Number.isInteger(source.index) && source.index >= 0 && source.index < width
+      : source.kind === "unit" ? allowed.includes("unit") && Number.isInteger(source.index) && source.index >= 0 && source.index < width
+      : source.kind === "generate" ? allowed.includes("generate") && (source.lineNo === null || (Number.isInteger(source.lineNo) && source.lineNo >= 0 && source.lineNo < width))
+      : source.kind === "zero" ? allowed.includes("zero") : source.kind === "none" ? !field.required || allowed.includes("none") : false;
+    if (!ok) throw new StudioError(`That source is not allowed for ${name}.`);
+    entry.overrides[name] = source;
   }
   drop(fileId: string) { this.get(fileId); this.entries.delete(fileId); this.order = this.order.filter(x => x !== fileId); this.invalidate(); }
 
   view(entry: Entry, recipes: Recipe[]): FileView {
     const rows = this.rows(entry), headers = this.headers(entry), detected = detectRole(entry.file.name, headers);
-    const role = entry.role, alignment = role ? align(role, headers) : [];
-    const used = new Set(alignment.map(a => a.index)), missing = role ? missingRequired(role, alignment) : [];
+    const role = entry.role, mapped = this.mapping(entry), mapping = Object.fromEntries(mapped.map(m => [m.field, m.source])) as Record<string, FieldSource>;
+    const idx = (s: FieldSource) => s.kind === "column" || s.kind === "unit" ? s.index : s.kind === "generate" ? s.lineNo : null;
+    const used = new Set(mapped.flatMap(m => { const i = idx(m.source); return i === null ? [] : [i]; })), missing = role ? mappingProblems(role, mapping) : [];
     const letter = (i: number) => entry.grid?.keyed ? headers[i] : columnLetter((entry.grid?.colOffset ?? 0) + i);
     const start = Math.max(0, entry.settings.headerRow - entry.settings.headerDepth + 1 - 2);
-    const reason = !role ? "Choose what this file contains." : !LOADABLE.includes(role) ? `${ROLE_LABELS[role]} files can be converted and downloaded now; loading them arrives in Phase 2.` : missing.length ? `Missing column(s): ${missing.join(", ")}. Rename the headers to these names; mapping other header names arrives in the next chunk.` : null;
+    const confirm = needsConfirmation(mapped);
+    const reason = !role ? "Choose what this file contains." : !LOADABLE.includes(role) ? `${ROLE_LABELS[role]} files can be converted and downloaded now; loading them arrives in Phase 2.`
+      : missing.length ? `Map these field(s): ${missing.join(", ")}.` : confirm && !entry.confirmed ? "Check the column mapping below and confirm it." : null;
     // Text files: records in the 256 KiB sample scaled to the file size (exact for small files).
     const dataRows = entry.grid ? entry.grid.rows.length - entry.settings.headerRow - 1 : Math.round(entry.file.size * entry.sampleRecords / Math.max(1, entry.sampleBytes)) - entry.settings.headerRow - 1;
     const recipe = this.matchRecipe(entry, recipes);
     return {
       id: entry.id, name: entry.file.name, bytes: String(entry.file.size), kind: entry.kind, sheets: entry.sheets, settings: entry.settings, role,
       roleConfidence: role ? detected.scores[role] : 0, roleScores: detected.scores, headers,
-      mapped: alignment.map(a => ({ field: a.field, header: headers[a.index], column: letter(a.index) })), missing,
+      mapped: mapped.flatMap(m => m.source.kind === "column" ? [{ field: m.field, header: headers[m.source.index], column: letter(m.source.index) }] : []), missing,
       ignored: headers.filter((_, i) => !used.has(i)), headerRowNumber: this.rowNumber(entry, entry.settings.headerRow),
+      fields: role ? mapped.map(m => { const i = idx(m.source); return { field: m.field, required: !!ROLE_FIELDS[role].find(f => f.name === m.field)?.required, source: m.source, header: i === null ? null : headers[i] ?? null, column: i === null ? null : letter(i), confidence: m.confidence, reason: m.reason, options: ALTERNATIVES[role]?.[m.field] ?? [] }; }) : [],
+      erp: entry.erp, erpOptions: PROFILE_IDS.map(p => ({ id: p, label: PROFILES[p].label, note: PROFILES[p].note })), needsConfirmation: confirm, confirmed: entry.confirmed,
       headerRowOptions: rows.slice(0, 40).map((_, i) => ({ index: i, row: this.rowNumber(entry, i) })),
       preview: rows.slice(start, start + 22).map((cells, i) => ({ row: this.rowNumber(entry, start + i), cells: cells.slice(0, 30).map(clip) })),
       notices: [...(entry.grid?.notices ?? []), ...entry.notices, ...(entry.appliedRecipe ? [`Recipe "${entry.appliedRecipe}" was applied.`] : [])],
@@ -185,7 +271,8 @@ export class Studio {
   recipeFor(fileId: string, name: string): Omit<Recipe, "id"> {
     const entry = this.get(fileId), label = name.trim();
     if (!label || label.length > 80) throw new StudioError("Name the recipe after the ERP or supplier (1-80 characters).");
-    return { name: label, profile: fingerprint(entry.kind, this.headers(entry)), settings: { ...entry.settings, kind: entry.kind, role: entry.role } };
+    if (entry.role && needsConfirmation(this.mapping(entry)) && !entry.confirmed) throw new StudioError("Confirm the column mapping before saving it as a recipe.");
+    return { name: label, profile: fingerprint(entry.kind, this.headers(entry)), settings: { ...entry.settings, kind: entry.kind, role: entry.role, erp: entry.erp, mapping: this.mappingOf(entry) } };
   }
   apply(fileId: string, recipe: Recipe) {
     const entry = this.get(fileId);
@@ -204,8 +291,8 @@ export class Studio {
     const normalizer = new Normalizer(entry.settings, (cells, row) => {
       if (!headed) {
         writer.header(normalizer.headers!); headed = true;
-        const fields = entry.role ? ROLE_FIELDS[entry.role] : [], at = entry.role ? align(entry.role, normalizer.headers!) : [];
-        types = normalizer.headers!.map((_, i) => fields.find(f => f.name === at.find(a => a.index === i)?.field)?.type ?? null);
+        const fields = entry.role ? ROLE_FIELDS[entry.role] : [], mapping = this.mappingOf(entry);
+        types = normalizer.headers!.map((_, i) => fields.find(f => { const s = mapping[f.name]; return s?.kind === "column" && s.index === i; })?.type ?? null);
       }
       writer.row(cells.map((v, i) => types[i] ? canonicalValue(types[i]!, v, entry.settings) : v), row);
     });
@@ -232,8 +319,10 @@ export class Studio {
     const warnings: string[] = [], replaces = entries.find(e => e.replaces)?.replaces ?? null;
     for (const e of entries) {
       if (!e.role) throw new StudioError(`${e.file.name}: choose what this file contains before importing.`);
-      const missing = missingRequired(e.role, align(e.role, this.headers(e)));
-      if (LOADABLE.includes(e.role) && missing.length) throw new StudioError(`${e.file.name}: missing column(s) ${missing.join(", ")}. Rename the headers to these names, or remove the file from the batch. Mapping other header names arrives in the next chunk.`);
+      if (!LOADABLE.includes(e.role)) continue;
+      const mapped = this.mapping(e), missing = mappingProblems(e.role, this.mappingOf(e));
+      if (missing.length) throw new StudioError(`${e.file.name}: map ${missing.join(", ")} in "Preview and fix", or remove the file from the batch.`);
+      if (needsConfirmation(mapped) && !e.confirmed) throw new StudioError(`${e.file.name}: check the column mapping in "Preview and fix" and confirm it before importing.`);
     }
     const load = entries.filter(e => LOADABLE.includes(e.role!));
     for (const e of entries.filter(x => !LOADABLE.includes(x.role!))) warnings.push(`${e.file.name}: ${ROLE_LABELS[e.role!]} files are converted only; loading them arrives in Phase 2.`);
@@ -243,25 +332,26 @@ export class Studio {
       if (!role) throw new StudioError("The file being replaced is no longer in the vault.");
       if (role !== load[0].role) throw new StudioError(`The replacement must also be a ${ROLE_LABELS[role as Role] ?? role} file.`);
     }
-    const roles = new Set(load.map(e => e.role!)), files: StagedFile[] = [], stats = new Map<number, Stats>();
+    const roles = new Set(load.map(e => e.role!)), files: StagedFile[] = [], stats = new Map<number, Stats>(), cleanups = new Map<number, FileReport["cleaned"]>();
     try {
       await resetStage(engine);
       for (const role of roles) await createStage(engine, role);
       for (let ord = 0; ord < load.length; ord++) {
-        const e = load[ord], writer = new CsvWriter("internal");
+        const e = load[ord], writer = new CsvWriter("internal"), role = e.role!, mapping = this.mappingOf(e), canonical = ROLE_FIELDS[role].map(f => f.name);
         progress(`Converting ${e.file.name} (${ord + 1} of ${load.length})`, "0", String(e.file.size));
         const letter = (i: number) => e.grid?.keyed ? (this.headers(e)[i] ?? "") : columnLetter((e.grid?.colOffset ?? 0) + i);
-        let headed = false;
-        const normalizer = new Normalizer(e.settings, (cells, row) => { if (!headed) { writer.header(normalizer.headers!); headed = true; } writer.row(cells, row); }, emptyStats(), letter);
+        const invoiceLines = new Map<string, number>(), notes: Notes = new Map();
+        writer.header(canonical);
+        const normalizer = new Normalizer(e.settings, (cells, row) => writer.row(canonicalRow(role, mapping, e.settings, cells, row, invoiceLines, notes), row), emptyStats(), letter);
         await this.run(e, normalizer, signal, bytes => progress(`Converting ${e.file.name} (${ord + 1} of ${load.length})`, String(bytes), String(e.file.size)));
         const headers = normalizer.headers ?? [];
-        if (!headed) writer.header(headers);
         for (const issue of e.grid?.issues ?? []) normalizer.stats.issues.push(issue);
         normalizer.stats.issueCount += e.grid?.issues.length ?? 0;
-        const staged: StagedFile = { ord, role: e.role!, name: e.file.name, bytes: e.file.size, fingerprint: await fileFingerprint(e.file), alignment: align(e.role!, headers), settings: e.settings, keyed: !!e.grid?.keyed, headers, colOffset: e.grid?.colOffset ?? 0 };
+        const alignment = Object.entries(mapping).flatMap(([field, s]) => s.kind === "column" || s.kind === "unit" ? [{ field, index: s.index }] : []);
+        const staged: StagedFile = { ord, role, name: e.file.name, bytes: e.file.size, fingerprint: await fileFingerprint(e.file), alignment, settings: e.settings, keyed: !!e.grid?.keyed, headers, colOffset: e.grid?.colOffset ?? 0, generatedIds: mapping.line_id?.kind === "generate" };
         signal.throwIfAborted();
-        await stageFile(engine, staged, writer.blob(), headers.length);
-        files.push(staged); stats.set(ord, normalizer.stats);
+        await stageFile(engine, staged, writer.blob());
+        files.push(staged); stats.set(ord, normalizer.stats); cleanups.set(ord, [...notes].flatMap(([field, m]) => [...m].map(([n, count]) => ({ field, note: NOTE_TEXT[n], count: String(count) }))));
       }
       progress("Checking values, duplicates and plan limits", "0", "1");
       for (const role of roles) { signal.throwIfAborted(); await validate(engine, role as Exclude<Role, "rebate_agreement">, files, replaces); }
@@ -272,11 +362,11 @@ export class Studio {
         const issues = [...st.issues.slice(0, 50), ...sampled.map(s => ({ row: s.row, column: issueColumn(s.code, file), message: issueMessage(s.code, file.settings) }))].sort((a, b) => a.row - b.row).slice(0, 100);
         const bad = BigInt(c.bad) + BigInt(st.rejected);
         loaded += BigInt(c.ok); rejected += bad;
-        reports.push({ id: load[c.ord].id, name: file.name, role, rowsRead: String(st.read), rowsLoaded: c.ok, rowsRejected: String(bad), rowsSkipped: String(st.skipped), issueCount: String(BigInt(c.bad) + BigInt(st.issueCount)), issues, dateRange: null });
+        reports.push({ id: load[c.ord].id, name: file.name, role, rowsRead: String(st.read), rowsLoaded: c.ok, rowsRejected: String(bad), rowsSkipped: String(st.skipped), issueCount: String(BigInt(c.bad) + BigInt(st.issueCount)), issues, dateRange: null, cleaned: cleanups.get(c.ord) ?? [] });
       }
       for (const f of files) if (!reports.some(r => r.id === load[f.ord].id)) {
         const st = stats.get(f.ord)!; rejected += BigInt(st.rejected);
-        reports.push({ id: load[f.ord].id, name: f.name, role: f.role, rowsRead: String(st.read), rowsLoaded: "0", rowsRejected: String(st.rejected), rowsSkipped: String(st.skipped), issueCount: String(st.issueCount), issues: st.issues.slice(0, 100), dateRange: null });
+        reports.push({ id: load[f.ord].id, name: f.name, role: f.role, rowsRead: String(st.read), rowsLoaded: "0", rowsRejected: String(st.rejected), rowsSkipped: String(st.skipped), issueCount: String(st.issueCount), issues: st.issues.slice(0, 100), dateRange: null, cleaned: cleanups.get(f.ord) ?? [] });
       }
       if (roles.has("sales_history")) {
         const ranges = await salesRanges(engine, replaces);
@@ -321,7 +411,10 @@ INSERT INTO import_batches(id,source_id,rows_loaded,rows_rejected,imported_at,co
       await engine.conn.query(commitSql(staged.roles));
       for (const [i, f] of staged.files.entries()) {
         const issues = staged.stats.get(f.ord)!.issues;
-        for (let at = 0; at < issues.length; at += 500) await engine.conn.query(`INSERT INTO import_issues VALUES ${issues.slice(at, at + 500).map(x => `(${sqlText(id())},${sqlText(sources[i])},${Math.max(1, x.row)},${sqlText(x.column)},${sqlText(x.message)},'open')`).join(",")}`);
+        for (let at = 0; at < issues.length; at += 500) await engine.conn.query(`INSERT INTO import_issues(id,source_id,row_number,column_name,message,status,code) VALUES ${issues.slice(at, at + 500).map(x => `(${sqlText(id())},${sqlText(sources[i])},${Math.max(1, x.row)},${sqlText(x.column)},${sqlText(x.message)},'open','structure')`).join(",")}`);
+        // Rows rejected before mapping (wrong column count, oversized cells) can only be dismissed in Fix Later.
+        const rows = staged.stats.get(f.ord)!.rejectedRows;
+        for (let at = 0; at < rows.length; at += 500) await engine.conn.query(`INSERT INTO rejected_rows VALUES ${rows.slice(at, at + 500).map(r => `(${sqlText(sources[i])},${Math.max(1, r)},${sqlText(f.role)},'structure',${Array(12).fill("NULL").join(",")},'open')`).join(",")} ON CONFLICT DO NOTHING`);
         const r = report.files.find(x => x.id === staged.entries[f.ord].id)!;
         await appendAudit(engine, "import.committed", { source_id: sources[i], file_name: f.name, role: f.role, rows_loaded: r.rowsLoaded, rows_rejected: r.rowsRejected, ...(staged.replaces ? { replaces: staged.replaces } : {}) });
       }
@@ -360,6 +453,10 @@ export async function loadRecipes(engine: Engine): Promise<Recipe[]> {
     try {
       const s = JSON.parse(String(r.settings));
       const valid = DELIMITERS.includes(s.delimiter) && DATE_FORMATS.includes(s.dateFormat) && ["dot", "comma"].includes(s.decimal) && [1, 2, 3].includes(s.headerDepth) && Number.isInteger(s.headerRow) && kindOf("x." + s.kind) === s.kind && (s.role === null || ROLES.includes(s.role));
+      // Mappings are re-checked against the file when applied; keep only well-formed sources here.
+      const sourceOk = (x: FieldSource) => x && ["column", "unit", "zero", "none", "generate"].includes(x.kind) && (!("index" in x) || Number.isInteger(x.index));
+      if (s.mapping && (typeof s.mapping !== "object" || !Object.values(s.mapping as Record<string, FieldSource>).every(sourceOk))) delete s.mapping;
+      if (s.erp && !PROFILE_IDS.includes(s.erp)) delete s.erp;
       return valid ? [{ id: String(r.id), name: String(r.name), profile: String(r.profile), settings: s }] : [];
     } catch { return []; }
   });

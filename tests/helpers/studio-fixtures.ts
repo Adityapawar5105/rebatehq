@@ -96,3 +96,21 @@ export function salesUtf16(): Fixture {
   return { name: "sales-utf16.csv", bytes };
 }
 export const toFile = (f: Fixture) => new File([f.bytes as Uint8Array<ArrayBuffer>], f.name);
+/**
+ * A small export shaped like the real UCI "Online Retail" file tested in chunk 4C-2:
+ * no line IDs or totals, unit prices, M/D/YY H:MM dates, blank customers, cancellations
+ * (negative quantities, "C" invoices), exact duplicate rows and a mixed-case SKU.
+ */
+export const RETAIL_HEADER = ["InvoiceNo", "StockCode", "Description", "Quantity", "InvoiceDate", "UnitPrice", "CustomerID", "Country"];
+export function retailLike(marker = "", count = 20): Fixture {
+  const rows: string[][] = [RETAIL_HEADER];
+  for (let i = 0; i < count; i++) {
+    const inv = String(536365 + Math.floor(i / 4)), stock = marker && i === 0 ? marker : ["85123A", "71053", "84406B", "22752"][i % 4];
+    rows.push([inv, stock, `ITEM ${i % 4}`, String(1 + (i % 6)), `12/${1 + (i % 9)}/10 8:${String(10 + i).slice(-2)}`, ["2.55", "3.39", "$1,275.00", "0.425"][i % 4], String(17850 + (i % 3)), "United Kingdom"]);
+  }
+  rows.push(["536370", "22752", "ITEM 2", "2", "12/1/10 9:00", "7.65", "", "United Kingdom"]);       // blank customer
+  rows.push(["536371", "85123a", "item lower", "1", "12/1/10 9:01", "2.55", "", "France"]);          // blank customer, mixed-case SKU
+  rows.push(["C536379", "D", "Discount", "-1", "12/1/10 9:41", "27.50", "14527", "United Kingdom"]); // cancellation
+  rows.push(rows[1].slice(), rows[2].slice());                                                     // exact duplicate rows
+  return { name: "online-retail-like.csv", bytes: enc.encode(csv(rows)) };
+}

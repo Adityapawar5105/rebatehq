@@ -25,7 +25,8 @@ const f = (name: string, type: FieldType, required = false, max?: number): Field
  * 4C-2; here headers align only when their normalized name equals a canonical name.
  */
 export const ROLE_FIELDS: Record<Role, Field[]> = {
-  sales_history: [f("line_id", "line_id", true), f("product_id", "id", true), f("customer_id", "id", true), f("sale_date", "date", true), f("quantity", "quantity", true), f("list_amount", "amount", true), f("discount_amount", "amount", true), f("freight_amount", "amount", true), f("rebate_amount", "amount", true), f("cost_amount", "amount", true)],
+  // Blank discount/freight/rebate load as 0; a blank cost stays unknown (NULL), never 0.
+  sales_history: [f("line_id", "line_id", true), f("invoice_id", "text", false, 64), f("product_id", "id", true), f("customer_id", "id", true), f("sale_date", "date", true), f("quantity", "quantity", true), f("list_amount", "amount", true), f("discount_amount", "amount"), f("freight_amount", "amount"), f("rebate_amount", "amount"), f("cost_amount", "amount")],
   item_master: [f("product_id", "id", true), f("description", "text", false, 500), f("category", "text", false, 200), f("uom", "code", false, 16), f("current_cost", "amount"), f("list_price", "amount")],
   customer_list: [f("customer_id", "id", true), f("name", "text", false, 300), f("tier", "text", false, 100), f("branch", "text", false, 100), f("region", "text", false, 100), f("payment_terms", "text", false, 100)],
   vendor_cost: [f("vendor", "text", true, 200), f("product_id", "id", true), f("cost", "amount", true), f("effective_date", "date", true)],
@@ -34,7 +35,7 @@ export const ROLE_FIELDS: Record<Role, Field[]> = {
 };
 /** Roles whose rows load into the vault in Phase 1. Rebate agreements load in Phase 2. */
 export const LOADABLE: Role[] = ["sales_history", "item_master", "customer_list", "vendor_cost", "price_list"];
-const FILE_HINTS: Array<[Role, RegExp]> = [
+export const FILE_HINTS: Array<[Role, RegExp]> = [
   ["sales_history", /sales|invoice|history|orders?/i], ["item_master", /item|product|catalog|sku/i],
   ["customer_list", /customer|account|client/i], ["vendor_cost", /vendor|supplier|cost/i],
   ["rebate_agreement", /rebate|program|agreement/i], ["price_list", /price|matrix|tariff/i],
@@ -55,20 +56,6 @@ export function missingRequired(role: Role, alignment: Alignment) {
   const missing = ROLE_FIELDS[role].filter(field => field.required && !have.has(field.name)).map(field => field.name);
   if (role === "price_list" && !have.has("product_id") && !have.has("category")) missing.push("product_id or category");
   return missing;
-}
-/** Score every role from aligned headers (weight 0.85) and the file name (0.15). */
-export function detectRole(fileName: string, headers: string[]) {
-  const scores = {} as Record<Role, number>;
-  for (const role of ROLES) {
-    const fields = ROLE_FIELDS[role], matched = align(role, headers).length;
-    const required = fields.filter(field => field.required).length;
-    const requiredMatched = align(role, headers).filter(a => fields.find(field => field.name === a.field)?.required).length;
-    const headerScore = fields.length ? (matched / fields.length) * 0.5 + (required ? requiredMatched / required : 0) * 0.5 : 0;
-    const hint = FILE_HINTS.find(([r]) => r === role)?.[1].test(fileName) ? 1 : 0;
-    scores[role] = Math.round((headerScore * 0.85 + hint * 0.15) * 100) / 100;
-  }
-  const best = [...ROLES].sort((a, b) => scores[b] - scores[a])[0];
-  return { role: scores[best] >= 0.3 ? best : null, confidence: scores[best], scores };
 }
 
 const NUMERIC = /^[+-]?(\d+([.,]\d+)?|\d{1,3}([ ,.]\d{3})+([.,]\d+)?)$/;
@@ -133,9 +120,10 @@ export function detectDecimal(rows: string[][], delimiter: Delimiter): "dot" | "
 /** Date order from data cells; ambiguous slash dates default to US month-first with a notice. */
 export function detectDateFormat(rows: string[][]): { format: DateFormat; ambiguous: boolean } {
   let iso = 0, dayFirst = false, monthFirst = false, sep = "", other = 0;
-  for (const row of rows) for (const v of row) {
+  for (const row of rows) for (const raw of row) {
+    const v = raw.replace(/[ T]\d{1,2}:\d{2}(:\d{2}(\.\d+)?)?\s*(am|pm)?\s*(z|[+-]\d{2}:?\d{2})?$/i, ""); // ignore a time of day
     if (/^\d{4}-\d{2}-\d{2}$/.test(v)) { iso++; continue; }
-    const m = /^(\d{1,2})([/.-])(\d{1,2})\2(\d{4})$/.exec(v);
+    const m = /^(\d{1,2})([/.-])(\d{1,2})\2(\d{4}|\d{2})$/.exec(v);
     if (!m) continue;
     other++; sep ||= m[2];
     if (Number(m[1]) > 12) dayFirst = true;

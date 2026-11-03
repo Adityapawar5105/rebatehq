@@ -1,5 +1,8 @@
-export const SCHEMA_VERSION = 3;
-export const TABLES = ["vault_meta", "products", "customers", "price_matrix", "price_guardrails", "source_files", "import_batches", "sales_lines", "vendor_costs", "cost_basis_settings", "rules", "rule_runs", "price_versions", "roi_ledger", "audit_log", "import_issues", "converter_recipes"] as const;
+export const SCHEMA_VERSION = 4;
+const V1_TABLES = ["vault_meta", "products", "customers", "price_matrix", "price_guardrails", "source_files", "import_batches", "sales_lines", "vendor_costs", "cost_basis_settings", "rules", "rule_runs", "price_versions", "roi_ledger", "audit_log", "import_issues", "converter_recipes"] as const;
+export const TABLES = [...V1_TABLES, "rejected_rows"] as const;
+/** Tables that exist at a schema version (in creation order, so copy-on-write inserts parents first). */
+export function tablesFor(version: number): readonly string[] { return version >= 4 ? TABLES : V1_TABLES; }
 // These are local DuckDB migrations, not Supabase migrations. V1 stays frozen
 // so the committed encrypted compatibility fixture exercises a real upgrade.
 export const V1_SQL = `
@@ -37,7 +40,19 @@ ALTER TABLE price_matrix ADD COLUMN source_row BIGINT;
 ALTER TABLE import_batches ADD COLUMN fingerprint VARCHAR;
 ALTER TABLE import_batches ADD COLUMN rows_skipped BIGINT DEFAULT 0;`;
 // DuckDB cannot add columns with constraints; the studio always writes rows_skipped.
-const STEPS = [V1_SQL, V2_SQL, V3_SQL];
+// V4 (chunk 4C-2): cost may be unknown (NULL, never a guessed zero), sales keep their
+// invoice number, issues carry a code, and rejected rows are kept for Fix Later.
+// DuckDB refuses DROP NOT NULL on a table with indexes, so they are rebuilt around it.
+export const V4_SQL = `DROP INDEX sales_lines_customer_date; DROP INDEX sales_lines_product_date;
+ALTER TABLE sales_lines ALTER COLUMN cost_cents DROP NOT NULL;
+CREATE INDEX sales_lines_customer_date ON sales_lines(customer_id,sale_date);
+CREATE INDEX sales_lines_product_date ON sales_lines(product_id,sale_date);
+ALTER TABLE sales_lines ADD COLUMN invoice_id VARCHAR;
+ALTER TABLE import_issues ADD COLUMN code VARCHAR;
+CREATE TABLE rejected_rows(source_id VARCHAR NOT NULL REFERENCES source_files(id), source_row BIGINT NOT NULL CHECK(source_row>=1), role VARCHAR NOT NULL, code VARCHAR NOT NULL, ${Array.from({ length: 12 }, (_, i) => `v${i} VARCHAR`).join(", ")}, status VARCHAR NOT NULL CHECK(status IN ('open','loaded','dismissed')), PRIMARY KEY(source_id,source_row));`;
+/** rejected_rows keeps a role's canonical fields positionally in v0..v11 (ROLE_FIELDS order) so Fix Later can bulk-correct in SQL. */
+export const REJECTED_SLOTS = 12;
+const STEPS = [V1_SQL, V2_SQL, V3_SQL, V4_SQL];
 function checkVersion(version: number) {
   if (!Number.isInteger(version) || version < 1 || version > SCHEMA_VERSION) throw new Error("Unsupported vault schema version; update the app before opening this vault.");
 }

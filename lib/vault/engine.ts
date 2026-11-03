@@ -1,5 +1,5 @@
 import * as duckdb from "@duckdb/duckdb-wasm";
-import { schemaSql, TABLES, upgradeSql } from "./schema";
+import { schemaSql, tablesFor, upgradeSql } from "./schema";
 // `warming` is the background copy-on-write started after unlock (true = copied);
 // `warmDone` turns true when it settles (`warmReady` when it succeeded), before the
 // main connection switches over.
@@ -20,7 +20,7 @@ export async function openMemory(bytes?: Uint8Array): Promise<Engine> {
       const version = Number((await conn.query("SELECT schema_version FROM incoming.vault_meta WHERE id=1")).toArray()[0]?.schema_version);
       upgradeSql(version); // Reject future/invalid versions before creating tables.
       const inventory = (await conn.query("SELECT table_name FROM information_schema.tables WHERE table_catalog='incoming' AND table_schema='main' AND table_type='BASE TABLE' ORDER BY table_name")).toArray().map(row => String(row.table_name));
-      if (JSON.stringify(inventory) !== JSON.stringify([...TABLES].sort())) throw new Error("Unsupported vault table inventory");
+      if (JSON.stringify(inventory) !== JSON.stringify([...tablesFor(version)].sort())) throw new Error("Unsupported vault table inventory");
       await conn.query("USE incoming");
     }
     return { db, conn, worker, writable: !bytes, warming: null, warmDone: false, warmReady: false };
@@ -35,7 +35,7 @@ async function copyToWritable(engine: Engine, conn: duckdb.AsyncDuckDBConnection
   await conn.query('USE "vault-ram"; BEGIN');
   try {
     await conn.query(schemaSql(version));
-    for (const table of TABLES) await conn.query(`INSERT INTO ${table} SELECT * FROM incoming.${table}`);
+    for (const table of tablesFor(version)) await conn.query(`INSERT INTO ${table} SELECT * FROM incoming.${table}`);
     await conn.query("COMMIT");
   } catch (error) { await conn.query("ROLLBACK").catch(() => undefined); throw error; }
 }

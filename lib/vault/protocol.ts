@@ -1,4 +1,8 @@
 import type { Role, Settings } from "../studio/formats";
+import type { ErpProfile, FieldSource } from "../studio/mapper";
+import type { FixGroup, FixRow } from "../studio/fixlater";
+import type { Health } from "../studio/health";
+import type { PlaygroundManifest } from "../studio/playground";
 import type { SourceView, StudioState } from "../studio/studio";
 export type Tier = "starter" | "professional" | "scale";
 export type Scope = { userId: string; tenantId: string };
@@ -24,7 +28,7 @@ export type Commands = {
   verify: Record<string, never>;
   storage: Record<string, never>;
   studioAdd: { files: File[]; replaces?: string | null };
-  studioUpdate: { id: string; settings?: Partial<Settings>; role?: Role | null };
+  studioUpdate: { id: string; settings?: Partial<Settings>; role?: Role | null; erp?: ErpProfile; field?: { name: string; source: FieldSource }; confirmed?: boolean };
   studioDrop: { id: string };
   studioClear: Record<string, never>;
   studioState: Record<string, never>;
@@ -36,6 +40,14 @@ export type Commands = {
   recipeApply: { id: string; recipeId: string };
   sources: Record<string, never>;
   sourceRemove: { id: string };
+  fixGroups: Record<string, never>;
+  fixRows: { sourceId: string; code: string; offset?: number };
+  fixSet: { sourceId: string; code: string; field: string; value: string; rows?: number[] | null };
+  fixDismiss: { sourceId: string; code: string; rows?: number[] | null };
+  fixRecheck: { sourceId: string; code: string };
+  health: Record<string, never>;
+  playgroundLoad: Record<string, never>;
+  playgroundRemove: Record<string, never>;
 };
 export type CommitResult = { loaded: string; rejected: string; files: string; cleanup: boolean };
 export type Results = {
@@ -47,6 +59,9 @@ export type Results = {
   studioCommit: { status: VaultStatus; studio: StudioState; result: CommitResult };
   studioDownload: { name: string; blob: Blob }; studioZip: { name: string; blob: Blob };
   sources: SourceView[]; sourceRemove: { status: VaultStatus; cleanup: boolean };
+  fixGroups: FixGroup[]; fixRows: FixRow[]; fixSet: FixGroup[]; fixDismiss: { status: VaultStatus; groups: FixGroup[] };
+  fixRecheck: { status: VaultStatus; groups: FixGroup[]; loaded: string; stillRejected: string };
+  health: Health; playgroundLoad: { status: VaultStatus; manifest: PlaygroundManifest }; playgroundRemove: { status: VaultStatus; removed: string };
 };
 export type Action = keyof Commands;
 export type Request = { [K in Action]: { id: string; action: K; data: Commands[K] } }[Action];

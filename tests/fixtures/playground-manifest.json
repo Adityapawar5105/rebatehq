@@ -1,0 +1,50 @@
+{
+  "seed": 20261104,
+  "skus": 5000,
+  "customers": 400,
+  "tiers": 50,
+  "lines": 120000,
+  "months": "2024-11 to 2026-10",
+  "leaks": [
+    {
+      "id": "L1",
+      "type": "below_floor",
+      "description": "C-0007 gets an extra 18 points of discount on every Valves line, below its tier floor.",
+      "lines": 166,
+      "cents": "23021196",
+      "dollars": "230211.96"
+    },
+    {
+      "id": "L2",
+      "type": "discount_outlier",
+      "description": "C-0042 is discounted 25% on everything, far above its tier's peers.",
+      "lines": 598,
+      "cents": "87351873",
+      "dollars": "873518.73"
+    },
+    {
+      "id": "L3",
+      "type": "unrecovered_freight",
+      "description": "Lines under $100 list carry a flat $15.00 freight that is never billed back.",
+      "lines": 11954,
+      "cents": "17931000",
+      "dollars": "179310.00"
+    },
+    {
+      "id": "L4",
+      "type": "negative_margin",
+      "description": "Twenty thin-margin Valves SKUs keep their price after a 12% supplier cost rise on 2025-11-01.",
+      "lines": 159,
+      "cents": "10722336",
+      "dollars": "107223.36"
+    },
+    {
+      "id": "L5",
+      "type": "below_lower_tier",
+      "description": "C-0123 is assigned tier T40 but billed at the T05 discount.",
+      "lines": 337,
+      "cents": "64972728",
+      "dollars": "649727.28"
+    }
+  ]
+}

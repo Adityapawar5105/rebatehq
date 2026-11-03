@@ -30,7 +30,7 @@ async function handle(request: Request) {
     case "verify": result = await service.verify(); break;
     case "storage": result = await storageStatus(); break;
     case "studioAdd": result = await service.studioAdd(request.data.files, request.data.replaces ?? null); break;
-    case "studioUpdate": result = await service.studioUpdate(request.data.id, request.data.settings, request.data.role); break;
+    case "studioUpdate": result = await service.studioUpdate(request.data.id, request.data.settings, request.data.role, { erp: request.data.erp, field: request.data.field, confirmed: request.data.confirmed }); break;
     case "studioDrop": result = await service.studioDrop(request.data.id); break;
     case "studioClear": result = await service.studioClear(); break;
     case "studioState": result = await service.studioState(); break;
@@ -42,6 +42,14 @@ async function handle(request: Request) {
     case "recipeApply": result = await service.recipeApply(request.data.id, request.data.recipeId); break;
     case "sources": result = await service.sources(); break;
     case "sourceRemove": result = await service.sourceRemove(request.data.id); break;
+    case "fixGroups": result = await service.fixGroups(); break;
+    case "fixRows": result = await service.fixRows(request.data.sourceId, request.data.code, request.data.offset ?? 0); break;
+    case "fixSet": result = await service.fixSet(request.data.sourceId, request.data.code, request.data.field, request.data.value, request.data.rows ?? null); break;
+    case "fixDismiss": result = await service.fixDismiss(request.data.sourceId, request.data.code, request.data.rows ?? null); break;
+    case "fixRecheck": result = await service.fixRecheck(request.data.sourceId, request.data.code); break;
+    case "health": result = await service.health(); break;
+    case "playgroundLoad": result = await service.playgroundLoad(progress); break;
+    case "playgroundRemove": result = await service.playgroundRemove(); break;
     default: throw new VaultError("PROTOCOL", "Unsupported local command.");
   }
   post({ id: request.id, action: request.action, result } as Response);

@@ -6,6 +6,10 @@ import { V1_SQL, SCHEMA_VERSION, upgradeSql } from "./schema";
 import { sqlText } from "../spike/exact";
 import { Studio, listSources, loadRecipes, recipeSql, removeSource, type Progress } from "../studio/studio";
 import type { Role, Settings } from "../studio/formats";
+import type { ErpProfile, FieldSource } from "../studio/mapper";
+import { dismissSql, fixGroups, fixRows, fixSetSql, recheck } from "../studio/fixlater";
+import { health } from "../studio/health";
+import { PLAYGROUND_PREFIX, generatePlayground } from "../studio/playground";
 import { AUTO_LOCK_MS, LEASE_WAIT_MS, VaultError, type Scope, type Tier, type VaultStatus } from "./protocol";
 export class VaultService {
   engine: Engine | null = null;
@@ -119,7 +123,9 @@ export class VaultService {
   private async recipes() { return loadRecipes(this.requireEngine()); }
   async studioState() { return this.studio.state(await this.recipes()); }
   async studioAdd(files: File[], replaces: string | null = null) { this.requireEngine(); await this.studio.add(files, await this.recipes(), replaces); return this.studioState(); }
-  async studioUpdate(id: string, settings: Partial<Settings> = {}, role?: Role | null) { this.requireEngine(); await this.studio.update(id, { ...settings, ...(role !== undefined ? { role } : {}) }); return this.studioState(); }
+  async studioUpdate(id: string, settings: Partial<Settings> = {}, role?: Role | null, extra: { erp?: ErpProfile; field?: { name: string; source: FieldSource }; confirmed?: boolean } = {}) {
+    this.requireEngine(); await this.studio.update(id, { ...settings, ...(role !== undefined ? { role } : {}), ...extra }); return this.studioState();
+  }
   async studioDrop(id: string) { this.requireEngine(); this.studio.drop(id); return this.studioState(); }
   async studioClear() { this.requireEngine(); this.studio.clear(); return this.studioState(); }
   async studioPlan(signal: AbortSignal, progress: Progress) { await this.studio.plan(this.requireEngine(), this.tier, signal, progress); return this.studioState(); }
@@ -151,6 +157,49 @@ export class VaultService {
     const cleanup = await removeSource(engine, id);
     this.dirty = true; await this.save(); this.touch();
     return { status: await this.status(), cleanup };
+  }
+  async fixGroups() { return fixGroups(this.requireEngine()); }
+  async fixRows(sourceId: string, code: string, offset = 0) { return fixRows(this.requireEngine(), sourceId, code, offset); }
+  /** Bulk or row-level correction; audited and saved like any other change. */
+  async fixSet(sourceId: string, code: string, field: string, value: string, rows: number[] | null = null) {
+    const engine = await this.writable(), { sql } = await fixSetSql(engine, sourceId, code, field, value, rows);
+    await engine.conn.query("BEGIN");
+    try { await engine.conn.query(sql); await appendAudit(engine, "fixlater.corrected", { source_id: sourceId, code, field, rows: rows ? String(rows.length) : "group" }); await engine.conn.query("COMMIT"); }
+    catch (error) { await engine.conn.query("ROLLBACK"); throw error; }
+    this.dirty = true; await this.save(); this.touch(); return fixGroups(engine);
+  }
+  async fixDismiss(sourceId: string, code: string, rows: number[] | null = null) {
+    const engine = await this.writable();
+    await engine.conn.query("BEGIN");
+    try { await engine.conn.query(dismissSql(sourceId, code, rows)); await appendAudit(engine, "fixlater.dismissed", { source_id: sourceId, code, rows: rows ? String(rows.length) : "group" }); await engine.conn.query("COMMIT"); }
+    catch (error) { await engine.conn.query("ROLLBACK"); throw error; }
+    this.dirty = true; await this.save(); this.touch(); return { status: await this.status(), groups: await fixGroups(engine) };
+  }
+  async fixRecheck(sourceId: string, code: string) {
+    const engine = await this.writable(), out = await recheck(engine, sourceId, code, this.tier);
+    if (out.loaded !== "0") { this.dirty = true; await this.save(); }
+    this.touch(); return { status: await this.status(), groups: await fixGroups(engine), ...out };
+  }
+  async health() { return health(this.requireEngine()); }
+  /** Load the fictional Playground through the normal import path, into a vault with no other data. */
+  async playgroundLoad(progress: Progress) {
+    const engine = await this.writable(progress), existing = await listSources(engine);
+    if (existing.some(s => !s.name.startsWith(PLAYGROUND_PREFIX))) throw new VaultError("PLAYGROUND", "The Playground loads only into a vault without your own files, so sample and real data never mix.");
+    if (existing.length) throw new VaultError("PLAYGROUND", "The Playground is already loaded.");
+    const { files, manifest } = generatePlayground();
+    this.studio.clear();
+    await this.studio.add(files.map(f => new File([f.text], f.name, { type: "text/csv" })), []);
+    await this.studio.plan(engine, this.tier, new AbortController().signal, progress);
+    progress("Loading Playground rows", "0", "1");
+    await this.studio.commit(engine, true);
+    this.dirty = true; await this.save(); this.touch();
+    return { status: await this.status(), manifest };
+  }
+  async playgroundRemove() {
+    const engine = await this.writable(), sources = (await listSources(engine)).filter(s => s.name.startsWith(PLAYGROUND_PREFIX));
+    for (const s of sources) await removeSource(engine, s.id);
+    if (sources.length) { this.dirty = true; await this.save(); }
+    return { status: await this.status(), removed: String(sources.length) };
   }
   async verify() { return verifyAudit(this.requireEngine()); }
   async lock() {

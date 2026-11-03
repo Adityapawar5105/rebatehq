@@ -6,8 +6,8 @@ import { classifyRow, headerNames, type Settings, type StudioIssue } from "./for
 import { CsvTokenizer, decodeChunks } from "./text";
 import type { Grid } from "./sheets";
 export const MAX_STORED_ISSUES = 10_000;
-export type Stats = { read: number; skipped: number; rejected: number; issues: StudioIssue[]; issueCount: number };
-export const emptyStats = (): Stats => ({ read: 0, skipped: 0, rejected: 0, issues: [], issueCount: 0 });
+export type Stats = { read: number; skipped: number; rejected: number; issues: StudioIssue[]; issueCount: number; rejectedRows: number[] };
+export const emptyStats = (): Stats => ({ read: 0, skipped: 0, rejected: 0, issues: [], issueCount: 0, rejectedRows: [] });
 export function addIssue(stats: Stats, issue: StudioIssue) { stats.issueCount++; if (stats.issues.length < MAX_STORED_ISSUES) stats.issues.push(issue); }
 type DataSink = (cells: string[], row: number) => void;
 /** Feed raw records in order; emits headers once, then aligned data rows. */
@@ -26,11 +26,12 @@ export class Normalizer {
     const width = this.headers.length, verdict = classifyRow(cells, width);
     if (verdict !== "data") { this.stats.skipped++; return; }
     this.stats.read++;
-    if (oversized) { this.stats.rejected++; addIssue(this.stats, { row, column: "", message: "A cell is longer than 4,000 characters or the row has more than 256 columns. The row was not loaded." }); return; }
-    if (cells.length > width && cells.slice(width).some(v => v !== "")) { this.stats.rejected++; addIssue(this.stats, { row, column: this.letter(width), message: "The row has more values than there are column headers. The row was not loaded." }); return; }
+    if (oversized) { this.reject(row); addIssue(this.stats, { row, column: "", message: "A cell is longer than 4,000 characters or the row has more than 256 columns. The row was not loaded." }); return; }
+    if (cells.length > width && cells.slice(width).some(v => v !== "")) { this.reject(row); addIssue(this.stats, { row, column: this.letter(width), message: "The row has more values than there are column headers. The row was not loaded." }); return; }
     const out = cells.length === width ? cells : cells.length > width ? cells.slice(0, width) : [...cells, ...new Array(width - cells.length).fill("")];
     this.onData(out.map(v => v.trim()), row);
   }
+  private reject(row: number) { this.stats.rejected++; if (this.stats.rejectedRows.length < MAX_STORED_ISSUES) this.stats.rejectedRows.push(row); }
 }
 export async function streamText(file: Blob, settings: Settings, normalizer: Normalizer, signal?: AbortSignal, progress?: (bytes: number) => void) {
   let index = 0;
