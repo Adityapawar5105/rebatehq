@@ -1,10 +1,11 @@
-import { openMemory, snapshotBytes, closeMemory, makeWritable, type Engine } from "./engine";
+import { openMemory, snapshotBytes, closeMemory, makeWritable, startWarmup, type Engine } from "./engine";
 import { VaultStorage } from "./storage";
 import { decrypt, deriveKey, type Key } from "./crypto";
 import { appendAudit, verifyAudit, GENESIS } from "./audit";
 import { V1_SQL, SCHEMA_VERSION, upgradeSql } from "./schema";
-import { ingest, estimateImport, type Progress } from "./ingest";
 import { sqlText } from "../spike/exact";
+import { Studio, listSources, loadRecipes, recipeSql, removeSource, type Progress } from "../studio/studio";
+import type { Role, Settings } from "../studio/formats";
 import { AUTO_LOCK_MS, LEASE_WAIT_MS, VaultError, type Scope, type Tier, type VaultStatus } from "./protocol";
 export class VaultService {
   engine: Engine | null = null;
@@ -17,7 +18,9 @@ export class VaultService {
   private tier: Tier = "starter";
   private releaseLease: (() => void) | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
-  constructor(private onIdle: () => void, private idleMs = AUTO_LOCK_MS, private leaseWaitMs = LEASE_WAIT_MS) {}
+  readonly studio = new Studio();
+  // autoWarm: start the copy-on-write in the background right after unlock.
+  constructor(private onIdle: () => void, private idleMs = AUTO_LOCK_MS, private leaseWaitMs = LEASE_WAIT_MS, private autoWarm = true) {}
   async init(scope: Scope) {
     if (this.storage) throw new VaultError("STATE", "Workspace is already selected. Reload to switch workspace.");
     if (!navigator.storage?.getDirectory || !navigator.locks) throw new VaultError("BROWSER", "Use a current Chrome or Edge browser with local storage and Web Locks enabled.");
@@ -87,6 +90,7 @@ export class VaultService {
       const audit = await verifyAudit(this.engine); if (!audit.valid) throw new VaultError("AUDIT", "The vault audit chain failed verification. No changes were saved.");
       this.recovered = chosen.recovered; this.lastSaved = chosen.savedAt;
       await this.migrate(); if (this.dirty) await this.save();
+      if (this.autoWarm) startWarmup(this.engine);
       this.touch(); return this.status();
     } catch (error) { await this.dispose(); if (error instanceof VaultError && error.code === "SAVE") throw new VaultError("SAVE", "The schema upgrade could not be saved. Your original encrypted vault is retained. Free storage and unlock again."); throw error instanceof VaultError ? error : new VaultError("UNLOCK_FAILED", "Wrong passphrase, damaged vault or unsupported schema. No data was opened."); }
   }
@@ -103,20 +107,51 @@ export class VaultService {
     finally { if (bytes.byteLength) bytes.fill(0); }
     return this.status();
   }
-  async import(file: File, confirmed: boolean, signal: AbortSignal, progress: Progress) {
+  /** Resolves when the background copy finishes (true) or failed (false); null when not running. */
+  warmup() { return this.engine?.warming ?? null; }
+  /** Wait for the background copy (or do it now) before the first change. */
+  private async writable(progress?: Progress) {
     const engine = this.requireEngine();
-    if (!confirmed) throw new VaultError("CONFIRM", "Review the size and memory warning before importing.");
-    if (this.dirty) throw new VaultError("SAVE", "Save the pending change before importing another file.");
-    if (!engine.writable) {
-      progress("Preparing the first change in worker memory", "0", "1");
-      await makeWritable(engine);
-      if (signal.aborted) throw new VaultError("CANCELLED", "Import cancelled. No rows were committed.");
-    }
-    await ingest(engine, file, this.tier, signal, progress);
-    this.dirty = true; progress("Saving encrypted snapshot", "0", "1"); await this.save();
-    progress("Saved", "1", "1"); this.touch(); return this.status();
+    if (this.dirty) throw new VaultError("SAVE", "Save the pending change first.");
+    if (!engine.writable) { progress?.(engine.warming ? "Finishing preparing the vault for edits" : "Preparing the vault for edits in worker memory", "0", "1"); await makeWritable(engine); }
+    return engine;
   }
-  estimate(file: File) { this.requireEngine(); return estimateImport(file, this.tier); }
+  private async recipes() { return loadRecipes(this.requireEngine()); }
+  async studioState() { return this.studio.state(await this.recipes()); }
+  async studioAdd(files: File[], replaces: string | null = null) { this.requireEngine(); await this.studio.add(files, await this.recipes(), replaces); return this.studioState(); }
+  async studioUpdate(id: string, settings: Partial<Settings> = {}, role?: Role | null) { this.requireEngine(); await this.studio.update(id, { ...settings, ...(role !== undefined ? { role } : {}) }); return this.studioState(); }
+  async studioDrop(id: string) { this.requireEngine(); this.studio.drop(id); return this.studioState(); }
+  async studioClear() { this.requireEngine(); this.studio.clear(); return this.studioState(); }
+  async studioPlan(signal: AbortSignal, progress: Progress) { await this.studio.plan(this.requireEngine(), this.tier, signal, progress); return this.studioState(); }
+  async studioCommit(acknowledge: boolean, progress: Progress) {
+    const engine = await this.writable(progress);
+    progress("Loading rows into the vault", "0", "1");
+    const result = await this.studio.commit(engine, acknowledge);
+    this.dirty = true; progress("Saving encrypted snapshot", "0", "1"); await this.save();
+    progress("Saved", "1", "1"); this.touch();
+    return { status: await this.status(), studio: await this.studioState(), result };
+  }
+  async studioDownload(id: string, signal: AbortSignal) { this.requireEngine(); return this.studio.download(id, signal); }
+  async studioZip(signal: AbortSignal) { this.requireEngine(); return this.studio.zip(signal); }
+  async recipeSave(id: string, name: string) {
+    const recipe = this.studio.recipeFor(id, name), engine = await this.writable();
+    await engine.conn.query("BEGIN");
+    try { await engine.conn.query(recipeSql(recipe)); await appendAudit(engine, "recipe.saved", { name: recipe.name, profile: recipe.profile }); await engine.conn.query("COMMIT"); }
+    catch (error) { await engine.conn.query("ROLLBACK"); throw error; }
+    this.dirty = true; await this.save(); return this.studioState();
+  }
+  async recipeApply(id: string, recipeId: string) {
+    const recipe = (await this.recipes()).find(r => r.id === recipeId);
+    if (!recipe) throw new VaultError("RECIPE", "That recipe no longer exists.");
+    this.studio.apply(id, recipe); return this.studioState();
+  }
+  async sources() { return listSources(this.requireEngine()); }
+  async sourceRemove(id: string) {
+    const engine = await this.writable();
+    const cleanup = await removeSource(engine, id);
+    this.dirty = true; await this.save(); this.touch();
+    return { status: await this.status(), cleanup };
+  }
   async verify() { return verifyAudit(this.requireEngine()); }
   async lock() {
     if (this.engine && this.dirty) await this.save();
@@ -130,12 +165,13 @@ export class VaultService {
   }
   private async dispose() {
     if (this.timer) clearTimeout(this.timer); this.timer = null;
-    const engine = this.engine; this.engine = null; this.key = null;
+    const engine = this.engine; this.engine = null; this.key = null; this.studio.clear();
     if (engine) await closeMemory(engine).catch(() => undefined);
     this.releaseLease?.(); this.releaseLease = null; this.dirty = false;
   }
   async status(): Promise<VaultStatus> {
-    const base: VaultStatus = { state: this.engine ? "unlocked" : "locked", exists: await this.storage.exists(), dirty: this.dirty, recovered: this.recovered, lines: "0", products: "0", customers: "0", auditEntries: "0", schemaVersion: "0", generation: this.generation, tier: this.tier, lastSaved: this.lastSaved };
+    const base: VaultStatus = { state: this.engine ? "unlocked" : "locked", exists: await this.storage.exists(), dirty: this.dirty,
+      writable: !!this.engine?.writable || !!this.engine?.warmReady, preparing: !!this.engine && !this.engine.writable && !!this.engine.warming && !this.engine.warmDone, recovered: this.recovered, lines: "0", products: "0", customers: "0", auditEntries: "0", schemaVersion: "0", generation: this.generation, tier: this.tier, lastSaved: this.lastSaved };
     if (!this.engine) return base;
     const data = (await this.engine.conn.query(`SELECT (SELECT count(*) FROM sales_lines)::VARCHAR AS lines,(SELECT count(*) FROM products)::VARCHAR AS products,(SELECT count(*) FROM customers)::VARCHAR AS customers,audit_count::VARCHAR AS entries,schema_version::VARCHAR AS version FROM vault_meta WHERE id=1`)).toArray()[0];
     const totals = (await this.engine.conn.query(`SELECT coalesce(sum(list_cents),0)::VARCHAR AS list,coalesce(sum(discount_cents),0)::VARCHAR AS discounts,coalesce(sum(freight_cents),0)::VARCHAR AS freight,coalesce(sum(rebate_cents),0)::VARCHAR AS rebates,coalesce(sum(list_cents-discount_cents-freight_cents-rebate_cents),0)::VARCHAR AS pocket,coalesce(sum(cost_cents),0)::VARCHAR AS cost,coalesce(sum(list_cents-discount_cents-freight_cents-rebate_cents-cost_cents),0)::VARCHAR AS margin FROM sales_lines`)).toArray()[0];

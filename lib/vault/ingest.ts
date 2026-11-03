@@ -1,3 +1,6 @@
+// Chunk 4B single-CSV ingest into a v1 schema. The app now imports through the
+// Import Studio (lib/studio); this remains only to rebuild the committed v1
+// compatibility fixture (tests/browser/vault-worker.ts --make-fixture).
 import * as duckdb from "@duckdb/duckdb-wasm";
 import type { Engine } from "./engine";
 import { CAPS, MAX_CSV_BYTES, VaultError, type Tier, type ImportEstimate } from "./protocol";

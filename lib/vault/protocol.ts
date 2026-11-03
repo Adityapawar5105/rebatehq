@@ -1,7 +1,11 @@
+import type { Role, Settings } from "../studio/formats";
+import type { SourceView, StudioState } from "../studio/studio";
 export type Tier = "starter" | "professional" | "scale";
 export type Scope = { userId: string; tenantId: string };
 export type VaultStatus = {
   state: "locked" | "unlocked"; exists: boolean; dirty: boolean; recovered: boolean;
+  /** writable: the first change will not need a copy; preparing: that copy is running in the background. */
+  writable: boolean; preparing: boolean;
   lines: string; products: string; customers: string; auditEntries: string;
   schemaVersion: string; generation: string; tier: Tier; lastSaved: string | null;
   totals?: { list: string; discounts: string; freight: string; rebates: string; pocket: string; cost: string; margin: string };
@@ -15,25 +19,42 @@ export type Commands = {
   lock: Record<string, never>;
   touch: Record<string, never>;
   status: Record<string, never>;
-  estimate: { file: File };
-  import: { file: File; confirmed: boolean };
   cancel: Record<string, never>;
   save: Record<string, never>;
   verify: Record<string, never>;
   storage: Record<string, never>;
+  studioAdd: { files: File[]; replaces?: string | null };
+  studioUpdate: { id: string; settings?: Partial<Settings>; role?: Role | null };
+  studioDrop: { id: string };
+  studioClear: Record<string, never>;
+  studioState: Record<string, never>;
+  studioPlan: Record<string, never>;
+  studioCommit: { acknowledge: boolean };
+  studioDownload: { id: string };
+  studioZip: Record<string, never>;
+  recipeSave: { id: string; name: string };
+  recipeApply: { id: string; recipeId: string };
+  sources: Record<string, never>;
+  sourceRemove: { id: string };
 };
+export type CommitResult = { loaded: string; rejected: string; files: string; cleanup: boolean };
 export type Results = {
   init: VaultStatus; create: VaultStatus; unlock: VaultStatus; lock: VaultStatus; status: VaultStatus;
   touch: { ok: boolean }; cancel: { ok: boolean }; save: VaultStatus;
-  estimate: ImportEstimate; import: VaultStatus;
   verify: { valid: boolean; entries: string }; storage: StorageStatus;
+  studioAdd: StudioState; studioUpdate: StudioState; studioDrop: StudioState; studioClear: StudioState; studioState: StudioState;
+  studioPlan: StudioState; recipeSave: StudioState; recipeApply: StudioState;
+  studioCommit: { status: VaultStatus; studio: StudioState; result: CommitResult };
+  studioDownload: { name: string; blob: Blob }; studioZip: { name: string; blob: Blob };
+  sources: SourceView[]; sourceRemove: { status: VaultStatus; cleanup: boolean };
 };
 export type Action = keyof Commands;
 export type Request = { [K in Action]: { id: string; action: K; data: Commands[K] } }[Action];
 export type Response = { [K in Action]: { id: string; action: K; result: Results[K] } }[Action]
   | { id: string; error: { code: string; message: string } }
   | { event: "progress"; stage: string; done: string; total: string }
-  | { event: "locked"; reason: string };
+  | { event: "locked"; reason: string }
+  | { event: "writable" };
 export class VaultError extends Error {
   constructor(public code: string, message: string) { super(message); }
 }

@@ -1,8 +1,9 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { VaultClient } from "@/lib/vault/client";
-import type { ImportEstimate, Scope, StorageStatus, Tier, VaultStatus } from "@/lib/vault/protocol";
+import type { Scope, StorageStatus, Tier, VaultStatus } from "@/lib/vault/protocol";
 import { moneyText } from "@/lib/spike/exact";
+import { ImportStudio } from "./ImportStudio";
 import styles from "./vault.module.css";
 const sections = ["Home", "Data Hub", "Margin", "Pricing", "Reports", "Settings"] as const;
 type Section = typeof sections[number];
@@ -11,7 +12,6 @@ export function VaultApp({ scope, email, workspace, lab = false }: { scope: Scop
   const [status, setStatus] = useState<VaultStatus | null>(null), [section, setSection] = useState<Section>("Home");
   const [error, setError] = useState(""), [message, setMessage] = useState("Opening local storage…"), [busy, setBusy] = useState(false);
   const [passphrase, setPassphrase] = useState(""), [tier, setTier] = useState<Tier>("starter");
-  const [file, setFile] = useState<File | null>(null), [estimate, setEstimate] = useState<ImportEstimate | null>(null);
   const [storage, setStorage] = useState<StorageStatus | null>(null), [progress, setProgress] = useState<{ stage: string; done: string; total: string } | null>(null);
   const [supported, setSupported] = useState(true);
   useEffect(() => {
@@ -19,7 +19,8 @@ export function VaultApp({ scope, email, workspace, lab = false }: { scope: Scop
     const c = new VaultClient(scope, event => {
       if (!active) return;
       if (event.event === "progress") { setProgress(event); window.dispatchEvent(new CustomEvent("vault-progress", { detail: { stage: event.stage } })); }
-      else { setPassphrase(""); setFile(null); setEstimate(null); setMessage(event.reason); void c.call("status", {}).then(s => { if (active) setStatus(s); }); }
+      else if (event.event === "writable") { void c.call("status", {}).then(s => { if (active) setStatus(s); }).catch(() => undefined); }
+      else { setPassphrase(""); setMessage(event.reason); void c.call("status", {}).then(s => { if (active) setStatus(s); }); }
     });
     client.current = c;
     c.ready.then(s => { if (active) { setStatus(s); setMessage(s.exists ? "Unlock your encrypted vault." : "Create an encrypted vault on this device."); } }).catch(e => { if (active) setError(e.message); });
@@ -38,12 +39,6 @@ export function VaultApp({ scope, email, workspace, lab = false }: { scope: Scop
     try { await work(); } catch (e) { setError(e instanceof Error ? e.message : "The local operation failed."); try { setStatus(await client.current!.call("status", {})); } catch {} }
     finally { setBusy(false); setProgress(null); }
   }
-  async function chooseFile(value: File | undefined) {
-    if (!value) return;
-    setError(""); setFile(null); setEstimate(null);
-    try { const preview = await client.current!.call("estimate", { file: value }); setFile(value); setEstimate(preview); }
-    catch (e) { setError((e as Error).message); }
-  }
   const unlocked = status?.state === "unlocked";
   return <div className={styles.shell}>
     <a className={styles.skip} href="#local-content">Skip to content</a>
@@ -52,10 +47,11 @@ export function VaultApp({ scope, email, workspace, lab = false }: { scope: Scop
     <div className={styles.layout}>
       <nav aria-label="Main navigation" className={styles.nav}>{sections.map(item => <a key={item} href={`#${item.toLowerCase().replace(" ", "-")}`} aria-current={section === item ? "page" : undefined} onClick={() => setSection(item)}>{item}</a>)}<a href="/legacy/dashboard">Legacy · server-backed</a></nav>
       <main id="local-content" className={styles.content}>
-        <div className={styles.title}><div><span className={styles.eyebrow}>LOCAL WORKSPACE</span><h1>{section}</h1></div>{unlocked && <button disabled={busy} onClick={() => void operation(async () => { setStatus(await client.current!.call("lock", {})); setPassphrase(""); setFile(null); setEstimate(null); setMessage("Vault locked. The key and working database were released."); })}>Lock vault</button>}</div>
+        <div className={styles.title}><div><span className={styles.eyebrow}>LOCAL WORKSPACE</span><h1>{section}</h1></div>{unlocked && <button disabled={busy} onClick={() => void operation(async () => { setStatus(await client.current!.call("lock", {})); setPassphrase(""); setMessage("Vault locked. The key and working database were released."); })}>Lock vault</button>}</div>
         {!supported && <p className={styles.notice}>For local vault support, use the latest Chrome or Edge. Other browsers have not been validated.</p>}
         <p role="status" aria-live="polite">{message}</p>
         {error && <p role="alert" className={styles.error}>⚠ {error}</p>}
+        {status?.preparing && <p className={styles.muted} data-testid="preparing">Preparing for edits… You can browse now; an import started meanwhile waits for this step.</p>}
         {status?.recovered && <p className={styles.error}>⚠ Opened the retained previous generation because the current save was damaged. Review the last import before continuing.</p>}
         {progress && <div className={styles.progress}><label htmlFor="vault-progress">{progress.stage}</label><progress id="vault-progress" value={Number(progress.done)} max={Math.max(1, Number(progress.total))}/>{!progress.stage.startsWith("Saving") && progress.stage !== "Saved" && <button onClick={() => void client.current!.call("cancel", {})}>Cancel import</button>}</div>}
         {!status ? <section className={styles.card} aria-busy="true">Starting the local worker…</section> : !unlocked ? <section className={styles.card}>
@@ -70,13 +66,16 @@ export function VaultApp({ scope, email, workspace, lab = false }: { scope: Scop
         </section> : <>
           {status.dirty && <section className={styles.error}>⚠ A change is not yet saved. Keep this tab open. <button onClick={() => void operation(async () => { setStatus(await client.current!.call("save", {})); setMessage("Encrypted save completed."); })}>Retry Save</button></section>}
           <div className={styles.stats}><div><span>Invoice lines</span><strong data-testid="line-count">{status.lines}</strong></div><div><span>Products</span><strong>{status.products}</strong></div><div><span>Customers</span><strong>{status.customers}</strong></div><div><span>Encrypted generation</span><strong>{status.generation}</strong></div></div>
-          {section === "Home" && <section className={styles.card}><h2>Your data stays in the local vault</h2><p>Import a sales CSV in Data Hub to begin. Working and staging data live in worker memory. OPFS holds encrypted snapshots only.</p><a className={styles.primary} href="#data-hub">Open Data Hub</a><p className={styles.muted}>First insights in minutes from files. This foundation does not yet include the complete Import Studio or leak reports.</p></section>}
-          {section === "Data Hub" && <section className={styles.card} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); if (event.dataTransfer.files.length !== 1) { setError("Choose one CSV file for this import. Multi-file mapping arrives in the next chunk."); return; } if (!busy) void chooseFile(event.dataTransfer.files[0]); }}>
-            <h2>Import sales history</h2><p>Drop one CSV here or choose a file. Native DuckDB reads it in the worker; the file is never uploaded.</p>
-            <label>Choose CSV<input data-testid="csv-file" type="file" accept=".csv" disabled={busy} onChange={event => { void chooseFile(event.target.files?.[0]); event.target.value = ""; }}/></label>
-            <details><summary>Required columns for this chunk</summary><p>line_id, product_id, customer_id, sale_date, quantity, list_amount, discount_amount, freight_amount, rebate_amount, cost_amount</p><p>Positive whole IDs and quantities, ISO dates and non-negative amounts with up to two decimals. Amounts are line totals. Mapping and additional formats arrive in 4C.</p></details>
-            {file && estimate && <div className={styles.warning}><strong>⚠ Review before import: {file.name}</strong><p>{estimate.bytes} bytes; approximately {estimate.estimatedMemoryBytes} additional memory bytes. Profile maximum: {estimate.maxLines} lines / {estimate.maxProducts} products.</p><p>{estimate.warning}</p><button className={styles.primary} disabled={busy || status.dirty} onClick={() => void operation(async () => { setStatus(await client.current!.call("import", { file, confirmed: true })); setFile(null); setEstimate(null); setMessage("Import committed, audited and saved as an encrypted snapshot."); })}>Confirm and import locally</button></div>}
-          </section>}
+          {section === "Home" && <section className={styles.card}><h2>Your data stays in the local vault</h2><p>Drop your ERP and supplier files in Data Hub to begin. Working and staging data live in worker memory. OPFS holds encrypted snapshots only.</p><a className={styles.primary} href="#data-hub">Open Data Hub</a><p className={styles.muted}>Column mapping for other ERP header names, the Fix Later queue and leak reports arrive in the next chunks.</p></section>}
+          {section === "Data Hub" && client.current && <>
+            <ImportStudio client={client.current} status={status} busy={busy} operation={operation} onStatus={setStatus} setMessage={setMessage}/>
+            <details className={styles.card}><summary>Columns each file type needs</summary>
+              <p className={styles.small}><strong>Sales history:</strong> line_id, product_id, customer_id, sale_date, quantity, list_amount, discount_amount, freight_amount, rebate_amount, cost_amount (amounts are line totals).</p>
+              <p className={styles.small}><strong>Item master:</strong> product_id, and any of description, category, uom, current_cost, list_price. <strong>Customer list:</strong> customer_id, and any of name, tier, branch, region, payment_terms.</p>
+              <p className={styles.small}><strong>Vendor cost sheet:</strong> vendor, product_id, cost, effective_date. <strong>Price list:</strong> price, valid_from, product_id or category, and optionally customer_id, tier, qty_break, valid_to.</p>
+              <p className={styles.muted}>Header names are matched ignoring case, spaces and punctuation, in any column order. Mapping other ERP header names arrives in the next chunk. Amounts use up to two decimals with no currency symbols or grouping.</p>
+            </details>
+          </>}
           {section === "Margin" && <section className={styles.card}><h2>Imported line totals</h2><p>Exact cents from your CSV. Cost-basis lookup, reconciliation and the full analytical engine arrive in 4D.</p><dl className={styles.totals}>{Object.entries(status.totals || {}).map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{moneyText(value)}</dd></div>)}</dl></section>}
           {section === "Pricing" && <section className={styles.card}><h2>Pricing foundation</h2><p>Local matrix, guardrail, rule and version tables are ready. The rule editor and approval/export workflow arrive in later chunks.</p></section>}
           {section === "Reports" && <section className={styles.card}><h2>Verify local audit history</h2><p>{status.auditEntries} hash-chained entries. Schema version {status.schemaVersion}.</p><button className={styles.primary} disabled={busy} onClick={() => void operation(async () => { const result = await client.current!.call("verify", {}); if (!result.valid) throw new Error("Audit verification failed. Keep your encrypted backup."); setMessage(`Audit chain verified: ${result.entries} entries.`); })}>Verify audit chain</button><p className={styles.muted}>A local hash chain detects changed, missing or reordered records against its encrypted tip. It cannot prove that a device owner did not rewrite the whole vault or restore an older snapshot.</p></section>}

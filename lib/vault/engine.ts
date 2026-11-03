@@ -1,6 +1,9 @@
 import * as duckdb from "@duckdb/duckdb-wasm";
-import { V1_SQL, V2_SQL, TABLES, upgradeSql } from "./schema";
-export type Engine = { db: duckdb.AsyncDuckDB; conn: duckdb.AsyncDuckDBConnection; worker: Worker; writable: boolean };
+import { schemaSql, TABLES, upgradeSql } from "./schema";
+// `warming` is the background copy-on-write started after unlock (true = copied);
+// `warmDone` turns true when it settles (`warmReady` when it succeeded), before the
+// main connection switches over.
+export type Engine = { db: duckdb.AsyncDuckDB; conn: duckdb.AsyncDuckDBConnection; worker: Worker; writable: boolean; warming: Promise<boolean> | null; warmDone: boolean; warmReady: boolean };
 export const MEMORY_PATH = "opfs://vault-ram.duckdb";
 export async function openMemory(bytes?: Uint8Array): Promise<Engine> {
   const worker = new Worker(new URL("/spike/vault-ram-worker.js", self.location.origin));
@@ -20,22 +23,48 @@ export async function openMemory(bytes?: Uint8Array): Promise<Engine> {
       if (JSON.stringify(inventory) !== JSON.stringify([...TABLES].sort())) throw new Error("Unsupported vault table inventory");
       await conn.query("USE incoming");
     }
-    return { db, conn, worker, writable: !bytes };
+    return { db, conn, worker, writable: !bytes, warming: null, warmDone: false, warmReady: false };
   } catch (error) { try { await db.terminate(); } finally { worker.terminate(); } throw error; }
+}
+// Copy the authenticated read-only snapshot into the writable RAM catalog on
+// `conn`. Lazy copy-on-write within the SAME instance: unlock stays fast, and FK
+// validation is paid once. Never reopen the pinned build's read-only handle for
+// writes. No untrusted schema SQL is executed.
+async function copyToWritable(engine: Engine, conn: duckdb.AsyncDuckDBConnection) {
+  const version = Number((await conn.query("SELECT schema_version FROM incoming.vault_meta WHERE id=1")).toArray()[0].schema_version);
+  await conn.query('USE "vault-ram"; BEGIN');
+  try {
+    await conn.query(schemaSql(version));
+    for (const table of TABLES) await conn.query(`INSERT INTO ${table} SELECT * FROM incoming.${table}`);
+    await conn.query("COMMIT");
+  } catch (error) { await conn.query("ROLLBACK").catch(() => undefined); throw error; }
+}
+async function switchToWritable(engine: Engine) {
+  await engine.conn.query('USE "vault-ram"; DETACH incoming'); await engine.db.dropFile("vault-input.duckdb"); engine.writable = true;
+}
+/**
+ * Start the copy on a second connection right after unlock. The main connection
+ * keeps reading the snapshot meanwhile; makeWritable() finishes the switch.
+ */
+export function startWarmup(engine: Engine) {
+  if (engine.writable || engine.warming) return engine.warming;
+  engine.warming = (async () => {
+    const conn = await engine.db.connect();
+    try { await copyToWritable(engine, conn); engine.warmReady = true; return true; }
+    catch { return false; }
+    finally { await conn.close().catch(() => undefined); engine.warmDone = true; }
+  })();
+  return engine.warming;
 }
 export async function makeWritable(engine: Engine) {
   if (engine.writable) return;
-  const version = Number((await engine.conn.query("SELECT schema_version FROM incoming.vault_meta WHERE id=1")).toArray()[0].schema_version);
-  await engine.conn.query('USE "vault-ram"; BEGIN');
-  try {
-    await engine.conn.query(V1_SQL + (version === 2 ? V2_SQL : ""));
-    // Lazy copy-on-write within the SAME instance. Keep existing indexes in
-    // the authenticated RAM snapshot for fast unlock; pay FK validation once,
-    // on the first mutation. Never reopen the pinned build's read-only handle
-    // for writes. No untrusted schema SQL is executed.
-    for (const table of TABLES) await engine.conn.query(`INSERT INTO ${table} SELECT * FROM incoming.${table}`);
-    await engine.conn.query("COMMIT; DETACH incoming"); await engine.db.dropFile("vault-input.duckdb"); engine.writable = true;
-  } catch (error) { await engine.conn.query("ROLLBACK; USE incoming"); throw error; }
+  if (engine.warming) {
+    const copied = await engine.warming; engine.warming = null;
+    if (copied) { await switchToWritable(engine); return; }
+    // A failed background copy rolled back; retry once on the main connection.
+  }
+  await copyToWritable(engine, engine.conn).catch(async error => { await engine.conn.query("USE incoming"); throw error; });
+  await switchToWritable(engine);
 }
 export async function snapshotBytes(engine: Engine) {
   await makeWritable(engine);

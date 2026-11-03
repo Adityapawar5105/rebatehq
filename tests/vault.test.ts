@@ -9,7 +9,7 @@ import { verifyEntries, auditPayload, GENESIS, type AuditEntry } from "../lib/va
 import { digest } from "../lib/vault/crypto";
 import { CAPS } from "../lib/vault/protocol";
 import { estimateImport } from "../lib/vault/ingest";
-import { upgradeSql, TABLES, V1_SQL } from "../lib/vault/schema";
+import { upgradeSql, schemaSql, TABLES, V1_SQL } from "../lib/vault/schema";
 import { closeMemory } from "../lib/vault/engine";
 class FakeDirectory {
   files = new Map<string, Uint8Array>(); failName = "";
@@ -104,15 +104,19 @@ test("committed encrypted v1 fixture stays frozen", () => {
 });
 test("schema inventory, forward-only migration, capacity and memory warning are explicit", () => {
   assert.equal(TABLES.length, 17); for (const table of TABLES) assert.ok(V1_SQL.includes(`CREATE TABLE ${table}(`));
-  assert.ok(upgradeSql(1).includes("ALTER TABLE import_batches")); assert.equal(upgradeSql(2), ""); assert.throws(() => upgradeSql(3));
+  assert.ok(upgradeSql(1).includes("ALTER TABLE import_batches") && upgradeSql(1).includes("ADD COLUMN source_id"));
+  assert.ok(upgradeSql(2).startsWith("ALTER TABLE products ADD COLUMN source_id")); assert.equal(upgradeSql(3), ""); assert.throws(() => upgradeSql(4));
+  assert.equal(schemaSql(3), [V1_SQL, upgradeSql(1)].join("\n"));
   assert.equal(CAPS.scale.lines, 1000000); assert.equal(CAPS.starter.products, 20000);
   assert.equal(estimateImport({ name: "sales.csv", size: 1000 }, "professional").estimatedMemoryBytes, "6000");
   assert.throws(() => estimateImport({ name: "sales.xlsx", size: 1000 }, "starter"));
   assert.throws(() => estimateImport({ name: "sales.csv", size: 257 * 1024 * 1024 }, "starter"));
 });
 test("local data paths contain no business API, raw SQL protocol, or real OPFS worker handle", () => {
-  const ui = readFileSync("components/local/VaultApp.tsx", "utf8"), engine = readFileSync("lib/vault/engine.ts", "utf8"), protocol = readFileSync("lib/vault/protocol.ts", "utf8");
-  assert.ok(!/\.query\(|fetch\(|JSON\.stringify/.test(ui));
+  const ui = readFileSync("components/local/VaultApp.tsx", "utf8") + readFileSync("components/local/ImportStudio.tsx", "utf8"), engine = readFileSync("lib/vault/engine.ts", "utf8"), protocol = readFileSync("lib/vault/protocol.ts", "utf8");
+  assert.ok(!/\.query\(|fetch\(|JSON\.stringify|console\./.test(ui));
+  const studio = ["formats", "text", "sheets", "rows", "load", "studio"].map(f => readFileSync(`lib/studio/${f}.ts`, "utf8")).join("\n");
+  assert.ok(!/fetch\(|XMLHttpRequest|sendBeacon|WebSocket|console\.|importScripts/.test(studio), "Import Studio must not make network calls or log");
   assert.ok(!/sql:|query:/.test(protocol)); assert.ok(engine.includes('new URL("/spike/vault-ram-worker.js"'));
   const workflow = readFileSync(".github/workflows/ci.yml", "utf8"); assert.ok(workflow.includes("pnpm test:vault:privacy")); assert.ok(!workflow.includes("continue-on-error"));
   assert.ok(!readFileSync("scripts/vault-test-auth.mjs", "utf8").includes("setSession("));

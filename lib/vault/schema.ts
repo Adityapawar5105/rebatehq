@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 export const TABLES = ["vault_meta", "products", "customers", "price_matrix", "price_guardrails", "source_files", "import_batches", "sales_lines", "vendor_costs", "cost_basis_settings", "rules", "rule_runs", "price_versions", "roi_ledger", "audit_log", "import_issues", "converter_recipes"] as const;
 // These are local DuckDB migrations, not Supabase migrations. V1 stays frozen
 // so the committed encrypted compatibility fixture exercises a real upgrade.
@@ -24,7 +24,24 @@ CREATE TABLE converter_recipes(id VARCHAR PRIMARY KEY, name VARCHAR NOT NULL, pr
 export const V2_SQL = `ALTER TABLE import_batches ADD COLUMN content_sha256 VARCHAR;
 CREATE INDEX sales_lines_customer_date ON sales_lines(customer_id,sale_date);
 CREATE INDEX sales_lines_product_date ON sales_lines(product_id,sale_date);`;
-export function upgradeSql(version: number) {
+// V3 (chunk 4C-1): every row loaded from a file remembers its source file and
+// row. A NULL source on products/customers means "derived from sales lines".
+export const V3_SQL = `ALTER TABLE products ADD COLUMN source_id VARCHAR;
+ALTER TABLE products ADD COLUMN source_row BIGINT;
+ALTER TABLE customers ADD COLUMN source_id VARCHAR;
+ALTER TABLE customers ADD COLUMN source_row BIGINT;
+ALTER TABLE vendor_costs ADD COLUMN source_id VARCHAR;
+ALTER TABLE vendor_costs ADD COLUMN source_row BIGINT;
+ALTER TABLE price_matrix ADD COLUMN source_id VARCHAR;
+ALTER TABLE price_matrix ADD COLUMN source_row BIGINT;
+ALTER TABLE import_batches ADD COLUMN fingerprint VARCHAR;
+ALTER TABLE import_batches ADD COLUMN rows_skipped BIGINT DEFAULT 0;`;
+// DuckDB cannot add columns with constraints; the studio always writes rows_skipped.
+const STEPS = [V1_SQL, V2_SQL, V3_SQL];
+function checkVersion(version: number) {
   if (!Number.isInteger(version) || version < 1 || version > SCHEMA_VERSION) throw new Error("Unsupported vault schema version; update the app before opening this vault.");
-  return version === 1 ? V2_SQL : "";
 }
+/** Full schema DDL as it existed at `version`, in migration order. */
+export function schemaSql(version: number) { checkVersion(version); return STEPS.slice(0, version).join("\n"); }
+/** Forward-only migration SQL from `version` to SCHEMA_VERSION. */
+export function upgradeSql(version: number) { checkVersion(version); return STEPS.slice(version).join("\n"); }
