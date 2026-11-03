@@ -1,3 +1,56 @@
+# Chunk 4A spike assumptions — 3 November 2026, local evidence only
+
+- Blueprint v2.2 and its execution plan govern. Only the spike is implemented:
+  no 4B vault lifecycle, app-shell migration, control-plane retirement, licence
+  changes or production privacy claim. Locked migrations and `migrations.lock`
+  remain byte-for-byte unchanged.
+- `/lab/spike` processes data only in browser workers. The new page wrapper has
+  only dynamic-render configuration for the existing CSP nonce; it reads no
+  data and sends no props. Existing server changes are header configuration
+  only (COEP and lab-scoped Wasm/worker CSP); API/auth/business handlers stay
+  unchanged.
+- Pin DuckDB-Wasm **1.32.0**, not the npm `latest` tag: the official OPFS note
+  identifies a persistence bug in latest 1.33.1-dev57.0. Assets are copied from
+  that pinned dependency and served by this app; no runtime CDN/extensions.
+- On this Chrome build the COI bundle starts but stalls on a small OPFS write.
+  The threaded scratch import also failed the exact 130-row reconciliation.
+  All spike work now uses single-thread EH, including isolated memory DBs;
+  non-isolated mode also uses one thread. Neither failure was worked around by
+  weakening its assertion.
+- Plaintext OPFS persistence is tested **only with generated synthetic data**.
+  User-selected files import into a separate memory-only DB. The faster native
+  scanner can read browser File handles directly, without copying customer
+  files to plaintext OPFS. Snapshot restore to a plaintext file is likewise a
+  synthetic-only spike probe, not the chosen production working-vault design.
+- Native encrypted OPFS writes fail in the offline build's read-only crypto
+  module; httpfs is not installed and no extension is downloaded. The chosen
+  approach is encrypted snapshots (AES-256-GCM, authenticated 1 MiB chunks,
+  PBKDF2-SHA256 600,000 iterations, random salt/IV). Production unlocked working
+  data/staging must be in memory. This corrects blueprint sections 5/20, logged
+  in section 22; 4B must implement the actual vault.
+- This spike uses a documented ten-column invoice shape, exact cent amounts,
+  200k SKU/2M-line caps and 256 MiB CSV cap. The XLSX/conversion demonstration is
+  bounded to 8 MiB/10k rows and one sheet. It is not the 4C mapping/converter
+  feature. Formula cells/cached results, macros, ZIP bombs and XML entities are
+  rejected or surfaced, never evaluated.
+- The development environment has installed Chrome/Edge and nominal 8 GB RAM.
+  Record OS/browser/CPU/usable RAM and exact methodology in `SPIKE_RESULTS.md`;
+  local numbers do not prove CI, other laptops or deployment performance.
+- There are no local Supabase credentials, Docker or psql. A real magic-link
+  session is unverified unless separately exercised; auth UI/asset checks cannot
+  be described as a verified Supabase login. No email is sent by a mock check.
+- Full-size local headless Chrome 156.0.8078.76 and Edge 156.0.4314.58 runs on
+  this Ryzen 5 5600H / nominal 8 GB Windows laptop pass the functional harness.
+  Native 2M-row imports took 3,625.5 / 3,857.8 ms; encrypted startup took
+  3,385.1 / 3,412.7 ms and **misses** the three-second target. Methodology,
+  sampled memory peaks, exact evidence and proposed pilot caps are in
+  `SPIKE_RESULTS.md`. These are local observations, not CI evidence.
+- Browser storage estimates report about 4.14 GB while enumerated named OPFS
+  files total about 68.18 MB. This discrepancy is unresolved; do not advertise
+  either number as a total disk-footprint guarantee. Headless persistence was
+  not granted. Manual headed Chrome/Edge, quota/crash/multi-tab recovery and
+  the production memory-only encrypted vault remain unverified.
+
 # Phase 0 assumptions
 
 - Phase 0 keeps the existing static browser app and localStorage model. Multi-tenant authentication, APIs, and hosted persistence are outside this phase.

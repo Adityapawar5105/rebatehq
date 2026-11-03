@@ -118,7 +118,7 @@ Goals, not promises. Benchmark on an 8 GB office laptop. "100M rows in a tab" cl
 8. Backups as **Parquet or encrypted file snapshots**.
 9. **Memory guardrails:** estimate size before import, warn on huge files, offer import by date range.
 10. **Privacy gate:** an automated browser test imports fixture data with unique marker values and fails if any marker appears in a network request, header, body or console log. It runs in CI on every change.
-11. **Encryption at rest is decided by the spike:** use DuckDB's own database encryption if it works with OPFS in the browser; otherwise keep the working database unencrypted only while the vault is unlocked and persist encrypted snapshots (AES-GCM, key derived from the passphrase).
+11. **Encryption at rest is decided by the spike:** use DuckDB's own database encryption only if encrypted OPFS read/write is proved in the chosen browser build. Otherwise keep the unlocked working database and staging **in memory**, and persist **only encrypted snapshots** in OPFS (AES-GCM, key derived from the passphrase). Encrypting backups does not encrypt a plaintext OPFS working database; deleting it at lock/tab-close is not a crash-safe security boundary.
 
 ### Hosting and headers
 - DuckDB multi-threading needs **COOP/COEP headers**. Set them from day one.
@@ -359,7 +359,7 @@ Success metric: **time to first leak found under 2 minutes.**
 | Converter scope creep | Business data formats only; PDF and scanned files are never 100% accurate, so always preview |
 | Phase 1 scope growth | Phase 1 now has more items; ship Phase 1 core first (import, waterfall, rules, export), then 1b (cleanup, cost basis, checklist, ROI v1) |
 | Building without customer input | Mapper, cleanup and rules may not match real exports; secure at least one real sample early |
-| DuckDB-Wasm cannot encrypt its OPFS file | Spike tests it first; fallback is encrypted snapshots with auto-lock |
+| DuckDB-Wasm cannot encrypt its OPFS file | Use encrypted snapshots with memory-only working/staging data. A plaintext OPFS working file survives crashes; deleting it on lock/close is not encryption. Native encryption can return only after encrypted read/write is proved. |
 | COEP breaks third-party resources (auth, fonts) | Spike checks Supabase sign-in and assets with COEP on; use `credentialless` or self-host if needed |
 | Verification overhead outruns product | Database-level test suites and restore drills only for control-plane changes; data-plane chunks use unit, browser e2e, privacy-gate and timing checks; stop and simplify after 3 CI-fix attempts on one chunk |
 
@@ -502,7 +502,7 @@ Estimates assume one full-time founder with an AI coding agent. The critical pat
 4. Solo build, or bring in a developer for the security review?
 5. Do you want opt-in benchmarks, given the privacy wording it needs?
 6. Is the extra Phase 1b scope acceptable, or should some items move to Phase 2?
-7. Encryption at rest: DuckDB native encryption on OPFS or encrypted snapshots? (decided by the spike, chunk 4A)
+7. Encryption at rest: **encrypted snapshots** for the approved offline build (chunk 4A local probe: DuckDB-Wasm 1.32.0 / DuckDB 1.4.3 reports a read-only crypto module; writable native encryption needs httpfs, which is not installed). Use AES-256-GCM authenticated chunks and PBKDF2-SHA256 at 600,000 iterations, with memory-only unlocked working data. Full-size save/open measurements and remaining verification limits are in `SPIKE_RESULTS.md`; production vault implementation remains 4B.
 
 ---
 
@@ -536,3 +536,4 @@ Corrections after reviewing the repository and build history against v2.1. Produ
 6. **Risks added:** OPFS encryption feasibility, COEP side effects, verification overhead.
 7. **Roadmap (section 17)** maps blueprint phases to repo phases, adds the transition/spike and control-plane steps, gives realistic week ranges and a sellable-v1 window (11 Jan - 1 Feb 2027), and states the verification policy. Week 1 reuses the existing sign-in.
 8. **Open questions:** Q3 answered by `ARCHITECTURE_TRANSITION.md`; Q7 (encryption approach) added.
+9. **3 Nov 2026, chunk 4A — encryption fallback clarified (sections 5, 13 and 20).** The pinned offline Wasm build cannot write a natively encrypted OPFS database in the local probe. The chosen fallback is chunk-authenticated AES-256-GCM snapshots, PBKDF2-SHA256 (600k), and memory-only unlocked working/staging data. A plaintext OPFS database can survive a crash even if backups are encrypted, so "delete on lock/close" is insufficient. The spike's plaintext OPFS persistence experiment is restricted to generated synthetic data. This is a local feasibility decision, not CI evidence or a production-vault claim.

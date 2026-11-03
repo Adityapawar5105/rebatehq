@@ -1,5 +1,14 @@
 # MarginDesk
 
+**Chunk 4A — local prototype only (3 November 2026).** `/lab/spike` runs a
+self-hosted DuckDB-Wasm worker with synthetic OPFS persistence and memory-only
+user-file imports. Full-size Chrome/Edge measurements and the pending manual
+checklist are in [SPIKE_RESULTS.md](./SPIKE_RESULTS.md). Functional checks pass
+locally; encrypted startup misses the three-second target. This is not CI
+verification or a production vault, and 4B has not started. Reproduce with
+`pnpm install --frozen-lockfile`, `pnpm build`, `pnpm start --hostname 127.0.0.1 --port 3100`,
+then `pnpm benchmark:spike --browser=chrome` or `--browser=msedge` in another terminal.
+
 **Chunk 3C and Phase 3 — verified in [MarginDesk CI #39](https://github.com/Adityapawar5105/margindesk/actions/runs/40937330833) and [MarginDesk Restore Drill #13](https://github.com/Adityapawar5105/margindesk/actions/runs/40938982321), 2026-10-30 (Asia/Calcutta), commit `2f8b06d`.** Acceptance covers **162 fresh / 165 restore-mode pgTAP checks**, planned = ran with repeatability, across **38 tenant tables**. The dashboard shows invoice data readiness with a visible equal-weight formula and improvement steps; the demo scores **25%** because standard costs and default zeros are not actual evidence. Sheets schedules stage read-only CSV reviews through existing tables; commits remain explicit. Email-in/SFTP interfaces are inert previews. Phase 4 has not started. See [CHUNK_3C_VERIFICATION.md](./CHUNK_3C_VERIFICATION.md).
 
 Migration `20261029175710_chunk3c_invoice_actual_cost.sql` is now **locked** with its unchanged normalized hash; all six earlier locked migrations and hashes are unchanged. Apply all migrations to new databases. Restore Drill #13 passed the strict column metadata, evidence/ingestion hashes, ACL/count/sentinel/runtime comparisons and repeated restored-database suite on a **local target**.

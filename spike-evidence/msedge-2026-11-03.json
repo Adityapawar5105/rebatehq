@@ -1,0 +1,257 @@
+{
+  "date": "2026-11-03T09:13:16.834Z",
+  "scope": "full",
+  "channel": "msedge",
+  "machine": {
+    "cpu": "AMD Ryzen 5 5600H with Radeon Graphics         ",
+    "logical_cpus": 12,
+    "ram_bytes": 7887220736,
+    "os": "Windows_NT 10.0.26200",
+    "architecture": "x64"
+  },
+  "measurements": {
+    "initial": {
+      "init_ms": 1736.7,
+      "bundle": "eh",
+      "fallback": null,
+      "threads": "1",
+      "version": "v1.4.3",
+      "counts": {
+        "products": "0",
+        "lines": "0",
+        "months": "0"
+      },
+      "isolated": true
+    },
+    "generation": {
+      "generation_ms": 3124,
+      "counts": {
+        "products": "200000",
+        "lines": "2000000",
+        "months": "24"
+      },
+      "duckdb_memory_bytes": 32505856
+    },
+    "waterfall": [
+      29.3,
+      25.3,
+      26,
+      25.2,
+      24.9,
+      24.7,
+      25.8
+    ],
+    "product": [
+      12,
+      10.8,
+      10.5,
+      7.4,
+      9.8,
+      7.3,
+      12.5
+    ],
+    "customer": [
+      13.5,
+      10.6,
+      11.2,
+      7.9,
+      6.9,
+      7,
+      7.1
+    ],
+    "simulation_target": {
+      "simulation_ms": 77.1,
+      "scope": "100k SKUs / first 12 months",
+      "lines": "500000",
+      "base_unchanged": true,
+      "duckdb_memory_bytes": 32505856
+    },
+    "simulation_all": {
+      "simulation_ms": 326.6,
+      "scope": "all lines",
+      "lines": "2000000",
+      "base_unchanged": true,
+      "duckdb_memory_bytes": 32505856
+    },
+    "reopen": {
+      "init_ms": 810.8,
+      "bundle": "eh",
+      "fallback": null,
+      "threads": "1",
+      "version": "v1.4.3",
+      "counts": {
+        "products": "200000",
+        "lines": "2000000",
+        "months": "24"
+      },
+      "isolated": true
+    },
+    "import": {
+      "rows": 1000000,
+      "bytes": 61354113,
+      "fixture_export_ms": 1236.6,
+      "papa_ms": 10216.4,
+      "native_ms": 1988.5,
+      "chosen": "native",
+      "equal_checksums": true,
+      "duckdb_memory_bytes": 150132736
+    },
+    "import_2m": {
+      "rows": 2000000,
+      "bytes": 123819235,
+      "fixture_export_ms": 2134.6,
+      "papa_ms": 20971.6,
+      "native_ms": 3857.8,
+      "chosen": "native",
+      "equal_checksums": true,
+      "duckdb_memory_bytes": 273602560
+    },
+    "native_encryption": {
+      "native": false,
+      "reason": "Invalid Configuration Error: The database was opened with encryption enabled, but DuckDB currently has a read-only crypto module loaded. Please re-open using READONLY, or ensure httpfs is loaded using `LOAD httpfs`.",
+      "httpfs": "Not installed in the pinned offline bundle; no remote extension was fetched.",
+      "version": "v1.4.3"
+    },
+    "snapshot": {
+      "save_ms": 500.2,
+      "open_ms": 1464.6,
+      "plain_bytes": 34091008,
+      "cipher_bytes": 34091673,
+      "rows": "2000000",
+      "iterations": 600000,
+      "cipher": "AES-256-GCM / authenticated chunk envelope",
+      "exact": true,
+      "wrong_passphrase_rejected": true,
+      "note": "Synthetic plaintext OPFS persistence is a lab probe, not a production encrypted vault. Chosen production fallback is memory-only working data plus encrypted snapshots."
+    },
+    "restore": {
+      "open_ms": 1213,
+      "counts": {
+        "products": "200000",
+        "lines": "2000000",
+        "months": "24"
+      }
+    },
+    "encrypted_restart_init": {
+      "init_ms": 795.9,
+      "bundle": "eh",
+      "fallback": null,
+      "threads": "1",
+      "version": "v1.4.3",
+      "counts": {
+        "products": "200000",
+        "lines": "2000000",
+        "months": "24"
+      },
+      "isolated": true
+    },
+    "encrypted_navigation_to_open_ms": 3412.7,
+    "multifile": {
+      "rows": "130",
+      "sources": [
+        {
+          "source_file": "extra.xlsx",
+          "rows": "10"
+        },
+        {
+          "source_file": "month-01.csv",
+          "rows": "10"
+        },
+        {
+          "source_file": "month-02.csv",
+          "rows": "10"
+        },
+        {
+          "source_file": "month-03.csv",
+          "rows": "10"
+        },
+        {
+          "source_file": "month-04.csv",
+          "rows": "10"
+        },
+        {
+          "source_file": "month-05.csv",
+          "rows": "10"
+        },
+        {
+          "source_file": "month-06.csv",
+          "rows": "10"
+        },
+        {
+          "source_file": "month-07.csv",
+          "rows": "10"
+        },
+        {
+          "source_file": "month-08.csv",
+          "rows": "10"
+        },
+        {
+          "source_file": "month-09.csv",
+          "rows": "10"
+        },
+        {
+          "source_file": "month-10.csv",
+          "rows": "10"
+        },
+        {
+          "source_file": "month-11.csv",
+          "rows": "10"
+        },
+        {
+          "source_file": "month-12.csv",
+          "rows": "10"
+        }
+      ],
+      "issues": [],
+      "import_ms": 322,
+      "persistence": "memory only — user files are not written to plaintext OPFS"
+    },
+    "conversions": {
+      "conversion_ms": 36.7,
+      "rows": [
+        10,
+        1,
+        1
+      ]
+    }
+  },
+  "checks": {
+    "cross_origin_isolated": true,
+    "browser_restart_exact": true,
+    "encrypted_browser_restart_exact": true,
+    "thirteen_sources": true,
+    "utf8_conversions_exact": true,
+    "valid_marker_imported": true,
+    "cancel_no_partial_rows": true,
+    "storage": {
+      "persisted": false,
+      "estimate": {
+        "quota": 14881304745,
+        "usage": 4143886505,
+        "usageDetails": {
+          "fileSystem": 4143886505
+        }
+      }
+    },
+    "nonisolated_fallback": true,
+    "mobile_no_overflow": true,
+    "system_fonts": true,
+    "no_data_egress_or_console_marker": true
+  },
+  "memory": {
+    "peak_working_set_sum_bytes": 1191452672,
+    "peak_private_bytes": 958599168,
+    "method": "sum of measured browser process working sets/private bytes; working sets can double-count shared pages; 500 ms sampling"
+  },
+  "browser": "156.0.4314.58",
+  "request_summary": {
+    "requests": 65,
+    "paths": [
+      "/lab/spike",
+      "/spike/duckdb-browser-eh.worker.js",
+      "/spike/duckdb-eh.wasm",
+      "/spike/spike-worker.js"
+    ]
+  },
+  "status": "passed"
+}

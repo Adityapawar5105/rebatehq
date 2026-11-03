@@ -8,3 +8,7 @@ out/
 supabase/.temp/
 *.log
 tsconfig.tsbuildinfo
+public/spike/
+test-results/
+playwright-report/
+.spike-profile*/
