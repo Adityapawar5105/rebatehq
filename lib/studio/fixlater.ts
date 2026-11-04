@@ -8,7 +8,8 @@ import { ROLE_FIELDS, LOADABLE, StudioError, type Role } from "./formats";
 import { cleanDate, cleanId, cleanNumber } from "./clean";
 import { CODES, capUsage, commitSql, createStage, issueMessage, resetStage, validate, type StagedFile } from "./load";
 import { CAPS, type Tier } from "../vault/protocol";
-export type FixGroup = { sourceId: string; sourceName: string; role: Role; code: string; field: string | null; message: string; count: string; fixable: boolean };
+/** credits: the group can load as returns/credits (negative-quantity sales rows, chunk 4D). */
+export type FixGroup = { sourceId: string; sourceName: string; role: Role; code: string; field: string | null; message: string; count: string; fixable: boolean; credits: boolean };
 export type FixRow = { sourceRow: string; code: string; values: { field: string; value: string }[] };
 const CANONICAL = { sheet: null, headerRow: 0, headerDepth: 1 as const, delimiter: "," as const, encoding: "utf-8" as const, decimal: "dot" as const, dateFormat: "YYYY-MM-DD" as const };
 const slot = (role: Role, field: string) => { const i = ROLE_FIELDS[role].findIndex(f => f.name === field); if (i < 0) throw new StudioError("Unknown field for this file type."); return `v${i}`; };
@@ -18,7 +19,7 @@ export async function fixGroups(engine: Engine): Promise<FixGroup[]> {
 WHERE r.status='open' GROUP BY r.source_id, s.name, r.role, r.code ORDER BY count(*) DESC, s.name LIMIT 500`)).toArray();
   return rows.map(r => {
     const role = String(r.role) as Role, code = String(r.code);
-    return { sourceId: String(r.source_id), sourceName: String(r.name), role, code, field: fieldOf(code), count: String(r.n),
+    return { sourceId: String(r.source_id), sourceName: String(r.name), role, code, field: code === "credit:sign" ? null : fieldOf(code), count: String(r.n), credits: role === "sales_history" && code === "quantity:negative",
       message: code === "structure" ? "The row's layout was broken (extra values or an oversized cell). It can only be dismissed; fix the file and import it again." : issueMessage(code, CANONICAL),
       fixable: code !== "structure" && LOADABLE.includes(role) };
   });

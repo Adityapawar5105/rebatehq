@@ -50,6 +50,18 @@ async function handle(request: Request) {
     case "health": result = await service.health(); break;
     case "playgroundLoad": result = await service.playgroundLoad(progress); break;
     case "playgroundRemove": result = await service.playgroundRemove(); break;
+    case "creditsLoad": result = await service.creditsLoad(request.data.sourceId); break;
+    case "marginWaterfall": result = await service.marginWaterfall(request.data.filters); break;
+    case "marginDrill": result = await service.marginDrill(request.data.dim, request.data.filters, request.data.sort); break;
+    case "marginWhale": result = await service.marginWhale(request.data.filters); break;
+    case "marginMath": result = await service.marginMath(request.data.metric, request.data.filters, request.data.offset ?? 0); break;
+    case "leaks": result = await service.leaks(); break;
+    case "leakRows": result = await service.leakRows(request.data.id, request.data.offset ?? 0); break;
+    case "leakReport": result = await service.leakReport(); break;
+    case "roi": result = await service.roi(); break;
+    case "reconcile": result = await service.reconcile(); break;
+    case "reconAccept": result = await service.reconAccept(request.data.id ?? null); break;
+    case "reconRebuild": result = await service.reconRebuild(); break;
     default: throw new VaultError("PROTOCOL", "Unsupported local command.");
   }
   post({ id: request.id, action: request.action, result } as Response);

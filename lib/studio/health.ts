@@ -13,7 +13,7 @@ SELECT (SELECT count(*) FROM sales_lines)::VARCHAR AS lines,
  (SELECT coalesce(sum(c), 0) FROM (SELECT count(*) AS c FROM products GROUP BY upper(trim(product_id)) HAVING count(*) > 1))::VARCHAR AS dup_products,
  (SELECT count(*) FROM u JOIN m USING (product_id) WHERE m.med > 0 AND (u.unit > m.med * 5 OR u.unit < m.med / 5))::VARCHAR AS outliers,
  (SELECT count(*) FROM u JOIN m USING (product_id))::VARCHAR AS comparable,
- (SELECT count(*) FROM sales_lines WHERE cost_cents IS NOT NULL AND list_cents - discount_cents - freight_cents - rebate_cents - cost_cents < 0)::VARCHAR AS below_cost,
+ (SELECT count(*) FROM sales_lines WHERE line_kind = 'sale' AND cost_cents IS NOT NULL AND list_cents - discount_cents - freight_cents - rebate_cents - cost_cents < 0)::VARCHAR AS below_cost,
  (SELECT count(*) FROM rejected_rows WHERE status = 'open')::VARCHAR AS open_rows,
  (SELECT count(*) FROM customers)::VARCHAR AS customers,
  (SELECT count(*) FROM customers WHERE tier <> '')::VARCHAR AS tiered`)).toArray()[0];

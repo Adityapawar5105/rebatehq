@@ -4,6 +4,10 @@ import type { FixGroup, FixRow } from "../studio/fixlater";
 import type { Health } from "../studio/health";
 import type { PlaygroundManifest } from "../studio/playground";
 import type { SourceView, StudioState } from "../studio/studio";
+import type { Dim, Drill, Filters, MathPanel, Metric, Waterfall, Whale } from "../margin/views";
+import type { LeakResult, LeakRow } from "../margin/leaks";
+import type { RoiSummary } from "../margin/roi";
+import type { ReconSummary } from "../margin/aggregate";
 export type Tier = "starter" | "professional" | "scale";
 export type Scope = { userId: string; tenantId: string };
 export type VaultStatus = {
@@ -48,7 +52,20 @@ export type Commands = {
   health: Record<string, never>;
   playgroundLoad: Record<string, never>;
   playgroundRemove: Record<string, never>;
+  creditsLoad: { sourceId: string };
+  marginWaterfall: { filters?: Filters };
+  marginDrill: { dim: Dim; filters?: Filters; sort?: "margin" | "pocket" | "rate" };
+  marginWhale: { filters?: Filters };
+  marginMath: { metric: Metric; filters?: Filters; offset?: number };
+  leaks: Record<string, never>;
+  leakRows: { id: string; offset?: number };
+  leakReport: Record<string, never>;
+  roi: Record<string, never>;
+  reconcile: Record<string, never>;
+  reconAccept: { id: string | null };
+  reconRebuild: Record<string, never>;
 };
+export type LeaksView = { result: LeakResult; roi: RoiSummary; sample: boolean; recorded: number };
 export type CommitResult = { loaded: string; rejected: string; files: string; cleanup: boolean };
 export type Results = {
   init: VaultStatus; create: VaultStatus; unlock: VaultStatus; lock: VaultStatus; status: VaultStatus;
@@ -62,6 +79,11 @@ export type Results = {
   fixGroups: FixGroup[]; fixRows: FixRow[]; fixSet: FixGroup[]; fixDismiss: { status: VaultStatus; groups: FixGroup[] };
   fixRecheck: { status: VaultStatus; groups: FixGroup[]; loaded: string; stillRejected: string };
   health: Health; playgroundLoad: { status: VaultStatus; manifest: PlaygroundManifest }; playgroundRemove: { status: VaultStatus; removed: string };
+  creditsLoad: { status: VaultStatus; groups: FixGroup[]; loaded: string; stillRejected: string };
+  marginWaterfall: Waterfall; marginDrill: Drill; marginWhale: Whale; marginMath: MathPanel;
+  leaks: LeaksView; leakRows: { rows: LeakRow[]; count: string; sum: string; engineAgrees: boolean };
+  leakReport: { name: string; blob: Blob; bytes: string; status: VaultStatus }; roi: RoiSummary;
+  reconcile: ReconSummary; reconAccept: { status: VaultStatus; recon: ReconSummary }; reconRebuild: { status: VaultStatus; recon: ReconSummary };
 };
 export type Action = keyof Commands;
 export type Request = { [K in Action]: { id: string; action: K; data: Commands[K] } }[Action];

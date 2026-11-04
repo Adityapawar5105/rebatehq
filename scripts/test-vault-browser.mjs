@@ -105,6 +105,8 @@ try {
   results.checks.warmup = await worker("warmup");
   results.checks.mapper = await worker("mapper");
   results.checks.playground = await worker("playground");
+  results.checks.margin = await worker("margin");
+  if (process.argv.includes("--margin-only")) { console.log(JSON.stringify(results.checks.margin, null, 2)); process.exit(0); }
   await page.getByLabel("Vault passphrase").fill(secret); await page.getByRole("button", { name: "Create encrypted vault", exact: true }).click();
   await page.getByRole("button", { name: "Lock vault", exact: true }).waitFor();
   await page.getByRole("link", { name: "Data Hub", exact: true }).click();

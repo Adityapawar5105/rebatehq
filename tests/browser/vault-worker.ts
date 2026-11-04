@@ -1,4 +1,4 @@
-﻿// Test-only worker, bundled under test-results and intercepted by Playwright.
+// Test-only worker, bundled under test-results and intercepted by Playwright.
 // It is never included by the production asset build or exposed by app routes.
 import { VaultService } from "../../lib/vault/service";
 import { VaultStorage, storageStatus } from "../../lib/vault/storage";
@@ -11,6 +11,11 @@ import { ingest } from "../../lib/vault/ingest";
 import * as duckdb from "@duckdb/duckdb-wasm";
 import JSZip from "jszip";
 import * as fx from "../helpers/studio-fixtures";
+import { lineFromCents } from "../../lib/margin/engine";
+import { rha } from "../../lib/margin/decimal";
+import { findLeaks, hitRows } from "../../lib/margin/leaks";
+import { REBUILD_SQL, findDifferences } from "../../lib/margin/aggregate";
+import { moneyText } from "../../lib/spike/exact";
 const labScope = { userId: "synthetic-lab-user", tenantId: "synthetic-lab-workspace" };
 const fixtureScope = { userId: "synthetic-v1-fixture-user", tenantId: "synthetic-v1-fixture-workspace" };
 const secret = "synthetic-local-vault-passphrase";
@@ -43,7 +48,10 @@ async function testFixture(bytes: Uint8Array) {
   await closeMemory(probe);
   const service = new VaultService(() => undefined); await service.init(fixtureScope);
   const result = await service.unlock(secret);
-  assert(result.schemaVersion === "4" && result.lines === "1", "V1 snapshot did not upgrade with its row intact");
+  assert(result.schemaVersion === "5" && result.lines === "1", "V1 snapshot did not upgrade with its row intact");
+  const agg = (await service.engine!.conn.query("SELECT count(*)::VARCHAR AS n, sum(list_cents)::VARCHAR AS l, max(line_kind) AS k FROM agg_cpm")).toArray()[0];
+  assert(agg.n === "1" && agg.l === "1250" && agg.k === "sale", "V1 upgrade must build the margin pre-aggregate from existing lines");
+  assert((await service.marginWaterfall()).margin === "375", "Upgraded v1 line waterfall wrong");
   assert((await service.verify()).valid, "V1 upgraded chain failed"); await service.lock(); await service.unlock(secret); await service.lock(); await reset(fixtureScope); return result;
 }
 async function seed(rows: number) {
@@ -56,8 +64,8 @@ INSERT INTO products(product_id) SELECT (i+1)::VARCHAR FROM range(100000)t(i);
 INSERT INTO customers(customer_id) SELECT (i+1)::VARCHAR FROM range(2000)t(i);
 INSERT INTO source_files VALUES('${source}','synthetic-benchmark.csv','sales_history',0,'2026-11-03');
 INSERT INTO import_batches(id,source_id,rows_loaded,rows_rejected,imported_at) VALUES('${crypto.randomUUID()}','${source}',${rows},0,'2026-11-03')`);
-  for (let at = 0; at < rows; at += 50_000) await engine.conn.query(`INSERT INTO sales_lines SELECT '${source}',i+1,((i%100000)+1)::VARCHAR,((i*13%2000)+1)::VARCHAR,(DATE '2024-01-01'+INTERVAL (least(23,(i*24)//${rows})) MONTH)::DATE,(i%5)+1,10000+(i%997)*29,(i%21)*50,100+i%599,CASE WHEN i%7=0 THEN 200 ELSE 0 END,6000+(i%991)*23,i+2 FROM range(${at},${Math.min(rows, at + 50_000)})t(i) ORDER BY 4,5,2`);
-  await appendAudit(engine, "fixture.synthetic_benchmark", { rows: String(rows) }); await engine.conn.query("COMMIT");
+  for (let at = 0; at < rows; at += 50_000) await engine.conn.query(`INSERT INTO sales_lines(source_id,line_id,product_id,customer_id,sale_date,quantity,list_cents,discount_cents,freight_cents,rebate_cents,cost_cents,source_row) SELECT '${source}',i+1,((i%100000)+1)::VARCHAR,((i*13%2000)+1)::VARCHAR,(DATE '2024-01-01'+INTERVAL (least(23,(i*24)//${rows})) MONTH)::DATE,(i%5)+1,10000+(i%997)*29,(i%21)*50,100+i%599,CASE WHEN i%7=0 THEN 200 ELSE 0 END,6000+(i%991)*23,i+2 FROM range(${at},${Math.min(rows, at + 50_000)})t(i) ORDER BY 4,5,2`);
+  await engine.conn.query(REBUILD_SQL); await appendAudit(engine, "fixture.synthetic_benchmark", { rows: String(rows) }); await engine.conn.query("COMMIT");
   (service as unknown as { dirty: boolean }).dirty = true;
   await service.save(); const status = await service.status(); await service.lock();
   return { rows: status.lines, seedAndSaveMs: String(Math.round(performance.now() - start)), storage: await storageStatus() };
@@ -372,6 +380,185 @@ async function playground() {
   await service.lock(); await reset(scope);
   return { loadMs, under10s: loadMs < 10000, leaks: out.manifest.leaks.map(l => `${l.id}:${l.lines}:${l.dollars}`), health: health.score };
 }
+const median = (xs: number[]) => { const s = [...xs].sort((a, b) => a - b); return Math.round(s[Math.floor(s.length / 2)] * 10) / 10; };
+async function timed<T>(n: number, work: () => Promise<T>) { const ms: number[] = []; let last: T | undefined; for (let i = 0; i < n; i++) { const t = performance.now(); last = await work(); ms.push(performance.now() - t); } return { medianMs: median(ms), maxMs: Math.round(Math.max(...ms) * 10) / 10, last: last! }; }
+/** Chunk 4D: margin engine v2 in real DuckDB-Wasm, reconciliation, the Playground leak manifest, credits, whale gating and the PDF. */
+async function margin() {
+  const Z = BigInt(0), n = (v: unknown) => BigInt(String(v ?? "0"));
+  const scope = { userId: "test-" + crypto.randomUUID(), tenantId: "test-" + crypto.randomUUID() };
+  const service = new VaultService(() => undefined); await service.init(scope); await service.create(secret, "professional");
+  const result: Record<string, unknown> = {};
+  const out = await service.playgroundLoad(noop), manifest = out.manifest;
+  assert((await service.status()).schemaVersion === "5", "New vaults must be schema v5");
+  // 1. The waterfall equals the imported lines recomputed one by one with the JS engine.
+  const raw = await rowsOf(service, "SELECT invoice_id, customer_id, strftime(sale_date, '%Y-%m') AS m, list_cents::VARCHAR AS l, discount_cents::VARCHAR AS d, rebate_cents::VARCHAR AS r, freight_cents::VARCHAR AS f, cost_cents::VARCHAR AS c, line_kind AS k FROM sales_lines");
+  let list = Z, discount = Z, rebate = Z, freight = Z, pocket = Z, costedPocket = Z, cost = Z, marginJs = Z;
+  const byInvoice = new Map<string, bigint>(), byCm = new Map<string, bigint>();
+  for (const x of raw) {
+    const w = lineFromCents({ list: n(x.l), discount: n(x.d), rebate: n(x.r), freight: n(x.f), cost: x.c === null ? null : n(x.c) });
+    list += n(x.l); discount += n(x.d); rebate += n(x.r); freight += n(x.f); pocket += w.pocket;
+    if (w.margin !== null) { costedPocket += w.pocket; cost += n(x.c); marginJs += w.margin; }
+    byInvoice.set(String(x.invoice_id), (byInvoice.get(String(x.invoice_id)) ?? Z) + w.pocket);
+    byCm.set(`${x.customer_id}|${x.m}`, (byCm.get(`${x.customer_id}|${x.m}`) ?? Z) + w.pocket);
+  }
+  const w = await service.marginWaterfall();
+  assert(w.sales.list === String(list) && w.sales.discount === String(discount) && w.sales.rebate === String(rebate) && w.sales.freight === String(freight), "Waterfall components differ from the imported lines");
+  assert(w.netPocket === String(pocket) && w.costedPocket === String(costedPocket) && w.cost === String(cost) && w.margin === String(marginJs) && w.uncostedLines === "0" && w.credits.lines === "0", "Waterfall pocket/margin differ from the JS engine");
+  // Per invoice and per customer x month: SQL sums from the pre-aggregate / lines equal the JS engine to the cent.
+  const sqlInvoice = await rowsOf(service, `SELECT invoice_id, sum(list_cents - discount_cents - rebate_cents - freight_cents)::VARCHAR AS p FROM sales_lines GROUP BY invoice_id`);
+  assert(sqlInvoice.length === byInvoice.size && sqlInvoice.every(r => byInvoice.get(String(r.invoice_id)) === n(r.p)), "Per-invoice pocket differs between SQL and JS");
+  const aggCm = await rowsOf(service, `SELECT customer_id || '|' || strftime(month, '%Y-%m') AS k, (sum(list_cents) - sum(discount_cents) - sum(rebate_cents) - sum(freight_cents))::VARCHAR AS p FROM agg_cpm GROUP BY 1`);
+  assert(aggCm.length === byCm.size && aggCm.every(r => byCm.get(String(r.k)) === n(r.p)), "Pre-aggregate customer x month pocket differs from the JS engine");
+  const recon = await service.reconcile();
+  assert(recon.reconciled && recon.open.length === 0 && recon.invoices === String(byInvoice.size), `Playground should reconcile: ${JSON.stringify(recon.open.slice(0, 3))}`);
+  result.reconciled = { invoices: recon.invoices, customerMonths: recon.customerMonths, lines: recon.lines };
+  // 2. Drill-downs and show-me-the-math.
+  const branch = await service.marginDrill("branch");
+  assert(branch.rows.length === 3 && branch.rows.reduce((s, r) => s + n(r.pocket), Z) === pocket && branch.rows.reduce((s, r) => s + n(r.margin), Z) === marginJs, "Branch drill does not add up to the waterfall");
+  const products = await service.marginDrill("product", undefined, "margin");
+  assert(products.total === "5000" && products.rows.length === 100, "Product drill size wrong");
+  const worst = products.rows[0], one = await service.marginWaterfall({ by: [{ dim: "product", value: worst.key }] });
+  assert(one.margin === worst.margin && one.netPocket === worst.pocket, "Drilled product row differs from its own waterfall");
+  const cat = await service.marginDrill("category", { by: [{ dim: "branch", value: "North" }] });
+  const north = await service.marginWaterfall({ by: [{ dim: "branch", value: "North" }] });
+  assert(cat.rows.reduce((s, r) => s + n(r.pocket), Z) === n(north.netPocket), "Category drill within a branch does not add up");
+  const metrics = ["list", "discount", "rebate", "freight", "salesPocket", "credits", "netPocket", "uncostedPocket", "costedPocket", "cost", "margin", "rate", "lines"] as const;
+  for (const m of metrics) {
+    const p = await service.marginMath(m, { by: [{ dim: "branch", value: "North" }, { dim: "category", value: "Valves" }] });
+    assert(p.check.agrees && p.rowsAgree, `Show-the-math for ${m} does not reconcile: ${p.value} vs engine ${p.check.engine} vs rows ${p.rowsSum}`);
+    assert(p.rows.every(r => r.sourceFile.startsWith("Playground - ") && Number(r.sourceRow) >= 2), `Math rows for ${m} lack source file/row`);
+  }
+  result.math = metrics.length;
+  // 3. Leak finder reproduces every planted leak exactly, by type, scope, lines and cents.
+  const t0 = performance.now(), view = await service.leaks(), leakMs = Math.round(performance.now() - t0);
+  const found = view.result.findings, reproduced: string[] = [];
+  for (const leak of manifest.leaks) {
+    const match = found.filter(f => f.type === leak.type && f.lines === String(leak.lines) && f.cents === leak.cents);
+    assert(match.length === 1, `Planted leak ${leak.id} (${leak.type}, ${leak.lines} lines, ${leak.cents} cents) not found exactly. Findings: ${found.map(f => `${f.id}:${f.lines}:${f.cents}`).join("; ")}`);
+    const f = match[0], scopeOk = leak.type === "below_floor" ? f.scope.customer === "C-0007" && f.scope.category === "Valves" : leak.type === "discount_outlier" ? f.scope.customer === "C-0042"
+      : leak.type === "below_lower_tier" ? f.scope.customer === "C-0123" && f.scope.billedAs === "T05" && f.scope.tier === "T40" : leak.type === "negative_margin" ? f.id === "negative_margin|cost_rise" : f.id === "unrecovered_freight|small_lines";
+    assert(scopeOk, `Planted leak ${leak.id} matched the wrong scope: ${f.id}`);
+    // Every evidence row recomputed by the JS engine.
+    const hits = await hitRows(service.engine!, f.id); let sum = Z;
+    for (const h of hits) {
+      const lw = lineFromCents({ list: n(h.list), discount: n(h.discount), rebate: n(h.rebate), freight: n(h.freight), cost: h.cost === null ? null : n(h.cost) });
+      const js = h.type === "unrecovered_freight" ? n(h.freight) : h.type === "negative_margin" ? -(lw.margin ?? Z) : n(h.discount) - rha(n(h.list) * n(h.basis), BigInt(10000));
+      assert(String(js) === String(h.leak), `JS engine disagrees on ${f.id} line ${h.line_id}`); sum += js;
+    }
+    assert(String(sum) === leak.cents && hits.length === leak.lines, `${leak.id} evidence does not sum to the manifest`);
+    const ev = await service.leakRows(f.id);
+    assert(ev.engineAgrees && ev.count === String(leak.lines) && ev.rows.every(r => r.sourceFile.startsWith("Playground - ")), `${leak.id} evidence rows incomplete`);
+    reproduced.push(`${leak.id}:${f.id}:${f.lines}:${f.cents}`);
+  }
+  assert(!found.some(f => (f.type as string) === "" || n(f.cents) <= Z), "Every finding needs a positive dollar amount");
+  result.leaks = { reproduced, findings: found.map(f => `${f.id}:${f.lines}:${f.cents}`), totalCents: view.result.totalCents, dedupedCents: view.result.dedupedCents, overlapLines: view.result.overlapLines, leakMs };
+  // 4. ROI v1: Playground findings are recorded as sample and never count toward the real total.
+  assert(view.sample && view.roi.identifiedCents === "0" && view.roi.sampleCents === view.result.totalCents && view.recorded === found.length, `ROI ledger wrong: ${JSON.stringify(view.roi)}`);
+  assert((await service.leaks()).recorded === 0, "A repeated leak run must not add ledger rows");
+  // 5. Leak Report PDF, built in the worker.
+  const t1 = performance.now(), rep = await service.leakReport(), pdfMs = Math.round(performance.now() - t1), text = await rep.blob.text();
+  assert(text.startsWith("%PDF-1.4") && text.trimEnd().endsWith("%%EOF") && text.includes("Margin Leak Report") && text.includes("SAMPLE DATA"), "Leak Report PDF malformed");
+  for (const leak of manifest.leaks) assert(text.includes("$" + moneyText(leak.cents)), `Leak Report lacks ${leak.id} dollars`);
+  result.pdf = { bytes: rep.bytes, ms: pdfMs, name: rep.name };
+  // 6. Whale curve on Professional.
+  const whaleView = await service.marginWhale();
+  assert(whaleView.available && whaleView.customers === "400" && n(whaleView.totalMargin) === marginJs && whaleView.points[whaleView.points.length - 1].x === 100, "Whale curve wrong");
+  result.whale = { customers: whaleView.customers, losers: whaleView.losers, peakPct: whaleView.peakPct };
+  // 7. Reconciliation differences become issues; nothing is adjusted silently.
+  const e = service.engine!, before = (await rowsOf(service, "SELECT sum(list_cents)::VARCHAR AS l FROM sales_lines"))[0].l;
+  await e.conn.query("UPDATE agg_cpm SET list_cents = list_cents + 1 WHERE customer_id = 'C-0007' AND month = (SELECT min(month) FROM agg_cpm WHERE customer_id = 'C-0007') AND product_id = (SELECT min(product_id) FROM agg_cpm WHERE customer_id = 'C-0007' AND month = (SELECT min(month) FROM agg_cpm WHERE customer_id = 'C-0007'))");
+  const stale = await service.reconcile();
+  assert(!stale.reconciled && stale.open.some(i => i.level === "customer_month" && i.component === "list" && i.scopeKey.startsWith("C-0007|")) && stale.open.some(i => i.level === "total" && i.component === "list"), "Stale pre-aggregate not reported");
+  assert((await rowsOf(service, "SELECT sum(list_cents)::VARCHAR AS l FROM sales_lines"))[0].l === before, "Imported lines must never be adjusted");
+  const rebuilt = await service.reconRebuild();
+  assert(rebuilt.recon.reconciled, "Rebuild should reconcile again");
+  const inv = (await rowsOf(service, "SELECT invoice_id, min(line_id)::VARCHAR AS line, any_value(source_id) AS sid FROM sales_lines GROUP BY invoice_id HAVING count(*) > 1 AND min(customer_id) <> 'C-0001' ORDER BY invoice_id LIMIT 1"))[0];
+  const original = (await rowsOf(service, `SELECT customer_id FROM sales_lines WHERE source_id = '${inv.sid}' AND line_id = ${inv.line}`))[0].customer_id;
+  await e.conn.query(`UPDATE sales_lines SET customer_id = 'C-0001' WHERE source_id = '${inv.sid}' AND line_id = ${inv.line}`);
+  const split = await service.reconRebuild(), issue = split.recon.open.find(i => i.level === "invoice" && i.scopeKey === inv.invoice_id);
+  assert(issue && issue.component === "customer" && /2 customers/.test(issue.message) && issue.sourceId === inv.sid, "Invoice split across customers not reported");
+  const accepted = await service.reconAccept(issue!.id);
+  assert(accepted.recon.reconciled && accepted.recon.accepted === "1" && (await service.reconcile()).open.length === 0, "Accepted issue should stay accepted");
+  await e.conn.query(`UPDATE sales_lines SET customer_id = '${original}' WHERE source_id = '${inv.sid}' AND line_id = ${inv.line}`);
+  assert((await service.reconRebuild()).recon.reconciled, "Restored invoice should reconcile");
+  result.reconciliation = { staleAggregateFlagged: true, invoiceSplitFlagged: true, linesUnchanged: true };
+  // 8. Timings on the 120k-line Playground (local measurement).
+  result.timings = { waterfall: (await timed(7, () => service.marginWaterfall())).medianMs, drillProduct: (await timed(7, () => service.marginDrill("product"))).medianMs,
+    drillCustomer: (await timed(7, () => service.marginDrill("customer"))).medianMs, drillBranch: (await timed(7, () => service.marginDrill("branch"))).medianMs };
+  // 9. Removing the Playground removes its sample ledger rows and every aggregate.
+  await service.playgroundRemove();
+  const left = (await rowsOf(service, "SELECT (SELECT count(*) FROM agg_cpm)::VARCHAR AS a, (SELECT count(*) FROM roi_ledger)::VARCHAR AS r"))[0];
+  assert(left.a === "0" && left.r === "0", "Playground removal left aggregates or sample ROI rows");
+  assert((await service.verify()).valid, "Audit chain invalid after margin operations");
+  await service.lock(); await reset(scope);
+  result.credits = await credits();
+  return result;
+}
+/** Returns and credits load from Fix Later as signed credit lines; unknown cost stays unknown. Starter tier: no whale curve. */
+async function credits() {
+  const scope = { userId: "test-" + crypto.randomUUID(), tenantId: "test-" + crypto.randomUUID() };
+  const service = new VaultService(() => undefined); await service.init(scope); await service.create(secret, "starter");
+  const csv = "line_id,invoice_id,product_id,customer_id,sale_date,quantity,list_amount,discount_amount,freight_amount,rebate_amount,cost_amount\n"
+    + "1,INV-1,P-1,C-1,2025-01-05,10,100.00,10.00,2.00,0.00,60.00\n2,INV-1,P-2,C-1,2025-01-05,5,50.00,0.00,1.00,0.00,\n3,INV-2,P-1,C-2,2025-02-03,2,20.00,2.00,0.50,0.00,12.00\n"
+    + "4,CR-1,P-1,C-1,2025-01-20,-3,-30.00,-3.00,0.00,0.00,-18.00\n5,CR-2,P-2,C-2,2025-02-10,-1,-10.00,1.00,0.00,0.00,\n";
+  await service.studioAdd([new File([csv], "synthetic-credits.csv")]); await service.studioPlan(signal(), noop);
+  const committed = await service.studioCommit(true, noop);
+  assert(committed.status.lines === "3", "Sales lines should load; returns wait in Fix Later");
+  const group = (await service.fixGroups()).find(g => g.code === "quantity:negative");
+  assert(group && group.count === "2" && group.credits, "Negative quantities should wait as a credit-loadable group");
+  const loaded = await service.creditsLoad(group!.sourceId);
+  assert(loaded.loaded === "1" && loaded.stillRejected === "1" && loaded.status.lines === "4" && loaded.groups.some(g => g.code === "credit:sign" && g.count === "1"), `Credit load wrong: ${JSON.stringify({ ...loaded, status: undefined })}`);
+  const row = (await rowsOf(service, "SELECT quantity::VARCHAR AS q, list_cents::VARCHAR AS l, discount_cents::VARCHAR AS d, cost_cents::VARCHAR AS c, line_kind AS k, source_row::VARCHAR AS r FROM sales_lines WHERE line_kind = 'credit'"))[0];
+  assert(row.q === "-3.0000" && row.l === "-3000" && row.d === "-300" && row.c === "-1800" && row.r === "5", `Credit line stored wrong: ${JSON.stringify(row)}`);
+  const w = await service.marginWaterfall();
+  const expect = { list: "17000", discount: "1200", freight: "350", salesPocket: "15450", creditPocket: "-2700", net: "12750", costed: "7850", cost: "5400", margin: "2450", uncostedLines: "1", uncostedPocket: "4900" };
+  assert(w.sales.list === expect.list && w.sales.discount === expect.discount && w.sales.freight === expect.freight && w.sales.pocket === expect.salesPocket && w.credits.pocket === expect.creditPocket
+    && w.netPocket === expect.net && w.costedPocket === expect.costed && w.cost === expect.cost && w.margin === expect.margin && w.uncostedLines === expect.uncostedLines && w.uncostedPocket === expect.uncostedPocket, `Credit waterfall wrong: ${JSON.stringify(w.steps)}`);
+  const m = await service.marginMath("credits");
+  assert(m.rows.length === 1 && m.rows[0].kind === "credit" && m.rows[0].sourceRow === "5" && m.check.agrees && m.rowsAgree, "Credits math wrong");
+  const leaks = await service.leaks();
+  assert(!(await rowsOf(service, "SELECT count(*)::VARCHAR AS n FROM lf_hits h JOIN sales_lines s USING (source_id, line_id) WHERE s.line_kind = 'credit'")).some(r => r.n !== "0"), "Credits must never be leaks");
+  assert(leaks.result.checked.creditLines === "1" && leaks.result.checked.uncostedLines === "1", "Leak finder should count credit and unknown-cost lines it skipped");
+  assert((await service.reconcile()).reconciled, "Credits vault should reconcile");
+  assert(!(await service.marginWhale()).available, "Whale curve must be gated on Starter");
+  await service.sourceRemove(group!.sourceId);
+  assert((await rowsOf(service, "SELECT count(*)::VARCHAR AS n FROM agg_cpm"))[0].n === "0" && (await service.status()).lines === "0", "Removing the file must remove its credits and aggregates");
+  assert((await service.verify()).valid, "Audit chain invalid after credits");
+  await service.lock(); await reset(scope);
+  return { waterfall: expect, signErrorKept: true };
+}
+/** 2M-line timing for the waterfall, drill-downs, whale curve, leak finder and reconciliation (blueprint section 5 target: under 300 ms). */
+async function marginBenchmark(rows: number) {
+  assert(rows === 2_000_000, "benchmark scope");
+  const scope = { userId: "bench-" + crypto.randomUUID(), tenantId: "bench-" + crypto.randomUUID() };
+  const service = new VaultService(() => undefined); await service.init(scope); await service.create(secret, "scale");
+  const engine = service.engine!, source = crypto.randomUUID();
+  try {
+    await engine.conn.query(`BEGIN;
+INSERT INTO products(product_id, category) SELECT 'P' || (i+1), 'Cat ' || (i % 40) FROM range(100000)t(i);
+INSERT INTO customers(customer_id, tier, branch) SELECT 'C' || (i+1), 'T' || lpad(((i % 50) + 1)::VARCHAR, 2, '0'), CASE i % 3 WHEN 0 THEN 'North' WHEN 1 THEN 'South' ELSE 'West' END FROM range(2000)t(i);
+INSERT INTO source_files VALUES('${source}','synthetic-benchmark.csv','sales_history',0,'2026-11-04');
+INSERT INTO import_batches(id,source_id,rows_loaded,rows_rejected,imported_at) VALUES('${crypto.randomUUID()}','${source}',${rows},0,'2026-11-04')`);
+    for (let at = 0; at < rows; at += 100_000) await engine.conn.query(`INSERT INTO sales_lines(source_id,line_id,product_id,customer_id,sale_date,quantity,list_cents,discount_cents,freight_cents,rebate_cents,cost_cents,source_row,invoice_id,line_kind)
+SELECT '${source}', i+1, 'P' || ((i % 100000)+1), 'C' || ((i*13 % 2000)+1), (DATE '2024-01-01' + INTERVAL (least(23,(i*24)//${rows})) MONTH)::DATE, (i%5)+1, 10000+(i%997)*29, ((10000+(i%997)*29) * (3000 - ((i*13 % 2000) % 50) * 50)) // 10000, 100+i%599, CASE WHEN i%7=0 THEN 200 ELSE 0 END, 6000+(i%991)*23, i+2, 'INV-' || (i // 4), 'sale'
+FROM range(${at},${Math.min(rows, at + 100_000)})t(i) ORDER BY 4,5,2`);
+    await engine.conn.query("COMMIT");
+    const t0 = performance.now(); await (service as unknown as { derived(e: typeof engine): Promise<void> }).derived(engine); const rebuildAndReconcileMs = Math.round(performance.now() - t0);
+    await service.save(); await service.lock(); await service.unlock(secret);
+    const aggRows = String((await service.engine!.conn.query("SELECT count(*)::VARCHAR AS n FROM agg_cpm")).toArray()[0].n);
+    const wf = await timed(7, () => service.marginWaterfall()), wfBranch = await timed(7, () => service.marginWaterfall({ by: [{ dim: "branch", value: "North" }] }));
+    const product = await timed(7, () => service.marginDrill("product")), customer = await timed(7, () => service.marginDrill("customer")), branch = await timed(7, () => service.marginDrill("branch"));
+    const category = await timed(7, () => service.marginDrill("category", { by: [{ dim: "branch", value: "South" }] })), whaleT = await timed(3, () => service.marginWhale());
+    const mathT = await timed(3, () => service.marginMath("margin", { by: [{ dim: "branch", value: "West" }] }));
+    const t1 = performance.now(); const leaks = await findLeaks(service.engine!); const leakMs = Math.round(performance.now() - t1);
+    const t2 = performance.now(); const diff = await findDifferences(service.engine!); const reconcileMs = Math.round(performance.now() - t2);
+    assert(wf.last.lines === String(rows) && diff.found.length === 0, "2M benchmark waterfall/reconciliation wrong");
+    const under = (x: { medianMs: number }) => x.medianMs < 300;
+    return { rows: String(rows), aggRows, rebuildAndReconcileMs, waterfallMs: wf.medianMs, waterfallMaxMs: wf.maxMs, waterfallBranchMs: wfBranch.medianMs, drillProductMs: product.medianMs, drillCustomerMs: customer.medianMs, drillBranchMs: branch.medianMs,
+      drillCategoryInBranchMs: category.medianMs, whaleMs: whaleT.medianMs, mathMs: mathT.medianMs, leakFinderMs: leakMs, findings: String(leaks.findings.length), reconcileMs,
+      waterfallAndDrillUnder300ms: [wf, wfBranch, product, customer, branch, category].every(under) };
+  } finally { await service.lock(); await reset(scope); }
+}
 async function cipherOnly() {
   let files = 0;
   async function walk(dir: FileSystemDirectoryHandle) {
@@ -390,7 +577,7 @@ async function cipherOnly() {
 self.onmessage = async event => {
   try {
     const { action } = event.data;
-    const result = action === "fixture" ? await fixture() : action === "v1" ? await testFixture(event.data.bytes) : action === "seed" ? await seed(event.data.rows) : action === "firstChange" ? await firstChange(event.data.rows) : action === "integrity" ? await integrity() : action === "studio" ? await studio() : action === "mapper" ? await mapper() : action === "playground" ? await playground() : action === "studioBenchmark" ? await studioBenchmark(event.data.rows) : action === "warmup" ? await warmup() : action === "cipherOnly" ? await cipherOnly() : await storageStatus();
+    const result = action === "fixture" ? await fixture() : action === "v1" ? await testFixture(event.data.bytes) : action === "seed" ? await seed(event.data.rows) : action === "firstChange" ? await firstChange(event.data.rows) : action === "integrity" ? await integrity() : action === "studio" ? await studio() : action === "mapper" ? await mapper() : action === "playground" ? await playground() : action === "margin" ? await margin() : action === "marginBenchmark" ? await marginBenchmark(event.data.rows) : action === "studioBenchmark" ? await studioBenchmark(event.data.rows) : action === "warmup" ? await warmup() : action === "cipherOnly" ? await cipherOnly() : await storageStatus();
     self.postMessage({ result });
   } catch (e) { self.postMessage({ error: e instanceof Error ? e.message : "test worker failed" }); }
 };

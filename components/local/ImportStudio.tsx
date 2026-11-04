@@ -7,6 +7,7 @@ import type { FileView, SourceView, StudioState } from "@/lib/studio/studio";
 import type { ErpProfile, FieldSource } from "@/lib/studio/mapper";
 import type { FixGroup, FixRow } from "@/lib/studio/fixlater";
 import type { Health } from "@/lib/studio/health";
+import type { ReconSummary } from "@/lib/margin/aggregate";
 import { PLAYGROUND_PREFIX, type PlaygroundManifest } from "@/lib/studio/playground";
 import styles from "./vault.module.css";
 type Props = { client: VaultClient; status: VaultStatus; busy: boolean; operation: (work: () => Promise<void>) => Promise<void>; onStatus: (status: VaultStatus) => void; setMessage: (message: string) => void };
@@ -122,6 +123,7 @@ export function ImportStudio({ client, status, busy, operation, onStatus, setMes
       })}>Confirm and import locally</button>
     </section>}
     <FixLater {...shared} onSources={refreshSources}/>
+    <Reconciliation {...shared}/>
     <HealthCard {...shared}/>
     <Playground {...shared} sources={sources} onSources={refreshSources}/>
     <section className={styles.card} aria-labelledby="sources-heading">
@@ -232,6 +234,7 @@ function FixLater({ client, busy, operation, onStatus, setMessage, version, bump
           {g.fixable && g.field && <><input aria-label={`New ${g.field} for all rows in this group`} placeholder={`New ${g.field}`} style={{ width: 160 }} value={value[key(g)] ?? ""} onChange={e => setValue({ ...value, [key(g)]: e.target.value })}/>
             <button className={styles.linkish} aria-label={`Set ${g.field} for all rows`} disabled={busy || !(value[key(g)] ?? "").trim()} onClick={() => void operation(async () => { setGroups(await client.call("fixSet", { sourceId: g.sourceId, code: g.code, field: g.field!, value: value[key(g)] })); setMessage(`Set ${g.field} on ${Number(g.count).toLocaleString("en-US")} rows. Re-check the group to load them.`); })}>Set for all</button></>}
           {g.fixable && <button className={styles.linkish} aria-label={g.code === "duplicate_row" ? `Load duplicate rows of ${g.sourceName} anyway` : `Re-check and load ${g.field ?? g.code} rows`} disabled={busy} onClick={() => void operation(async () => { const out = await client.call("fixRecheck", { sourceId: g.sourceId, code: g.code }); onStatus(out.status); setGroups(out.groups); setOpen(null); await onSources(); bump(); setMessage(`Re-checked: ${Number(out.loaded).toLocaleString("en-US")} rows loaded, ${Number(out.stillRejected).toLocaleString("en-US")} still need attention.`); })}>{g.code === "duplicate_row" ? "Load anyway" : "Re-check and load"}</button>}
+          {g.credits && <button className={styles.linkish} aria-label={`Load negative-quantity rows of ${g.sourceName} as returns and credits`} disabled={busy} onClick={() => void operation(async () => { const out = await client.call("creditsLoad", { sourceId: g.sourceId }); onStatus(out.status); setGroups(out.groups); setOpen(null); await onSources(); bump(); setMessage(`Loaded ${Number(out.loaded).toLocaleString("en-US")} returns/credits as credit lines; ${Number(out.stillRejected).toLocaleString("en-US")} still need attention.`); })}>Load as returns and credits</button>}
           <button className={styles.linkish} aria-label={`Dismiss ${g.field ?? g.code} rows`} disabled={busy} onClick={() => void operation(async () => { const out = await client.call("fixDismiss", { sourceId: g.sourceId, code: g.code }); onStatus(out.status); setGroups(out.groups); setOpen(null); bump(); setMessage(`Dismissed ${Number(g.count).toLocaleString("en-US")} rows; they will not be loaded.`); })}>Dismiss all</button>
         </div></td>
       </tr>)}</tbody>
@@ -241,6 +244,21 @@ function FixLater({ client, busy, operation, onStatus, setMessage, version, bump
       <tbody>{rows.map(r => <tr key={r.sourceRow}><td>{r.sourceRow}</td>{r.values.map(v => <td key={v.field}>{v.value}</td>)}</tr>)}</tbody>
     </table></div>}
     {open && <p className={styles.small}>Showing the first {rows.length} rows of this group.</p>}
+  </section>;
+}
+/** Reconciliation (4D): waterfall totals vs imported lines per invoice, customer x month and in total. Differences are listed, never adjusted. */
+function Reconciliation({ client, busy, operation, onStatus, setMessage, version, bump }: Shared) {
+  const [recon, setRecon] = useState<ReconSummary | null>(null);
+  useEffect(() => { let active = true; void client.call("reconcile", {}).then(r => { if (active) setRecon(r); }).catch(() => undefined); return () => { active = false; }; }, [client, version]);
+  if (!recon || recon.lines === "0") return null;
+  return <section className={styles.card} aria-labelledby="recon-heading">
+    <h2 id="recon-heading">Reconciliation</h2>
+    {recon.reconciled ? <p role="status" data-testid="recon-ok">✓ The margin waterfall matches the imported lines to the cent for {Number(recon.invoices).toLocaleString("en-US")} invoices, {Number(recon.customerMonths).toLocaleString("en-US")} customer-months and in total.{recon.accepted !== "0" ? ` ${recon.accepted} accepted difference(s) are kept on record.` : ""}</p>
+      : <><p className={styles.warning}>⚠ {recon.open.length} difference(s) between the waterfall and the imported lines. Nothing was adjusted. Rebuild the totals from the lines, fix the source file, or accept a difference to keep it on record.</p>
+        <div className={styles.tableWrap}><table className={styles.table} aria-label="Reconciliation differences"><thead><tr><th scope="col">Level</th><th scope="col">Difference</th><th scope="col">Imported</th><th scope="col">Waterfall</th><th scope="col">First source row</th><th scope="col"></th></tr></thead>
+          <tbody>{recon.open.map(i => <tr key={i.id}><td>{i.level.replace("_", " x ")}</td><td className={styles.wrap}>{i.message}</td><td>{i.imported ?? "none"}</td><td>{i.waterfall ?? "none"}</td><td>{i.sourceRow ?? ""}</td>
+            <td><button className={styles.linkish} disabled={busy} aria-label={`Accept difference ${i.scopeKey} ${i.component}`} onClick={() => void operation(async () => { const out = await client.call("reconAccept", { id: i.id }); onStatus(out.status); setRecon(out.recon); bump(); setMessage("Difference accepted and recorded in the audit log."); })}>Accept</button></td></tr>)}</tbody></table></div>
+        <button disabled={busy} onClick={() => void operation(async () => { const out = await client.call("reconRebuild", {}); onStatus(out.status); setRecon(out.recon); bump(); setMessage(out.recon.reconciled ? "Margin totals rebuilt from the imported lines; everything reconciles." : "Totals rebuilt; some differences remain."); })}>Rebuild totals from the imported lines</button></>}
   </section>;
 }
 /** Data health: equal-weight components with their formula and the next step for each. */

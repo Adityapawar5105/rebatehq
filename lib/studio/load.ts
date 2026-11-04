@@ -40,7 +40,8 @@ export function issueMessage(code: string, settings: Settings) {
   if (code === "scope") return "Give a product_id or a category for this price.";
   if (code === "valid_to:range") return "valid_to must be later than valid_from.";
   if (kind === "required") return `${name} is required but empty.`;
-  if (kind === "negative") return name === "quantity" ? "Negative quantity (a return or credit). Returns are not loaded yet; they will be handled with the margin engine." : `Negative ${name} (a credit or adjustment). Credits are not loaded yet.`;
+  if (code === "credit:sign") return "A return with a positive amount: the quantity is negative but an amount is above zero. Correct the sign in the file, then load the group as credits.";
+  if (kind === "negative") return name === "quantity" ? "Negative quantity (a return or credit). Check the rows, then load the group as returns and credits; they net against sales in the margin waterfall." : `Negative ${name} on a positive quantity (a credit memo or adjustment). These are not loaded; correct or dismiss them.`;
   switch (field?.type) {
     case "line_id": return "Use a positive whole line ID of up to 18 digits.";
     case "id": return "Use an ID of 1-64 characters without control characters.";

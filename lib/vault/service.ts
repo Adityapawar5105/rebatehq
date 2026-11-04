@@ -10,7 +10,13 @@ import type { ErpProfile, FieldSource } from "../studio/mapper";
 import { dismissSql, fixGroups, fixRows, fixSetSql, recheck } from "../studio/fixlater";
 import { health } from "../studio/health";
 import { PLAYGROUND_PREFIX, generatePlayground } from "../studio/playground";
-import { AUTO_LOCK_MS, LEASE_WAIT_MS, VaultError, type Scope, type Tier, type VaultStatus } from "./protocol";
+import { AUTO_LOCK_MS, LEASE_WAIT_MS, VaultError, type LeaksView, type Scope, type Tier, type VaultStatus } from "./protocol";
+import { REBUILD_SQL, findDifferences, reconSummary, recordSql } from "../margin/aggregate";
+import { drill, math, waterfall, whale, type Dim, type Filters, type Metric } from "../margin/views";
+import { findLeaks, leakRows, type LeakResult } from "../margin/leaks";
+import { REMOVE_SAMPLE_SQL, ledgerSql, roiSummary } from "../margin/roi";
+import { leakReport } from "../margin/report";
+import { loadCredits } from "../margin/credits";
 export class VaultService {
   engine: Engine | null = null;
   storage!: VaultStorage;
@@ -65,7 +71,8 @@ export class VaultService {
     const sql = upgradeSql(version);
     if (!sql) return;
     await makeWritable(engine);
-    await engine.conn.query(`BEGIN; ${sql} UPDATE vault_meta SET schema_version=${SCHEMA_VERSION} WHERE id=1`);
+    // v5 adds the margin pre-aggregate; build it from the lines already in the vault.
+    await engine.conn.query(`BEGIN; ${sql} ${version < 5 ? REBUILD_SQL : ""} UPDATE vault_meta SET schema_version=${SCHEMA_VERSION} WHERE id=1`);
     try { await appendAudit(engine, "vault.schema_upgraded", { from: String(version), to: String(SCHEMA_VERSION) }); await engine.conn.query("COMMIT"); this.dirty = true; }
     catch (error) { await engine.conn.query("ROLLBACK"); throw error; }
   }
@@ -133,7 +140,8 @@ export class VaultService {
     const engine = await this.writable(progress);
     progress("Loading rows into the vault", "0", "1");
     const result = await this.studio.commit(engine, acknowledge);
-    this.dirty = true; progress("Saving encrypted snapshot", "0", "1"); await this.save();
+    this.dirty = true; progress("Updating margin totals", "0", "1"); await this.derived(engine);
+    progress("Saving encrypted snapshot", "0", "1"); await this.save();
     progress("Saved", "1", "1"); this.touch();
     return { status: await this.status(), studio: await this.studioState(), result };
   }
@@ -155,7 +163,7 @@ export class VaultService {
   async sourceRemove(id: string) {
     const engine = await this.writable();
     const cleanup = await removeSource(engine, id);
-    this.dirty = true; await this.save(); this.touch();
+    this.dirty = true; await this.derived(engine); await this.save(); this.touch();
     return { status: await this.status(), cleanup };
   }
   async fixGroups() { return fixGroups(this.requireEngine()); }
@@ -177,7 +185,7 @@ export class VaultService {
   }
   async fixRecheck(sourceId: string, code: string) {
     const engine = await this.writable(), out = await recheck(engine, sourceId, code, this.tier);
-    if (out.loaded !== "0") { this.dirty = true; await this.save(); }
+    if (out.loaded !== "0") { this.dirty = true; await this.derived(engine); await this.save(); }
     this.touch(); return { status: await this.status(), groups: await fixGroups(engine), ...out };
   }
   async health() { return health(this.requireEngine()); }
@@ -192,14 +200,107 @@ export class VaultService {
     await this.studio.plan(engine, this.tier, new AbortController().signal, progress);
     progress("Loading Playground rows", "0", "1");
     await this.studio.commit(engine, true);
-    this.dirty = true; await this.save(); this.touch();
+    this.dirty = true; progress("Updating margin totals", "0", "1"); await this.derived(engine); await this.save(); this.touch();
     return { status: await this.status(), manifest };
   }
   async playgroundRemove() {
     const engine = await this.writable(), sources = (await listSources(engine)).filter(s => s.name.startsWith(PLAYGROUND_PREFIX));
     for (const s of sources) await removeSource(engine, s.id);
-    if (sources.length) { this.dirty = true; await this.save(); }
+    if (sources.length) { this.dirty = true; await engine.conn.query(REMOVE_SAMPLE_SQL); await this.derived(engine); await this.save(); }
     return { status: await this.status(), removed: String(sources.length) };
+  }
+  // ---- Margin intelligence (chunk 4D) -------------------------------------------------
+  private dataVersion = 0;
+  private leakCache: { version: number; result: LeakResult } | null = null;
+  /** After any change to sales lines: rebuild the pre-aggregate and reconcile it with the lines (same transaction). */
+  private async derived(engine: Engine) {
+    await engine.conn.query("BEGIN");
+    try {
+      await engine.conn.query(REBUILD_SQL);
+      const d = await findDifferences(engine);
+      await engine.conn.query(await recordSql(d.found, new Date().toISOString()));
+      await engine.conn.query("COMMIT");
+    } catch (error) { await engine.conn.query("ROLLBACK").catch(() => undefined); throw error; }
+    finally { this.dataVersion++; this.leakCache = null; this.dirty = true; }
+  }
+  async creditsLoad(sourceId: string) {
+    const engine = await this.writable(), out = await loadCredits(engine, sourceId, this.tier);
+    if (out.loaded !== "0") { this.dirty = true; await this.derived(engine); await this.save(); }
+    this.touch(); return { status: await this.status(), groups: await fixGroups(engine), ...out };
+  }
+  async marginWaterfall(filters?: Filters) { return waterfall(this.requireEngine(), filters); }
+  async marginDrill(dim: Dim, filters?: Filters, sort?: "margin" | "pocket" | "rate") { return drill(this.requireEngine(), dim, filters, sort); }
+  async marginWhale(filters?: Filters) { return whale(this.requireEngine(), this.tier, filters); }
+  async marginMath(metric: Metric, filters?: Filters, offset = 0) { return math(this.requireEngine(), metric, filters, offset); }
+  private async isSample(engine: Engine) { const s = await listSources(engine); return s.length > 0 && s.every(x => x.name.startsWith(PLAYGROUND_PREFIX)); }
+  private async leakResult() {
+    const engine = this.requireEngine();
+    if (!this.leakCache || this.leakCache.version !== this.dataVersion) this.leakCache = { version: this.dataVersion, result: await findLeaks(engine) };
+    return this.leakCache.result;
+  }
+  /** Run the leak finder and record new or changed findings in the ROI ledger (audited, saved). */
+  async leaks(): Promise<LeaksView> {
+    const result = await this.leakResult(), engine = this.requireEngine(), sample = await this.isSample(engine);
+    const { sql, changed } = await ledgerSql(engine, result.findings, sample, new Date().toISOString());
+    if (changed) {
+      const w = await this.writable();
+      await w.conn.query("BEGIN");
+      try { await w.conn.query(sql); await appendAudit(w, "leaks.recorded", { findings: String(result.findings.length), changed: String(changed), sample: String(sample) }); await w.conn.query("COMMIT"); }
+      catch (error) { await w.conn.query("ROLLBACK").catch(() => undefined); throw error; }
+      this.dirty = true; await this.save();
+    }
+    this.touch(); return { result, roi: await roiSummary(engine), sample, recorded: changed };
+  }
+  async leakRows(id: string, offset = 0) { await this.leakResult(); return leakRows(this.requireEngine(), id, offset); }
+  async roi() { return roiSummary(this.requireEngine()); }
+  /** Build the Margin Leak Report PDF in this worker (no upload); the export is audited. */
+  async leakReport() {
+    const view = await this.leaks(), engine = this.requireEngine(), result = view.result;
+    const evidence: Record<string, Awaited<ReturnType<typeof leakRows>>["rows"]> = {};
+    for (const f of result.findings.slice(0, 6)) evidence[f.id] = (await leakRows(engine, f.id, 0)).rows.slice(0, 5);
+    const meta = (await engine.conn.query("SELECT count(*)::VARCHAR AS n, strftime(min(sale_date), '%Y-%m-%d') AS a, strftime(max(sale_date), '%Y-%m-%d') AS b FROM sales_lines")).toArray()[0];
+    const sources = (await listSources(engine)).filter(s => s.role === "sales_history").map(s => s.name);
+    const generatedAt = new Date().toISOString();
+    const bytes = leakReport({ generatedAt, sample: view.sample, lines: String(meta.n), from: meta.a === null ? null : String(meta.a), to: meta.b === null ? null : String(meta.b), sources, waterfall: await waterfall(engine), leaks: result, roi: view.roi, evidence });
+    const w = await this.writable();
+    await w.conn.query("BEGIN");
+    try { await appendAudit(w, "report.leak_pdf", { findings: String(result.findings.length), bytes: String(bytes.byteLength), sample: String(view.sample) }); await w.conn.query("COMMIT"); }
+    catch (error) { await w.conn.query("ROLLBACK").catch(() => undefined); throw error; }
+    this.dirty = true; await this.save(); this.touch();
+    return { name: `margindesk-leak-report-${generatedAt.slice(0, 10)}.pdf`, blob: new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "application/pdf" }), bytes: String(bytes.byteLength), status: await this.status() };
+  }
+  /** Re-run reconciliation; open differences are replaced, accepted ones keep their status. */
+  async reconcile() {
+    const engine = this.requireEngine(), d = await findDifferences(engine), at = new Date().toISOString();
+    const open = Number((await engine.conn.query("SELECT count(*) AS n FROM recon_issues WHERE status='open'")).toArray()[0].n);
+    if (d.found.length || open) {
+      const w = await this.writable();
+      await w.conn.query("BEGIN");
+      try { await w.conn.query(await recordSql(d.found, at)); await w.conn.query("COMMIT"); } catch (error) { await w.conn.query("ROLLBACK").catch(() => undefined); throw error; }
+      this.dirty = true; await this.save();
+    }
+    return reconSummary(engine, d, at);
+  }
+  async reconAccept(id: string | null) {
+    const engine = await this.writable();
+    await engine.conn.query("BEGIN");
+    try {
+      await engine.conn.query(`UPDATE recon_issues SET status='accepted' WHERE status='open'${id === null ? "" : ` AND id=${sqlText(id)}`}`);
+      await appendAudit(engine, "reconcile.accepted", { issue: id ?? "all open" }); await engine.conn.query("COMMIT");
+    } catch (error) { await engine.conn.query("ROLLBACK").catch(() => undefined); throw error; }
+    this.dirty = true; await this.save();
+    const d = await findDifferences(engine);
+    return { status: await this.status(), recon: await reconSummary(engine, d, new Date().toISOString()) };
+  }
+  /** Rebuild the pre-aggregate from the imported lines (never edits the lines), then reconcile. */
+  async reconRebuild() {
+    const engine = await this.writable();
+    await this.derived(engine);
+    await engine.conn.query("BEGIN");
+    try { await appendAudit(engine, "reconcile.rebuilt", {}); await engine.conn.query("COMMIT"); } catch (error) { await engine.conn.query("ROLLBACK").catch(() => undefined); throw error; }
+    await this.save();
+    const d = await findDifferences(engine);
+    return { status: await this.status(), recon: await reconSummary(engine, d, new Date().toISOString()) };
   }
   async verify() { return verifyAudit(this.requireEngine()); }
   async lock() {
@@ -214,7 +315,7 @@ export class VaultService {
   }
   private async dispose() {
     if (this.timer) clearTimeout(this.timer); this.timer = null;
-    const engine = this.engine; this.engine = null; this.key = null; this.studio.clear();
+    const engine = this.engine; this.engine = null; this.key = null; this.studio.clear(); this.leakCache = null;
     if (engine) await closeMemory(engine).catch(() => undefined);
     this.releaseLease?.(); this.releaseLease = null; this.dirty = false;
   }
