@@ -165,3 +165,33 @@ The 4B open item (first change after unlock: 7.6 s at 1M lines, about 15 s at 2M
 | Max UI long task during first change | 0 ms | 0 ms |
 
 The target (first change after warm-up under 2 s at 1M lines) is met locally in both browsers. An import started during warm-up waits for it (up to about 7 s at 1M lines) while the UI stays responsive. The 2M startup still misses 3 s, so the Scale cap stays at 1M lines. 4C-1 is CI-verified in [CI #48](https://github.com/Adityapawar5105/margindesk/actions/runs/41690570143) (`ea4e5b6`); these timings are local. Details: [CHUNK_4C1_VERIFICATION.md](./CHUNK_4C1_VERIFICATION.md).
+
+## Chunk 4D margin views — 4 Nov 2026
+
+Local measurements only (Ryzen 5 5600H, about 8 GB, Windows 11). Run with `node scripts/test-vault-browser.mjs --browser=chrome --full`, and with `--margin-bench` for the margin-only 2M run. The synthetic 2M set is a worst case for pre-aggregation: every line is its own customer x product x month, so `agg_cpm` has 2M rows.
+
+| 2M lines, after warm-up (median of 7) | Chrome 156.0.8078.80 | Target (section 5) |
+|---|---:|---:|
+| Waterfall, whole vault / one branch | 3.3 / 6.7 ms | < 300 ms |
+| Drill by product (100k products) | 156 ms | < 300 ms |
+| Drill by customer / branch | 14.5 / 12.6 ms | < 300 ms |
+| Drill by category within a branch (reads `agg_cpm`) | 246 ms | < 300 ms |
+| Whale curve | 34.5 ms | — |
+| Show-the-math with source rows (scans lines) | 410 ms | — |
+| Leak finder (all rules) | 8.3 s | — |
+| Rebuild pre-aggregates + reconcile after a change | 4.0 s | — |
+| Waterfall while the post-unlock warm-up runs | 13.6 ms | — |
+
+Regression check against 4C-1 on the same machine:
+
+| Measurement | Now | Before (4C-1) |
+|---|---:|---:|
+| Unlock to ready, 1M / 2M | 2,752 / 3,255 ms | 2,729 / 3,314 ms |
+| Background warm-up, 1M / 2M | 8,089 / 15,649 ms | 7,352 / 14,067 ms |
+| First change after warm-up, 1M / 2M | 726 / 1,518 ms | 767 / 1,595 ms |
+
+The warm-up is longer because the snapshot now carries the pre-aggregates. The 1M CSV through the full studio path took 10.7 s to convert, stage and validate, and 9.2 s to commit and save. The commit-and-save figure now includes the pre-aggregate rebuild. Neither 1M figure meets the 10 s parse-and-load target.
+
+Two engineering findings:
+- DuckDB-Wasm scans HUGEINT columns far slower than BIGINT. Eight sums over 200k pre-aggregate rows took 232 ms as HUGEINT and 6 ms as BIGINT, so the aggregates are BIGINT.
+- The 512 MB DuckDB memory guardrail held only after three changes: the leak finder keeps its line views unmaterialised, it stores compact hits, and reconciliation drops COUNT(DISTINCT) per invoice.

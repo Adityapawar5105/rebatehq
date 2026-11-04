@@ -65,7 +65,9 @@ INSERT INTO customers(customer_id) SELECT (i+1)::VARCHAR FROM range(2000)t(i);
 INSERT INTO source_files VALUES('${source}','synthetic-benchmark.csv','sales_history',0,'2026-11-03');
 INSERT INTO import_batches(id,source_id,rows_loaded,rows_rejected,imported_at) VALUES('${crypto.randomUUID()}','${source}',${rows},0,'2026-11-03')`);
   for (let at = 0; at < rows; at += 50_000) await engine.conn.query(`INSERT INTO sales_lines(source_id,line_id,product_id,customer_id,sale_date,quantity,list_cents,discount_cents,freight_cents,rebate_cents,cost_cents,source_row) SELECT '${source}',i+1,((i%100000)+1)::VARCHAR,((i*13%2000)+1)::VARCHAR,(DATE '2024-01-01'+INTERVAL (least(23,(i*24)//${rows})) MONTH)::DATE,(i%5)+1,10000+(i%997)*29,(i%21)*50,100+i%599,CASE WHEN i%7=0 THEN 200 ELSE 0 END,6000+(i%991)*23,i+2 FROM range(${at},${Math.min(rows, at + 50_000)})t(i) ORDER BY 4,5,2`);
-  await engine.conn.query(REBUILD_SQL); await appendAudit(engine, "fixture.synthetic_benchmark", { rows: String(rows) }); await engine.conn.query("COMMIT");
+  await appendAudit(engine, "fixture.synthetic_benchmark", { rows: String(rows) }); await engine.conn.query("COMMIT");
+  // As in the product (commit, then derived totals): rebuilding inside the 2M-line insert transaction cannot spill and exceeds the 512 MB guardrail.
+  await engine.conn.query(`BEGIN; ${REBUILD_SQL} COMMIT`);
   (service as unknown as { dirty: boolean }).dirty = true;
   await service.save(); const status = await service.status(); await service.lock();
   return { rows: status.lines, seedAndSaveMs: String(Math.round(performance.now() - start)), storage: await storageStatus() };

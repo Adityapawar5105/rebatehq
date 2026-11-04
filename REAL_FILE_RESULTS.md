@@ -64,3 +64,19 @@ The 4C-1 role detector trusted a single matching column. That is the most import
 - **Real spreadsheets exceed the 300,000-row cap.** Users must save as CSV today. A streaming XLSX reader belongs in pilot hardening (6A).
 - **Cost is often absent** from sales exports. Cost basis (5A) and item-master/vendor-cost joins are essential before margins mean anything.
 - Prospect ERP exports are still needed to verify the five ERP profiles.
+
+## Chunk 4D on the same export (4 Nov 2026, local, Chromium)
+
+Full CSV, then a bulk fix of blank customers to `CASH-SALE`, then the negative-quantity group loaded as credits. Run with a git-ignored runner in `test-results/real/`.
+
+| Step | Result | Time |
+|---|---|---:|
+| Import (as in 4C-2) + fix + re-check | 526,088 sales lines | 6.3 + 6.1 + 5.5 s |
+| Load as returns and credits | **10,624 credit lines loaded, 0 sign errors**; 5,195 duplicates and 2 negative prices remain in Fix Later | 2.8 s |
+| Waterfall | 536,712 lines. Sales list = sales pocket = $10,641,929.78 (the file has no discounts, rebates or freight). Returns and credits: -$896,812.49. Net pocket: $9,745,117.29 | 5 ms |
+| Margin | **Not computable**: 0 lines have a known cost, so all net pocket is shown as "unknown cost" and margin is $0.00 on 0 costed lines (never cost 0) | — |
+| Reconciliation | Reconciled to the cent: 25,898 invoices, 13,688 customer-months, no invoice split across customers or months | 0.1 s |
+| Leak finder | **0 findings**: no customer tiers (no discount rules apply) and no costs (no margin rules apply). It reports 524,905 uncosted / untiered lines not checked | 0.3 s |
+| Leak Report PDF | Produced on the device (6,165 bytes), stating the above; saved only under git-ignored `test-results/real/` | 1.4 s |
+
+A real Leak Report with dollar findings needs an export with cost and a customer list with tiers. Pilot files (6A) remain the open item.
