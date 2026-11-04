@@ -1,5 +1,15 @@
 # Vault results — 4B CI-verified (CI #44, c382f7d)
 
+## Chunk 4E pricing — 4 Nov 2026 (local only)
+
+Ryzen 5 5600H / about 8 GB / Windows 11 / Chrome 156.0.8078.80; reopened vault
+after warm-up. 1M lines, 100k SKUs/affected SKU-tier pairs, 12 months, 512 MB
+DuckDB limit and spill disabled. SQL simulation: **273 ms**; through saved
+preview, audit and encrypted snapshot: **3,448 ms**; 50-row preview: **18 ms**.
+SQL meets the 2 s target locally; full user wait exceeds it. No temporary
+invoice copy. Synthetic results are not a guarantee for arbitrary SKU/tier
+distributions. Scale stays at 1M lines. See CHUNK_4E_VERIFICATION.md; final CI pending.
+
 **Chunk 4B — CI-verified in [MarginDesk CI #44](https://github.com/Adityapawar5105/margindesk/actions/runs/41660146540), 3 November 2026, commit `c382f7d`.** The GitHub job API confirms step 18, "Required authenticated local-vault privacy gate", completed successfully (not skipped). Its log records `pnpm test:vault:privacy --browser=chromium`, `auth: true`, `status: passed`: **one authenticated harness with 14 named checks**, not a Playwright test-runner count. The separate unit suite passed **67 JavaScript + 56 TypeScript = 123 tests**.
 
 Privacy acceptance covers the **local vault flow only**. Legacy server business-data routes still exist; no app-wide "data never leaves your device" claim is made. **Unverified:** deployed Supabase sign-in, headed manual checks, physical crash/quota/multi-tab recovery, the historical storage-estimate discrepancy, and CI validation of the locally measured **~7.6 s / ~15–16 s first-change latency** (open item for 4C-1). Those timings remain local observations; Scale retains its 1M-line cap. 4C-1 has not started.

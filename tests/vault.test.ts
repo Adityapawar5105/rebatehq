@@ -107,7 +107,7 @@ test("schema inventory, forward-only migration, capacity and memory warning are 
   assert.deepEqual([...tablesFor(4)].filter(t => !tablesFor(3).includes(t)), ["rejected_rows"]);
   assert.ok(upgradeSql(1).includes("ALTER TABLE import_batches") && upgradeSql(1).includes("ADD COLUMN source_id") && upgradeSql(1).includes("CREATE TABLE rejected_rows"));
   assert.ok(upgradeSql(2).startsWith("ALTER TABLE products ADD COLUMN source_id"));
-  assert.ok(upgradeSql(3).includes("ALTER COLUMN cost_cents DROP NOT NULL") && upgradeSql(3).startsWith("DROP INDEX")); assert.ok(upgradeSql(4).startsWith("CREATE TEMP TABLE md_v4_sales") && upgradeSql(4).includes("line_kind")); assert.equal(upgradeSql(5), ""); assert.throws(() => upgradeSql(6));
+  assert.ok(upgradeSql(3).includes("ALTER COLUMN cost_cents DROP NOT NULL") && upgradeSql(3).startsWith("DROP INDEX")); assert.ok(upgradeSql(4).startsWith("CREATE TEMP TABLE md_v4_sales") && upgradeSql(4).includes("line_kind")); assert.ok(upgradeSql(5).includes("CREATE TABLE rule_changes")); assert.equal(upgradeSql(6), ""); assert.throws(() => upgradeSql(7));
   assert.deepEqual([...tablesFor(5)].filter(t => !tablesFor(4).includes(t)), ["agg_cpm", "agg_cm", "agg_p", "recon_issues"]);
   assert.equal(schemaSql(6), [V1_SQL, upgradeSql(1)].join("\n"));
   assert.equal(CAPS.scale.lines, 1000000); assert.equal(CAPS.starter.products, 20000);
@@ -116,7 +116,7 @@ test("schema inventory, forward-only migration, capacity and memory warning are 
   assert.throws(() => estimateImport({ name: "sales.csv", size: 257 * 1024 * 1024 }, "starter"));
 });
 test("local data paths contain no business API, raw SQL protocol, or real OPFS worker handle", () => {
-  const ui = readFileSync("components/local/VaultApp.tsx", "utf8") + readFileSync("components/local/ImportStudio.tsx", "utf8") + readFileSync("components/local/MarginView.tsx", "utf8"), engine = readFileSync("lib/vault/engine.ts", "utf8"), protocol = readFileSync("lib/vault/protocol.ts", "utf8");
+  const ui = readFileSync("components/local/PricingView.tsx", "utf8") + readFileSync("components/local/BackupView.tsx", "utf8") + readFileSync("components/local/VaultApp.tsx", "utf8") + readFileSync("components/local/ImportStudio.tsx", "utf8") + readFileSync("components/local/MarginView.tsx", "utf8"), engine = readFileSync("lib/vault/engine.ts", "utf8"), protocol = readFileSync("lib/vault/protocol.ts", "utf8");
   assert.ok(!/\.query\(|fetch\(|JSON\.stringify|console\./.test(ui));
   const studio = ["formats", "text", "sheets", "rows", "load", "studio", "mapper", "clean", "fixlater", "health", "playground"].map(f => readFileSync(`lib/studio/${f}.ts`, "utf8")).join("\n");
   assert.ok(!/fetch\(|XMLHttpRequest|sendBeacon|WebSocket|console\.|importScripts/.test(studio), "Import Studio must not make network calls or log");

@@ -99,6 +99,8 @@ try {
     console.log("Created committed synthetic encrypted v1 fixture.");
   }
   if (process.argv.includes("--margin-bench")) { const m = await worker("marginBenchmark", { rows: Number(process.env.MARGIN_BENCH_ROWS || 2000000) }, 900000); console.log(JSON.stringify(m, null, 2)); await writeFile(`test-results/vault-margin-bench-${channel}.json`, JSON.stringify({ date: new Date().toISOString(), browser: results.browser, machine: results.machine, margin2M: m }, null, 2)); process.exit(0); }
+  if(process.argv.includes('--pricing-bench')){const m=await worker('pricingBenchmark',{},900000);console.log(JSON.stringify(m,null,2));await writeFile('test-results/pricing-benchmark-'+channel+'.json',JSON.stringify({browser:results.browser,machine:results.machine,...m},null,2));process.exit(0);}
+  if(process.argv.includes('--pricing-only')){console.log(JSON.stringify(await worker('pricing',{},600000),null,2));process.exit(0);}
   const fixture = await readFile("tests/fixtures/vault/v1.enc");
   results.checks.v1 = await worker("v1", { bytes: new Uint8Array(fixture) });
   results.checks.integrity = await worker("integrity");
@@ -107,6 +109,9 @@ try {
   results.checks.mapper = await worker("mapper");
   results.checks.playground = await worker("playground");
   results.checks.margin = await worker("margin");
+  results.checks.pricing = await worker("pricing",{},600000);
+  // The recovery suite intentionally deleted every OPFS handle, including the shell’s empty scope. Reinitialise it.
+  await page.reload(); await ready();
   if (process.argv.includes("--margin-only")) { console.log(JSON.stringify(results.checks.margin, null, 2)); process.exit(0); }
   await page.getByLabel("Vault passphrase").fill(secret); await page.getByRole("button", { name: "Create encrypted vault", exact: true }).click();
   await page.getByRole("button", { name: "Lock vault", exact: true }).waitFor();
@@ -208,6 +213,36 @@ try {
   await page.getByRole("status").filter({ hasText: /nothing was uploaded/ }).waitFor();
   await page.getByRole("link", { name: "Home", exact: true }).click(); await page.getByTestId("roi-total").waitFor();
   results.checks.marginUi = { creditLoaded: true, mathPanel: true, leakReportBytes: pdfBytes.length, roiTracker: true };
+
+  // 4E: UI flow stays under the same marker sensors, including --auth in CI.
+  await page.getByRole('link',{name:'Data Hub',exact:true}).click();
+  if(await page.getByRole('button',{name:'Clear batch',exact:true}).isVisible())await clearBatch();
+  const priceSku=marker+'-4E';const files4E={
+    'pricing-items.csv':'product_id,description,category,uom,current_cost,list_price\n'+priceSku+',Private pricing item,Privacy category,EA,66.00,100.00\n',
+    'pricing-customers.csv':'customer_id,name,tier,branch\nE-CUSTOMER,Private customer,E-TIER,East\n',
+    'pricing-costs.csv':'vendor,product_id,cost,effective_date\nPrivacy Mills,'+priceSku+',60.00,2025-01-01\nPrivacy Mills,'+priceSku+',66.00,2025-02-01\n',
+    'pricing-sales.csv':header+'9000001,'+priceSku+',E-CUSTOMER,2025-03-01,1,100.00,10.00,1.00,0.00,66.00\n'
+  };const pricePaths=[];for(const [name,body]of Object.entries(files4E)){const file=path.resolve('test-results',name);await writeFile(file,body);pricePaths.push(file);}
+  const oldCount=BigInt(await page.getByTestId('line-count').innerText());await importFiles(pricePaths,String(oldCount+BigInt(1)));
+  await page.getByRole('link',{name:'Settings',exact:true}).click();
+  await page.evaluate(()=>{window.showDirectoryPicker=async()=>await(await navigator.storage.getDirectory()).getDirectoryHandle('privacy-backup-seam',{create:true});});
+  await page.getByRole('button',{name:'Choose backup folder',exact:true}).click();await page.getByRole('status').filter({hasText:'Encrypted folder backup written.'}).waitFor();
+  await page.getByRole('link',{name:'Pricing',exact:true}).click();await page.getByLabel('Pricing Owner name',{exact:true}).fill('Synthetic Pricing Owner');
+  await page.getByRole('button',{name:'Name me as Pricing Owner',exact:true}).click();await page.getByRole('status').filter({hasText:'Pricing Owner saved.'}).waitFor();
+  for(const [key,value]of Object.entries({tier:'E-TIER',category:'Privacy category',start:'11000',target:'10500',floor:'9500'}))await page.getByLabel('Guardrail '+key,{exact:true}).fill(value);
+  await page.getByRole('button',{name:'Save guardrails',exact:true}).click();await page.getByRole('status').filter({hasText:'Guardrails saved.'}).waitFor();
+  for(const [key,value]of Object.entries({name:marker+' rule',category:'Privacy category',vendor:'Privacy Mills',threshold:'5',increase:'4.5'}))await page.getByLabel('Rule '+key,{exact:true}).fill(value);
+  await page.getByRole('button',{name:'Save rule version',exact:true}).click();await page.getByRole('status').filter({hasText:'Rule version saved.'}).waitFor();
+  await page.getByRole('button',{name:'Simulate price change',exact:true}).click();await page.getByRole('heading',{name:'Change preview',exact:true}).waitFor();
+  await page.getByRole('cell',{name:'⚠ Yellow · owner review',exact:true}).waitFor();await page.getByRole('cell',{name:'104.50',exact:true}).first().waitFor();
+  await page.getByRole('button',{name:'Approve as Pricing Owner',exact:true}).click();await page.getByRole('heading',{name:'Export Studio',exact:true}).waitFor();
+  const outputs=[];const capture=d=>outputs.push(d);page.on('download',capture);await page.getByRole('button',{name:'Export prices and change log',exact:true}).click();
+  await page.getByRole('status').filter({hasText:/unverified until tested on a real import/}).waitFor();assert.equal(outputs.length,2,'Missing ERP export or change log');
+  for(const d of outputs){const bytes=await readFile(await d.path());assert.ok(bytes.includes(Buffer.from('104.50')),'Export omitted approved cents');}
+  page.off('download',capture);
+  await page.getByRole('link',{name:'Settings',exact:true}).click();const encrypted=page.waitForEvent('download');await page.getByRole('button',{name:'Download encrypted backup',exact:true}).click();const enc=await encrypted;assert.ok((await readFile(await enc.path())).subarray(0,8).toString()==='MDVAULT1','Backup export is not encrypted');
+  results.checks.pricingUi={owner:true,guardrails:true,rule:true,simulation:true,preview:true,approval:true,erpExportAndLog:true,folderHandleSeam:true,encryptedBackup:true};
+
   await page.getByRole("button", { name: "Lock vault", exact: true }).click(); await ready();
   if (full) {
     assert.ok(!auth, "Synthetic benchmark must not reset an authenticated vault");

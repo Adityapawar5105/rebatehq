@@ -13,6 +13,7 @@ export type GuardInput = { tier: string; category: string; start: string; target
 export type PriceRow = { product: string; tier: string; before: string; after: string; cost: string | null; quantity: string; impact: string; guard: string; beforeMargin: string | null; afterMargin: string | null };
 export type Preview = { id: string; count: string; impact: string; red: string; rows: PriceRow[]; offset: number; explanation: string; status: string; ms: number };
 export const MAX_PREVIEW_PAIRS = 250_000;
+const today = () => "DATE "+Q(new Date().toISOString().slice(0,10));
 const bad = (text: string): never => { throw new VaultError("PRICING", text); };
 export function rate(text: string) { if (!/^\d{1,3}(\.\d{1,2})?$/.test(text)) return bad("Use a percentage from 0 to 100 with at most two decimals."); const bp = rescale(dec(text), 2).v; if (bp > BigInt(10000)) return bad("A percentage cannot exceed 100%."); return bp; }
 export function label(value: string) { if (typeof value !== "string" || !value.trim() || value.length > 160 || /[\x00-\x1f]/.test(value)) return bad("Use a name of 1–160 characters without control characters."); return value.trim(); }
@@ -50,7 +51,7 @@ export async function simulate(e: Engine, id: string) {
   await e.conn.query(`DROP TABLE IF EXISTS temp.md_price_copy;
 CREATE TEMP TABLE md_price_copy AS WITH v AS (SELECT product_id,cost,lag(cost) OVER(PARTITION BY product_id ORDER BY effective_date,id) AS previous,row_number() OVER(PARTITION BY product_id ORDER BY effective_date DESC,id DESC) AS rk FROM vendor_costs WHERE vendor=${Q(d.vendor)}),
 hist AS (SELECT a.product_id,c.tier,sum(a.quantity)::DECIMAL(18,4) AS qty FROM agg_cpm a JOIN customers c USING(customer_id) WHERE a.line_kind='sale' GROUP BY a.product_id,c.tier),
-base AS (SELECT p.product_id,coalesce(h.tier,'') AS tier,p.category,p.current_cost,coalesce((SELECT m.price FROM price_matrix m WHERE m.product_id=p.product_id AND m.customer_id IS NULL AND coalesce(m.tier,'')=coalesce(h.tier,'') AND m.qty_break=0 AND m.valid_from<=current_date AND (m.valid_to IS NULL OR m.valid_to>current_date) ORDER BY m.valid_from DESC,m.id LIMIT 1),p.list_price) AS before_cents,coalesce(h.qty,0)::DECIMAL(18,4) AS qty
+base AS (SELECT p.product_id,coalesce(h.tier,'') AS tier,p.category,p.current_cost,coalesce((SELECT m.price FROM price_matrix m WHERE m.product_id=p.product_id AND m.customer_id IS NULL AND coalesce(m.tier,'')=coalesce(h.tier,'') AND m.qty_break=0 AND m.valid_from<=${today()} AND (m.valid_to IS NULL OR m.valid_to>${today()}) ORDER BY m.valid_from DESC,m.id LIMIT 1),p.list_price) AS before_cents,coalesce(h.qty,0)::DECIMAL(18,4) AS qty
 FROM products p JOIN v USING(product_id) LEFT JOIN hist h USING(product_id) WHERE p.category=${Q(d.category)} AND v.rk=1 AND v.previous>0 AND CAST(v.cost-v.previous AS HUGEINT)*10000>CAST(v.previous AS HUGEINT)*${d.threshold})
 SELECT product_id,tier,category,current_cost,before_cents,CAST(${rhaSql(`CAST(before_cents AS HUGEINT)*(10000+${d.increase})`,"10000")} AS BIGINT) AS after_cents,qty FROM base WHERE before_cents IS NOT NULL LIMIT ${MAX_PREVIEW_PAIRS+1}`);
   const count = Number((await rows(e,"SELECT count(*) AS n FROM md_price_copy"))[0].n);
@@ -74,9 +75,9 @@ export async function approveSql(e: Engine, id: string, actor: string) {
   if (String(r.run_date).slice(0,10)!==new Date().toISOString().slice(0,10)) return bad('The preview date changed. Simulate again before approval.');
   const p = await preview(e,id); if (p.count==='0') return bad("No prices changed. Adjust the rule before approval."); if (p.red!=='0') return bad("Red: a proposed price is below its floor. Revise the rule or guardrail before approval.");
   return `INSERT INTO price_versions VALUES(${Q(crypto.randomUUID())},${Q(id)},${Q(actor)},${Q(JSON.stringify({rows:p.count,impact:p.impact,rule:r.rule_id,version:Number(r.rule_version)}))},${Q(new Date().toISOString())});
-UPDATE price_matrix SET valid_to=current_date WHERE customer_id IS NULL AND qty_break=0 AND valid_from<current_date AND (valid_to IS NULL OR valid_to>current_date) AND (product_id,coalesce(tier,'')) IN (SELECT product_id,tier FROM rule_changes WHERE run_id=${Q(id)});
-DELETE FROM price_matrix WHERE customer_id IS NULL AND qty_break=0 AND valid_from=current_date AND (product_id,coalesce(tier,'')) IN (SELECT product_id,tier FROM rule_changes WHERE run_id=${Q(id)});
-INSERT INTO price_matrix(id,product_id,tier,price,valid_from,valid_to) SELECT ${Q(id)}||':'||row_number() OVER(ORDER BY product_id,tier),product_id,tier,after_cents,current_date,NULL FROM rule_changes WHERE run_id=${Q(id)};
+UPDATE price_matrix SET valid_to=${today()} WHERE customer_id IS NULL AND qty_break=0 AND valid_from<${today()} AND (valid_to IS NULL OR valid_to>${today()}) AND (product_id,coalesce(tier,'')) IN (SELECT product_id,tier FROM rule_changes WHERE run_id=${Q(id)});
+DELETE FROM price_matrix WHERE customer_id IS NULL AND qty_break=0 AND valid_from=${today()} AND (product_id,coalesce(tier,'')) IN (SELECT product_id,tier FROM rule_changes WHERE run_id=${Q(id)});
+INSERT INTO price_matrix(id,product_id,tier,price,valid_from,valid_to) SELECT ${Q(id)}||':'||row_number() OVER(ORDER BY product_id,tier),product_id,tier,after_cents,${today()},NULL FROM rule_changes WHERE run_id=${Q(id)};
 UPDATE rule_runs SET status='approved',approved_by=${Q(actor)} WHERE id=${Q(id)}; UPDATE vault_meta SET pricing_revision=pricing_revision+1 WHERE id=1;`;
 }
 export const EXPORT_LAYOUTS: Record<ErpProfile,string[]> = { generic:['product_id','tier','price','effective_from'],netsuite:['Item','Price Level','Unit Price','Effective Date'],p21:['Item ID','Pricing Library','Price','Effective Date'],infor:['Item','Price Type','Sales Price','Effective Date'],bc:['Product No.','Source No.','Unit Price','Starting Date'],quickbooks:['Item','Price Level','Custom Price','Effective Date'] };

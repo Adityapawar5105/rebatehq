@@ -1,3 +1,4 @@
+import { backupConfig, storeBackupConfig } from "../../lib/vault/backup";
 // Test-only worker, bundled under test-results and intercepted by Playwright.
 // It is never included by the production asset build or exposed by app routes.
 import { VaultService } from "../../lib/vault/service";
@@ -592,10 +593,69 @@ async function cipherOnly() {
   }
   await walk(await navigator.storage.getDirectory()); return { cipherOnly: true, files };
 }
+
+async function pricingFlow() {
+ const scope={userId:'price-'+crypto.randomUUID(),tenantId:'price-'+crypto.randomUUID()};
+ let service=new VaultService(()=>undefined);await service.init(scope);await service.create(secret,'professional');
+ try {
+  const playground=await service.playgroundLoad(()=>undefined),found=await service.leaks();
+  for(const leak of playground.manifest.leaks)assert(found.result.findings.filter(f=>f.type===leak.type&&f.lines===String(leak.lines)&&f.cents===leak.cents).length===1,'Playground leak changed before guardrails');
+  await service.pricingOwner('Synthetic Pricing Owner',scope.userId,7);
+  const rule={name:'Valves cost pass-through',category:'Valves',vendor:'Valves Mills',threshold:'5',increase:'4.5'};
+  const saved=await service.ruleSave(rule),beforePrices=String((await service.engine!.conn.query('SELECT sum(price)::VARCHAR AS n FROM price_matrix')).toArray()[0].n);
+  let sim=await service.ruleSimulate(saved.id);assert(BigInt(sim.count)>BigInt(0),'No affected SKU/tier pairs');
+  assert(String((await service.engine!.conn.query('SELECT sum(price)::VARCHAR AS n FROM price_matrix')).toArray()[0].n)===beforePrices,'Simulation changed live prices');
+  await service.guardSet({tier:'T01',category:'Valves',start:'3',target:'2',floor:'1'});
+  let conflict=false;try{await service.ruleApprove(sim.id);}catch(e){conflict=(e as Error).message.includes('Conflict');}assert(conflict,'Stale preview was approved');
+  // An explicit floor must override the peer-rate fallback even for one line.
+  await service.guardSet({tier:'T08',category:'Valves',start:'99999999',target:'99999999',floor:'99999999'});
+  const guarded=await service.leaks(),specific=guarded.result.findings.find(f=>f.type==='below_floor'&&f.scope.category==='Valves');assert(specific,'Configured guardrail made no below-floor finding');
+  const evidence=await service.leakRows(specific!.id);assert(evidence.engineAgrees,'Configured floor evidence does not agree with decimal engine');
+  await service.guardSet({tier:'T08',category:'Valves',start:'3',target:'2',floor:'1'});
+  sim=await service.ruleSimulate(saved.id);
+  const root=await navigator.storage.getDirectory(),dir=await root.getDirectoryHandle('test-price-backup-'+crypto.randomUUID(),{create:true});
+  await service.backupConfigure(dir,1);await service.ruleApprove(sim.id);
+  assert((await service.backupStatus()).last!==null,'Approval did not write auto-backup');
+  for(const format of ['csv','xlsx'] as const){const file=await service.priceExport(sim.id,'netsuite',format);assert(file.blob.size>100&&(await file.log.text()).includes('Before'),'Export missing price rows or change log');}
+  // Save the audit of exports in the final backup too.
+  const cfg=await backupConfig(service.storage.scope);await storeBackupConfig(service.storage.scope,{...cfg,last:'2020-01-01T00:00:00Z'});await service.backupDue();assert((await service.backupStatus()).last!=='2020-01-01T00:00:00Z','Due scheduled backup did not run');
+  await service.backupNow();const backup=await (await dir.getFileHandle('margindesk-backup.enc')).getFile();
+  const wf=await service.marginWaterfall(),leaks=await service.leaks();await service.backupNow();const finalBackup=new Blob([await (await (await dir.getFileHandle('margindesk-backup.enc')).getFile()).arrayBuffer()]);
+  const prices=await service.engine!.conn.query('SELECT product_id,tier,price::VARCHAR AS price FROM price_matrix ORDER BY product_id,tier,id');
+  const expected=JSON.stringify(prices.toArray().map(r=>({...r}))),tip=(await service.engine!.conn.query('SELECT audit_tip,audit_count::VARCHAR AS n FROM vault_meta')).toArray()[0];
+  await service.lock();
+  // Keep the external-backup seam's File snapshot, then wipe ALL origin OPFS and backup-handle metadata.
+  for await(const [name] of root.entries())await root.removeEntry(name,{recursive:true});
+  await new Promise<void>((resolve,reject)=>{const request=indexedDB.deleteDatabase('margindesk-backup-handles');request.onsuccess=()=>resolve();request.onerror=()=>reject(request.error);});
+  service=new VaultService(()=>undefined);await service.init(scope);
+  let wrong=false;try{await service.backupRestore(finalBackup,'deliberately-wrong-passphrase');}catch{wrong=true;}assert(wrong&&!(await service.status()).exists,'Wrong restore passphrase wrote a vault');
+  const tampered=new Uint8Array(await finalBackup.arrayBuffer());tampered[tampered.length-1]^=1;let damaged=false;try{await service.backupRestore(new Blob([tampered]),secret);}catch{damaged=true;}assert(damaged&&!(await service.status()).exists,'Damaged backup was accepted');
+  const otherScope={userId:'other-'+crypto.randomUUID(),tenantId:scope.tenantId},other=new VaultService(()=>undefined);await other.init(otherScope);let wrongScope=false;try{await other.backupRestore(finalBackup,secret);}catch{wrongScope=true;}assert(wrongScope,'Cross-workspace backup was accepted');await other.lock();await reset(otherScope);
+  await service.backupRestore(finalBackup,secret);
+  const restored=await service.marginWaterfall(),restoredLeaks=await service.leaks();
+  assert(restored.netPocket===wf.netPocket&&restored.margin===wf.margin&&restored.cost===wf.cost,'Restored waterfall differs');
+  assert(restoredLeaks.result.totalCents===leaks.result.totalCents&&restoredLeaks.result.dedupedCents===leaks.result.dedupedCents,'Restored leak totals differ');
+  assert(JSON.stringify((await service.engine!.conn.query('SELECT product_id,tier,price::VARCHAR AS price FROM price_matrix ORDER BY product_id,tier,id')).toArray().map(r=>({...r})))===expected,'Restored prices differ to the cent');
+  assert((await service.verify()).valid,'Restored audit chain invalid');
+  const audit=(await service.engine!.conn.query(`SELECT hash FROM audit_log WHERE sequence=${tip.n}`)).toArray()[0];assert(audit.hash===tip.audit_tip,'Backup audit prefix changed');
+  let refused=false;try{await service.backupRestore(backup,secret);}catch{refused=true;}assert(refused,'Restore overwrote an existing vault');
+  return {manifestLeaks:5,simulationNoWrites:true,staleConflict:true,configuredFloor:true,automaticBackup:true,csvAndXlsx:true,originOpfsAndHandleStorageWiped:true,exactRestore:true,wrongPassphrase:true,auditPrefixIntact:true};
+ }finally{await service.lock();await reset(scope);}
+}
+async function pricingBenchmark(){
+ const scope={userId:'bench-'+crypto.randomUUID(),tenantId:'bench-'+crypto.randomUUID()},service=new VaultService(()=>undefined);await service.init(scope);await service.create(secret,'scale');
+ try{const e=service.engine!,src=crypto.randomUUID();await e.conn.query(`BEGIN;INSERT INTO products(product_id,category,current_cost,list_price) SELECT 'P'||i,'Benchmark',6000,10000 FROM range(100000)t(i);INSERT INTO customers(customer_id,tier) SELECT 'C'||i,'T'||(i%50) FROM range(2000)t(i);INSERT INTO source_files VALUES('${src}','synthetic benchmark.csv','sales_history',0,'2026-11-04');INSERT INTO vendor_costs(id,vendor,product_id,cost,effective_date,source_file) SELECT 'old'||i,'Benchmark Mills','P'||i,6000,'2024-01-01','synthetic' FROM range(100000)t(i);INSERT INTO vendor_costs(id,vendor,product_id,cost,effective_date,source_file) SELECT 'new'||i,'Benchmark Mills','P'||i,6600,'2025-01-01','synthetic' FROM range(100000)t(i)`);
+ for(let at=0;at<1000000;at+=50000)await e.conn.query(`INSERT INTO sales_lines(source_id,line_id,product_id,customer_id,sale_date,quantity,list_cents,discount_cents,freight_cents,rebate_cents,cost_cents,source_row) SELECT '${src}',i+1,'P'||(i%100000),'C'||(i%2000),DATE '2025-01-01'+INTERVAL (i%12) MONTH,1,10000,100,50,0,6000,i+2 FROM range(${at},${at+50000})t(i)`);
+ await e.conn.query('COMMIT');await(service as unknown as {derived(value:typeof e):Promise<void>}).derived(e);await service.save();await service.lock();await service.unlock(secret);await service.warmup();
+ const r=await service.ruleSave({name:'Benchmark',category:'Benchmark',vendor:'Benchmark Mills',threshold:'5',increase:'4.5'});let start=performance.now();const p=await service.ruleSimulate(r.id);const simulationAndEncryptedSaveMs=Math.round(performance.now()-start);start=performance.now();const preview=await service.rulePreview(p.id);const previewPageMs=Math.round(performance.now()-start);
+ assert(p.count==='100000'&&p.rows[0].after==='10450'&&preview.rows.length===50,'Benchmark price copy invalid');assert(String((await service.engine!.conn.query('SELECT count(*) AS n FROM price_matrix')).toArray()[0].n)==='0','Benchmark modified live prices');return{lines:'1000000',skus:'100000',pairs:p.count,sqlSimulationMs:p.ms,simulationAndEncryptedSaveMs,previewPageMs,memoryLimit:'512MB',temporaryInvoiceCopies:false};
+ }finally{await service.lock();await reset(scope);}
+}
+
 self.onmessage = async event => {
   try {
     const { action } = event.data;
-    const result = action === "fixture" ? await fixture() : action === "v1" ? await testFixture(event.data.bytes) : action === "seed" ? await seed(event.data.rows) : action === "firstChange" ? await firstChange(event.data.rows) : action === "integrity" ? await integrity() : action === "studio" ? await studio() : action === "mapper" ? await mapper() : action === "playground" ? await playground() : action === "margin" ? await margin() : action === "marginBenchmark" ? await marginBenchmark(event.data.rows) : action === "studioBenchmark" ? await studioBenchmark(event.data.rows) : action === "warmup" ? await warmup() : action === "cipherOnly" ? await cipherOnly() : await storageStatus();
+    const result = action === "pricing" ? await pricingFlow() : action === "pricingBenchmark" ? await pricingBenchmark() : action === "fixture" ? await fixture() : action === "v1" ? await testFixture(event.data.bytes) : action === "seed" ? await seed(event.data.rows) : action === "firstChange" ? await firstChange(event.data.rows) : action === "integrity" ? await integrity() : action === "studio" ? await studio() : action === "mapper" ? await mapper() : action === "playground" ? await playground() : action === "margin" ? await margin() : action === "marginBenchmark" ? await marginBenchmark(event.data.rows) : action === "studioBenchmark" ? await studioBenchmark(event.data.rows) : action === "warmup" ? await warmup() : action === "cipherOnly" ? await cipherOnly() : await storageStatus();
     self.postMessage({ result });
   } catch (e) { self.postMessage({ error: e instanceof Error ? e.message : "test worker failed" }); }
 };
