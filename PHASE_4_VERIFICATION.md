@@ -11,7 +11,7 @@ retain their own scope. 5A has not started.
 | 4C-1 | Multi-file conversion/import and warm-up | CI #48, ea4e5b6; CHUNK_4C1_VERIFICATION.md |
 | 4C-2 | Mapper, resilient parser, Fix Later, health, Playground | CI #51, a9ca8f7; CHUNK_4C2_VERIFICATION.md |
 | 4D | Decimal engine, reconciliation, waterfall, leaks, reports, credits | CI #53, 6d21cf0; CHUNK_4D_VERIFICATION.md |
-| 4E | Guardrails, rules, preview, owner approval, exports, backup/restore | CHUNK_4E_VERIFICATION.md; final acceptance pending |
+| 4E | Guardrails, rules, preview, owner approval, exports, backup/restore | [CI #55](https://github.com/Adityapawar5105/margindesk/actions/runs/41814159704), 7fe3db8; CHUNK_4E_VERIFICATION.md |
 
 Seven locked Supabase migrations/hashes stay unchanged. Local schema advances
 to v6; the frozen encrypted v1 fixture still upgrades. SO-8102 stays negative,
@@ -25,3 +25,5 @@ routes still exist. Real ERP imports, headed folder picker, deployed sign-in,
 physical recovery/quota, formal accessibility, external review, authoritative
 roles/licences and real-file benchmarks remain open. Server foundation Phases
 0–3 are not renamed by this local-first phase.
+
+4E acceptance reference: [MarginDesk CI #55](https://github.com/Adityapawar5105/margindesk/actions/runs/41814159704), 4 November 2026, commit `7fe3db82951e82d5ba8a049158a7ef0a17a69597`. Its 25-check authenticated local-vault flow passed. This phase summary and its performance numbers remain local evidence; it is not an external security or sellable-v1 acceptance.

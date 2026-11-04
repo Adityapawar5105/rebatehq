@@ -1,0 +1,229 @@
+{
+  "date": "2026-11-04",
+  "scope": "Local headless production harness; not authenticated CI evidence",
+  "browsers": {
+    "chrome": {
+      "date": "2026-11-04T10:20:00.055Z",
+      "browser": "156.0.8078.80",
+      "machine": {
+        "cpu": "AMD Ryzen 5 5600H with Radeon Graphics         ",
+        "ram": "7887220736",
+        "os": "Windows_NT 10.0.26200"
+      },
+      "checks": [
+        "v1",
+        "integrity",
+        "studio",
+        "warmup",
+        "mapper",
+        "playground",
+        "margin",
+        "pricing",
+        "capRollback",
+        "invalidCellNoLeak",
+        "locatedDuplicate",
+        "cancelRollback",
+        "multiFormatImport",
+        "storage",
+        "cipherOnly",
+        "killedTabRecovery",
+        "wrongPassphrase",
+        "reload",
+        "firstMutationAfterUnlock",
+        "mappingAndFixLater",
+        "reconciliation",
+        "marginUi",
+        "pricingUi",
+        "mobile",
+        "privacy"
+      ],
+      "recovery": {
+        "manifestLeaks": 5,
+        "simulationNoWrites": true,
+        "staleConflict": true,
+        "configuredFloor": true,
+        "automaticBackup": true,
+        "csvAndXlsx": true,
+        "originOpfsAndHandleStorageWiped": true,
+        "exactRestore": true,
+        "wrongPassphrase": true,
+        "auditPrefixIntact": true
+      },
+      "ui": {
+        "owner": true,
+        "guardrails": true,
+        "rule": true,
+        "simulation": true,
+        "preview": true,
+        "approval": true,
+        "erpExportAndLog": true,
+        "folderHandleSeam": true,
+        "encryptedBackup": true
+      },
+      "measurements": {
+        "import100kMs": 2877,
+        "maxImportLongTaskMs": 0
+      }
+    },
+    "msedge": {
+      "date": "2026-11-04T10:25:53.790Z",
+      "browser": "156.0.4314.58",
+      "machine": {
+        "cpu": "AMD Ryzen 5 5600H with Radeon Graphics         ",
+        "ram": "7887220736",
+        "os": "Windows_NT 10.0.26200"
+      },
+      "checks": [
+        "v1",
+        "integrity",
+        "studio",
+        "warmup",
+        "mapper",
+        "playground",
+        "margin",
+        "pricing",
+        "capRollback",
+        "invalidCellNoLeak",
+        "locatedDuplicate",
+        "cancelRollback",
+        "multiFormatImport",
+        "storage",
+        "cipherOnly",
+        "killedTabRecovery",
+        "wrongPassphrase",
+        "reload",
+        "firstMutationAfterUnlock",
+        "mappingAndFixLater",
+        "reconciliation",
+        "marginUi",
+        "pricingUi",
+        "mobile",
+        "privacy"
+      ],
+      "recovery": {
+        "manifestLeaks": 5,
+        "simulationNoWrites": true,
+        "staleConflict": true,
+        "configuredFloor": true,
+        "automaticBackup": true,
+        "csvAndXlsx": true,
+        "originOpfsAndHandleStorageWiped": true,
+        "exactRestore": true,
+        "wrongPassphrase": true,
+        "auditPrefixIntact": true
+      },
+      "ui": {
+        "owner": true,
+        "guardrails": true,
+        "rule": true,
+        "simulation": true,
+        "preview": true,
+        "approval": true,
+        "erpExportAndLog": true,
+        "folderHandleSeam": true,
+        "encryptedBackup": true
+      },
+      "measurements": {
+        "import100kMs": 3390,
+        "maxImportLongTaskMs": 0
+      }
+    },
+    "chromium": {
+      "date": "2026-11-04T10:30:24.258Z",
+      "browser": "156.0.8078.4",
+      "machine": {
+        "cpu": "AMD Ryzen 5 5600H with Radeon Graphics         ",
+        "ram": "7887220736",
+        "os": "Windows_NT 10.0.26200"
+      },
+      "checks": [
+        "v1",
+        "integrity",
+        "studio",
+        "warmup",
+        "mapper",
+        "playground",
+        "margin",
+        "pricing",
+        "capRollback",
+        "invalidCellNoLeak",
+        "locatedDuplicate",
+        "cancelRollback",
+        "multiFormatImport",
+        "storage",
+        "cipherOnly",
+        "killedTabRecovery",
+        "wrongPassphrase",
+        "reload",
+        "firstMutationAfterUnlock",
+        "mappingAndFixLater",
+        "reconciliation",
+        "marginUi",
+        "pricingUi",
+        "mobile",
+        "privacy"
+      ],
+      "recovery": {
+        "manifestLeaks": 5,
+        "simulationNoWrites": true,
+        "staleConflict": true,
+        "configuredFloor": true,
+        "automaticBackup": true,
+        "csvAndXlsx": true,
+        "originOpfsAndHandleStorageWiped": true,
+        "exactRestore": true,
+        "wrongPassphrase": true,
+        "auditPrefixIntact": true
+      },
+      "ui": {
+        "owner": true,
+        "guardrails": true,
+        "rule": true,
+        "simulation": true,
+        "preview": true,
+        "approval": true,
+        "erpExportAndLog": true,
+        "folderHandleSeam": true,
+        "encryptedBackup": true
+      },
+      "measurements": {
+        "import100kMs": 3484,
+        "maxImportLongTaskMs": 0
+      }
+    }
+  },
+  "benchmark": {
+    "browser": "156.0.8078.80",
+    "machine": {
+      "cpu": "AMD Ryzen 5 5600H with Radeon Graphics         ",
+      "ram": "7887220736",
+      "os": "Windows_NT 10.0.26200"
+    },
+    "lines": "1000000",
+    "skus": "100000",
+    "pairs": "100000",
+    "sqlSimulationMs": 273,
+    "simulationAndEncryptedSaveMs": 3448,
+    "previewPageMs": 18,
+    "memoryLimit": "512MB",
+    "temporaryInvoiceCopies": false
+  },
+  "assets": {
+    "vault-worker.js": "9593671323e851586d8226f8362506af0363c57d26d5b025728d5ec7d609781f",
+    "vault-ram-worker.js": "5074f880a861b3b9b4340300b985a203da630eb29f3acc4d058c82869c17a391",
+    "duckdb-eh.wasm": "4c221bfa59c11f24dbd750e70c90b9252eca6eec5633936e6a2ec766e55fd879"
+  },
+  "ciAcceptance": {
+    "run": 55,
+    "url": "https://github.com/Adityapawar5105/margindesk/actions/runs/41814159704",
+    "commit": "7fe3db82951e82d5ba8a049158a7ef0a17a69597",
+    "job": 126520564314,
+    "gateStep": 18,
+    "gateConclusion": "success",
+    "auth": true,
+    "harnessChecks": 25,
+    "unitTests": 163,
+    "resultLoggedAt": "2026-11-04T10:42:41Z",
+    "scope": "Authenticated local-vault flow only; local timings are separate"
+  }
+}

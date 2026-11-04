@@ -343,7 +343,9 @@ Open items carried to Phase 3 (recorded only; not implemented here):
 - **Leak Report PDF**: a small PDF 1.4 writer in the worker, using standard Helvetica and uncompressed ASCII streams, with no dependency. Non-ASCII text is replaced with "?". The page receives a Blob and downloads it via an object URL; nothing is uploaded, and each export is audited.
 - **Memory**: the 512 MB DuckDB guardrail is kept. The leak finder's line views are never materialised; a hit is five numbers (finding hash, source number, line, leak, basis). Reconciliation finds split invoices with min/max per invoice, not COUNT(DISTINCT). Show-the-math scans lines (about 400 ms at 2M, measured) and the leak finder takes about 8 s at 2M (measured). Neither is a section 5 target.
 - The real UCI export (local only) has no cost or tier columns, so no margin or discount leak can be found in it. Its Leak Report states that.
-## Chunk 4E assumptions — 4 Nov 2026; implementation unverified until CI
+## Chunk 4E assumptions — 4 Nov 2026; CI-verified
+
+Verified in [MarginDesk CI #55](https://github.com/Adityapawar5105/margindesk/actions/runs/41814159704), 4 November 2026, commit `7fe3db82951e82d5ba8a049158a7ef0a17a69597`. The authenticated local-vault gate ran 25 named checks (including pricing UI); 163 unit tests passed. Performance measurements and headed/real-ERP limits below remain unverified in CI.
 
 - Only 4E; no 5A. Supabase migrations/lock and local V1–V5 SQL stay frozen; new local schema v6 holds owner, rule revisions, saved price diffs and guardrail scope.
 - Guardrails are absolute unit prices in integer cents per named tier/category. Red blocks approval; yellow requires the one named Pricing Owner. Initial owner names themselves; reassignment requires that owner. The worker uses the authenticated scope user ID, never a caller-provided approver. Device-owner tampering is outside this local role boundary; authoritative role/licence work is 5A/5B.

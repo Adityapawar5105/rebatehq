@@ -57,5 +57,5 @@ Playground) is done and CI-verified (CI #51, `a9ca8f7`). 4D (decimal
 pocket-margin engine, reconciliation, show-the-math, leak finder, Leak Report,
 ROI v1, credits; vault schema v5) is done and CI-verified (CI #53, `6d21cf0`);
 its leak finder reproduces `tests/fixtures/playground-manifest.json` exactly.
-The next chunk is 4E (guardrails, rules, change preview, ERP export, backup). Real-export files stay
+4E (guardrails, versioned rules, preview, owner approval, ERP export, encrypted backup/restore; vault v6) is done and CI-verified in [CI #55](https://github.com/Adityapawar5105/margindesk/actions/runs/41814159704), commit `7fe3db8` (163 unit tests, 25 named authenticated privacy checks). Local timings and real ERP/picker limits are in `CHUNK_4E_VERIFICATION.md`. The next chunk is 5A; do not start it without an explicit user prompt. Real-export files stay
 in git-ignored `test-results/real/` and are never committed.
