@@ -44,7 +44,7 @@ export function VaultApp({ scope, email, workspace, lab = false }: { scope: Scop
   const unlocked = status?.state === "unlocked";
   return <div className={styles.shell}>
     <a className={styles.skip} href="#local-content">Skip to content</a>
-    <header className={styles.header}><a href="/home" className={styles.brand}>M <span>MarginDesk</span></a><span>{workspace}</span><span className={styles.identity}>{email}</span>{!lab && <form method="post" action="/api/auth/logout"><button>Sign out</button></form>}</header>
+    <header className={styles.header}><a href="/home" className={styles.brand}>M <span>RebateHQ</span></a><span>{workspace}</span><span className={styles.identity}>{email}</span>{!lab && <form method="post" action="/api/auth/logout"><button>Sign out</button></form>}</header>
     {lab && <aside className={styles.notice}>LOCAL TEST HARNESS · synthetic identity only. The signed-in application is /home. This route does not prove authentication.</aside>}
     <div className={styles.layout}>
       <nav aria-label="Main navigation" className={styles.nav}>{sections.map(item => <a key={item} href={`#${item.toLowerCase().replace(" ", "-")}`} aria-current={section === item ? "page" : undefined} onClick={() => setSection(item)}>{item}</a>)}<a href="/legacy/dashboard">Legacy · server-backed</a></nav>

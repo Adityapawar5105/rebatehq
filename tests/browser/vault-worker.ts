@@ -23,7 +23,7 @@ const secret = "synthetic-local-vault-passphrase";
 const assert = (value: unknown, message: string) => { if (!value) throw new Error(message); };
 async function reset(scope: typeof labScope) {
   const storage = await VaultStorage.open(scope);
-  const root = await (await navigator.storage.getDirectory()).getDirectoryHandle("margindesk-vaults");
+  const root = await (await navigator.storage.getDirectory()).getDirectoryHandle("rebatehq-vaults");
   await root.removeEntry(storage.scope, { recursive: true });
 }
 async function fixture() {
@@ -619,14 +619,14 @@ async function pricingFlow() {
   for(const format of ['csv','xlsx'] as const){const file=await service.priceExport(sim.id,'netsuite',format);assert(file.blob.size>100&&(await file.log.text()).includes('Before'),'Export missing price rows or change log');}
   // Save the audit of exports in the final backup too.
   const cfg=await backupConfig(service.storage.scope);await storeBackupConfig(service.storage.scope,{...cfg,last:'2020-01-01T00:00:00Z'});await service.backupDue();assert((await service.backupStatus()).last!=='2020-01-01T00:00:00Z','Due scheduled backup did not run');
-  await service.backupNow();const backup=await (await dir.getFileHandle('margindesk-backup.enc')).getFile();
-  const wf=await service.marginWaterfall(),leaks=await service.leaks();await service.backupNow();const finalBackup=new Blob([await (await (await dir.getFileHandle('margindesk-backup.enc')).getFile()).arrayBuffer()]);
+  await service.backupNow();const backup=await (await dir.getFileHandle('rebatehq-backup.enc')).getFile();
+  const wf=await service.marginWaterfall(),leaks=await service.leaks();await service.backupNow();const finalBackup=new Blob([await (await (await dir.getFileHandle('rebatehq-backup.enc')).getFile()).arrayBuffer()]);
   const prices=await service.engine!.conn.query('SELECT product_id,tier,price::VARCHAR AS price FROM price_matrix ORDER BY product_id,tier,id');
   const expected=JSON.stringify(prices.toArray().map(r=>({...r}))),tip=(await service.engine!.conn.query('SELECT audit_tip,audit_count::VARCHAR AS n FROM vault_meta')).toArray()[0];
   await service.lock();
   // Keep the external-backup seam's File snapshot, then wipe ALL origin OPFS and backup-handle metadata.
   for await(const [name] of root.entries())await root.removeEntry(name,{recursive:true});
-  await new Promise<void>((resolve,reject)=>{const request=indexedDB.deleteDatabase('margindesk-backup-handles');request.onsuccess=()=>resolve();request.onerror=()=>reject(request.error);});
+  await new Promise<void>((resolve,reject)=>{const request=indexedDB.deleteDatabase('rebatehq-backup-handles');request.onsuccess=()=>resolve();request.onerror=()=>reject(request.error);});
   service=new VaultService(()=>undefined);await service.init(scope);
   let wrong=false;try{await service.backupRestore(finalBackup,'deliberately-wrong-passphrase');}catch{wrong=true;}assert(wrong&&!(await service.status()).exists,'Wrong restore passphrase wrote a vault');
   const tampered=new Uint8Array(await finalBackup.arrayBuffer());tampered[tampered.length-1]^=1;let damaged=false;try{await service.backupRestore(new Blob([tampered]),secret);}catch{damaged=true;}assert(damaged&&!(await service.status()).exists,'Damaged backup was accepted');
@@ -642,6 +642,34 @@ async function pricingFlow() {
   return {manifestLeaks:5,simulationNoWrites:true,staleConflict:true,configuredFloor:true,automaticBackup:true,csvAndXlsx:true,originOpfsAndHandleStorageWiped:true,exactRestore:true,wrongPassphrase:true,auditPrefixIntact:true};
  }finally{await service.lock();await reset(scope);}
 }
+async function legacyStorage() {
+ const scope={userId:'legacy-'+crypto.randomUUID(),tenantId:'legacy-'+crypto.randomUUID()},root=await navigator.storage.getDirectory();
+ const idb=(name:string,work:(db:IDBDatabase)=>Promise<void>)=>new Promise<void>((resolve,reject)=>{const r=indexedDB.open(name,1);r.onupgradeneeded=()=>r.result.createObjectStore('handles');r.onerror=()=>reject(r.error);r.onsuccess=()=>{work(r.result).then(()=>{r.result.close();resolve();},e=>{r.result.close();reject(e);});};});
+ const drop=(name:string)=>new Promise<void>((resolve,reject)=>{const r=indexedDB.deleteDatabase(name);r.onsuccess=()=>resolve();r.onerror=()=>reject(r.error);});
+ let service=new VaultService(()=>undefined);await service.init(scope);await service.create(secret,'professional');await service.lock();
+ // Simulate a vault saved by a pre-rename build: copy its files into the legacy folder and remove the new copy (Chromium cannot rename OPFS directories).
+ const scopeName=service.storage.scope,parent=await root.getDirectoryHandle('rebatehq-vaults'),vaultDir=await parent.getDirectoryHandle(scopeName);
+ const legacyDir=await (await root.getDirectoryHandle('margindesk-vaults',{create:true})).getDirectoryHandle(scopeName,{create:true});
+ for await(const [name,entry] of vaultDir.entries())if(entry.kind==='file'){const out=await (await legacyDir.getFileHandle(name,{create:true})).createWritable();await (await (entry as FileSystemFileHandle).getFile()).stream().pipeTo(out);}
+ await parent.removeEntry(scopeName,{recursive:true});
+ service=new VaultService(()=>undefined);await service.init(scope);
+ assert((await service.status()).exists,'Vault in the legacy folder was not found');
+ await service.unlock(secret);await service.lock();
+ let duplicated=true;try{await parent.getDirectoryHandle(scopeName);}catch{duplicated=false;}
+ assert(!duplicated,'Opening a legacy vault created a second copy under rebatehq-vaults');
+ // Backup-folder settings saved by a pre-rename build are carried forward once.
+ await drop('rebatehq-backup-handles');await drop('margindesk-backup-handles');
+ await idb('margindesk-backup-handles',db=>new Promise<void>((resolve,reject)=>{const tx=db.transaction('handles','readwrite');tx.objectStore('handles').put({directory:null,hours:12,last:'2026-01-01T00:00:00.000Z',error:false},scope.userId);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);}));
+ const carried=await backupConfig(scope.userId);assert(carried.hours===12&&carried.last==='2026-01-01T00:00:00.000Z','Legacy backup settings were not carried forward');
+ await drop('margindesk-backup-handles');
+ const kept=await backupConfig(scope.userId);assert(kept.hours===12,'Carried-forward backup settings were not stored in the new database');
+ await drop('rebatehq-backup-handles');
+ const none=await backupConfig('never-configured-'+crypto.randomUUID());assert(none.directory===null&&none.hours===24,'Missing settings did not fall back to defaults');
+ let legacyCreated=false;await new Promise<void>(resolve=>{const r=indexedDB.databases?indexedDB.databases():Promise.resolve([]);r.then(list=>{legacyCreated=list.some(d=>d.name==='margindesk-backup-handles');resolve();});});
+ assert(!legacyCreated,'Probing for legacy settings created an empty legacy database');
+ await (await root.getDirectoryHandle('margindesk-vaults')).removeEntry(scopeName,{recursive:true});
+ return {legacyVaultOpenedInPlaceAndUnlocked:true,legacyBackupSettingsCarriedForward:true,missingLegacyDatabaseNotCreated:true};
+}
 async function pricingBenchmark(){
  const scope={userId:'bench-'+crypto.randomUUID(),tenantId:'bench-'+crypto.randomUUID()},service=new VaultService(()=>undefined);await service.init(scope);await service.create(secret,'scale');
  try{const e=service.engine!,src=crypto.randomUUID();await e.conn.query(`BEGIN;INSERT INTO products(product_id,category,current_cost,list_price) SELECT 'P'||i,'Benchmark',6000,10000 FROM range(100000)t(i);INSERT INTO customers(customer_id,tier) SELECT 'C'||i,'T'||(i%50) FROM range(2000)t(i);INSERT INTO source_files VALUES('${src}','synthetic benchmark.csv','sales_history',0,'2026-11-04');INSERT INTO vendor_costs(id,vendor,product_id,cost,effective_date,source_file) SELECT 'old'||i,'Benchmark Mills','P'||i,6000,'2024-01-01','synthetic' FROM range(100000)t(i);INSERT INTO vendor_costs(id,vendor,product_id,cost,effective_date,source_file) SELECT 'new'||i,'Benchmark Mills','P'||i,6600,'2025-01-01','synthetic' FROM range(100000)t(i)`);
@@ -655,7 +683,7 @@ async function pricingBenchmark(){
 self.onmessage = async event => {
   try {
     const { action } = event.data;
-    const result = action === "pricing" ? await pricingFlow() : action === "pricingBenchmark" ? await pricingBenchmark() : action === "fixture" ? await fixture() : action === "v1" ? await testFixture(event.data.bytes) : action === "seed" ? await seed(event.data.rows) : action === "firstChange" ? await firstChange(event.data.rows) : action === "integrity" ? await integrity() : action === "studio" ? await studio() : action === "mapper" ? await mapper() : action === "playground" ? await playground() : action === "margin" ? await margin() : action === "marginBenchmark" ? await marginBenchmark(event.data.rows) : action === "studioBenchmark" ? await studioBenchmark(event.data.rows) : action === "warmup" ? await warmup() : action === "cipherOnly" ? await cipherOnly() : await storageStatus();
+    const result = action === "pricing" ? await pricingFlow() : action === "legacyStorage" ? await legacyStorage() : action === "pricingBenchmark" ? await pricingBenchmark() : action === "fixture" ? await fixture() : action === "v1" ? await testFixture(event.data.bytes) : action === "seed" ? await seed(event.data.rows) : action === "firstChange" ? await firstChange(event.data.rows) : action === "integrity" ? await integrity() : action === "studio" ? await studio() : action === "mapper" ? await mapper() : action === "playground" ? await playground() : action === "margin" ? await margin() : action === "marginBenchmark" ? await marginBenchmark(event.data.rows) : action === "studioBenchmark" ? await studioBenchmark(event.data.rows) : action === "warmup" ? await warmup() : action === "cipherOnly" ? await cipherOnly() : await storageStatus();
     self.postMessage({ result });
   } catch (e) { self.postMessage({ error: e instanceof Error ? e.message : "test worker failed" }); }
 };

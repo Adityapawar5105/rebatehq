@@ -16,7 +16,7 @@ export function suggestMapping(headers:string[]):ColumnMapping {
 }
 function reject(message:string):never{throw new HttpError(422,message);}
 export function validateMapping(value:unknown,columns:number):ColumnMapping {
- if(!value||typeof value!=="object"||Array.isArray(value))reject("Choose which columns match MarginDesk fields.");
+ if(!value||typeof value!=="object"||Array.isArray(value))reject("Choose which columns match RebateHQ fields.");
  const result:ColumnMapping={};const seen=new Set<number>();
  for(const [key,index] of Object.entries(value!)){if(!IMPORT_FIELDS.includes(key as ImportField)||!Number.isInteger(index)||Number(index)<0||Number(index)>=columns||seen.has(Number(index)))reject("Map each field to a different existing column.");result[key as ImportField]=Number(index);seen.add(Number(index));}
  return result;

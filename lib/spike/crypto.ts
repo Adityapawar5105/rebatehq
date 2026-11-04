@@ -32,7 +32,7 @@ export async function encryptSnapshot(source:Blob,sink:Sink,passphrase:string,pr
 export async function decryptSnapshot(source:Blob,sink:Sink,passphrase:string,progress=(done:number,total:number)=>{},signal?:AbortSignal){
  try{
   const first=new Uint8Array(await source.slice(0,12).arrayBuffer());
-  if(first.length!==12||!MAGIC.every((b,i)=>b===first[i]))throw new SpikeError("Not a MarginDesk spike snapshot.");
+  if(first.length!==12||!MAGIC.every((b,i)=>b===first[i]))throw new SpikeError("Not a RebateHQ spike snapshot.");
   const length=new DataView(first.buffer).getUint32(8);
   if(length>4096||source.size<12+length+16)throw new SpikeError("Snapshot header is invalid.");
   const header=new Uint8Array(await source.slice(0,12+length).arrayBuffer());

@@ -165,7 +165,7 @@ function MappingEditor({ file, busy, patch }: { file: FileView; busy: boolean; p
     </div>
     {erp && <p className={styles.small}>{erp.note}</p>}
     <div className={styles.tableWrap}><table className={styles.table} aria-label={`Column mapping for ${file.name}`}>
-      <thead><tr><th scope="col">MarginDesk field</th><th scope="col">Comes from</th><th scope="col">Match</th><th scope="col">Why</th></tr></thead>
+      <thead><tr><th scope="col">RebateHQ field</th><th scope="col">Comes from</th><th scope="col">Match</th><th scope="col">Why</th></tr></thead>
       <tbody>{file.fields.map(m => <tr key={m.field}>
         <td>{m.field}{m.required ? " (required)" : ""}</td>
         <td><select aria-label={`Source for ${m.field}`} value={sourceValue(m.source)} disabled={busy} onChange={e => void patch({ field: { name: m.field, source: parseSource(e.target.value) } })}>

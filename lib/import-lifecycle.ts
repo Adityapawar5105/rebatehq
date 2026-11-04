@@ -14,7 +14,7 @@ type RecordRow=Record<string,any>;
 export type Graph={product:RecordRow;costs:RecordRow[];prices:RecordRow[]};
 export type StoredRow={diff:ImportDiff;before:Graph|null;expected:string;input?:ImportValue;conversion?:{from:string;to:string;factor:string;date:string}};
 type Journal={version:1;currency:string;plan:ImportPlan;rows:StoredRow[];listId:string|null;createdList:boolean;warningsAcknowledged?:boolean;after?:Record<string,Graph|string>;committedAt?:string;committedBy?:string;undoneAt?:string;undoneBy?:string};
-const IMPORT="catalog_import_v1",EXPORT="catalog_export_v1",LIST="MarginDesk file imports";
+const IMPORT="catalog_import_v1",EXPORT="catalog_export_v1",LIST="RebateHQ file imports";
 export const ImportOptions=z.object({
  numericFormat:z.enum(["dot","comma"]).default("dot"),approveTextNumbers:z.boolean().default(false),
  approveUnits:z.boolean().default(false),acknowledgeWarnings:z.boolean().default(false),

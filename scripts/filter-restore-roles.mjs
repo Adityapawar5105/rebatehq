@@ -1,6 +1,6 @@
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 
-export const RESTORE_OWNED_ROLES = new Set(["margindesk_app"]);
+export const RESTORE_OWNED_ROLES = new Set(["rebatehq_app"]);
 export const SUPABASE_MANAGED_ROLES = new Set([
   "anon", "authenticated", "authenticator", "dashboard_user", "postgres", "pgbouncer", "service_role",
   "supabase_admin", "supabase_auth_admin", "supabase_etl_admin", "supabase_functions_admin",
@@ -160,7 +160,7 @@ export function inspectAndFilterRolesDump(sql) {
         const granted = roleList(match[2]);
         const grantees = roleList(match[4]);
         referencedRoles = [...granted, ...grantees];
-        if (referencedRoles.includes("margindesk_app")) {
+        if (referencedRoles.includes("rebatehq_app")) {
           if (referencedRoles.some(name => name === null || (!RESTORE_OWNED_ROLES.has(name) && !SUPABASE_MANAGED_ROLES.has(name)))) {
             errors.push(`Membership statement involving an owned role references a role outside the explicit allowlists: ${redact(statement)}`);
             continue;
@@ -172,7 +172,7 @@ export function inspectAndFilterRolesDump(sql) {
     if (keep) {
       restore.push(statement);
       if (role && RESTORE_OWNED_ROLES.has(role)) retainedOwned.push(redact(statement));
-      if (/^(?:GRANT|REVOKE)\b/i.test(clean) && referencedRoles.includes("margindesk_app")) {
+      if (/^(?:GRANT|REVOKE)\b/i.test(clean) && referencedRoles.includes("rebatehq_app")) {
         retainedAppGrants.push(redact(statement));
       }
       continue;
@@ -189,16 +189,16 @@ export function inspectAndFilterRolesDump(sql) {
   }
 
   diagnostics.push(`Role statements retained for owned roles: ${retainedOwned.length}`);
-  diagnostics.push(`Statements retained for owned role margindesk_app: ${retainedOwned.length}`);
-  for (const statement of retainedOwned) diagnostics.push(`RETAINED [margindesk_app]: ${statement}`);
-  diagnostics.push(`Membership grant statements retained for margindesk_app: ${retainedAppGrants.length}`);
-  for (const statement of retainedAppGrants) diagnostics.push(`RETAINED [grant involving margindesk_app]: ${statement}`);
+  diagnostics.push(`Statements retained for owned role rebatehq_app: ${retainedOwned.length}`);
+  for (const statement of retainedOwned) diagnostics.push(`RETAINED [rebatehq_app]: ${statement}`);
+  diagnostics.push(`Membership grant statements retained for rebatehq_app: ${retainedAppGrants.length}`);
+  for (const statement of retainedAppGrants) diagnostics.push(`RETAINED [grant involving rebatehq_app]: ${statement}`);
   diagnostics.push(`Allowlisted session statements retained: ${retainedSession.length}`);
   for (const statement of retainedSession) diagnostics.push(`RETAINED [session allowlist]: ${statement}`);
   diagnostics.push(`Allowlisted platform-role statements skipped: ${skipped.length}`);
   for (const item of skipped) diagnostics.push(`SKIPPED [${item.reason}]: ${item.statement}`);
-  if (!restore.some(statement => /^\s*CREATE\s+ROLE\s+(?:"margindesk_app"|margindesk_app)(?:\s|;)/i.test(statement))) {
-    errors.push("roles.sql did not contain CREATE ROLE margindesk_app; refusing a partial role restore.");
+  if (!restore.some(statement => /^\s*CREATE\s+ROLE\s+(?:"rebatehq_app"|rebatehq_app)(?:\s|;)/i.test(statement))) {
+    errors.push("roles.sql did not contain CREATE ROLE rebatehq_app; refusing a partial role restore.");
   }
   return { restoreSql: `${restore.join("\n\n")}\n`, diagnostics, retainedOwned, retainedAppGrants, retainedSession, skipped, errors };
 }
@@ -214,13 +214,13 @@ if (process.argv[1] && process.argv[1].endsWith("filter-restore-roles.mjs")) {
     appendFileSync(summaryPath, [
       "### Filtered role dump",
       "",
-      "Only explicitly allowlisted `margindesk_app` role statements and four exact dump-session statements were retained. Platform-managed statements were skipped only under the bounded role/parameter allowlists.",
+      "Only explicitly allowlisted `rebatehq_app` role statements and four exact dump-session statements were retained. Platform-managed statements were skipped only under the bounded role/parameter allowlists.",
       "",
-      `Retained ${result.retainedOwned.length} ` + "`margindesk_app`" + " role statement(s):",
+      `Retained ${result.retainedOwned.length} ` + "`rebatehq_app`" + " role statement(s):",
       "",
       ...result.retainedOwned.map(statement => `- \`${statement.replace(/`/g, "'")}\``),
       "",
-      `Retained ${result.retainedAppGrants.length} membership statement(s) involving ` + "`margindesk_app`" + ":",
+      `Retained ${result.retainedAppGrants.length} membership statement(s) involving ` + "`rebatehq_app`" + ":",
       "",
       ...result.retainedAppGrants.map(statement => `- \`${statement.replace(/`/g, "'")}\``),
       "",

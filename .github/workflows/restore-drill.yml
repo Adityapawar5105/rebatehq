@@ -1,4 +1,4 @@
-name: MarginDesk Restore Drill
+name: RebateHQ Restore Drill
 on:
   workflow_dispatch:
     inputs:
@@ -78,18 +78,18 @@ jobs:
         env:
           RESTORE_TEST_SOURCE_DATABASE_URL: ${{ secrets.RESTORE_TEST_SOURCE_DATABASE_URL }}
         run: |
-          mkdir -p "$RUNNER_TEMP/margindesk-dump"
-          cp scripts/restore-platform-acl-cleanup.sql "$RUNNER_TEMP/margindesk-dump/restore-platform-acl-cleanup.sql"
+          mkdir -p "$RUNNER_TEMP/rebatehq-dump"
+          cp scripts/restore-platform-acl-cleanup.sql "$RUNNER_TEMP/rebatehq-dump/restore-platform-acl-cleanup.sql"
           schema_allowlist="$(node scripts/restore-dump-scope.mjs)"
           echo "Using application schema allowlist: $schema_allowlist"
           if [[ "$RESTORE_TARGET" == "local" ]]; then
-            pnpm exec supabase db dump --local --role-only --file "$RUNNER_TEMP/margindesk-dump/roles.sql"
-            pnpm exec supabase db dump --local --schema "$schema_allowlist" --file "$RUNNER_TEMP/margindesk-dump/schema.sql"
-            pnpm exec supabase db dump --local --data-only --use-copy --schema "$schema_allowlist" --file "$RUNNER_TEMP/margindesk-dump/data.sql"
+            pnpm exec supabase db dump --local --role-only --file "$RUNNER_TEMP/rebatehq-dump/roles.sql"
+            pnpm exec supabase db dump --local --schema "$schema_allowlist" --file "$RUNNER_TEMP/rebatehq-dump/schema.sql"
+            pnpm exec supabase db dump --local --data-only --use-copy --schema "$schema_allowlist" --file "$RUNNER_TEMP/rebatehq-dump/data.sql"
           else
-            pnpm exec supabase db dump --db-url "$RESTORE_TEST_SOURCE_DATABASE_URL" --role-only --file "$RUNNER_TEMP/margindesk-dump/roles.sql"
-            pnpm exec supabase db dump --db-url "$RESTORE_TEST_SOURCE_DATABASE_URL" --schema "$schema_allowlist" --file "$RUNNER_TEMP/margindesk-dump/schema.sql"
-            pnpm exec supabase db dump --db-url "$RESTORE_TEST_SOURCE_DATABASE_URL" --data-only --use-copy --schema "$schema_allowlist" --file "$RUNNER_TEMP/margindesk-dump/data.sql"
+            pnpm exec supabase db dump --db-url "$RESTORE_TEST_SOURCE_DATABASE_URL" --role-only --file "$RUNNER_TEMP/rebatehq-dump/roles.sql"
+            pnpm exec supabase db dump --db-url "$RESTORE_TEST_SOURCE_DATABASE_URL" --schema "$schema_allowlist" --file "$RUNNER_TEMP/rebatehq-dump/schema.sql"
+            pnpm exec supabase db dump --db-url "$RESTORE_TEST_SOURCE_DATABASE_URL" --data-only --use-copy --schema "$schema_allowlist" --file "$RUNNER_TEMP/rebatehq-dump/data.sql"
           fi
           printf 'DUMP_END_EPOCH=%s\n' "$(date +%s)" >> "$GITHUB_ENV"
           printf 'RESTORE_START_EPOCH=%s\n' "$(date +%s)" >> "$GITHUB_ENV"
@@ -98,24 +98,24 @@ jobs:
         shell: bash
         run: |
           node scripts/inspect-restore-dump.mjs \
-            "$RUNNER_TEMP/margindesk-dump/schema.sql" \
-            "$RUNNER_TEMP/margindesk-dump/data.sql" \
-            "$RUNNER_TEMP/margindesk-dump/dump-inventory.json"
+            "$RUNNER_TEMP/rebatehq-dump/schema.sql" \
+            "$RUNNER_TEMP/rebatehq-dump/data.sql" \
+            "$RUNNER_TEMP/rebatehq-dump/dump-inventory.json"
 
-      - name: Inspect role dump and filter to MarginDesk-owned roles
+      - name: Inspect role dump and filter to RebateHQ-owned roles
         shell: bash
         run: |
           node scripts/filter-restore-roles.mjs \
-            "$RUNNER_TEMP/margindesk-dump/roles.sql" \
-            "$RUNNER_TEMP/margindesk-dump/margindesk-roles.sql"
+            "$RUNNER_TEMP/rebatehq-dump/roles.sql" \
+            "$RUNNER_TEMP/rebatehq-dump/rebatehq-roles.sql"
       - name: Capture source role, ACL, and tenant row-count baseline
         shell: bash
         run: |
           node scripts/verify-restore-equivalence.mjs --snapshot \
-            "$RUNNER_TEMP/margindesk-dump/source-equivalence.json" \
-            "$RUNNER_TEMP/margindesk-dump/dump-inventory.json"
+            "$RUNNER_TEMP/rebatehq-dump/source-equivalence.json" \
+            "$RUNNER_TEMP/rebatehq-dump/dump-inventory.json"
       - name: Capture source function ACL checkpoint
-        run: node scripts/inspect-restore-function-acls.mjs source "$RUNNER_TEMP/margindesk-dump/function-acl-evidence"
+        run: node scripts/inspect-restore-function-acls.mjs source "$RUNNER_TEMP/rebatehq-dump/function-acl-evidence"
 
       - name: Stop and discard source stack before starting a fresh target (local)
         if: always() && inputs.target == 'local'
@@ -126,7 +126,7 @@ jobs:
             exit 0
           fi
           running_containers="$(docker ps --format '{{.Names}}')"
-          if grep -Eq '^supabase_[^[:space:]]*_margindesk-local$' <<< "$running_containers"; then
+          if grep -Eq '^supabase_[^[:space:]]*_rebatehq-local$' <<< "$running_containers"; then
             pnpm exec supabase stop --no-backup
           else
             echo "Source stack was never started or is already stopped; skipping cleanup."
@@ -135,9 +135,9 @@ jobs:
         if: inputs.target == 'local'
         shell: bash
         run: |
-          target_dir="$RUNNER_TEMP/margindesk-restore-target"
+          target_dir="$RUNNER_TEMP/rebatehq-restore-target"
           mkdir -p "$target_dir/supabase"
-          sed 's/^project_id = "margindesk-local"$/project_id = "margindesk-restore"/' supabase/config.toml > "$target_dir/supabase/config.toml"
+          sed 's/^project_id = "rebatehq-local"$/project_id = "rebatehq-restore"/' supabase/config.toml > "$target_dir/supabase/config.toml"
           pnpm exec supabase start --workdir "$target_dir" -x studio,edge-runtime,storage-api,imgproxy,logflare,vector
           pnpm exec supabase status --workdir "$target_dir" --output env > "$RUNNER_TEMP/target-status.env"
           db_url="$(sed -n 's/^DB_URL=//p' "$RUNNER_TEMP/target-status.env" | head -n 1 | sed 's/^"//; s/"$//')"
@@ -175,10 +175,10 @@ jobs:
         if: inputs.target == 'local'
         shell: bash
         run: |
-          docker cp "$RUNNER_TEMP/margindesk-dump/margindesk-roles.sql" "$RESTORE_DB_CONTAINER:/tmp/margindesk-roles.sql"
-          docker cp "$RUNNER_TEMP/margindesk-dump/schema.sql" "$RESTORE_DB_CONTAINER:/tmp/margindesk-schema.sql"
+          docker cp "$RUNNER_TEMP/rebatehq-dump/rebatehq-roles.sql" "$RESTORE_DB_CONTAINER:/tmp/rebatehq-roles.sql"
+          docker cp "$RUNNER_TEMP/rebatehq-dump/schema.sql" "$RESTORE_DB_CONTAINER:/tmp/rebatehq-schema.sql"
           docker exec "$RESTORE_DB_CONTAINER" psql -U postgres -d postgres --single-transaction --set ON_ERROR_STOP=1 \
-            --file=/tmp/margindesk-roles.sql --file=/tmp/margindesk-schema.sql
+            --file=/tmp/rebatehq-roles.sql --file=/tmp/rebatehq-schema.sql
 
       - name: Restore owned roles and application schema (hosted)
         if: inputs.target == 'hosted'
@@ -186,16 +186,16 @@ jobs:
           RESTORE_TEST_TARGET_DATABASE_URL: ${{ secrets.RESTORE_TEST_TARGET_DATABASE_URL }}
         shell: bash
         run: |
-          docker run --rm -v "$RUNNER_TEMP/margindesk-dump:/restore:ro" postgres:17-alpine \
+          docker run --rm -v "$RUNNER_TEMP/rebatehq-dump:/restore:ro" postgres:17-alpine \
             psql "$RESTORE_TEST_TARGET_DATABASE_URL" --single-transaction --set ON_ERROR_STOP=1 \
-            --file /restore/margindesk-roles.sql --file /restore/schema.sql
+            --file /restore/rebatehq-roles.sql --file /restore/schema.sql
           {
             printf 'SEED_DATABASE_URL=%s\n' "$RESTORE_TEST_TARGET_DATABASE_URL"
             printf 'TEST_DATABASE_URL=%s\n' "$RESTORE_TEST_TARGET_DATABASE_URL"
           } >> "$GITHUB_ENV"
 
       - name: Capture function ACLs immediately after schema restore
-        run: node scripts/inspect-restore-function-acls.mjs after-schema "$RUNNER_TEMP/margindesk-dump/function-acl-evidence"
+        run: node scripts/inspect-restore-function-acls.mjs after-schema "$RUNNER_TEMP/rebatehq-dump/function-acl-evidence"
 
       - name: Remove target platform ACL additions (local)
         if: inputs.target == 'local'
@@ -204,7 +204,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          docker cp "$RUNNER_TEMP/margindesk-dump/restore-platform-acl-cleanup.sql" "$RESTORE_DB_CONTAINER:/tmp/restore-platform-acl-cleanup.sql"
+          docker cp "$RUNNER_TEMP/rebatehq-dump/restore-platform-acl-cleanup.sql" "$RESTORE_DB_CONTAINER:/tmp/restore-platform-acl-cleanup.sql"
           migration_log="$RUNNER_TEMP/restore-platform-acl-cleanup.log"
           docker exec -e PGOPTIONS="$PGOPTIONS" "$RESTORE_DB_CONTAINER" psql -U postgres -d postgres --set ON_ERROR_STOP=1 \
             --file=/tmp/restore-platform-acl-cleanup.sql 2>&1 | tee "$migration_log"
@@ -222,7 +222,7 @@ jobs:
         run: |
           set -o pipefail
           migration_log="$RUNNER_TEMP/restore-platform-acl-cleanup.log"
-          docker run --rm -e PGOPTIONS="$PGOPTIONS" -v "$RUNNER_TEMP/margindesk-dump:/restore:ro" postgres:17-alpine \
+          docker run --rm -e PGOPTIONS="$PGOPTIONS" -v "$RUNNER_TEMP/rebatehq-dump:/restore:ro" postgres:17-alpine \
             psql "$RESTORE_TEST_TARGET_DATABASE_URL" --set ON_ERROR_STOP=1 \
             --file /restore/restore-platform-acl-cleanup.sql 2>&1 | tee "$migration_log"
           if grep -Eiq 'no privileges (were granted|could be revoked|were revoked)' "$migration_log"; then
@@ -231,18 +231,18 @@ jobs:
           fi
 
       - name: Capture function ACLs after restore-only platform cleanup
-        run: node scripts/inspect-restore-function-acls.mjs after-cleanup "$RUNNER_TEMP/margindesk-dump/function-acl-evidence"
+        run: node scripts/inspect-restore-function-acls.mjs after-cleanup "$RUNNER_TEMP/rebatehq-dump/function-acl-evidence"
 
       - name: Prepare synthetic auth.users references
-        run: node scripts/prepare-restore-auth-users.mjs "$RUNNER_TEMP/margindesk-dump/dump-inventory.json"
+        run: node scripts/prepare-restore-auth-users.mjs "$RUNNER_TEMP/rebatehq-dump/dump-inventory.json"
 
       - name: Restore application data (local)
         if: inputs.target == 'local'
         shell: bash
         run: |
-          docker cp "$RUNNER_TEMP/margindesk-dump/data.sql" "$RESTORE_DB_CONTAINER:/tmp/margindesk-data.sql"
+          docker cp "$RUNNER_TEMP/rebatehq-dump/data.sql" "$RESTORE_DB_CONTAINER:/tmp/rebatehq-data.sql"
           docker exec "$RESTORE_DB_CONTAINER" psql -U postgres -d postgres --single-transaction --set ON_ERROR_STOP=1 \
-            --command='SET session_replication_role = replica' --file=/tmp/margindesk-data.sql
+            --command='SET session_replication_role = replica' --file=/tmp/rebatehq-data.sql
           printf 'RESTORE_END_EPOCH=%s\n' "$(date +%s)" >> "$GITHUB_ENV"
 
       - name: Restore application data (hosted)
@@ -251,14 +251,14 @@ jobs:
           RESTORE_TEST_TARGET_DATABASE_URL: ${{ secrets.RESTORE_TEST_TARGET_DATABASE_URL }}
         shell: bash
         run: |
-          docker run --rm -v "$RUNNER_TEMP/margindesk-dump:/restore:ro" postgres:17-alpine \
+          docker run --rm -v "$RUNNER_TEMP/rebatehq-dump:/restore:ro" postgres:17-alpine \
             psql "$RESTORE_TEST_TARGET_DATABASE_URL" --single-transaction --set ON_ERROR_STOP=1 \
             --command='SET session_replication_role = replica' --file /restore/data.sql
           printf 'RESTORE_END_EPOCH=%s\n' "$(date +%s)" >> "$GITHUB_ENV"
       - name: Capture function ACLs after data restore
-        run: node scripts/inspect-restore-function-acls.mjs after-data "$RUNNER_TEMP/margindesk-dump/function-acl-evidence"
+        run: node scripts/inspect-restore-function-acls.mjs after-data "$RUNNER_TEMP/rebatehq-dump/function-acl-evidence"
       - name: Compare restored role attributes, grants, and application row counts
-        run: node scripts/verify-restore-equivalence.mjs --compare "$RUNNER_TEMP/margindesk-dump/source-equivalence.json" "$RUNNER_TEMP/margindesk-dump/dump-inventory.json"
+        run: node scripts/verify-restore-equivalence.mjs --compare "$RUNNER_TEMP/rebatehq-dump/source-equivalence.json" "$RUNNER_TEMP/rebatehq-dump/dump-inventory.json"
       - name: Verify restored sentinel and create restricted app login
         run: |
           pnpm check:restore-sentinel
@@ -269,7 +269,7 @@ jobs:
       - name: Re-run full RLS and append-only suite against restored database
         env:
           RESTORE_TEST_MODE: "true"
-          RESTORE_BASELINE_PATH: ${{ runner.temp }}/margindesk-dump/source-equivalence.json
+          RESTORE_BASELINE_PATH: ${{ runner.temp }}/rebatehq-dump/source-equivalence.json
         run: |
           pnpm test:db:repeat
           printf 'TEST_END_EPOCH=%s\n' "$(date +%s)" >> "$GITHUB_ENV"
@@ -291,7 +291,7 @@ jobs:
           tests_seconds=$((test_end - tests_start))
           total_seconds=$((finished - DRILL_START_EPOCH))
           {
-            echo '## MarginDesk restore drill'
+            echo '## RebateHQ restore drill'
             echo
             echo "- Result: **$JOB_STATUS**"
             echo "- Target mode: **$RESTORE_TARGET**"
@@ -305,13 +305,13 @@ jobs:
         if: always() && inputs.target == 'local'
         shell: bash
         run: |
-          target_dir="$RUNNER_TEMP/margindesk-restore-target"
+          target_dir="$RUNNER_TEMP/rebatehq-restore-target"
           if [[ ! -d "$target_dir/supabase" ]]; then
             echo "Target Supabase workdir is missing; target stack was never started. Skipping cleanup."
             exit 0
           fi
           running_containers="$(docker ps --format '{{.Names}}')"
-          if grep -Eq '^supabase_[^[:space:]]*_margindesk-restore$' <<< "$running_containers"; then
+          if grep -Eq '^supabase_[^[:space:]]*_rebatehq-restore$' <<< "$running_containers"; then
             pnpm exec supabase stop --workdir "$target_dir" --no-backup
           else
             echo "Target stack is already stopped or was never started; skipping cleanup."

@@ -4,15 +4,28 @@ import { digest, encrypt, type Key } from "./crypto";
 import { VaultError, type Scope, type StorageStatus } from "./protocol";
 export type Head = { format: 1; current: string; previous: string | null; sequence: string; savedAt: string };
 const validName = (name: unknown): name is string => typeof name === "string" && /^snapshot-[0-9a-f-]{36}\.enc$/.test(name);
+const VAULTS_DIR = "rebatehq-vaults", LEGACY_VAULTS_DIR = "margindesk-vaults";
+const isNotFound = (e: unknown) => e instanceof DOMException && e.name === "NotFoundError";
+const child = async (parent: FileSystemDirectoryHandle, name: string) => {
+  try { return await parent.getDirectoryHandle(name); } catch (e) { if (isNotFound(e)) return null; throw e; }
+};
+/** Chromium cannot rename OPFS directories, so a vault saved before the RebateHQ rename stays in the legacy folder and is never copied; new vaults go in the new one. */
+export async function openVaultDirectory(root: FileSystemDirectoryHandle, name: string) {
+  const current = await child(root, VAULTS_DIR);
+  const own = current && await child(current, name);
+  if (own) return own;
+  const legacy = await child(root, LEGACY_VAULTS_DIR);
+  const old = legacy && await child(legacy, name);
+  if (old) return old;
+  return (current ?? await root.getDirectoryHandle(VAULTS_DIR, { create: true })).getDirectoryHandle(name, { create: true });
+}
 export class VaultStorage {
   activeHead: Head | null = null;
   constructor(public directory: FileSystemDirectoryHandle, public scope: string) {}
   static async open(scope: Scope) {
     if (!/^[a-zA-Z0-9-]{1,80}$/.test(scope.userId) || !/^[a-zA-Z0-9-]{1,80}$/.test(scope.tenantId)) throw new VaultError("SCOPE", "A signed-in workspace is required.");
     const name = await digest(JSON.stringify([scope.userId, scope.tenantId]));
-    const root = await navigator.storage.getDirectory();
-    const parent = await root.getDirectoryHandle("margindesk-vaults", { create: true });
-    return new VaultStorage(await parent.getDirectoryHandle(name, { create: true }), name);
+    return new VaultStorage(await openVaultDirectory(await navigator.storage.getDirectory(), name), name);
   }
   async readHead(name = "head.json"): Promise<Head | null> {
     try {

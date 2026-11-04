@@ -1,4 +1,4 @@
-project_id = "margindesk-local"
+project_id = "rebatehq-local"
 
 [api]
 enabled = true

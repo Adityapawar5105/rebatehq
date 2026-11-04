@@ -104,7 +104,7 @@ async function main() {
     const authUsersPresent = (await pool.query("SELECT to_regclass('auth.users') IS NOT NULL AS present")).rows[0].present;
     assert.equal(authUsersPresent, true, "Source Supabase database must contain auth.users for dependency inspection.");
     const migrationFiles = readdirSync("supabase/migrations").filter(file => file.endsWith(".sql")).sort();
-    assert.ok(migrationFiles.length > 0, "No MarginDesk migrations found for restore inventory inspection.");
+    assert.ok(migrationFiles.length > 0, "No RebateHQ migrations found for restore inventory inspection.");
     const migrations = migrationFiles.map(file => ({ name: file, sql: readFileSync(`supabase/migrations/${file}`, "utf8") }));
     const migrationSql = migrations.map(item => item.sql).join("\n");
     const hasAuthTrigger = migrations.some(({ sql }) => [...sql.matchAll(/CREATE\s+TRIGGER\b[\s\S]*?;/gi)].some(match => /\bON\s+auth\./i.test(match[0])));
@@ -191,7 +191,7 @@ async function main() {
     process.stdout.write(`Public foreign keys to auth.users(id): ${JSON.stringify(authForeignKeys)}\n`);
     process.stdout.write(`Distinct auth.users IDs referenced by application data: ${authUserIds.size} (IDs and auth fields are not printed or dumped).\n`);
     process.stdout.write(`Application-created triggers on auth tables: none. Existing source auth triggers: ${JSON.stringify(authTriggerResult.rows)}\n`);
-    process.stdout.write(`margindesk-data.sql lines ${dumpLineContext.start}-${dumpLineContext.end} around line 448 (COPY row contents redacted; file has ${dumpLineContext.totalLines} lines):\n${dumpLineContext.lines.join("\n")}\n`);
+    process.stdout.write(`rebatehq-data.sql lines ${dumpLineContext.start}-${dumpLineContext.end} around line 448 (COPY row contents redacted; file has ${dumpLineContext.totalLines} lines):\n${dumpLineContext.lines.join("\n")}\n`);
 
     const summary = process.env.GITHUB_STEP_SUMMARY;
     if (summary) {

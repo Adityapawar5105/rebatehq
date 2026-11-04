@@ -28,7 +28,7 @@ export class Pdf {
     objects[2] = `<< /Type /Pages /Count ${n} /Kids [${this.pages.map((_, i) => `${6 + i * 2} 0 R`).join(" ")}] >>`;
     objects[3] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>";
     objects[4] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>";
-    objects[5] = `<< /Title (${Pdf.esc(title)}) /Producer (MarginDesk local report) >>`;
+    objects[5] = `<< /Title (${Pdf.esc(title)}) /Producer (RebateHQ local report) >>`;
     this.pages.forEach((ops, i) => {
       const content = ops.join("\n");
       objects[6 + i * 2] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${this.width} ${this.height}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${7 + i * 2} 0 R >>`;

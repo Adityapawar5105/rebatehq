@@ -15,7 +15,7 @@ DECLARE
   v_scope text;
   v_kind text;
 BEGIN
-  IF to_regclass('public.tenant') IS NULL OR to_regrole('margindesk_app') IS NULL
+  IF to_regclass('public.tenant') IS NULL OR to_regrole('rebatehq_app') IS NULL
     OR to_regrole('anon') IS NULL OR to_regrole('authenticated') IS NULL OR to_regrole('service_role') IS NULL THEN
     RAISE EXCEPTION 'Restore cleanup requires restored application schema/role and Supabase platform roles';
   END IF;
@@ -28,7 +28,7 @@ BEGIN
       AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid='pg_class'::regclass AND d.objid=c.oid AND d.deptype='e')
   LOOP
     v_owner_count:=v_owner_count+1;
-    IF v_owner.rolname LIKE 'supabase_%' OR v_owner.rolname IN ('anon','authenticated','service_role','authenticator','dashboard_user','margindesk_app') THEN
+    IF v_owner.rolname LIKE 'supabase_%' OR v_owner.rolname IN ('anon','authenticated','service_role','authenticator','dashboard_user','rebatehq_app') THEN
       RAISE EXCEPTION 'Unexpected platform/application login owner % for application tables; refusing cleanup',v_owner.rolname;
     END IF;
     IF v_owner.rolname<>current_user AND NOT pg_has_role(current_user,v_owner.oid,'MEMBER') THEN

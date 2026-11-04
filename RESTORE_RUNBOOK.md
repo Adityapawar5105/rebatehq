@@ -1,4 +1,4 @@
-# MarginDesk logical restore runbook
+# RebateHQ logical restore runbook
 
 ## Verification status and scope
 
@@ -16,9 +16,9 @@ The locked pricing/rebate migration and local-target restore are **verified in [
 
 ## Hosted-mode prerequisites
 
-1. Create two disposable Supabase projects: a source containing the MarginDesk data to test and a separate, empty target. Confirm that the target is new or can be safely discarded and recreated. The workflow rejects a target that already has `public.tenant`.
+1. Create two disposable Supabase projects: a source containing the RebateHQ data to test and a separate, empty target. Confirm that the target is new or can be safely discarded and recreated. The workflow rejects a target that already has `public.tenant`.
 2. Configure both projects with their Supabase platform schemas and roles. Use direct database connection URLs suitable for schema dumps and migrations; do not use the application pool URL.
-3. Apply **all MarginDesk migrations to the source before dumping**, in filename order. This includes `202610250001_revoke_platform_public_privileges.sql` and `202610250002_revoke_platform_function_privileges.sql`. Run `pnpm check:migrations-lock` and `pnpm check:schema` against the checked-out code before starting.
+3. Apply **all RebateHQ migrations to the source before dumping**, in filename order. This includes `202610250001_revoke_platform_public_privileges.sql` and `202610250002_revoke_platform_function_privileges.sql`. Run `pnpm check:migrations-lock` and `pnpm check:schema` against the checked-out code before starting.
 4. Add these GitHub Actions repository secrets, using the direct/admin URLs for the disposable projects:
 
    - `RESTORE_TEST_SOURCE_DATABASE_URL`
@@ -28,7 +28,7 @@ The locked pricing/rebate migration and local-target restore are **verified in [
 
 ## Ordered restore procedure
 
-1. Open **Actions → MarginDesk Restore Drill → Run workflow** and choose `local` or `hosted`. The workflow prints its exact named step order and runs a PGlite preflight reproducing the old grant loss and checking the replacement.
+1. Open **Actions → RebateHQ Restore Drill → Run workflow** and choose `local` or `hosted`. The workflow prints its exact named step order and runs a PGlite preflight reproducing the old grant loss and checking the replacement.
 2. In local mode, start the source stack and apply all migrations once in order with a clean reset. In hosted mode, supply an already migrated disposable source. Never replay historical migrations over either source's later schema.
 3. Seed the source sentinel, dump owned roles and only the migrated `public` schema/data, inventory tables and auth dependencies, filter the roles through explicit allowlists, and capture the source equivalence baseline and function ACL checkpoint. Every skipped role statement is logged; an unrecognized statement fails the job.
 4. In local mode, stop/discard the source and start a fresh target. In hosted mode, require a fresh disposable target without `public.tenant`.

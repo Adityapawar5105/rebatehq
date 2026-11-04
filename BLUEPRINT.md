@@ -1,4 +1,4 @@
-# MarginDesk Blueprint v2.2
+# RebateHQ Blueprint v2.2
 
 *Local-first pricing and margin software for wholesale distributors.*
 *Last updated: 2 Nov 2026 (v2.1 adopted 2 Nov 2026; v2.2 corrections listed in section 22)*
@@ -38,7 +38,7 @@
 | 6 | CRM connectors | Salesforce/HubSpot deferred to Phase 2, only if pilots ask |
 | 7 | Launch integration | CSV/XLSX in (multi-file, with built-in converter), ERP-ready file out |
 | 8 | Approvals | Maximum two approval levels, preset thresholds |
-| 9 | Name | MarginDesk |
+| 9 | Name | RebateHQ |
 | 10 | Existing server business-data code | Port reusable logic to the browser, then retire the server paths; existing tables and locked migrations stay untouched until a reviewed retirement migration |
 | 11 | Privacy proof | A CI "privacy gate" browser test must pass before any "data never leaves your device" claim |
 | 12 | Licences in v1 | Issued manually by an admin for pilots; payment integration after the first paid pilots |
@@ -200,7 +200,7 @@ Goals, not promises. Benchmark on an 8 GB office laptop. "100M rows in a tab" cl
 
 ### 6A. Import Studio: multiple files and in-browser converter
 
-**Goal:** a user drops whatever files they have, from any ERP or supplier, and MarginDesk turns them into clean CSV and loads them. No hunting for 10 converter sites, and nothing is uploaded anywhere.
+**Goal:** a user drops whatever files they have, from any ERP or supplier, and RebateHQ turns them into clean CSV and loads them. No hunting for 10 converter sites, and nothing is uploaded anywhere.
 
 **Multi-file support**
 - Drag and drop many files or a whole folder (Chrome/Edge)
@@ -243,7 +243,7 @@ Goals, not promises. Benchmark on an 8 GB office laptop. "100M rows in a tab" cl
 
 Vendavo's suite covers pricing (price waterfall, margin bridge analytics), quoting and agreements with approvals, rebate management, and deal guidance with stretch, target and floor prices for reps.
 
-| Vendavo capability | MarginDesk low-cost version | Phase |
+| Vendavo capability | RebateHQ low-cost version | Phase |
 |---|---|---|
 | Price waterfall | Margin waterfall | 1 |
 | Start / target / floor guidance | Price guardrails per tier and category | 1 (config), 2 (in Quote Desk) |
@@ -256,9 +256,9 @@ Vendavo's suite covers pricing (price waterfall, margin bridge analytics), quoti
 
 ---
 
-## 8. Common problems in similar software, and how MarginDesk solves them
+## 8. Common problems in similar software, and how RebateHQ solves them
 
-| Problem users hit | Why it hurts | MarginDesk answer | Phase |
+| Problem users hit | Why it hurts | RebateHQ answer | Phase |
 |---|---|---|---|
 | **Bad data stalls everything** | Data quality issues can halt implementations and delay them for months | Resilient parser, Fix Later queue, health score, converter | 1 |
 | **Item master can't feed the engine** | Mid-cap distributors often buy a second tool after the first flops | Item master cleanup assistant | 1 |
@@ -412,9 +412,9 @@ Success metric: **time to first leak found under 2 minutes.**
 - **Scale capped at 15 users:** limits support load; larger teams negotiate a custom plan.
 
 ### Value framing (how to talk about price)
-- Position against the typical alternatives: enterprise pricing suites usually mean five- to six-figure annual contracts plus paid implementation, while MarginDesk is $3,588 to $11,988 a year with no setup fee.
+- Position against the typical alternatives: enterprise pricing suites usually mean five- to six-figure annual contracts plus paid implementation, while RebateHQ is $3,588 to $11,988 a year with no setup fee.
 - **Do not publish specific competitor prices or "90-95% cheaper" claims** until you have verified quotes or public figures; vendors don't publish pricing, so any published number is an estimate.
-- Anchor ROI on the customer's own data: "Your Leak Report found $X; MarginDesk costs $7,188 a year" beats any generic savings table.
+- Anchor ROI on the customer's own data: "Your Leak Report found $X; RebateHQ costs $7,188 a year" beats any generic savings table.
 
 ---
 
@@ -547,3 +547,5 @@ Corrections after reviewing the repository and build history against v2.1. Produ
     - Section 6A now states the credit decision: returns load from Fix Later as signed credit lines, shown as their own "Returns and credits" waterfall step and never counted as leaks. Unknown-cost pocket is shown but left out of margin.
     - The Playground's planted leak L2 changed. C-0042's 25% override equalled tier T11's schedule rate exactly, so no data-only rule could tell it from L5's tier mismatch. It is now 32%, deeper than any tier. The committed manifest was regenerated: L2 is $1,233,201.76 and L4 is $108,243.79 (C-0042 also buys thin SKUs); L1, L3 and L5 are unchanged.
     - Scope, tiers and prices are unchanged.
+13. **4 Nov 2026 — product renamed from MarginDesk to RebateHQ (decision 9 and throughout).** An active product already trades as MarginDesk (margindesk.ai), so the name was changed before any launch or marketing. On 4 Nov 2026 `rebatehq.com` was available and a USPTO wordmark search for "RebateHQ" returned no results; neither is legal clearance, so a trademark attorney's check and an early filing are still open. Display text, UI titles, user-visible export file names, docs and workflow names changed. **Left unchanged by this item:** applied migrations and their locked hashes, `schema.sql` (the Phase 1 mirror), GitHub URLs until the repo is renamed, and past CI/restore evidence lines, which record runs under the old name. The database role, the stored price-list name and browser storage keys are handled in item 14. Scope, tiers and prices are unchanged.
+14. **4 Nov 2026 — legacy identifiers renamed (follow-up to item 13).** Pending migration `20261104120000_rename_app_role_to_rebatehq.sql` renames the `margindesk_app` Postgres role to `rebatehq_app` and the stored price list `MarginDesk file imports` to `RebateHQ file imports`; applied migrations and their locked hashes are unchanged. Restore tooling, the pgTAP suite and the function-ACL registry now use `rebatehq_app`. Browser storage keys were renamed (OPFS `rebatehq-vaults`, IndexedDB `rebatehq-backup-handles`, localStorage `rebatehq-local-v1` and `rebatehq-role`, web-lock `rebatehq-vault-*`). Existing backup-folder settings and prototype data are copied forward once. Chromium cannot rename OPFS directories and copying vaults could mean gigabytes, so a vault saved before the rename is opened in place in the legacy `margindesk-vaults` folder; only new vaults use `rebatehq-vaults`. The migration is local-only evidence until CI and the restore drill pass on it, and it must ship together with the matching app build. Scope, tiers and prices are unchanged.

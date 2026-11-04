@@ -14,7 +14,7 @@ const rowCountHelpers = fs.readFileSync(path.join(__dirname, "..", "scripts", "t
 const roleSetup = fs.readFileSync(path.join(__dirname, "..", "scripts", "setup-test-app-role.ts"), "utf8");
 
 test("the restricted-role pgTAP checks capture results and run assertions after RESET ROLE", () => {
-  const roleStart = sql.indexOf("SET LOCAL ROLE margindesk_app;");
+  const roleStart = sql.indexOf("SET LOCAL ROLE rebatehq_app;");
   const roleEnd = sql.indexOf("RESET ROLE;", roleStart);
   assert.ok(roleStart >= 0 && roleEnd > roleStart, "The app-role section must have a matching RESET ROLE.");
 
@@ -47,7 +47,7 @@ test("RLS fixtures prove tenant-positive paths, exact RLS write failures, and TR
   assert.match(sql, /position\('row-level security' in lower\(v_msg\)\)=0/, "Cross-tenant UPDATE/INSERT must distinguish RLS violations from table ACL denial.");
   assert.match(sql, /TRUNCATE public\.audit_log/, "The restricted role must attempt audit_log TRUNCATE.");
   assert.match(sql, /Statement-level trigger rejects audit_log TRUNCATE/, "Elevated-role TRUNCATE must be blocked by the statement trigger.");
-  assert.match(sql, /has_table_privilege\('margindesk_app',[^\n]*'TRUNCATE'\)/, "The app role must be checked for TRUNCATE ACLs.");
+  assert.match(sql, /has_table_privilege\('rebatehq_app',[^\n]*'TRUNCATE'\)/, "The app role must be checked for TRUNCATE ACLs.");
   assert.match(sql, /customer policy evaluates auth\.uid\(\).*without auth schema USAGE/i, "Policy evaluation must prove auth.uid works without schema USAGE.");
   assert.match(sql, /through the Supabase platform PUBLIC grant/i);
   assert.match(sql, /auth_uid_authenticated_policy_query/);
@@ -65,11 +65,11 @@ test("RLS fixtures prove tenant-positive paths, exact RLS write failures, and TR
   assert.match(registry, /listed_signature IS NULL/, "Unexpected functions must fail the registry check.");
   assert.match(registry, /expected_grantees IS DISTINCT FROM actual_grantees/, "Unexpected or missing grantees must fail the ACL check.");
   assert.match(sql, /public_security_definer_default_execute/, "Applicable default function grants must be printed for diagnosis.");
-  assert.match(sql, /margindesk_app has no role memberships that could supply hidden privileges/);
+  assert.match(sql, /rebatehq_app has no role memberships that could supply hidden privileges/);
   assert.match(sql, /App role cannot directly insert a null-tenant/);
   assert.match(sql, /phase1_ci_diagnostic/);
   assert.match(sql, /public_security_definer_default_execute/);
-  assert.match(sql, /margindesk_app_memberships/);
+  assert.match(sql, /rebatehq_app_memberships/);
   assert.match(sql, /No application table or column ACL grants any privilege to anon, authenticated, or PUBLIC/);
   assert.match(sql, /service_role application table privilege allowlist is empty/);
   assert.match(sql, /Public default privileges for application object owners grant nothing/);
@@ -132,7 +132,7 @@ test("database repeatability command runs the suite twice and proves no tenant r
 });
 
 test("auth function access stays minimal and failed-login audit writes use the definer function", () => {
-  assert.doesNotMatch(migration, /GRANT\s+USAGE\s+ON\s+SCHEMA\s+auth\s+TO\s+margindesk_app/i);
+  assert.doesNotMatch(migration, /GRANT\s+USAGE\s+ON\s+SCHEMA\s+auth\s+TO\s+rebatehq_app/i);
   assert.doesNotMatch(migration, /\b(?:GRANT|REVOKE)\b[^;]*\bauth\.uid\s*\(/i);
   const auditInsertPolicy = migration.match(/CREATE POLICY audit_log_append[\s\S]*?;/i)?.[0] ?? "";
   assert.match(auditInsertPolicy, /FOR INSERT TO margindesk_app/i);

@@ -15,7 +15,7 @@ let dataPlaneActive = false;
 await mkdir("test-results", { recursive: true });
 await build({ entryPoints: ["tests/browser/vault-worker.ts"], outfile: "test-results/vault-tests.js", bundle: true, platform: "browser", format: "esm", minify: true });
 const testCode = await readFile("test-results/vault-tests.js", "utf8");
-const profile = await mkdtemp(path.join(os.tmpdir(), "margindesk-vault-"));
+const profile = await mkdtemp(path.join(os.tmpdir(), "rebatehq-vault-"));
 const browserOptions = { ...(channel === "chromium" ? {} : { channel }), headless: true, viewport: { width: 1365, height: 900 } };
 let context = await chromium.launchPersistentContext(profile, browserOptions);
 const results = { date: new Date().toISOString(), auth, channel, browser: context.browser().version(), machine: { cpu: os.cpus()[0].model, ram: String(os.totalmem()), os: os.type() + " " + os.release() }, checks: {}, measurements: {} };
@@ -109,6 +109,7 @@ try {
   results.checks.mapper = await worker("mapper");
   results.checks.playground = await worker("playground");
   results.checks.margin = await worker("margin");
+  results.checks.legacyStorage = await worker("legacyStorage",{},120000);
   results.checks.pricing = await worker("pricing",{},600000);
   // The recovery suite intentionally deleted every OPFS handle, including the shell’s empty scope. Reinitialise it.
   await page.reload(); await ready();
@@ -147,7 +148,7 @@ try {
   for (const f of marked) await writeFile(f.path, f.bytes);
   await review(marked.map(f => f.path));
   const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Download all as ZIP" }).click()]);
-  assert.equal(download.suggestedFilename(), "margindesk-converted.zip"); assert.ok((await readFile(await download.path())).length > 100, "Converted ZIP is empty");
+  assert.equal(download.suggestedFilename(), "rebatehq-converted.zip"); assert.ok((await readFile(await download.path())).length > 100, "Converted ZIP is empty");
   await page.getByRole("button", { name: "Confirm and import locally" }).click();
   await page.getByTestId("line-count").filter({ hasText: /^100016$/ }).waitFor({ timeout: 120000 });
   results.checks.multiFormatImport = { files: marked.map(f => f.name), lines: 16 };
@@ -209,7 +210,7 @@ try {
   await page.getByTestId("leak-total").waitFor({ timeout: 60000 });
   const [pdf] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Download Leak Report (PDF)" }).click()]);
   const pdfBytes = await readFile(await pdf.path());
-  assert.ok(/^margindesk-leak-report-\d{4}-\d{2}-\d{2}\.pdf$/.test(pdf.suggestedFilename()) && pdfBytes.subarray(0, 8).toString("latin1") === "%PDF-1.4" && pdfBytes.toString("latin1").includes("Margin Leak Report"), "Leak Report PDF download malformed");
+  assert.ok(/^rebatehq-leak-report-\d{4}-\d{2}-\d{2}\.pdf$/.test(pdf.suggestedFilename()) && pdfBytes.subarray(0, 8).toString("latin1") === "%PDF-1.4" && pdfBytes.toString("latin1").includes("Margin Leak Report"), "Leak Report PDF download malformed");
   await page.getByRole("status").filter({ hasText: /nothing was uploaded/ }).waitFor();
   await page.getByRole("link", { name: "Home", exact: true }).click(); await page.getByTestId("roi-total").waitFor();
   results.checks.marginUi = { creditLoaded: true, mathPanel: true, leakReportBytes: pdfBytes.length, roiTracker: true };

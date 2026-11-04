@@ -45,7 +45,7 @@ export class VaultService {
     // crashes, the browser may not yet have released that tab's lease.
     const signal = AbortSignal.timeout(this.leaseWaitMs);
     await new Promise<void>((resolve, reject) => {
-      navigator.locks.request(`margindesk-vault-${this.storage.scope}`, { signal }, async () => {
+      navigator.locks.request(`rebatehq-vault-${this.storage.scope}`, { signal }, async () => {
         await new Promise<void>(release => { this.releaseLease = release; resolve(); });
       }).catch(error => reject(signal.aborted ? new VaultError("OTHER_TAB", "This vault is open in another tab. Lock or close that tab first.") : error));
     });
@@ -271,7 +271,7 @@ export class VaultService {
     try { await appendAudit(w, "report.leak_pdf", { findings: String(result.findings.length), bytes: String(bytes.byteLength), sample: String(view.sample) }); await w.conn.query("COMMIT"); }
     catch (error) { await w.conn.query("ROLLBACK").catch(() => undefined); throw error; }
     this.dirty = true; await this.save(); this.touch();
-    return { name: `margindesk-leak-report-${generatedAt.slice(0, 10)}.pdf`, blob: new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "application/pdf" }), bytes: String(bytes.byteLength), status: await this.status() };
+    return { name: `rebatehq-leak-report-${generatedAt.slice(0, 10)}.pdf`, blob: new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "application/pdf" }), bytes: String(bytes.byteLength), status: await this.status() };
   }
   /** Re-run reconciliation; open differences are replaced, accepted ones keep their status. */
   async reconcile() {
@@ -341,7 +341,7 @@ export class VaultService {
     return this.backupStatus();
   }
   async backupDue(){if(!this.engine||this.dirty)return;const c=await backupConfig(this.storage.scope);if(c.directory&&(!c.last||Date.now()-Date.parse(c.last)>=c.hours*3600000))await this.backupNow();}
-  async backupExport(){await this.pricingWrite('backup.file_export',async()=>{});const h=await this.storage.readHead();return {name:'margindesk-vault.enc',blob:await this.storage.file(h!.current)};}
+  async backupExport(){await this.pricingWrite('backup.file_export',async()=>{});const h=await this.storage.readHead();return {name:'rebatehq-vault.enc',blob:await this.storage.file(h!.current)};}
   async backupRestore(file:Blob,passphrase:string){
     if(this.engine||await this.storage.exists())throw new VaultError('BACKUP','Restore into an empty local vault in the same signed-in workspace. Existing data is never replaced.');
     if(file.size>600*1024*1024)throw new VaultError('BACKUP','This backup exceeds the restore size limit.');

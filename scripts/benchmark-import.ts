@@ -24,9 +24,9 @@ export async function benchmarkImport(db:DB,rows=MAX_IMPORT_DATA_ROWS){
   await db.query("INSERT INTO public.membership(tenant_id,user_id,email,role) VALUES($1,$2,$3,'owner')",[tenant,user,user+"@benchmark.invalid"]);
   await db.query("INSERT INTO public.uom(tenant_id,code,display_name) VALUES($1,'EA','Each')",[tenant]);
   phase="restricted role and authenticated context";
-  await db.query("SET LOCAL ROLE margindesk_app");
+  await db.query("SET LOCAL ROLE rebatehq_app");
   const role=(await db.query("SELECT current_user AS role,rolsuper,rolbypassrls,current_setting('server_version') AS version FROM pg_roles WHERE rolname=current_user")).rows[0];
-  assert.equal(role.role,"margindesk_app");assert.equal(role.rolsuper,false);assert.equal(role.rolbypassrls,false);
+  assert.equal(role.role,"rebatehq_app");assert.equal(role.rolsuper,false);assert.equal(role.rolbypassrls,false);
   await db.query("SELECT set_config('request.jwt.claim.sub',$1::text,true),set_config('app.real_actor_id',$1::text,true)",[user]);
   const date=(await db.query("SELECT current_date::text AS date")).rows[0].date;
   const source="SKU,Description,Unit,Cost,Price,Date\n"+Array.from({length:rows},(_,i)=>`BENCH-${i},Benchmark item,EA,10,20,${date}`).join("\n");

@@ -117,8 +117,9 @@ export function lintMigrationSet(migrations, { frozenMigrationNames = [] } = {})
     const sqlWithoutComments = migration.sql
       .replace(/\/\*[\s\S]*?\*\//g, " ")
       .replace(/--[^\r\n]*/g, " ");
-    if (/\bGRANT\s+"?margindesk_app"?\s+TO\b/i.test(sqlWithoutComments)) {
-      errors.push(`${migration.name} grants membership in margindesk_app; role membership grants are allowed only in disposable test setup.`);
+    const roleMembershipGrant = /\bGRANT\s+"?(margindesk_app|rebatehq_app)"?\s+TO\b/i.exec(sqlWithoutComments);
+    if (roleMembershipGrant) {
+      errors.push(`${migration.name} grants membership in ${roleMembershipGrant[1].toLowerCase()}; role membership grants are allowed only in disposable test setup.`);
     }
     if (/\b(?:GRANT|REVOKE)\b[^;]*\bON\b[^;]*(?:\b(?:auth|storage|extensions)\s*\.|\bIN\s+SCHEMA\s+(?:auth|storage|extensions)\b|\bSCHEMA\s+(?:auth|storage|extensions)\b)/i.test(sqlWithoutComments)) {
       errors.push(`${migration.name} attempts to change privileges on a Supabase-managed auth, storage, or extensions object/schema.`);
@@ -254,7 +255,7 @@ export function lintMigrationSet(migrations, { frozenMigrationNames = [] } = {})
   }
 
   const auditAclCleanup = /a\.privilege_type\s+IN\s*\(\s*'INSERT'\s*,\s*'UPDATE'\s*,\s*'DELETE'\s*,\s*'TRUNCATE'\s*\)/i.test(allSql)
-    && /a\.grantee\s*=\s*0[\s\S]*?a\.grantee\s*=\s*'margindesk_app'::regrole/i.test(allSql)
+    && /a\.grantee\s*=\s*0[\s\S]*?a\.grantee\s*=\s*'(?:margindesk_app|rebatehq_app)'::regrole/i.test(allSql)
     && /'audit_log'/i.test(allSql);
   if (!/audit_log_immutable/i.test(allSql) || !auditAclCleanup) errors.push("Audit log must be append-only for row UPDATE and DELETE");
   if (!/CREATE\s+TRIGGER\s+audit_log_prevent_truncate\s+BEFORE\s+TRUNCATE\s+ON\s+(?:public\.)?audit_log[\s\S]*?EXECUTE\s+FUNCTION\s+public\.prevent_audit_mutation\s*\(/i.test(allSql)) {

@@ -27,9 +27,9 @@ test("Sheets schedules stage tenant-isolated audited reviews, reject changed dat
     await db.query("INSERT INTO public.import_job(tenant_id,import_type,status) VALUES($1,'preexisting','committed')",[other]);
     await db.query("INSERT INTO public.connector_sync_run(tenant_id,provider,direction,status,started_at,finished_at) VALUES($1,'fixture','inbound','succeeded',now(),now())",[other]);
    }
-   await db.query("SELECT set_config('request.jwt.claim.sub',$1,true),set_config('app.real_actor_id',$1,true)",[user]);await db.exec("SET LOCAL ROLE margindesk_app;");
+   await db.query("SELECT set_config('request.jwt.claim.sub',$1,true),set_config('app.real_actor_id',$1,true)",[user]);await db.exec("SET LOCAL ROLE rebatehq_app;");
    const role=(await db.query("SELECT current_user AS role,rolsuper,rolbypassrls FROM pg_roles WHERE rolname=current_user")).rows[0];
-   assert.equal(role.role,"margindesk_app");assert.equal(role.rolsuper,false);assert.equal(role.rolbypassrls,false);
+   assert.equal(role.role,"rebatehq_app");assert.equal(role.rolsuper,false);assert.equal(role.rolbypassrls,false);
    const bytes=new TextEncoder().encode("\uFEFFSKU,Description,Unit,Cost,Price\nP,Part,EA,10,20");
    const parsed=parseUpload("sheet.csv",bytes,{headerRow:1});
    const template=await saveMappingTemplate(db,tenant,user,{supplier:"Supplier",fileType:"csv",fields:parsed.mapping,headers:parsed.headers});
@@ -107,12 +107,12 @@ test("Sheets schedules stage tenant-isolated audited reviews, reject changed dat
 test("Drop interfaces are inert feature-flagged tenant-specific stubs, not live addresses or servers",()=>{
  assert.deepEqual(stubInterfaces(randomUUID(),{sheets:false,emailStub:false,sftpStub:false}),{email:null,sftp:null});
  const a=stubInterfaces(randomUUID(),flags),b=stubInterfaces(randomUUID(),flags);
- assert.match(a.email!.address,/@drop\.margindesk\.invalid$/);assert.notEqual(a.email!.address,b.email!.address);assert.notEqual(a.sftp!.path,b.sftp!.path);
+ assert.match(a.email!.address,/@drop\.rebatehq\.invalid$/);assert.notEqual(a.email!.address,b.email!.address);assert.notEqual(a.sftp!.path,b.sftp!.path);
  assert.match(a.email!.status,/cannot receive/);assert.match(a.sftp!.status,/no SFTP server/);
 });
 test("The real-Postgres CI benchmark's SQL executes locally and leaves no residue",async()=>{
  const db=await testDatabase(executed);
- try{for(let i=0;i<2;i++){const result=await benchmarkImport(db,251);assert.equal(result.rows,251);assert.equal(result.role,"margindesk_app");assert.ok(result.commit_ms>=0&&result.undo_ms>=0);}}
+ try{for(let i=0;i<2;i++){const result=await benchmarkImport(db,251);assert.equal(result.rows,251);assert.equal(result.role,"rebatehq_app");assert.ok(result.commit_ms>=0&&result.undo_ms>=0);}}
  finally{await db.close();}
 });
 test("Every Chunk 3C ingestion and benchmark literal SQL statement executed in PGlite",()=>{

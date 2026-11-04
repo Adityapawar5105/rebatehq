@@ -9,7 +9,7 @@ test("restore table ACL comparison accepts identical owners and grants", async (
     object_name: "tenant",
     owner_name: "postgres",
     acl: [
-      { grantee: "margindesk_app", grantor: "postgres", privilege: "SELECT", grantable: false },
+      { grantee: "rebatehq_app", grantor: "postgres", privilege: "SELECT", grantable: false },
       { grantee: "postgres", grantor: "postgres", privilege: "DELETE", grantable: true },
     ],
   }];
@@ -19,7 +19,7 @@ test("restore table ACL comparison accepts identical owners and grants", async (
 test("restore table ACL comparison fails on an extra target grant and groups it by grantee", async () => {
   const { assertApplicationTableAclsEqual, compareApplicationTableAcls } = await import("../scripts/verify-restore-equivalence.mjs");
   const source = [{ object_name: "tenant", owner_name: "postgres", acl: [
-    { grantee: "margindesk_app", grantor: "postgres", privilege: "SELECT", grantable: false },
+    { grantee: "rebatehq_app", grantor: "postgres", privilege: "SELECT", grantable: false },
   ] }];
   const restored = [{ object_name: "tenant", owner_name: "postgres", acl: [
     ...source[0].acl,
@@ -36,16 +36,16 @@ test("restore table ACL comparison fails on an extra target grant and groups it 
 test("restore table ACL comparison fails when a target grant is missing", async () => {
   const { assertApplicationTableAclsEqual, compareApplicationTableAcls } = await import("../scripts/verify-restore-equivalence.mjs");
   const source = [{ object_name: "tenant", owner_name: "postgres", acl: [
-    { grantee: "margindesk_app", grantor: "postgres", privilege: "SELECT", grantable: false },
-    { grantee: "margindesk_app", grantor: "postgres", privilege: "UPDATE", grantable: false },
+    { grantee: "rebatehq_app", grantor: "postgres", privilege: "SELECT", grantable: false },
+    { grantee: "rebatehq_app", grantor: "postgres", privilege: "UPDATE", grantable: false },
   ] }];
   const restored = [{ object_name: "tenant", owner_name: "postgres", acl: [source[0].acl[0]] }];
   const diff = compareApplicationTableAcls(source, restored);
-  assert.deepEqual(diff.margindesk_app, {
-    sourceOnly: [{ table: "tenant", grantee: "margindesk_app", grantor: "postgres", privilege: "UPDATE", grantable: false }],
+  assert.deepEqual(diff.rebatehq_app, {
+    sourceOnly: [{ table: "tenant", grantee: "rebatehq_app", grantor: "postgres", privilege: "UPDATE", grantable: false }],
     restoredOnly: [],
   });
-  assert.throws(() => assertApplicationTableAclsEqual(source, restored), /margindesk_app/);
+  assert.throws(() => assertApplicationTableAclsEqual(source, restored), /rebatehq_app/);
 });
 
 const functionFixture = acl => ({
@@ -63,7 +63,7 @@ test("restore function ACL comparison accepts identical function metadata and gr
   const { assertFunctionAclSectionsEqual } = await import("../scripts/verify-restore-equivalence.mjs");
   const functions = [functionFixture([
     { grantee: "postgres", grantor: "postgres", privilege: "EXECUTE", grantable: true },
-    { grantee: "margindesk_app", grantor: "postgres", privilege: "EXECUTE", grantable: false },
+    { grantee: "rebatehq_app", grantor: "postgres", privilege: "EXECUTE", grantable: false },
   ])];
   assert.equal(assertFunctionAclSectionsEqual(functions, structuredClone(functions)), true);
 });
@@ -85,7 +85,7 @@ test("restore function ACL comparison fails on an extra grant grouped by functio
   const { assertFunctionAclSectionsEqual, compareFunctionAclSections } = await import("../scripts/verify-restore-equivalence.mjs");
   const source = [functionFixture([
     { grantee: "postgres", grantor: "postgres", privilege: "EXECUTE", grantable: true },
-    { grantee: "margindesk_app", grantor: "postgres", privilege: "EXECUTE", grantable: false },
+    { grantee: "rebatehq_app", grantor: "postgres", privilege: "EXECUTE", grantable: false },
   ])];
   const restored = [functionFixture([
     ...source[0].acl,
@@ -112,15 +112,15 @@ test("Drill #9 missing EXECUTE on later functions is a strict source-only ACL mi
   const source = ["public.convert_quantity(uuid,uuid,numeric,text,text,date)", "public.record_data_quality_issue(uuid,text,text,text,date,jsonb)"].map(object_name => ({
     ...functionFixture([
       { grantee: "postgres", grantor: "postgres", privilege: "EXECUTE", grantable: false },
-      { grantee: "margindesk_app", grantor: "postgres", privilege: "EXECUTE", grantable: false },
+      { grantee: "rebatehq_app", grantor: "postgres", privilege: "EXECUTE", grantable: false },
     ]), object_name,
   }));
-  const restored = source.map(fn => ({ ...fn, acl: fn.acl.filter(entry => entry.grantee !== "margindesk_app") }));
+  const restored = source.map(fn => ({ ...fn, acl: fn.acl.filter(entry => entry.grantee !== "rebatehq_app") }));
   const diff = compareFunctionAclSections(source, restored);
   for (const fn of source) {
-    assert.deepEqual(diff[fn.object_name].margindesk_app, { sourceOnly: [fn.acl[1]], restoredOnly: [] });
+    assert.deepEqual(diff[fn.object_name].rebatehq_app, { sourceOnly: [fn.acl[1]], restoredOnly: [] });
   }
-  assert.throws(() => assertFunctionAclSectionsEqual(source, restored), /convert_quantity.*margindesk_app.*record_data_quality_issue/s);
+  assert.throws(() => assertFunctionAclSectionsEqual(source, restored), /convert_quantity.*rebatehq_app.*record_data_quality_issue/s);
   assert.equal(assertFunctionAclSectionsEqual(source, structuredClone(source)), true);
 });
 

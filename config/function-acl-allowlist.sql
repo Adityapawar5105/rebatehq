@@ -9,16 +9,16 @@ CREATE TEMP TABLE phase1_function_allowlist (
   )
 );
 INSERT INTO pg_temp.phase1_function_allowlist(signature,grantees) VALUES
- ('public.is_tenant_member(uuid)',ARRAY['$owner','margindesk_app']),
- ('public.is_tenant_role(uuid,text[])',ARRAY['$owner','margindesk_app']),
- ('public.is_tenant_role_any_status(uuid,text[])',ARRAY['$owner','margindesk_app']),
+ ('public.is_tenant_member(uuid)',ARRAY['$owner','rebatehq_app']),
+ ('public.is_tenant_role(uuid,text[])',ARRAY['$owner','rebatehq_app']),
+ ('public.is_tenant_role_any_status(uuid,text[])',ARRAY['$owner','rebatehq_app']),
  ('public.audit_row_change()',ARRAY['$owner']),
  ('public.prevent_audit_mutation()',ARRAY['$owner']),
- ('public.create_tenant_with_owner(text)',ARRAY['$owner','margindesk_app']),
- ('public.accept_tenant_invite(text)',ARRAY['$owner','margindesk_app']),
- ('public.record_failed_login(text,text,text)',ARRAY['$owner','margindesk_app']),
- ('public.record_data_quality_issue(uuid,text,text,text,date,jsonb)',ARRAY['$owner','margindesk_app']),
- ('public.convert_quantity(uuid,uuid,numeric,text,text,date)',ARRAY['$owner','margindesk_app']),
+ ('public.create_tenant_with_owner(text)',ARRAY['$owner','rebatehq_app']),
+ ('public.accept_tenant_invite(text)',ARRAY['$owner','rebatehq_app']),
+ ('public.record_failed_login(text,text,text)',ARRAY['$owner','rebatehq_app']),
+ ('public.record_data_quality_issue(uuid,text,text,text,date,jsonb)',ARRAY['$owner','rebatehq_app']),
+ ('public.convert_quantity(uuid,uuid,numeric,text,text,date)',ARRAY['$owner','rebatehq_app']),
  ('public.sync_product_standard_cost_history()',ARRAY['$owner']);
 
 CREATE TEMP VIEW phase1_public_function_inventory AS

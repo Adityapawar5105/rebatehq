@@ -48,7 +48,7 @@ export default function Spike(){
  const disabled=busy||!ready;
  const download=(name:string,blob:Blob)=>{const url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
  return <main className={styles.lab}>
-  <header><span className={styles.eyebrow}>MARGINDESK · CHUNK 4A · LOCAL PROTOTYPE</span><h1>Prove the local data plane.</h1><p>Generate, import and measure in a dedicated Web Worker. The page sends no business data to an API.</p></header>
+  <header><span className={styles.eyebrow}>REBATEHQ · CHUNK 4A · LOCAL PROTOTYPE</span><h1>Prove the local data plane.</h1><p>Generate, import and measure in a dedicated Web Worker. The page sends no business data to an API.</p></header>
   <aside className={styles.notice}><strong>Spike, not a production vault.</strong> Generated synthetic data uses a plaintext OPFS database to test persistence. User-selected files use a separate memory-only database. Never treat encrypted snapshots as protection for a plaintext working file. Full vault work belongs to 4B.</aside>
   <section className={styles.panel} aria-busy={busy}>
    <div className={styles.row}><h2>Run the experiment</h2><span>{ready?`${metrics.init?.bundle?.toUpperCase()} · ${metrics.init?.threads} thread(s) · ${metrics.init?.isolated?"isolated":"single-thread fallback"}`:"Starting…"}</span></div>

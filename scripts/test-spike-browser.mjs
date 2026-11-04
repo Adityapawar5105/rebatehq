@@ -8,7 +8,7 @@ import {chromium} from "@playwright/test";
 const full=process.argv.includes("--full"),channel=(process.argv.find(x=>x.startsWith("--browser="))||"--browser=chrome").split("=")[1];
 const base=process.env.SPIKE_URL||"http://127.0.0.1:3100";
 const output=path.resolve("test-results");await mkdir(output,{recursive:true});
-const profile=await mkdtemp(path.join(os.tmpdir(),"margindesk-spike-"));
+const profile=await mkdtemp(path.join(os.tmpdir(),"rebatehq-spike-"));
 const results={date:new Date().toISOString(),scope:full?"full":"smoke",channel,machine:{cpu:os.cpus()[0]?.model,logical_cpus:os.cpus().length,ram_bytes:os.totalmem(),os:os.type()+" "+os.release(),architecture:os.arch()},measurements:{},checks:{},memory:{peak_working_set_sum_bytes:0,peak_private_bytes:0,method:"sum of measured browser process working sets/private bytes; working sets can double-count shared pages; 500 ms sampling"}};
 const measurements=results.measurements,checks=results.checks;
 let context,page,memorySampler;const failures=[],requests=[];

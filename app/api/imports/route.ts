@@ -41,7 +41,7 @@ export async function POST(request:Request){let actionName="";try{
   if(input.action==="resolve")return {plan:await resolveImportChoices(db,context.tenantId,input.id,input.choices,input.offset,input.acknowledgeWarnings)};
   return undoImport(db,context.tenantId,context.userId,input.id);
  });
- if(typeof data==="string")return new Response(data,{headers:{"content-type":"text/csv;charset=utf-8","content-disposition":'attachment; filename="margindesk-lifeline.csv"',"cache-control":"no-store","x-content-type-options":"nosniff"}});
+ if(typeof data==="string")return new Response(data,{headers:{"content-type":"text/csv;charset=utf-8","content-disposition":'attachment; filename="rebatehq-lifeline.csv"',"cache-control":"no-store","x-content-type-options":"nosniff"}});
  return NextResponse.json(data,{headers:{"cache-control":"no-store"}});
 }catch(error){
  // Undo can encounter a new quote/invoice FK after the snapshot check. The

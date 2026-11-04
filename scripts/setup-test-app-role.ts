@@ -2,7 +2,7 @@ import { appendFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { Pool } from "pg";
 
-const roleName = "margindesk_app_login";
+const roleName = "rebatehq_app_login";
 
 function sqlFailure(step: string, displaySql: string, error: unknown, secret?: string): Error {
   const rawDetail = error instanceof Error ? error.message.split("\n")[0] : "unknown database error";
@@ -85,17 +85,17 @@ async function main() {
       throw sqlFailure("create or alter app login", statement.sql.replace(/PASSWORD\s+'[^']*'/i, "PASSWORD '[redacted]'"), error, password);
     }
     try {
-      await quotedRoleGrant(admin, "margindesk_app", roleName, version);
+      await quotedRoleGrant(admin, "rebatehq_app", roleName, version);
     } catch (error) {
-      throw sqlFailure("grant application role membership", "GRANT margindesk_app TO margindesk_app_login WITH INHERIT FALSE, SET TRUE (PostgreSQL 16+)", error, password);
+      throw sqlFailure("grant application role membership", "GRANT rebatehq_app TO rebatehq_app_login WITH INHERIT FALSE, SET TRUE (PostgreSQL 16+)", error, password);
     }
     try {
-      if (testLogin === "margindesk_app") {
-        throw new Error("TEST_DATABASE_URL must connect as a login distinct from margindesk_app.");
+      if (testLogin === "rebatehq_app") {
+        throw new Error("TEST_DATABASE_URL must connect as a login distinct from rebatehq_app.");
       }
-      await quotedRoleGrant(admin, "margindesk_app", testLogin, version);
+      await quotedRoleGrant(admin, "rebatehq_app", testLogin, version);
     } catch (error) {
-      throw sqlFailure("grant test connection role membership", "GRANT margindesk_app TO <TEST_DATABASE_URL login> WITH INHERIT FALSE, SET TRUE (PostgreSQL 16+)", error, password);
+      throw sqlFailure("grant test connection role membership", "GRANT rebatehq_app TO <TEST_DATABASE_URL login> WITH INHERIT FALSE, SET TRUE (PostgreSQL 16+)", error, password);
     }
     try {
       // CI-only membership lets the disposable pgTAP connection SET ROLE anon

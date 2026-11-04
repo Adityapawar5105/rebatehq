@@ -22,7 +22,7 @@ CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$SELECT nullif(c
     for (const name of readdirSync("supabase/migrations").filter(n => n.endsWith(".sql")).sort()) await db.exec(readFileSync(`supabase/migrations/${name}`, "utf8"));
     const source = readFileSync("scripts/vault-test-auth.mjs", "utf8");
     const statements = [...source.matchAll(/db\.query\("([^"]+)"/g)].map(match => match[1]);
-    const expected = ["BEGIN", "SET LOCAL ROLE margindesk_app", "SELECT set_config('request.jwt.claim.sub',$1::text,true),set_config('request.jwt.claims',$2::text,true)", "SELECT public.create_tenant_with_owner($1::text)", "COMMIT", "ROLLBACK"];
+    const expected = ["BEGIN", "SET LOCAL ROLE rebatehq_app", "SELECT set_config('request.jwt.claim.sub',$1::text,true),set_config('request.jwt.claims',$2::text,true)", "SELECT public.create_tenant_with_owner($1::text)", "COMMIT", "ROLLBACK"];
     assert.deepEqual(statements, expected);
     for (let n = 0; n < 2; n++) {
       const id = randomUUID(); await db.query("INSERT INTO auth.users VALUES($1,$2,now())", [id, `synthetic-${id}@example.test`]);

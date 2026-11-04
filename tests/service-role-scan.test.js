@@ -5,7 +5,7 @@ const path = require("node:path");
 const test = require("node:test");
 
 async function withFixture(run) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "margindesk-service-role-scan-"));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "rebatehq-service-role-scan-"));
   try {
     await run(root);
   } finally {

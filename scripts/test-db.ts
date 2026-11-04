@@ -197,7 +197,7 @@ async function runPgtap(connectionString: string) {
     }>(`SELECT n.nspname::text AS schema_name,
                pg_get_userbyid(n.nspowner)::text AS schema_owner,
                has_schema_privilege(session_user,n.oid,'USAGE') AS connection_usage,
-               has_schema_privilege('margindesk_app',n.oid,'USAGE') AS app_usage,
+               has_schema_privilege('rebatehq_app',n.oid,'USAGE') AS app_usage,
                (SELECT pg_get_userbyid(e.extowner)::text FROM pg_extension e
                 WHERE e.extname='pgtap' AND e.extnamespace=n.oid) AS pgtap_owner
         FROM pg_namespace n WHERE n.nspname='extensions'`);
@@ -205,7 +205,7 @@ async function runPgtap(connectionString: string) {
     if (extension) {
       process.stdout.write(
         `Extension schema ${extension.schema_name}: owner=${extension.schema_owner}, ` +
-        `TEST_DATABASE_URL_USAGE=${extension.connection_usage}, margindesk_app_USAGE=${extension.app_usage}, ` +
+        `TEST_DATABASE_URL_USAGE=${extension.connection_usage}, rebatehq_app_USAGE=${extension.app_usage}, ` +
         `pgTAP_owner=${extension.pgtap_owner ?? "not-installed-yet"}.\n`,
       );
     } else {
@@ -235,7 +235,7 @@ async function runPgtap(connectionString: string) {
                pg_get_userbyid(e.extowner)::text AS extension_owner,
                pg_get_userbyid(n.nspowner)::text AS schema_owner,
                has_schema_privilege(session_user,n.oid,'USAGE') AS connection_usage,
-               has_schema_privilege('margindesk_app',n.oid,'USAGE') AS app_usage
+               has_schema_privilege('rebatehq_app',n.oid,'USAGE') AS app_usage
         FROM pg_extension e JOIN pg_namespace n ON n.oid=e.extnamespace
         WHERE e.extname='pgtap'`);
     const pgtap = installedPgtap.rows[0];
@@ -243,7 +243,7 @@ async function runPgtap(connectionString: string) {
     process.stdout.write(
       `pgTAP installed in schema ${pgtap.extension_schema}; extension owner=${pgtap.extension_owner}; ` +
       `schema owner=${pgtap.schema_owner}; TEST_DATABASE_URL_USAGE=${pgtap.connection_usage}; ` +
-      `margindesk_app_USAGE=${pgtap.app_usage}.\n`,
+      `rebatehq_app_USAGE=${pgtap.app_usage}.\n`,
     );
     const authPolicyRefs = await client.query<{ schemaname: string; tablename: string; policyname: string; expression: string }>(
       `SELECT schemaname::text,tablename::text,policyname::text,
@@ -265,7 +265,7 @@ async function runPgtap(connectionString: string) {
               (SELECT setting FROM unnest(COALESCE(p.proconfig,ARRAY[]::text[])) setting
                WHERE setting LIKE 'search_path=%' LIMIT 1)::text AS search_path
        FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
-       WHERE has_function_privilege('margindesk_app',p.oid,'EXECUTE')
+       WHERE has_function_privilege('rebatehq_app',p.oid,'EXECUTE')
          AND (p.prosrc ILIKE '%auth.%' OR (n.nspname='auth' AND p.proname='uid'))
        ORDER BY n.nspname,p.proname,pg_get_function_identity_arguments(p.oid)`,
     );
@@ -300,9 +300,9 @@ async function runPgtap(connectionString: string) {
         ? sql.slice(0, absolutePosition! - 1).split("\n").length
         : undefined;
       const beforeError = absolutePosition ? sql.slice(0, absolutePosition - 1) : "";
-      const roleSwitch = beforeError.lastIndexOf("SET LOCAL ROLE margindesk_app");
+      const roleSwitch = beforeError.lastIndexOf("SET LOCAL ROLE rebatehq_app");
       const resetRole = beforeError.lastIndexOf("RESET ROLE");
-      const roleContext = roleSwitch > resetRole ? "while current_user should be margindesk_app" : "as the TEST_DATABASE_URL connection role";
+      const roleContext = roleSwitch > resetRole ? "while current_user should be rebatehq_app" : "as the TEST_DATABASE_URL connection role";
       const fields = [
         ["where/context", pgError.where],
         ["routine", pgError.routine],

@@ -11,7 +11,7 @@ async function main() {
   try {
     await client.connect();
     const result = await client.query("SELECT to_regclass('public.tenant') IS NULL AS empty_app_schema");
-    assert.equal(result.rows[0]?.empty_app_schema, true, "Restore target must be a fresh Supabase project with no MarginDesk public schema.");
+    assert.equal(result.rows[0]?.empty_app_schema, true, "Restore target must be a fresh Supabase project with no RebateHQ public schema.");
     process.stdout.write("Restore target is fresh (public.tenant does not exist).\n");
   } finally {
     await client.end();

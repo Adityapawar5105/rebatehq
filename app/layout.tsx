@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "MarginDesk",
+  title: "RebateHQ",
   description: "Secure pricing, quote guardrails, and rebate review for distributors."
 };
 

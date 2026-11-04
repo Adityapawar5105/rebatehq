@@ -1,4 +1,4 @@
-# MarginDesk security verification
+# RebateHQ security verification
 
 **Chunk 4B — CI-verified in [MarginDesk CI #44](https://github.com/Adityapawar5105/margindesk/actions/runs/41660146540), 3 November 2026, commit `c382f7d`.** The GitHub job API confirms step 18, "Required authenticated local-vault privacy gate", completed successfully (not skipped). Its log records `pnpm test:vault:privacy --browser=chromium`, `auth: true`, `status: passed`: **one authenticated harness with 14 named checks**, not a Playwright test-runner count. The separate unit suite passed **67 JavaScript + 56 TypeScript = 123 tests**.
 
@@ -176,13 +176,13 @@ Evidence command to run over the same connection string configured as `APP_DATAB
 
 ```sql
 BEGIN;
-SET LOCAL ROLE margindesk_app;
+SET LOCAL ROLE rebatehq_app;
 SELECT session_user AS pool_login, current_user AS effective_role,
        login.rolsuper AS login_is_superuser,
        login.rolbypassrls AS login_bypasses_rls,
        app.rolsuper AS app_is_superuser,
        app.rolbypassrls AS app_bypasses_rls,
-       pg_has_role(session_user, 'margindesk_app', 'member') AS login_is_app_member
+       pg_has_role(session_user, 'rebatehq_app', 'member') AS login_is_app_member
 FROM pg_roles AS login
 JOIN pg_roles AS app ON app.rolname=current_user
 WHERE login.rolname=session_user;
@@ -197,7 +197,7 @@ Expected: `effective_role=margindesk_app`; both superuser and bypass columns are
 
 1. `BEGIN`.
 2. Validate the PostgreSQL login role flags and membership.
-3. `SET LOCAL ROLE margindesk_app`.
+3. `SET LOCAL ROLE rebatehq_app`.
 4. Set transaction-local `request.jwt.claim.sub`, `request.jwt.claim.role`, and `request.jwt.claims` from the user ID returned by Supabase Auth’s verified `getUser()` call. The claims are cleared at transaction end.
 5. Set `app.real_actor_id`, client IP, and user agent for audit triggers.
 6. Run the tenant query and commit; errors roll the transaction back.
@@ -216,11 +216,11 @@ Executable public functions whose definitions reference `auth.*` are `is_tenant_
 
 ### Failed-login audit and rate limiting
 
-The undeployed migration gives `public.record_failed_login(text,text,text)` `EXECUTE` only to `margindesk_app` (plus the function owner), revoking it from PUBLIC, `anon`, and `authenticated`. It has no caller-supplied actor or tenant arguments and always inserts `tenant_id=NULL`, `actor_id=NULL`, and `action='auth.login_failed'`; a check calls it with a known test email while setting a spoofed `app.real_actor_id`. `app/api/auth/login/route.ts` rate-limits login attempts to 8 per 10 minutes through `lib/rate-limit.ts`; production requires configured Upstash Redis and fails closed without it. Supabase Auth also has `email_sent=8` in `supabase/config.toml`. The database function itself has no independent rate limiter, so its safety depends on the restricted app role and the rate-limited login route. The prior failing CI summary did not include the exact unexpected function grantee. The migration now conditionally removes every existing non-owner grant from public SECURITY DEFINER functions it owns, then grants only the app allowlist; the diagnostic prints each current ACL owner/grantor/grantee and applicable defaults, and check 42 rejects any extra role.
+The undeployed migration gives `public.record_failed_login(text,text,text)` `EXECUTE` only to `rebatehq_app` (plus the function owner), revoking it from PUBLIC, `anon`, and `authenticated`. It has no caller-supplied actor or tenant arguments and always inserts `tenant_id=NULL`, `actor_id=NULL`, and `action='auth.login_failed'`; a check calls it with a known test email while setting a spoofed `app.real_actor_id`. `app/api/auth/login/route.ts` rate-limits login attempts to 8 per 10 minutes through `lib/rate-limit.ts`; production requires configured Upstash Redis and fails closed without it. Supabase Auth also has `email_sent=8` in `supabase/config.toml`. The database function itself has no independent rate limiter, so its safety depends on the restricted app role and the rate-limited login route. The prior failing CI summary did not include the exact unexpected function grantee. The migration now conditionally removes every existing non-owner grant from public SECURITY DEFINER functions it owns, then grants only the app allowlist; the diagnostic prints each current ACL owner/grantor/grantee and applicable defaults, and check 42 rejects any extra role.
 
 ### Open audit actor-setting item
 
-`lib/db.ts` sets `app.real_actor_id` from request context on every `withDatabase` transaction. `lib/context.ts` sets it to the authenticated actor, including the original actor during development impersonation; the development impersonation route uses the signed token helpers in `lib/impersonation.ts`. The `audit_log_append` policy also trusts this custom GUC, which any code executing as `margindesk_app` can set. Open item: replace this trust with a SECURITY DEFINER audit append function or a server-signed actor value before production use. This request records the risk only; no code change is made for it.
+`lib/db.ts` sets `app.real_actor_id` from request context on every `withDatabase` transaction. `lib/context.ts` sets it to the authenticated actor, including the original actor during development impersonation; the development impersonation route uses the signed token helpers in `lib/impersonation.ts`. The `audit_log_append` policy also trusts this custom GUC, which any code executing as `rebatehq_app` can set. Open item: replace this trust with a SECURITY DEFINER audit append function or a server-signed actor value before production use. This request records the risk only; no code change is made for it.
 
 ### Is the Supabase service-role key used by user-facing code?
 

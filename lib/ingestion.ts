@@ -74,7 +74,7 @@ export async function ingestionState(db:DB,tenant:string,flags=ingestionFlags())
 }
 export function stubInterfaces(tenant:string,flags:IngestionFlags){
  if(!z.uuid().safeParse(tenant).success)throw new HttpError(400,"Choose a valid workspace.");
- return {email:flags.emailStub?{address:`invoices+${tenant}@drop.margindesk.invalid`,status:"Preview only: this address cannot receive email."}:null,
+ return {email:flags.emailStub?{address:`invoices+${tenant}@drop.rebatehq.invalid`,status:"Preview only: this address cannot receive email."}:null,
   sftp:flags.sftpStub?{path:`/preview-only/${tenant}/inbox`,status:"Preview only: no SFTP server or upload endpoint exists."}:null};
 }
 export type Transaction=<T>(fn:(db:DB)=>Promise<T>)=>Promise<T>;

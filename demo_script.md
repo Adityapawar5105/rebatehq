@@ -1,4 +1,4 @@
-# 5-minute MarginDesk demo
+# 5-minute RebateHQ demo
 
 Use the seeded workspace and narrate all sample numbers as synthetic. Demonstrate local review workflows, not a real recovery or a customer message.
 

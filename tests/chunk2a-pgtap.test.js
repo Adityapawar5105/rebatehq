@@ -120,7 +120,7 @@ test("full pgTAP SQL executes in PGlite with assertion stubs and planned checks 
     assert.ok((await db.query("SELECT reason FROM pg_temp.phase1_function_acl_errors WHERE signature='public.unregistered_later_function()'")).rows.some(row => row.reason === 'no allowlist entry'));
     await db.exec('DROP FUNCTION public.unregistered_later_function(); GRANT EXECUTE ON FUNCTION public.convert_quantity(uuid,uuid,numeric,text,text,date) TO anon;');
     assert.ok((await db.query("SELECT actual_grantees FROM pg_temp.phase1_function_acl_errors WHERE oid='public.convert_quantity(uuid,uuid,numeric,text,text,date)'::regprocedure")).rows[0].actual_grantees.includes('anon'));
-    await db.exec('REVOKE EXECUTE ON FUNCTION public.convert_quantity(uuid,uuid,numeric,text,text,date) FROM anon; REVOKE EXECUTE ON FUNCTION public.convert_quantity(uuid,uuid,numeric,text,text,date) FROM margindesk_app;');
+    await db.exec('REVOKE EXECUTE ON FUNCTION public.convert_quantity(uuid,uuid,numeric,text,text,date) FROM anon; REVOKE EXECUTE ON FUNCTION public.convert_quantity(uuid,uuid,numeric,text,text,date) FROM rebatehq_app;');
     assert.equal((await db.query("SELECT reason FROM pg_temp.phase1_function_acl_errors WHERE oid='public.convert_quantity(uuid,uuid,numeric,text,text,date)'::regprocedure")).rows[0].reason, 'EXECUTE grantees differ');
     await db.exec('ROLLBACK;');
 

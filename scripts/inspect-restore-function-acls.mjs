@@ -21,14 +21,14 @@ export const FUNCTION_ACL_SQL = `
 `;
 
 export function assertAppGrantsPreserved(before, after, fromStage, toStage) {
-  const appRows = rows => rows.filter(row => row.grantee === "margindesk_app")
+  const appRows = rows => rows.filter(row => row.grantee === "rebatehq_app")
     .map(row => JSON.stringify(row)).sort();
   const previous = appRows(before), current = appRows(after);
-  assert.ok(previous.length > 0, `${fromStage}: no margindesk_app function ACLs captured; refusing a vacuous comparison.`);
+  assert.ok(previous.length > 0, `${fromStage}: no rebatehq_app function ACLs captured; refusing a vacuous comparison.`);
   const removed = previous.filter(row => !current.includes(row));
   const added = current.filter(row => !previous.includes(row));
   assert.ok(!removed.length && !added.length,
-    `margindesk_app function ACLs changed at ${fromStage} -> ${toStage}:\n` +
+    `rebatehq_app function ACLs changed at ${fromStage} -> ${toStage}:\n` +
     JSON.stringify({ removed: removed.map(JSON.parse), added: added.map(JSON.parse) }, null, 2));
 }
 
@@ -69,7 +69,7 @@ async function main() {
       const previousStage = stages[stages.indexOf(stage)-1];
       const previous = JSON.parse(await readFile(path.join(directory,`${previousStage}.json`),"utf8"));
       assertAppGrantsPreserved(previous, rows, previousStage, stage);
-      process.stdout.write(`PASS: every margindesk_app function ACL is preserved from ${previousStage} to ${stage}.\n`);
+      process.stdout.write(`PASS: every rebatehq_app function ACL is preserved from ${previousStage} to ${stage}.\n`);
     }
   } finally { await client.end(); }
 }

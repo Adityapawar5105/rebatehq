@@ -309,7 +309,7 @@ export class Studio {
       let name = file.name; for (let n = 2; names.has(name.toLowerCase()); n++) name = file.name.replace(/\.csv$/, ` (${n}).csv`);
       names.add(name.toLowerCase()); zip.file(name, file.blob);
     }
-    return { name: "margindesk-converted.zip", blob: await zip.generateAsync({ type: "blob", compression: "DEFLATE" }) };
+    return { name: "rebatehq-converted.zip", blob: await zip.generateAsync({ type: "blob", compression: "DEFLATE" }) };
   }
 
   async plan(engine: Engine, tier: Tier, signal: AbortSignal, progress: Progress) {

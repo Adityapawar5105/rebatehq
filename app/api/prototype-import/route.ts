@@ -24,7 +24,7 @@ export async function POST(request: Request) {
     if (!limit.ok) throw new HttpError(429, "Too many import attempts. Try again in an hour.");
     let raw: string;
     try { raw = await readTextLimited(request, MAX_BYTES); } catch (error) { if (error instanceof HttpError && error.status === 413) throw new HttpError(413, "This export is larger than 2 MB. Split it into smaller exports before importing."); throw error; }
-    if (!request.headers.get("content-type")?.toLowerCase().includes("application/json")) throw new HttpError(415, "Upload a JSON export from the MarginDesk prototype.");
+    if (!request.headers.get("content-type")?.toLowerCase().includes("application/json")) throw new HttpError(415, "Upload a JSON export from the RebateHQ prototype.");
     await scanUpload(new TextEncoder().encode(raw));
     let decoded: unknown;
     try { decoded = JSON.parse(raw); } catch { throw new HttpError(400, "The selected file is not valid JSON."); }
@@ -32,7 +32,7 @@ export async function POST(request: Request) {
     if (!body.success) throw new HttpError(400, "The import request is missing its prototype data.");
     const root = (body.data.prototype as { model?: unknown } | null)?.model ?? body.data.prototype;
     const schema = PrototypeSchema.safeParse(root);
-    if (!schema.success) throw new HttpError(422, "This file is not a supported MarginDesk prototype export or exceeds a row limit.");
+    if (!schema.success) throw new HttpError(422, "This file is not a supported RebateHQ prototype export or exceeds a row limit.");
     const plan = validatePrototype(schema.data);
     const sourceHash = createHash("sha256").update(JSON.stringify(schema.data)).digest("hex");
     const preview = {

@@ -310,28 +310,28 @@ SELECT extensions.ok(NOT EXISTS (
  JOIN pg_namespace n ON n.oid=c.relnamespace AND n.nspname='public'
  WHERE NOT c.relrowsecurity OR NOT c.relforcerowsecurity
 ), 'RLS is enabled and forced on every application table');
-SELECT extensions.ok(EXISTS (SELECT 1 FROM pg_roles WHERE rolname='margindesk_app' AND NOT rolsuper AND NOT rolbypassrls AND NOT rolcanlogin), 'margindesk_app is NOLOGIN, NOSUPERUSER, and NOBYPASSRLS');
+SELECT extensions.ok(EXISTS (SELECT 1 FROM pg_roles WHERE rolname='rebatehq_app' AND NOT rolsuper AND NOT rolbypassrls AND NOT rolcanlogin), 'rebatehq_app is NOLOGIN, NOSUPERUSER, and NOBYPASSRLS');
 SELECT extensions.ok(NOT has_table_privilege('authenticated','public.product','SELECT'), 'Browser role has no direct product table grant');
-SELECT extensions.ok(has_schema_privilege('margindesk_app','public','USAGE'),'App role has public schema USAGE');
-SELECT extensions.ok(NOT has_schema_privilege('margindesk_app','auth','USAGE'),'App role has NO auth schema USAGE');
+SELECT extensions.ok(has_schema_privilege('rebatehq_app','public','USAGE'),'App role has public schema USAGE');
+SELECT extensions.ok(NOT has_schema_privilege('rebatehq_app','auth','USAGE'),'App role has NO auth schema USAGE');
 SELECT extensions.ok(NOT EXISTS (
   SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
   WHERE n.nspname='auth' AND c.relkind IN ('r','p','v','m','f')
-    AND (has_table_privilege('margindesk_app',c.oid,'SELECT')
-      OR has_any_column_privilege('margindesk_app',c.oid,'SELECT')
-      OR has_table_privilege('margindesk_app',c.oid,'INSERT')
-      OR has_any_column_privilege('margindesk_app',c.oid,'INSERT')
-      OR has_table_privilege('margindesk_app',c.oid,'UPDATE')
-      OR has_any_column_privilege('margindesk_app',c.oid,'UPDATE')
-      OR has_table_privilege('margindesk_app',c.oid,'DELETE')
-      OR has_table_privilege('margindesk_app',c.oid,'TRUNCATE')
-      OR has_table_privilege('margindesk_app',c.oid,'REFERENCES')
-      OR has_any_column_privilege('margindesk_app',c.oid,'REFERENCES')
-      OR has_table_privilege('margindesk_app',c.oid,'TRIGGER'))
+    AND (has_table_privilege('rebatehq_app',c.oid,'SELECT')
+      OR has_any_column_privilege('rebatehq_app',c.oid,'SELECT')
+      OR has_table_privilege('rebatehq_app',c.oid,'INSERT')
+      OR has_any_column_privilege('rebatehq_app',c.oid,'INSERT')
+      OR has_table_privilege('rebatehq_app',c.oid,'UPDATE')
+      OR has_any_column_privilege('rebatehq_app',c.oid,'UPDATE')
+      OR has_table_privilege('rebatehq_app',c.oid,'DELETE')
+      OR has_table_privilege('rebatehq_app',c.oid,'TRUNCATE')
+      OR has_table_privilege('rebatehq_app',c.oid,'REFERENCES')
+      OR has_any_column_privilege('rebatehq_app',c.oid,'REFERENCES')
+      OR has_table_privilege('rebatehq_app',c.oid,'TRIGGER'))
 ), 'App role has no table privileges in auth schema');
-SELECT extensions.ok(has_language_privilege('margindesk_app','plpgsql','USAGE'),'App role has PL/pgSQL USAGE');
+SELECT extensions.ok(has_language_privilege('rebatehq_app','plpgsql','USAGE'),'App role has PL/pgSQL USAGE');
 SELECT extensions.ok(
-  has_function_privilege('margindesk_app','auth.uid()','EXECUTE')
+  has_function_privilege('rebatehq_app','auth.uid()','EXECUTE')
   AND EXISTS (
     SELECT 1 FROM pg_proc p
     CROSS JOIN LATERAL aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) a
@@ -339,9 +339,9 @@ SELECT extensions.ok(
   ),
   'App role can execute auth.uid() through the Supabase platform PUBLIC grant'
 );
-SELECT extensions.ok(has_function_privilege('margindesk_app','public.is_tenant_member(uuid)','EXECUTE'),'App role has EXECUTE on public.is_tenant_member(uuid)');
-SELECT extensions.ok(has_function_privilege('margindesk_app','public.is_tenant_role(uuid,text[])','EXECUTE'),'App role has EXECUTE on public.is_tenant_role(uuid,text[])');
-SELECT extensions.ok(has_function_privilege('margindesk_app','public.is_tenant_role_any_status(uuid,text[])','EXECUTE'),'App role has EXECUTE on public.is_tenant_role_any_status(uuid,text[])');
+SELECT extensions.ok(has_function_privilege('rebatehq_app','public.is_tenant_member(uuid)','EXECUTE'),'App role has EXECUTE on public.is_tenant_member(uuid)');
+SELECT extensions.ok(has_function_privilege('rebatehq_app','public.is_tenant_role(uuid,text[])','EXECUTE'),'App role has EXECUTE on public.is_tenant_role(uuid,text[])');
+SELECT extensions.ok(has_function_privilege('rebatehq_app','public.is_tenant_role_any_status(uuid,text[])','EXECUTE'),'App role has EXECUTE on public.is_tenant_role_any_status(uuid,text[])');
 WITH required AS (
   SELECT t.table_name,op.privilege
   FROM pg_temp.phase1_rls_tables t
@@ -352,19 +352,19 @@ WITH required AS (
      OR (op.privilege='DELETE' AND t.table_name NOT IN ('tenant','audit_log'))
 ), missing AS (
   SELECT r.table_name,r.privilege FROM required r
-  WHERE NOT has_table_privilege('margindesk_app',format('public.%I',r.table_name),r.privilege)
+  WHERE NOT has_table_privilege('rebatehq_app',format('public.%I',r.table_name),r.privilege)
 )
 SELECT extensions.ok(NOT EXISTS(SELECT 1 FROM missing),
   'App table grants are present; missing='||COALESCE((SELECT string_agg(table_name||'.'||privilege,', ' ORDER BY table_name,privilege) FROM missing),'none'));
 SELECT extensions.ok(
-  NOT has_table_privilege('margindesk_app','public.audit_log','UPDATE')
-  AND NOT has_table_privilege('margindesk_app','public.audit_log','DELETE')
-  AND NOT has_table_privilege('margindesk_app','public.audit_log','TRUNCATE')
+  NOT has_table_privilege('rebatehq_app','public.audit_log','UPDATE')
+  AND NOT has_table_privilege('rebatehq_app','public.audit_log','DELETE')
+  AND NOT has_table_privilege('rebatehq_app','public.audit_log','TRUNCATE')
   AND NOT EXISTS (
     SELECT 1 FROM pg_class c CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) a
     WHERE c.oid='public.audit_log'::regclass AND a.grantee=0 AND a.privilege_type IN ('UPDATE','DELETE','TRUNCATE')
   ),
-  'audit_log has no UPDATE, DELETE, or TRUNCATE grant to margindesk_app or PUBLIC');
+  'audit_log has no UPDATE, DELETE, or TRUNCATE grant to rebatehq_app or PUBLIC');
 SELECT extensions.ok(NOT EXISTS (
   SELECT 1 FROM pg_temp.phase1_rls_tables t
   WHERE EXISTS (
@@ -373,13 +373,13 @@ SELECT extensions.ok(NOT EXISTS (
   )
 ),'PUBLIC has no write or TRUNCATE grants on tenant tables');
 SELECT extensions.ok(
-  NOT has_table_privilege('margindesk_app','public.tenant','INSERT')
-  AND NOT has_table_privilege('margindesk_app','public.tenant','DELETE')
-  AND NOT has_table_privilege('margindesk_app','public.membership','INSERT'),
+  NOT has_table_privilege('rebatehq_app','public.tenant','INSERT')
+  AND NOT has_table_privilege('rebatehq_app','public.tenant','DELETE')
+  AND NOT has_table_privilege('rebatehq_app','public.membership','INSERT'),
   'App role has no tenant or membership write operations forbidden to every policy');
 SELECT extensions.ok(NOT EXISTS (
   SELECT 1 FROM pg_temp.phase1_rls_tables t
-  WHERE t.table_name<>'audit_log' AND has_table_privilege('margindesk_app',format('public.%I',t.table_name),'TRUNCATE')
+  WHERE t.table_name<>'audit_log' AND has_table_privilege('rebatehq_app',format('public.%I',t.table_name),'TRUNCATE')
 ),'App role has no TRUNCATE privilege on tenant tables');
 
 SELECT extensions.ok(NOT EXISTS (
@@ -521,7 +521,7 @@ SELECT extensions.ok(
   'anon has no effective CRUD table privileges across the application schema; representative statements fail at ACL checks: '||current_setting('app.phase1_anon_privilege_result')
 );
 
-SET LOCAL ROLE margindesk_app;
+SET LOCAL ROLE rebatehq_app;
 SELECT set_config(
   'app.phase1_role_context',
   (SELECT jsonb_build_object(
@@ -901,7 +901,7 @@ END $$;
 
 -- All five new tables have positive UPDATE and DELETE controls. The data
 -- quality issue insert path is the SECURITY DEFINER helper above; direct
--- table INSERT remains intentionally absent from margindesk_app.
+-- table INSERT remains intentionally absent from rebatehq_app.
 DO $$ DECLARE v_rows integer; v_ok boolean:=true; v_detail text:=''; BEGIN
   UPDATE public.cost_history SET cost=cost+1 WHERE id='__PHASE1_COST_HISTORY_A_ID__'; GET DIAGNOSTICS v_rows=ROW_COUNT;
   v_ok:=v_ok AND v_rows=1; v_detail:=concat_ws(', ',v_detail,'cost_history update='||v_rows);
@@ -933,10 +933,10 @@ END $$;
 RESET ROLE;
 
 SELECT extensions.ok(
-  current_setting('app.phase1_role_context')::jsonb->>'current_user'='margindesk_app'
+  current_setting('app.phase1_role_context')::jsonb->>'current_user'='rebatehq_app'
   AND current_setting('app.phase1_role_context')::jsonb->>'rolsuper'='false'
   AND current_setting('app.phase1_role_context')::jsonb->>'rolbypassrls'='false',
-  'SET ROLE used NOSUPERUSER and NOBYPASSRLS margindesk_app'
+  'SET ROLE used NOSUPERUSER and NOBYPASSRLS rebatehq_app'
 );
 SELECT extensions.ok(current_setting('app.phase1_auth_policy_result')::jsonb->>'passed'='true',
   'A customer policy evaluates auth.uid() for its assigned rep without auth schema USAGE');
@@ -1011,7 +1011,7 @@ SELECT extensions.ok(
   'record_failed_login EXECUTE is revoked from PUBLIC, anon, and authenticated'
 );
 SELECT extensions.ok(
-  has_function_privilege('margindesk_app','public.record_failed_login(text,text,text)','EXECUTE')
+  has_function_privilege('rebatehq_app','public.record_failed_login(text,text,text)','EXECUTE')
   AND NOT EXISTS (SELECT 1 FROM pg_temp.phase1_function_acl_errors WHERE prosecdef IS TRUE)
   AND NOT EXISTS (
     SELECT 1 FROM pg_default_acl d
@@ -1024,12 +1024,12 @@ SELECT extensions.ok(
   'All public SECURITY DEFINER EXECUTE ACLs match the owner/app allowlist; no extra default grants exist'
 );
 SELECT extensions.ok(NOT EXISTS (
-  SELECT 1 FROM pg_auth_members WHERE member='margindesk_app'::regrole
-), 'margindesk_app has no role memberships that could supply hidden privileges');
+  SELECT 1 FROM pg_auth_members WHERE member='rebatehq_app'::regrole
+), 'rebatehq_app has no role memberships that could supply hidden privileges');
 
 -- Check the actual platform ACL; Supabase owns auth.uid(), so this migration
 -- role cannot manage its grants. The connection/runner prints the full ACL.
-SET LOCAL ROLE margindesk_app;
+SET LOCAL ROLE rebatehq_app;
 SET LOCAL request.jwt.claim.sub = '__PHASE1_USER_REP_ID__';
 SET LOCAL request.jwt.claims = '{"sub":"__PHASE1_USER_REP_ID__","role":"authenticated"}';
 DO $$ DECLARE n integer; v_state text; v_msg text; BEGIN
@@ -1046,10 +1046,10 @@ END $$;
 RESET ROLE;
 SELECT extensions.ok(
   current_setting('app.phase1_auth_uid_authenticated_result')::jsonb->>'passed'='true',
-  'Authenticated customer policy query returns its assigned row as margindesk_app'
+  'Authenticated customer policy query returns its assigned row as rebatehq_app'
 );
 
-SET LOCAL ROLE margindesk_app;
+SET LOCAL ROLE rebatehq_app;
 SET LOCAL request.jwt.claim.sub = '';
 SET LOCAL request.jwt.claims = '{}';
 DO $$ DECLARE n integer; v_state text; v_msg text; BEGIN
@@ -1068,7 +1068,7 @@ RESET ROLE;
 -- Emit the complete live privilege path and function ACL audit into the CI log.
 SELECT jsonb_build_object(
   'auth_uid_owner',(SELECT pg_get_userbyid(p.proowner) FROM pg_proc p WHERE p.oid='auth.uid()'::regprocedure),
-  'auth_uid_app_execute',has_function_privilege('margindesk_app','auth.uid()','EXECUTE'),
+  'auth_uid_app_execute',has_function_privilege('rebatehq_app','auth.uid()','EXECUTE'),
   'auth_uid_authenticated_policy_query',current_setting('app.phase1_auth_uid_authenticated_result')::jsonb,
   'auth_uid_missing_context_policy_query',current_setting('app.phase1_auth_uid_no_context_result')::jsonb,
   'auth_uid_acl',(
@@ -1083,7 +1083,7 @@ SELECT jsonb_build_object(
     LEFT JOIN pg_roles grantee_role ON grantee_role.oid=acl.grantee
     WHERE p.oid='auth.uid()'::regprocedure
   ),
-  'margindesk_app_memberships',(
+  'rebatehq_app_memberships',(
     SELECT COALESCE(jsonb_agg(jsonb_build_object(
       'role',granted_role.rolname,'grantor',grantor_role.rolname,
       'inherit',m.inherit_option,'set',m.set_option,'admin',m.admin_option
@@ -1091,7 +1091,7 @@ SELECT jsonb_build_object(
     FROM pg_auth_members m
     JOIN pg_roles granted_role ON granted_role.oid=m.roleid
     JOIN pg_roles grantor_role ON grantor_role.oid=m.grantor
-    WHERE m.member='margindesk_app'::regrole
+    WHERE m.member='rebatehq_app'::regrole
   ),
   'record_failed_login',(
     SELECT jsonb_build_object(
@@ -1157,7 +1157,7 @@ SELECT jsonb_build_object(
 
 SELECT extensions.ok(
   current_setting('app.phase1_auth_uid_no_context_result')::jsonb->>'passed'='true',
-  'The same customer policy query returns zero rows as margindesk_app without authenticated context'
+  'The same customer policy query returns zero rows as rebatehq_app without authenticated context'
 );
 
 -- This strengthened existing check covers every public function and exact ACL
@@ -1195,7 +1195,7 @@ SELECT set_config('app.phase1_function_permission_probes',COALESCE((
  )) ORDER BY a.signature)
  FROM pg_temp.phase1_function_allowlist a JOIN pg_proc p ON p.oid=to_regprocedure(a.signature)
  JOIN pg_namespace n ON n.oid=p.pronamespace
- WHERE 'margindesk_app'=ANY(a.grantees)
+ WHERE 'rebatehq_app'=ANY(a.grantees)
 ),'[]'::jsonb)::text,true);
 
 SET LOCAL ROLE anon;
@@ -1296,7 +1296,7 @@ SELECT extensions.ok(
 ) WHERE current_setting('app.restore_test_mode',true)='true';
 
 -- New-table grants are exact allowlists. The owner retains ownership; the
--- only direct non-owner grantee is margindesk_app with the listed operations.
+-- only direct non-owner grantee is rebatehq_app with the listed operations.
 WITH target AS (SELECT 'cost_history'::text AS table_name), expected(privilege) AS (VALUES
  ('DELETE'),('INSERT'),('SELECT'),('UPDATE')
 ), actual AS (
@@ -1305,11 +1305,11 @@ WITH target AS (SELECT 'cost_history'::text AS table_name), expected(privilege) 
  CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) acl
 )
 SELECT extensions.ok(
- NOT EXISTS(SELECT 1 FROM actual WHERE grantee NOT IN(relowner,'margindesk_app'::regrole))
- AND NOT EXISTS(SELECT privilege_type FROM actual WHERE grantee='margindesk_app'::regrole EXCEPT SELECT privilege FROM expected)
- AND NOT EXISTS(SELECT privilege FROM expected EXCEPT SELECT privilege_type FROM actual WHERE grantee='margindesk_app'::regrole)
+ NOT EXISTS(SELECT 1 FROM actual WHERE grantee NOT IN(relowner,'rebatehq_app'::regrole))
+ AND NOT EXISTS(SELECT privilege_type FROM actual WHERE grantee='rebatehq_app'::regrole EXCEPT SELECT privilege FROM expected)
+ AND NOT EXISTS(SELECT privilege FROM expected EXCEPT SELECT privilege_type FROM actual WHERE grantee='rebatehq_app'::regrole)
  AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.cost_history'::regclass AND attnum>0 AND NOT attisdropped AND attacl IS NOT NULL),
- 'cost_history ACL is owner plus margindesk_app CRUD only, with no column grants'
+ 'cost_history ACL is owner plus rebatehq_app CRUD only, with no column grants'
 );
 WITH target AS (SELECT 'uom'::text AS table_name), expected(privilege) AS (VALUES
  ('DELETE'),('INSERT'),('SELECT'),('UPDATE')
@@ -1319,11 +1319,11 @@ WITH target AS (SELECT 'uom'::text AS table_name), expected(privilege) AS (VALUE
  CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) acl
 )
 SELECT extensions.ok(
- NOT EXISTS(SELECT 1 FROM actual WHERE grantee NOT IN(relowner,'margindesk_app'::regrole))
- AND NOT EXISTS(SELECT privilege_type FROM actual WHERE grantee='margindesk_app'::regrole EXCEPT SELECT privilege FROM expected)
- AND NOT EXISTS(SELECT privilege FROM expected EXCEPT SELECT privilege_type FROM actual WHERE grantee='margindesk_app'::regrole)
+ NOT EXISTS(SELECT 1 FROM actual WHERE grantee NOT IN(relowner,'rebatehq_app'::regrole))
+ AND NOT EXISTS(SELECT privilege_type FROM actual WHERE grantee='rebatehq_app'::regrole EXCEPT SELECT privilege FROM expected)
+ AND NOT EXISTS(SELECT privilege FROM expected EXCEPT SELECT privilege_type FROM actual WHERE grantee='rebatehq_app'::regrole)
  AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.uom'::regclass AND attnum>0 AND NOT attisdropped AND attacl IS NOT NULL),
- 'uom ACL is owner plus margindesk_app CRUD only, with no column grants'
+ 'uom ACL is owner plus rebatehq_app CRUD only, with no column grants'
 );
 WITH target AS (SELECT 'uom_conversion'::text AS table_name), expected(privilege) AS (VALUES
  ('DELETE'),('INSERT'),('SELECT'),('UPDATE')
@@ -1333,11 +1333,11 @@ WITH target AS (SELECT 'uom_conversion'::text AS table_name), expected(privilege
  CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) acl
 )
 SELECT extensions.ok(
- NOT EXISTS(SELECT 1 FROM actual WHERE grantee NOT IN(relowner,'margindesk_app'::regrole))
- AND NOT EXISTS(SELECT privilege_type FROM actual WHERE grantee='margindesk_app'::regrole EXCEPT SELECT privilege FROM expected)
- AND NOT EXISTS(SELECT privilege FROM expected EXCEPT SELECT privilege_type FROM actual WHERE grantee='margindesk_app'::regrole)
+ NOT EXISTS(SELECT 1 FROM actual WHERE grantee NOT IN(relowner,'rebatehq_app'::regrole))
+ AND NOT EXISTS(SELECT privilege_type FROM actual WHERE grantee='rebatehq_app'::regrole EXCEPT SELECT privilege FROM expected)
+ AND NOT EXISTS(SELECT privilege FROM expected EXCEPT SELECT privilege_type FROM actual WHERE grantee='rebatehq_app'::regrole)
  AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.uom_conversion'::regclass AND attnum>0 AND NOT attisdropped AND attacl IS NOT NULL),
- 'uom_conversion ACL is owner plus margindesk_app CRUD only, with no column grants'
+ 'uom_conversion ACL is owner plus rebatehq_app CRUD only, with no column grants'
 );
 WITH target AS (SELECT 'fx_rate'::text AS table_name), expected(privilege) AS (VALUES
  ('DELETE'),('INSERT'),('SELECT'),('UPDATE')
@@ -1347,11 +1347,11 @@ WITH target AS (SELECT 'fx_rate'::text AS table_name), expected(privilege) AS (V
  CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) acl
 )
 SELECT extensions.ok(
- NOT EXISTS(SELECT 1 FROM actual WHERE grantee NOT IN(relowner,'margindesk_app'::regrole))
- AND NOT EXISTS(SELECT privilege_type FROM actual WHERE grantee='margindesk_app'::regrole EXCEPT SELECT privilege FROM expected)
- AND NOT EXISTS(SELECT privilege FROM expected EXCEPT SELECT privilege_type FROM actual WHERE grantee='margindesk_app'::regrole)
+ NOT EXISTS(SELECT 1 FROM actual WHERE grantee NOT IN(relowner,'rebatehq_app'::regrole))
+ AND NOT EXISTS(SELECT privilege_type FROM actual WHERE grantee='rebatehq_app'::regrole EXCEPT SELECT privilege FROM expected)
+ AND NOT EXISTS(SELECT privilege FROM expected EXCEPT SELECT privilege_type FROM actual WHERE grantee='rebatehq_app'::regrole)
  AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.fx_rate'::regclass AND attnum>0 AND NOT attisdropped AND attacl IS NOT NULL),
- 'fx_rate ACL is owner plus margindesk_app CRUD only, with no column grants'
+ 'fx_rate ACL is owner plus rebatehq_app CRUD only, with no column grants'
 );
 WITH target AS (SELECT 'data_quality_issue'::text AS table_name), expected(privilege) AS (VALUES
  ('DELETE'),('SELECT'),('UPDATE')
@@ -1361,17 +1361,17 @@ WITH target AS (SELECT 'data_quality_issue'::text AS table_name), expected(privi
  CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) acl
 )
 SELECT extensions.ok(
- NOT EXISTS(SELECT 1 FROM actual WHERE grantee NOT IN(relowner,'margindesk_app'::regrole))
- AND NOT EXISTS(SELECT privilege_type FROM actual WHERE grantee='margindesk_app'::regrole EXCEPT SELECT privilege FROM expected)
- AND NOT EXISTS(SELECT privilege FROM expected EXCEPT SELECT privilege_type FROM actual WHERE grantee='margindesk_app'::regrole)
- AND NOT has_table_privilege('margindesk_app','public.data_quality_issue','INSERT')
+ NOT EXISTS(SELECT 1 FROM actual WHERE grantee NOT IN(relowner,'rebatehq_app'::regrole))
+ AND NOT EXISTS(SELECT privilege_type FROM actual WHERE grantee='rebatehq_app'::regrole EXCEPT SELECT privilege FROM expected)
+ AND NOT EXISTS(SELECT privilege FROM expected EXCEPT SELECT privilege_type FROM actual WHERE grantee='rebatehq_app'::regrole)
+ AND NOT has_table_privilege('rebatehq_app','public.data_quality_issue','INSERT')
  AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.data_quality_issue'::regclass AND attnum>0 AND NOT attisdropped AND attacl IS NOT NULL),
  'data_quality_issue grants manager CRUD except INSERT; issue creation is function-only'
 );
 
 SELECT extensions.ok(
  (SELECT pg_get_userbyid(p.proowner)=current_setting('app.phase1_migration_owner')
-   AND has_function_privilege('margindesk_app',p.oid,'EXECUTE')
+   AND has_function_privilege('rebatehq_app',p.oid,'EXECUTE')
    AND p.prosecdef
    AND EXISTS(SELECT 1 FROM unnest(COALESCE(p.proconfig,ARRAY[]::text[])) cfg(setting) WHERE cfg.setting='search_path=public, pg_temp')
    AND NOT EXISTS(SELECT 1 FROM pg_temp.phase1_function_acl_errors e WHERE e.oid=p.oid)
@@ -1380,7 +1380,7 @@ SELECT extensions.ok(
 );
 SELECT extensions.ok(
  (SELECT pg_get_userbyid(p.proowner)=current_setting('app.phase1_migration_owner')
-   AND has_function_privilege('margindesk_app',p.oid,'EXECUTE')
+   AND has_function_privilege('rebatehq_app',p.oid,'EXECUTE')
    AND p.prosecdef
    AND EXISTS(SELECT 1 FROM unnest(COALESCE(p.proconfig,ARRAY[]::text[])) cfg(setting) WHERE cfg.setting='search_path=public, pg_temp')
    AND NOT EXISTS(SELECT 1 FROM pg_temp.phase1_function_acl_errors e WHERE e.oid=p.oid)
@@ -1391,7 +1391,7 @@ SELECT extensions.ok(
  (SELECT pg_get_userbyid(p.proowner)=current_setting('app.phase1_migration_owner')
    AND p.prosecdef
    AND EXISTS(SELECT 1 FROM unnest(COALESCE(p.proconfig,ARRAY[]::text[])) cfg(setting) WHERE cfg.setting='search_path=public, pg_temp')
-   AND NOT has_function_privilege('margindesk_app',p.oid,'EXECUTE')
+   AND NOT has_function_privilege('rebatehq_app',p.oid,'EXECUTE')
    AND NOT EXISTS(SELECT 1 FROM pg_temp.phase1_function_acl_errors e WHERE e.oid=p.oid)
   FROM pg_proc p WHERE p.oid='public.sync_product_standard_cost_history()'::regprocedure),
  'sync_product_standard_cost_history is migration-owned and executable only by its owner'
@@ -1433,11 +1433,11 @@ SELECT extensions.ok(current_setting('app.phase2a_new_table_write_result')::json
 
 SELECT extensions.ok(NOT EXISTS (
  SELECT 1 FROM pg_class c CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) a
- WHERE c.oid='public.customer_group'::regclass AND (a.grantee NOT IN(c.relowner,'margindesk_app'::regrole)
- OR (a.grantee='margindesk_app'::regrole AND (a.privilege_type NOT IN('SELECT','INSERT','UPDATE','DELETE') OR a.is_grantable))))
- AND (SELECT count(*) FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.customer_group'::regclass AND a.grantee='margindesk_app'::regrole)=4
+ WHERE c.oid='public.customer_group'::regclass AND (a.grantee NOT IN(c.relowner,'rebatehq_app'::regrole)
+ OR (a.grantee='rebatehq_app'::regrole AND (a.privilege_type NOT IN('SELECT','INSERT','UPDATE','DELETE') OR a.is_grantable))))
+ AND (SELECT count(*) FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.customer_group'::regclass AND a.grantee='rebatehq_app'::regrole)=4
  AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.customer_group'::regclass AND attacl IS NOT NULL),'customer_group: exact owner/app CRUD ACL');
-SET LOCAL ROLE margindesk_app;
+SET LOCAL ROLE rebatehq_app;
 SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_A_ID__',true);
 DO $$ DECLARE v_id uuid; n integer; BEGIN
  INSERT INTO public.customer_group SELECT (jsonb_populate_record(NULL::public.customer_group,current_setting('app.phase1_tenant_a_fixtures')::jsonb->'customer_group' || jsonb_build_object('id',gen_random_uuid(),'name',gen_random_uuid()::text))).* RETURNING id INTO v_id;
@@ -1476,11 +1476,11 @@ RESET ROLE;
 SELECT extensions.ok(current_setting('app.chunk2b_acl_denied')='true','customer_group: authenticated CRUD is permission denied independent of RLS');
 SELECT extensions.ok(NOT EXISTS (
  SELECT 1 FROM pg_class c CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) a
- WHERE c.oid='public.customer_price'::regclass AND (a.grantee NOT IN(c.relowner,'margindesk_app'::regrole)
- OR (a.grantee='margindesk_app'::regrole AND (a.privilege_type NOT IN('SELECT','INSERT','UPDATE','DELETE') OR a.is_grantable))))
- AND (SELECT count(*) FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.customer_price'::regclass AND a.grantee='margindesk_app'::regrole)=4
+ WHERE c.oid='public.customer_price'::regclass AND (a.grantee NOT IN(c.relowner,'rebatehq_app'::regrole)
+ OR (a.grantee='rebatehq_app'::regrole AND (a.privilege_type NOT IN('SELECT','INSERT','UPDATE','DELETE') OR a.is_grantable))))
+ AND (SELECT count(*) FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.customer_price'::regclass AND a.grantee='rebatehq_app'::regrole)=4
  AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.customer_price'::regclass AND attacl IS NOT NULL),'customer_price: exact owner/app CRUD ACL');
-SET LOCAL ROLE margindesk_app;
+SET LOCAL ROLE rebatehq_app;
 SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_A_ID__',true);
 DO $$ DECLARE v_id uuid; n integer; BEGIN
  INSERT INTO public.customer_price SELECT (jsonb_populate_record(NULL::public.customer_price,current_setting('app.phase1_tenant_a_fixtures')::jsonb->'customer_price' || jsonb_build_object('id',gen_random_uuid(),'effective_from','1900-01-01','effective_to','1900-01-02'))).* RETURNING id INTO v_id;
@@ -1519,11 +1519,11 @@ RESET ROLE;
 SELECT extensions.ok(current_setting('app.chunk2b_acl_denied')='true','customer_price: authenticated CRUD is permission denied independent of RLS');
 SELECT extensions.ok(NOT EXISTS (
  SELECT 1 FROM pg_class c CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) a
- WHERE c.oid='public.rebate_tier'::regclass AND (a.grantee NOT IN(c.relowner,'margindesk_app'::regrole)
- OR (a.grantee='margindesk_app'::regrole AND (a.privilege_type NOT IN('SELECT','INSERT','UPDATE','DELETE') OR a.is_grantable))))
- AND (SELECT count(*) FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.rebate_tier'::regclass AND a.grantee='margindesk_app'::regrole)=4
+ WHERE c.oid='public.rebate_tier'::regclass AND (a.grantee NOT IN(c.relowner,'rebatehq_app'::regrole)
+ OR (a.grantee='rebatehq_app'::regrole AND (a.privilege_type NOT IN('SELECT','INSERT','UPDATE','DELETE') OR a.is_grantable))))
+ AND (SELECT count(*) FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.rebate_tier'::regclass AND a.grantee='rebatehq_app'::regrole)=4
  AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.rebate_tier'::regclass AND attacl IS NOT NULL),'rebate_tier: exact owner/app CRUD ACL');
-SET LOCAL ROLE margindesk_app;
+SET LOCAL ROLE rebatehq_app;
 SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_A_ID__',true);
 DO $$ DECLARE v_id uuid; n integer; BEGIN
  INSERT INTO public.rebate_tier SELECT (jsonb_populate_record(NULL::public.rebate_tier,current_setting('app.phase1_tenant_a_fixtures')::jsonb->'rebate_tier' || jsonb_build_object('id',gen_random_uuid(),'from_amount',10,'to_amount',11))).* RETURNING id INTO v_id;
@@ -1562,11 +1562,11 @@ RESET ROLE;
 SELECT extensions.ok(current_setting('app.chunk2b_acl_denied')='true','rebate_tier: authenticated CRUD is permission denied independent of RLS');
 SELECT extensions.ok(NOT EXISTS (
  SELECT 1 FROM pg_class c CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) a
- WHERE c.oid='public.rebate_entry'::regclass AND (a.grantee NOT IN(c.relowner,'margindesk_app'::regrole)
- OR (a.grantee='margindesk_app'::regrole AND (a.privilege_type NOT IN('SELECT','INSERT','UPDATE','DELETE') OR a.is_grantable))))
- AND (SELECT count(*) FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.rebate_entry'::regclass AND a.grantee='margindesk_app'::regrole)=4
+ WHERE c.oid='public.rebate_entry'::regclass AND (a.grantee NOT IN(c.relowner,'rebatehq_app'::regrole)
+ OR (a.grantee='rebatehq_app'::regrole AND (a.privilege_type NOT IN('SELECT','INSERT','UPDATE','DELETE') OR a.is_grantable))))
+ AND (SELECT count(*) FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.rebate_entry'::regclass AND a.grantee='rebatehq_app'::regrole)=4
  AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.rebate_entry'::regclass AND attacl IS NOT NULL),'rebate_entry: exact owner/app CRUD ACL');
-SET LOCAL ROLE margindesk_app;
+SET LOCAL ROLE rebatehq_app;
 SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_A_ID__',true);
 DO $$ DECLARE v_id uuid; n integer; BEGIN
  INSERT INTO public.rebate_entry SELECT (jsonb_populate_record(NULL::public.rebate_entry,current_setting('app.phase1_tenant_a_fixtures')::jsonb->'rebate_entry' || jsonb_build_object('id',gen_random_uuid(),'source_ref',gen_random_uuid()::text))).* RETURNING id INTO v_id;
@@ -1619,17 +1619,17 @@ SELECT extensions.ok(EXISTS(
 ),'import_job: non-null indexed tenant, forced RLS and audit trigger');
 SELECT extensions.ok(NOT EXISTS(
  SELECT 1 FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.import_job'::regclass
- AND (a.grantee NOT IN(c.relowner,'margindesk_app'::regrole)
- OR (a.grantee='margindesk_app'::regrole AND (a.privilege_type NOT IN('SELECT','INSERT','UPDATE','DELETE') OR a.is_grantable))))
- AND (SELECT count(*) FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.import_job'::regclass AND a.grantee='margindesk_app'::regrole)=4
+ AND (a.grantee NOT IN(c.relowner,'rebatehq_app'::regrole)
+ OR (a.grantee='rebatehq_app'::regrole AND (a.privilege_type NOT IN('SELECT','INSERT','UPDATE','DELETE') OR a.is_grantable))))
+ AND (SELECT count(*) FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.import_job'::regclass AND a.grantee='rebatehq_app'::regrole)=4
  AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.import_job'::regclass AND attacl IS NOT NULL),
  'import_job: exact owner/app CRUD ACL, no platform/column grants');
-SET LOCAL ROLE margindesk_app;
+SET LOCAL ROLE rebatehq_app;
 SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_A_ID__',true),
  set_config('request.jwt.claims','{"sub":"__PHASE1_USER_A_ID__","role":"authenticated"}',true),
  set_config('app.real_actor_id','__PHASE1_USER_A_ID__',true);
 DO $$ DECLARE v_id uuid; n integer; BEGIN
- IF current_user<>'margindesk_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe policy test role'; END IF;
+ IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe policy test role'; END IF;
  INSERT INTO public.import_job SELECT (jsonb_populate_record(NULL::public.import_job,current_setting('app.phase1_tenant_a_fixtures')::jsonb->'import_job' || jsonb_build_object('id',gen_random_uuid()))).* RETURNING id INTO v_id;
  SELECT count(*) INTO n FROM public.import_job WHERE id=v_id;
  IF n<>1 THEN RAISE EXCEPTION 'import_job: own SELECT returned % rows',n; END IF;
@@ -1688,11 +1688,11 @@ DO $$ DECLARE op text; message text; BEGIN
 END $$;
 RESET ROLE;
 SELECT extensions.ok(current_setting('app.chunk2c_import_job_authenticated')='true','import_job: authenticated CRUD permission denied independent of RLS');
-SET LOCAL ROLE margindesk_app;
+SET LOCAL ROLE rebatehq_app;
 SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_REP_ID__',true),
  set_config('request.jwt.claims','{"sub":"__PHASE1_USER_REP_ID__","role":"authenticated"}',true);
 DO $$ DECLARE n integer; message text; BEGIN
- IF current_user<>'margindesk_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe rep policy test role'; END IF;
+ IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe rep policy test role'; END IF;
  SELECT count(*) INTO n FROM public.import_job WHERE tenant_id='__PHASE1_TENANT_B_ID__';
  IF n<>0 THEN RAISE EXCEPTION 'import_job: rep sees restricted rows'; END IF;
  UPDATE public.import_job SET id=id WHERE tenant_id='__PHASE1_TENANT_B_ID__'; GET DIAGNOSTICS n=ROW_COUNT;
@@ -1718,17 +1718,17 @@ SELECT extensions.ok(EXISTS(
 ),'column_mapping_template: non-null indexed tenant, forced RLS and audit trigger');
 SELECT extensions.ok(NOT EXISTS(
  SELECT 1 FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.column_mapping_template'::regclass
- AND (a.grantee NOT IN(c.relowner,'margindesk_app'::regrole)
- OR (a.grantee='margindesk_app'::regrole AND (a.privilege_type NOT IN('SELECT','INSERT','UPDATE','DELETE') OR a.is_grantable))))
- AND (SELECT count(*) FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.column_mapping_template'::regclass AND a.grantee='margindesk_app'::regrole)=4
+ AND (a.grantee NOT IN(c.relowner,'rebatehq_app'::regrole)
+ OR (a.grantee='rebatehq_app'::regrole AND (a.privilege_type NOT IN('SELECT','INSERT','UPDATE','DELETE') OR a.is_grantable))))
+ AND (SELECT count(*) FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.column_mapping_template'::regclass AND a.grantee='rebatehq_app'::regrole)=4
  AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.column_mapping_template'::regclass AND attacl IS NOT NULL),
  'column_mapping_template: exact owner/app CRUD ACL, no platform/column grants');
-SET LOCAL ROLE margindesk_app;
+SET LOCAL ROLE rebatehq_app;
 SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_A_ID__',true),
  set_config('request.jwt.claims','{"sub":"__PHASE1_USER_A_ID__","role":"authenticated"}',true),
  set_config('app.real_actor_id','__PHASE1_USER_A_ID__',true);
 DO $$ DECLARE v_id uuid; n integer; BEGIN
- IF current_user<>'margindesk_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe policy test role'; END IF;
+ IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe policy test role'; END IF;
  INSERT INTO public.column_mapping_template SELECT (jsonb_populate_record(NULL::public.column_mapping_template,current_setting('app.phase1_tenant_a_fixtures')::jsonb->'column_mapping_template' || jsonb_build_object('id',gen_random_uuid(),'name',gen_random_uuid()::text))).* RETURNING id INTO v_id;
  SELECT count(*) INTO n FROM public.column_mapping_template WHERE id=v_id;
  IF n<>1 THEN RAISE EXCEPTION 'column_mapping_template: own SELECT returned % rows',n; END IF;
@@ -1787,11 +1787,11 @@ DO $$ DECLARE op text; message text; BEGIN
 END $$;
 RESET ROLE;
 SELECT extensions.ok(current_setting('app.chunk2c_column_mapping_template_authenticated')='true','column_mapping_template: authenticated CRUD permission denied independent of RLS');
-SET LOCAL ROLE margindesk_app;
+SET LOCAL ROLE rebatehq_app;
 SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_REP_ID__',true),
  set_config('request.jwt.claims','{"sub":"__PHASE1_USER_REP_ID__","role":"authenticated"}',true);
 DO $$ DECLARE n integer; message text; BEGIN
- IF current_user<>'margindesk_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe rep policy test role'; END IF;
+ IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe rep policy test role'; END IF;
  SELECT count(*) INTO n FROM public.column_mapping_template WHERE tenant_id='__PHASE1_TENANT_B_ID__';
  IF n<>0 THEN RAISE EXCEPTION 'column_mapping_template: rep sees restricted rows'; END IF;
  UPDATE public.column_mapping_template SET id=id WHERE tenant_id='__PHASE1_TENANT_B_ID__'; GET DIAGNOSTICS n=ROW_COUNT;
@@ -1817,17 +1817,17 @@ SELECT extensions.ok(EXISTS(
 ),'connector_sync_run: non-null indexed tenant, forced RLS and audit trigger');
 SELECT extensions.ok(NOT EXISTS(
  SELECT 1 FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.connector_sync_run'::regclass
- AND (a.grantee NOT IN(c.relowner,'margindesk_app'::regrole)
- OR (a.grantee='margindesk_app'::regrole AND (a.privilege_type NOT IN('SELECT','INSERT','UPDATE','DELETE') OR a.is_grantable))))
- AND (SELECT count(*) FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.connector_sync_run'::regclass AND a.grantee='margindesk_app'::regrole)=4
+ AND (a.grantee NOT IN(c.relowner,'rebatehq_app'::regrole)
+ OR (a.grantee='rebatehq_app'::regrole AND (a.privilege_type NOT IN('SELECT','INSERT','UPDATE','DELETE') OR a.is_grantable))))
+ AND (SELECT count(*) FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.connector_sync_run'::regclass AND a.grantee='rebatehq_app'::regrole)=4
  AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.connector_sync_run'::regclass AND attacl IS NOT NULL),
  'connector_sync_run: exact owner/app CRUD ACL, no platform/column grants');
-SET LOCAL ROLE margindesk_app;
+SET LOCAL ROLE rebatehq_app;
 SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_A_ID__',true),
  set_config('request.jwt.claims','{"sub":"__PHASE1_USER_A_ID__","role":"authenticated"}',true),
  set_config('app.real_actor_id','__PHASE1_USER_A_ID__',true);
 DO $$ DECLARE v_id uuid; n integer; BEGIN
- IF current_user<>'margindesk_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe policy test role'; END IF;
+ IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe policy test role'; END IF;
  INSERT INTO public.connector_sync_run SELECT (jsonb_populate_record(NULL::public.connector_sync_run,current_setting('app.phase1_tenant_a_fixtures')::jsonb->'connector_sync_run' || jsonb_build_object('id',gen_random_uuid()))).* RETURNING id INTO v_id;
  SELECT count(*) INTO n FROM public.connector_sync_run WHERE id=v_id;
  IF n<>1 THEN RAISE EXCEPTION 'connector_sync_run: own SELECT returned % rows',n; END IF;
@@ -1886,11 +1886,11 @@ DO $$ DECLARE op text; message text; BEGIN
 END $$;
 RESET ROLE;
 SELECT extensions.ok(current_setting('app.chunk2c_connector_sync_run_authenticated')='true','connector_sync_run: authenticated CRUD permission denied independent of RLS');
-SET LOCAL ROLE margindesk_app;
+SET LOCAL ROLE rebatehq_app;
 SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_REP_ID__',true),
  set_config('request.jwt.claims','{"sub":"__PHASE1_USER_REP_ID__","role":"authenticated"}',true);
 DO $$ DECLARE n integer; message text; BEGIN
- IF current_user<>'margindesk_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe rep policy test role'; END IF;
+ IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe rep policy test role'; END IF;
  SELECT count(*) INTO n FROM public.connector_sync_run WHERE tenant_id='__PHASE1_TENANT_B_ID__';
  IF n<>0 THEN RAISE EXCEPTION 'connector_sync_run: rep sees restricted rows'; END IF;
  UPDATE public.connector_sync_run SET id=id WHERE tenant_id='__PHASE1_TENANT_B_ID__'; GET DIAGNOSTICS n=ROW_COUNT;
@@ -1916,17 +1916,17 @@ SELECT extensions.ok(EXISTS(
 ),'quote_share_link: non-null indexed tenant, forced RLS and audit trigger');
 SELECT extensions.ok(NOT EXISTS(
  SELECT 1 FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.quote_share_link'::regclass
- AND (a.grantee NOT IN(c.relowner,'margindesk_app'::regrole)
- OR (a.grantee='margindesk_app'::regrole AND (a.privilege_type NOT IN('SELECT','INSERT','UPDATE','DELETE') OR a.is_grantable))))
- AND (SELECT count(*) FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.quote_share_link'::regclass AND a.grantee='margindesk_app'::regrole)=4
+ AND (a.grantee NOT IN(c.relowner,'rebatehq_app'::regrole)
+ OR (a.grantee='rebatehq_app'::regrole AND (a.privilege_type NOT IN('SELECT','INSERT','UPDATE','DELETE') OR a.is_grantable))))
+ AND (SELECT count(*) FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.quote_share_link'::regclass AND a.grantee='rebatehq_app'::regrole)=4
  AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.quote_share_link'::regclass AND attacl IS NOT NULL),
  'quote_share_link: exact owner/app CRUD ACL, no platform/column grants');
-SET LOCAL ROLE margindesk_app;
+SET LOCAL ROLE rebatehq_app;
 SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_A_ID__',true),
  set_config('request.jwt.claims','{"sub":"__PHASE1_USER_A_ID__","role":"authenticated"}',true),
  set_config('app.real_actor_id','__PHASE1_USER_A_ID__',true);
 DO $$ DECLARE v_id uuid; n integer; BEGIN
- IF current_user<>'margindesk_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe policy test role'; END IF;
+ IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe policy test role'; END IF;
  INSERT INTO public.quote_share_link SELECT (jsonb_populate_record(NULL::public.quote_share_link,current_setting('app.phase1_tenant_a_fixtures')::jsonb->'quote_share_link' || jsonb_build_object('id',gen_random_uuid(),'token_hash',md5(gen_random_uuid()::text)||md5(gen_random_uuid()::text)))).* RETURNING id INTO v_id;
  SELECT count(*) INTO n FROM public.quote_share_link WHERE id=v_id;
  IF n<>1 THEN RAISE EXCEPTION 'quote_share_link: own SELECT returned % rows',n; END IF;
@@ -1985,11 +1985,11 @@ DO $$ DECLARE op text; message text; BEGIN
 END $$;
 RESET ROLE;
 SELECT extensions.ok(current_setting('app.chunk2c_quote_share_link_authenticated')='true','quote_share_link: authenticated CRUD permission denied independent of RLS');
-SET LOCAL ROLE margindesk_app;
+SET LOCAL ROLE rebatehq_app;
 SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_REP_ID__',true),
  set_config('request.jwt.claims','{"sub":"__PHASE1_USER_REP_ID__","role":"authenticated"}',true);
 DO $$ DECLARE n integer; message text; BEGIN
- IF current_user<>'margindesk_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe rep policy test role'; END IF;
+ IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe rep policy test role'; END IF;
  SELECT count(*) INTO n FROM public.quote_share_link WHERE tenant_id='__PHASE1_TENANT_B_ID__';
  IF n<>0 THEN RAISE EXCEPTION 'quote_share_link: rep sees restricted rows'; END IF;
  UPDATE public.quote_share_link SET id=id WHERE tenant_id='__PHASE1_TENANT_B_ID__'; GET DIAGNOSTICS n=ROW_COUNT;
@@ -2015,17 +2015,17 @@ SELECT extensions.ok(EXISTS(
 ),'approval_rule: non-null indexed tenant, forced RLS and audit trigger');
 SELECT extensions.ok(NOT EXISTS(
  SELECT 1 FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.approval_rule'::regclass
- AND (a.grantee NOT IN(c.relowner,'margindesk_app'::regrole)
- OR (a.grantee='margindesk_app'::regrole AND (a.privilege_type NOT IN('SELECT','INSERT','UPDATE','DELETE') OR a.is_grantable))))
- AND (SELECT count(*) FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.approval_rule'::regclass AND a.grantee='margindesk_app'::regrole)=4
+ AND (a.grantee NOT IN(c.relowner,'rebatehq_app'::regrole)
+ OR (a.grantee='rebatehq_app'::regrole AND (a.privilege_type NOT IN('SELECT','INSERT','UPDATE','DELETE') OR a.is_grantable))))
+ AND (SELECT count(*) FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.approval_rule'::regclass AND a.grantee='rebatehq_app'::regrole)=4
  AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.approval_rule'::regclass AND attacl IS NOT NULL),
  'approval_rule: exact owner/app CRUD ACL, no platform/column grants');
-SET LOCAL ROLE margindesk_app;
+SET LOCAL ROLE rebatehq_app;
 SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_A_ID__',true),
  set_config('request.jwt.claims','{"sub":"__PHASE1_USER_A_ID__","role":"authenticated"}',true),
  set_config('app.real_actor_id','__PHASE1_USER_A_ID__',true);
 DO $$ DECLARE v_id uuid; n integer; BEGIN
- IF current_user<>'margindesk_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe policy test role'; END IF;
+ IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe policy test role'; END IF;
  INSERT INTO public.approval_rule SELECT (jsonb_populate_record(NULL::public.approval_rule,current_setting('app.phase1_tenant_a_fixtures')::jsonb->'approval_rule' || jsonb_build_object('id',gen_random_uuid(),'name',gen_random_uuid()::text))).* RETURNING id INTO v_id;
  SELECT count(*) INTO n FROM public.approval_rule WHERE id=v_id;
  IF n<>1 THEN RAISE EXCEPTION 'approval_rule: own SELECT returned % rows',n; END IF;
@@ -2084,11 +2084,11 @@ DO $$ DECLARE op text; message text; BEGIN
 END $$;
 RESET ROLE;
 SELECT extensions.ok(current_setting('app.chunk2c_approval_rule_authenticated')='true','approval_rule: authenticated CRUD permission denied independent of RLS');
-SET LOCAL ROLE margindesk_app;
+SET LOCAL ROLE rebatehq_app;
 SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_REP_ID__',true),
  set_config('request.jwt.claims','{"sub":"__PHASE1_USER_REP_ID__","role":"authenticated"}',true);
 DO $$ DECLARE n integer; message text; BEGIN
- IF current_user<>'margindesk_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe rep policy test role'; END IF;
+ IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe rep policy test role'; END IF;
  SELECT count(*) INTO n FROM public.approval_rule WHERE tenant_id='__PHASE1_TENANT_B_ID__';
  IF n<>0 THEN RAISE EXCEPTION 'approval_rule: rep sees restricted rows'; END IF;
  UPDATE public.approval_rule SET id=id WHERE tenant_id='__PHASE1_TENANT_B_ID__'; GET DIAGNOSTICS n=ROW_COUNT;
@@ -2114,17 +2114,17 @@ SELECT extensions.ok(EXISTS(
 ),'plan_feature: non-null indexed tenant, forced RLS and audit trigger');
 SELECT extensions.ok(NOT EXISTS(
  SELECT 1 FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.plan_feature'::regclass
- AND (a.grantee NOT IN(c.relowner,'margindesk_app'::regrole)
- OR (a.grantee='margindesk_app'::regrole AND (a.privilege_type NOT IN('SELECT','INSERT','UPDATE','DELETE') OR a.is_grantable))))
- AND (SELECT count(*) FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.plan_feature'::regclass AND a.grantee='margindesk_app'::regrole)=4
+ AND (a.grantee NOT IN(c.relowner,'rebatehq_app'::regrole)
+ OR (a.grantee='rebatehq_app'::regrole AND (a.privilege_type NOT IN('SELECT','INSERT','UPDATE','DELETE') OR a.is_grantable))))
+ AND (SELECT count(*) FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.plan_feature'::regclass AND a.grantee='rebatehq_app'::regrole)=4
  AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.plan_feature'::regclass AND attacl IS NOT NULL),
  'plan_feature: exact owner/app CRUD ACL, no platform/column grants');
-SET LOCAL ROLE margindesk_app;
+SET LOCAL ROLE rebatehq_app;
 SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_A_ID__',true),
  set_config('request.jwt.claims','{"sub":"__PHASE1_USER_A_ID__","role":"authenticated"}',true),
  set_config('app.real_actor_id','__PHASE1_USER_A_ID__',true);
 DO $$ DECLARE v_id uuid; n integer; BEGIN
- IF current_user<>'margindesk_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe policy test role'; END IF;
+ IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe policy test role'; END IF;
  INSERT INTO public.plan_feature SELECT (jsonb_populate_record(NULL::public.plan_feature,current_setting('app.phase1_tenant_a_fixtures')::jsonb->'plan_feature' || jsonb_build_object('id',gen_random_uuid(),'feature_key','p'||replace(gen_random_uuid()::text,'-','')))).* RETURNING id INTO v_id;
  SELECT count(*) INTO n FROM public.plan_feature WHERE id=v_id;
  IF n<>1 THEN RAISE EXCEPTION 'plan_feature: own SELECT returned % rows',n; END IF;
@@ -2183,11 +2183,11 @@ DO $$ DECLARE op text; message text; BEGIN
 END $$;
 RESET ROLE;
 SELECT extensions.ok(current_setting('app.chunk2c_plan_feature_authenticated')='true','plan_feature: authenticated CRUD permission denied independent of RLS');
-SET LOCAL ROLE margindesk_app;
+SET LOCAL ROLE rebatehq_app;
 SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_REP_ID__',true),
  set_config('request.jwt.claims','{"sub":"__PHASE1_USER_REP_ID__","role":"authenticated"}',true);
 DO $$ DECLARE n integer; message text; BEGIN
- IF current_user<>'margindesk_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe rep policy test role'; END IF;
+ IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe rep policy test role'; END IF;
  SELECT count(*) INTO n FROM public.plan_feature WHERE tenant_id='__PHASE1_TENANT_B_ID__';
  IF n<>0 THEN RAISE EXCEPTION 'plan_feature: rep sees restricted rows'; END IF;
  UPDATE public.plan_feature SET id=id WHERE tenant_id='__PHASE1_TENANT_B_ID__'; GET DIAGNOSTICS n=ROW_COUNT;
@@ -2213,17 +2213,17 @@ SELECT extensions.ok(EXISTS(
 ),'margin_snapshot: non-null indexed tenant, forced RLS and audit trigger');
 SELECT extensions.ok(NOT EXISTS(
  SELECT 1 FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.margin_snapshot'::regclass
- AND (a.grantee NOT IN(c.relowner,'margindesk_app'::regrole)
- OR (a.grantee='margindesk_app'::regrole AND (a.privilege_type NOT IN('SELECT','INSERT','UPDATE','DELETE') OR a.is_grantable))))
- AND (SELECT count(*) FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.margin_snapshot'::regclass AND a.grantee='margindesk_app'::regrole)=4
+ AND (a.grantee NOT IN(c.relowner,'rebatehq_app'::regrole)
+ OR (a.grantee='rebatehq_app'::regrole AND (a.privilege_type NOT IN('SELECT','INSERT','UPDATE','DELETE') OR a.is_grantable))))
+ AND (SELECT count(*) FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.margin_snapshot'::regclass AND a.grantee='rebatehq_app'::regrole)=4
  AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.margin_snapshot'::regclass AND attacl IS NOT NULL),
  'margin_snapshot: exact owner/app CRUD ACL, no platform/column grants');
-SET LOCAL ROLE margindesk_app;
+SET LOCAL ROLE rebatehq_app;
 SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_A_ID__',true),
  set_config('request.jwt.claims','{"sub":"__PHASE1_USER_A_ID__","role":"authenticated"}',true),
  set_config('app.real_actor_id','__PHASE1_USER_A_ID__',true);
 DO $$ DECLARE v_id uuid; n integer; BEGIN
- IF current_user<>'margindesk_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe policy test role'; END IF;
+ IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe policy test role'; END IF;
  INSERT INTO public.margin_snapshot SELECT (jsonb_populate_record(NULL::public.margin_snapshot,current_setting('app.phase1_tenant_a_fixtures')::jsonb->'margin_snapshot' || jsonb_build_object('id',gen_random_uuid(),'entity_id',gen_random_uuid()::text))).* RETURNING id INTO v_id;
  SELECT count(*) INTO n FROM public.margin_snapshot WHERE id=v_id;
  IF n<>1 THEN RAISE EXCEPTION 'margin_snapshot: own SELECT returned % rows',n; END IF;
@@ -2282,11 +2282,11 @@ DO $$ DECLARE op text; message text; BEGIN
 END $$;
 RESET ROLE;
 SELECT extensions.ok(current_setting('app.chunk2c_margin_snapshot_authenticated')='true','margin_snapshot: authenticated CRUD permission denied independent of RLS');
-SET LOCAL ROLE margindesk_app;
+SET LOCAL ROLE rebatehq_app;
 SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_REP_ID__',true),
  set_config('request.jwt.claims','{"sub":"__PHASE1_USER_REP_ID__","role":"authenticated"}',true);
 DO $$ DECLARE n integer; message text; BEGIN
- IF current_user<>'margindesk_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe rep policy test role'; END IF;
+ IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe rep policy test role'; END IF;
  SELECT count(*) INTO n FROM public.margin_snapshot WHERE tenant_id='__PHASE1_TENANT_B_ID__';
  IF n<>0 THEN RAISE EXCEPTION 'margin_snapshot: rep sees restricted rows'; END IF;
  UPDATE public.margin_snapshot SET id=id WHERE tenant_id='__PHASE1_TENANT_B_ID__'; GET DIAGNOSTICS n=ROW_COUNT;
@@ -2327,10 +2327,10 @@ SELECT extensions.throws_ok($c$UPDATE public.quote_share_link SET quote_id='__PH
 
 
 -- No authenticated context must hide every Chunk 2C table and margin snapshots.
-SET LOCAL ROLE margindesk_app;
+SET LOCAL ROLE rebatehq_app;
 SELECT set_config('request.jwt.claim.sub','',true),set_config('request.jwt.claims','{}',true);
 DO $$ DECLARE t text; n integer; checked integer:=0; BEGIN
- IF current_user<>'margindesk_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe no-context test role'; END IF;
+ IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe no-context test role'; END IF;
  FOREACH t IN ARRAY ARRAY['import_job','column_mapping_template','connector_sync_run','quote_share_link','approval_rule','plan_feature','margin_snapshot'] LOOP
   checked:=checked+1;
   EXECUTE format('SELECT count(*) FROM public.%I',t) INTO n;
@@ -2344,12 +2344,12 @@ SELECT extensions.ok(current_setting('app.chunk2c_no_context')='true','Chunk 2C 
 
 -- Manager may view governance records but cannot edit owner-only plan/rule rows.
 UPDATE public.membership SET role='manager' WHERE tenant_id='__PHASE1_TENANT_B_ID__' AND user_id='__PHASE1_USER_B_ID__';
-SET LOCAL ROLE margindesk_app;
+SET LOCAL ROLE rebatehq_app;
 SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_B_ID__',true),
  set_config('request.jwt.claims','{"sub":"__PHASE1_USER_B_ID__","role":"authenticated"}',true),
  set_config('app.real_actor_id','__PHASE1_USER_B_ID__',true);
 DO $$ DECLARE t text; n integer; checked integer:=0; message text; v_row jsonb; BEGIN
- IF current_user<>'margindesk_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe manager policy test role'; END IF;
+ IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe manager policy test role'; END IF;
  FOREACH t IN ARRAY ARRAY['approval_rule','plan_feature'] LOOP
   checked:=checked+1;
   EXECUTE format('SELECT count(*) FROM public.%I WHERE tenant_id=$1',t) INTO n USING '__PHASE1_TENANT_B_ID__'::uuid;
@@ -2385,12 +2385,12 @@ SELECT extensions.throws_ok($c$UPDATE public.invoice_line SET actual_cost_amount
  WHERE tenant_id='__PHASE1_TENANT_B_ID__'$c$,'23514',NULL,'Chunk 3C: negative invoice actual cost is rejected');
 SELECT set_config('app.chunk3c_audit_before',(SELECT count(*)::text FROM public.audit_log
  WHERE tenant_id='__PHASE1_TENANT_B_ID__' AND action='invoice_line.update'),true);
-SET LOCAL ROLE margindesk_app;
+SET LOCAL ROLE rebatehq_app;
 SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_B_ID__',true),
  set_config('request.jwt.claims','{"sub":"__PHASE1_USER_B_ID__","role":"authenticated"}',true),
  set_config('app.real_actor_id','__PHASE1_USER_B_ID__',true);
 DO $$ DECLARE n integer; BEGIN
- IF current_user<>'margindesk_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe Chunk 3C actual-cost test role'; END IF;
+ IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe Chunk 3C actual-cost test role'; END IF;
  UPDATE public.invoice_line SET actual_cost_amount=0,actual_cost_source='checked-vendor-bill'
  WHERE tenant_id='__PHASE1_TENANT_B_ID__';
  GET DIAGNOSTICS n=ROW_COUNT; IF n<1 THEN RAISE EXCEPTION 'Actual-cost positive UPDATE control is empty'; END IF;
@@ -2402,9 +2402,9 @@ SELECT extensions.ok(current_setting('app.chunk3c_own_rows')::integer>0 AND
  (SELECT count(*) FROM public.audit_log WHERE tenant_id='__PHASE1_TENANT_B_ID__' AND action='invoice_line.update')
  =current_setting('app.chunk3c_audit_before')::integer+current_setting('app.chunk3c_own_rows')::integer,
  'Chunk 3C: app role reads/writes its own sourced zero actuals and every write is audited');
-SET LOCAL ROLE margindesk_app;
+SET LOCAL ROLE rebatehq_app;
 DO $$ DECLARE n integer; message text; BEGIN
- IF current_user<>'margindesk_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe Chunk 3C isolation test role'; END IF;
+ IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe Chunk 3C isolation test role'; END IF;
  SELECT count(*) INTO n FROM public.invoice_line WHERE tenant_id='__PHASE1_TENANT_A_ID__';
  IF n<>0 THEN RAISE EXCEPTION 'Foreign invoice actuals visible'; END IF;
  UPDATE public.invoice_line SET actual_cost_amount=3,actual_cost_source='forbidden' WHERE tenant_id='__PHASE1_TENANT_A_ID__';
@@ -2419,11 +2419,11 @@ DO $$ DECLARE n integer; message text; BEGIN
 END $$;
 RESET ROLE;
 SELECT extensions.ok(current_setting('app.chunk3c_actuals_isolation')='true','Chunk 3C: cross-tenant actuals are invisible and reassignment fails with RLS 42501');
-SET LOCAL ROLE margindesk_app;
+SET LOCAL ROLE rebatehq_app;
 SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_REP_ID__',true),
  set_config('request.jwt.claims','{"sub":"__PHASE1_USER_REP_ID__","role":"authenticated"}',true);
 DO $$ DECLARE n integer; BEGIN
- IF current_user<>'margindesk_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe Chunk 3C rep test role'; END IF;
+ IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe Chunk 3C rep test role'; END IF;
  SELECT count(actual_cost_amount) INTO n FROM public.invoice_line WHERE tenant_id='__PHASE1_TENANT_B_ID__';
  IF n<>0 THEN RAISE EXCEPTION 'Rep can read invoice actual costs'; END IF;
  UPDATE public.invoice_line SET actual_cost_amount=3,actual_cost_source='forbidden' WHERE tenant_id='__PHASE1_TENANT_B_ID__';

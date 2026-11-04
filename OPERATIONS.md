@@ -1,4 +1,4 @@
-# MarginDesk operations (Phase 1)
+# RebateHQ operations (Phase 1)
 
 ## Chunk 4B local vault — CI-verified
 
@@ -58,14 +58,16 @@ Rollback: export the new pricing rules, tiers, entries and quote rationale first
 
 Keep three separate Supabase projects, Vercel deployments, and Upstash databases for development, staging, and production. Never copy live customer data into development. Set the environment variables in `.env.example` separately for each deployment. Preview deployments must use staging services. Only the public Supabase URL and publishable key may use the `NEXT_PUBLIC_` prefix.
 
-`APP_DATABASE_URL` must connect as a dedicated login that is a member of `margindesk_app`; it must not be the `postgres`, `service_role`, or `BYPASSRLS` credential. Create it after applying the migration:
+`APP_DATABASE_URL` must connect as a dedicated login that is a member of `rebatehq_app`; it must not be the `postgres`, `service_role`, or `BYPASSRLS` credential. Create it after applying the migration:
 
 ```sql
-CREATE ROLE margindesk_app_login LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD 'use-a-generated-secret';
-GRANT margindesk_app TO margindesk_app_login;
+CREATE ROLE rebatehq_app_login LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD 'use-a-generated-secret';
+GRANT rebatehq_app TO rebatehq_app_login;
 ```
 
-Use the Supabase transaction pooler for the web runtime. The `pg` adapter begins a transaction, runs `SET LOCAL ROLE margindesk_app`, sets the verified Supabase user claims, and keeps all tenant work in that transaction. Rotate the login password and update `APP_DATABASE_URL` when personnel or environments change.
+Use the Supabase transaction pooler for the web runtime. The `pg` adapter begins a transaction, runs `SET LOCAL ROLE rebatehq_app`, sets the verified Supabase user claims, and keeps all tenant work in that transaction. Rotate the login password and update `APP_DATABASE_URL` when personnel or environments change.
+
+**Existing databases (rename migration).** Migration `20261104120000_rename_app_role_to_rebatehq.sql` renames `margindesk_app` to `rebatehq_app` and the stored `MarginDesk file imports` price list to `RebateHQ file imports`. Policies, grants and memberships follow the role, so an existing login (including one still named `margindesk_app_login`) keeps working. Apply the migration and deploy the matching app build together: a build that runs `SET LOCAL ROLE rebatehq_app` fails before the rename, and an older build that runs `SET LOCAL ROLE margindesk_app` fails after it. Run `pnpm check:db-role` afterwards. The migration is pending in `migrations.lock` until CI and the restore drill have passed on it.
 
 `SEED_DATABASE_URL` is a privileged direct database URL used only by operator scripts and migrations. It must not be configured in Vercel runtime functions. Use the Supabase project SQL editor or a controlled migration runner for production schema changes. The seed and retention scripts require this variable explicitly.
 
@@ -114,7 +116,7 @@ The restricted test login uses a random masked password; runtime checks use `APP
 1. Create the three Supabase projects and configure Auth email confirmation, magic-link redirect URLs, and a short-lived one-time link policy. Add the app callback URL `/auth/callback` to each environment’s allowed redirect list.
 2. Copy `.env.example` to `.env.local`. Generate separate random secrets for `APP_DATABASE_URL`, `CONNECTOR_ENCRYPTION_KEY`, and development impersonation. Set `APP_BASE_URL` to the exact origin.
 3. Apply the checked-in migration with `pnpm exec supabase link --project-ref <ref>` and `pnpm exec supabase db push`, or run the migration SQL from the dashboard. Run `pnpm check:schema` and `pnpm test:db` against a local Supabase instance before deploying.
-4. Create the restricted application login shown above. Run `pnpm check:db-role`; it asserts the actual `APP_DATABASE_URL` session login and effective role are neither superuser nor `BYPASSRLS`, that the login can assume `margindesk_app`, and that a request without a verified user context sees zero tenant rows.
+4. Create the restricted application login shown above. Run `pnpm check:db-role`; it asserts the actual `APP_DATABASE_URL` session login and effective role are neither superuser nor `BYPASSRLS`, that the login can assume `rebatehq_app`, and that a request without a verified user context sees zero tenant rows.
 5. Configure Resend and Upstash in staging and production. Production auth, invite, import, and export routes fail closed when distributed rate limiting is not configured. Confirm the sender domain before inviting customers.
 6. Set `CONNECTOR_ENCRYPTION_KEY` to a base64-encoded 32-byte key. Keep a separately secured copy outside Supabase; key loss makes stored connector credentials unreadable. For key rotation, decrypt and re-encrypt each secret in a controlled migration, then increment `CONNECTOR_ENCRYPTION_KEY_VERSION`.
 7. Deploy to Vercel with the matching environment variables and verify `/api/health`, sign-in, invite acceptance, owner/manager/analyst/rep permissions, and RLS tenant isolation in staging before production traffic.
@@ -149,7 +151,7 @@ Local code checks on 2026-10-26 passed (`pnpm test`: 45 JavaScript and 9 TypeScr
 
 To use a hosted test project, set these GitHub Actions repository secrets (the names are also listed in `.env.example`):
 
-- `RESTORE_TEST_SOURCE_DATABASE_URL`: direct/admin database URL for a disposable source project with all MarginDesk migrations already applied.
+- `RESTORE_TEST_SOURCE_DATABASE_URL`: direct/admin database URL for a disposable source project with all RebateHQ migrations already applied.
 - `RESTORE_TEST_TARGET_DATABASE_URL`: direct/admin database URL for a separate, fresh disposable Supabase project. The workflow refuses to restore if `public.tenant` already exists.
 
 Select `hosted` when manually dispatching the workflow. It seeds the source project, dumps its custom roles/schema/data, restores into the fresh target, creates a new restricted app login, then runs the app-role and pgTAP checks against that restored target. Use projects created only for this drill; never use production. Recreate the target project before a later hosted run because the workflow intentionally does not drop hosted projects. Protect and rotate these secrets after use.
@@ -163,7 +165,7 @@ Perform at launch and quarterly. Use a disposable staging project or restore int
 1. Record project ref, database size, backup type, selected recovery timestamp, start time (UTC), and operator before starting. Prefer restoring to a new test project when that option is available; otherwise use a disposable staging project.
 2. In the test project, create a uniquely named test tenant and a marker row before the selected backup point. Record its exact ID. After the backup point, create a second marker row so the drill can verify the recovery boundary.
 3. Use **Database → Backups** in the Supabase Dashboard to restore the selected daily backup or configured PITR point. Keep the source project unchanged. Record the time restore starts and when Supabase reports completion.
-4. Reset/recreate `margindesk_app_login` and reapply the application secrets. Do not copy a production login password into the test project.
+4. Reset/recreate `rebatehq_app_login` and reapply the application secrets. Do not copy a production login password into the test project.
 5. Set `SEED_DATABASE_URL` to the restored project’s direct database connection. Create a restricted app login, set `APP_DATABASE_URL` to that login’s connection string, then run `pnpm check:schema`, `pnpm check:db-role`, `pnpm test:db`, `pnpm typecheck`, `pnpm test`, and `pnpm build`.
 6. Verify the pre-backup marker exists and the post-backup marker does not. Sign into the app using a test account; verify two-tenant isolation, one server-recalculated quote, CSV export, and a full owner export. Record pass/fail for each and the end time.
 7. Calculate elapsed restore time (end minus start), recovery-point age/data loss, and whether the app recovered. Record the results below or in the incident log. Delete the disposable project after preserving the drill record.
@@ -204,7 +206,7 @@ Prototype JSON import is owner-only, JSON-only, capped at 2 MB, parsed in memory
 
 User-reported Drill #9 passed data restore and role/table/schema ACL, inventory, count, auth-ID and sentinel-hash comparisons, but lost margindesk_app EXECUTE on convert_quantity and record_data_quality_issue. The old workflow replayed locked migration 202610250002 after schema restore; its six-function list revoked grants introduced by a later migration. Sentinel/login, runtime-role and restored pgTAP steps were skipped. No #9 run URL was supplied, so this report is recorded as user-provided evidence, not a new passing-run verification.
 
-The procedure now uses only the dump's grants plus restore-platform-acl-cleanup.sql. Both local and hosted paths omit historical migration replay. The cleanup removes only platform grantees from application-owned public objects and owner defaults, preserves application grants, excludes extension and platform-owned objects, and is idempotent. CI retains ON_ERROR_STOP, the ignored-privilege warning gate, every strict comparator section, sentinel, runtime checks, and two 73-check restore suite runs with unchanged counts. Four ACL checkpoints log the two affected helpers' owners and full grantor/grantee/privilege rows and fail if any margindesk_app function grant changes. An early PGlite preflight reproduces the historical failure without replaying migrations against the actual target.
+The procedure now uses only the dump's grants plus restore-platform-acl-cleanup.sql. Both local and hosted paths omit historical migration replay. The cleanup removes only platform grantees from application-owned public objects and owner defaults, preserves application grants, excludes extension and platform-owned objects, and is idempotent. CI retains ON_ERROR_STOP, the ignored-privilege warning gate, every strict comparator section, sentinel, runtime checks, and two 73-check restore suite runs with unchanged counts. Four ACL checkpoints log the two affected helpers' owners and full grantor/grantee/privilege rows and fail if any rebatehq_app function grant changes. An early PGlite preflight reproduces the historical failure without replaying migrations against the actual target.
 
 Function ACL checks use the single config/function-acl-allowlist.sql registry for every public function. Unknown/missing signatures, extra/missing grantees, wrong ownership and non-owner grant options fail. Existing checks were strengthened, preserving 70 fresh / 73 restore-mode plans. Future function migrations must update that registry.
 
@@ -235,7 +237,7 @@ Chunk 3A is **verified in [MarginDesk CI #33](https://github.com/Adityapawar5105
 1. As owner/manager, open Price Lists. For a round trip choose **Export for Excel**, optionally filtering by exact supplier. The export/import maximum defaults to 10,000 data rows via `MAX_IMPORT_DATA_ROWS` in `lib/import-config.ts` (**verified in CI #37 on `32aff35`**, as cited below). Keep `md_row_id`, `md_version` and SKU; existing base units are protected. New products use blank metadata and a registered unit.
 2. Upload within that maximum, map columns, and review every source issue. Issues are paged and all are downloadable. Explicitly approve the chosen text-number separator, any unit conversions and structural warnings. Grouping separators/formulas and excess decimal places remain rejected. Source bytes stay in memory; normalized plans and before records are persisted.
 3. Select **Preview changes**. Review new, changed, unchanged and rejected rows in 100-row pages. For an export conflict, retain the app row, use the file row, or leave it in review. Refresh or change pages to save a choice. Every plan expires after 30 minutes; app or unit-factor changes require a new preview.
-4. Commit the valid rows. If any are rejected, explicitly acknowledge that they will be skipped. Costs use standard history and prices use the reserved tenant list `MarginDesk file imports`, in tenant currency. Dates affect cost/price intervals; description/supplier changes apply immediately. Quantities do not write inventory.
+4. Commit the valid rows. If any are rejected, explicitly acknowledge that they will be skipped. Costs use standard history and prices use the reserved tenant list `RebateHQ file imports`, in tenant currency. Dates affect cost/price intervals; description/supplier changes apply immediately. Quantities do not write inventory.
 5. History shows the last 50 plans/imports, actor/time, filename, written/unchanged/rejected counts and undo state. Undo requires confirmation. It restores affected business rows and removes new products/list headers only if no later edit or reference would be lost. A conflict/FK failure rolls the entire transaction back. Audit events, jobs and data-quality records are retained.
 
 Do not bypass a stale-plan or unsafe-undo error. Review current rows and create a fresh dry run, or undo dependent work first. Duplicate commit/undo calls return conflict without applying twice. Requests log only the existing safe error class/code; never log cell values or journal payloads. The derived journal cap is 81,920,000 bytes at the default maximum; jobs follow existing tenant purge/retention behavior and have no new automatic cleanup. Keep normalized values, prior records and diagnostic metadata restricted as confidential business data.

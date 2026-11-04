@@ -12,7 +12,7 @@ const $ = (cents: string) => "$" + moneyText(cents);
 export function leakReport(r: ReportInput): Uint8Array {
   const pdf = new Pdf(), L = 48, R = pdf.width - 48;
   let y = 0;
-  const newPage = () => { pdf.page(); y = pdf.height - 56; pdf.text(L, 28, "MarginDesk - Margin Leak Report - generated on this device; nothing was uploaded", 7, false, MUTED); };
+  const newPage = () => { pdf.page(); y = pdf.height - 56; pdf.text(L, 28, "RebateHQ - Margin Leak Report - generated on this device; nothing was uploaded", 7, false, MUTED); };
   const need = (h: number) => { if (y - h < 48) newPage(); };
   newPage();
   pdf.text(L, y, "Margin Leak Report", 22, true, INK); y -= 18;
@@ -66,7 +66,7 @@ export function leakReport(r: ReportInput): Uint8Array {
       pdf.text(L, y, Pdf.fit(`${e.sourceFile}, row ${e.sourceRow}`, 7, 195), 7); pdf.text(L + 200, y, Pdf.fit(e.invoice, 7, 66), 7); pdf.text(L + 270, y, Pdf.fit(e.product, 7, 66), 7); pdf.text(L + 340, y, Pdf.fit(e.customer, 7, 40), 7);
       pdf.text(L + 410, y, $(e.list), 7, false, INK, "right"); pdf.text(R, y, $(e.leak), 7, true, LOSS, "right"); y -= 10;
     }
-    if (Number(f.lines) > rows.slice(0, 5).length) { pdf.text(L, y, `... and ${(Number(f.lines) - Math.min(5, rows.length)).toLocaleString("en-US")} more lines; every line is listed under "Show the math" in MarginDesk.`, 7, false, MUTED); y -= 10; }
+    if (Number(f.lines) > rows.slice(0, 5).length) { pdf.text(L, y, `... and ${(Number(f.lines) - Math.min(5, rows.length)).toLocaleString("en-US")} more lines; every line is listed under "Show the math" in RebateHQ.`, 7, false, MUTED); y -= 10; }
     y -= 10;
   }
   // Method
@@ -80,5 +80,5 @@ export function leakReport(r: ReportInput): Uint8Array {
     `Returns and credits (${Number(r.leaks.checked.creditLines).toLocaleString("en-US")} lines) are netted in the waterfall and are never counted as leaks.`,
     `These are findings to review with your pricing owner, not verified recoveries. Recovered dollars are tracked from Phase 2.`,
   ]) { need(12); pdf.text(L, y, Pdf.fit(t, 8, R - L), 8, false, MUTED); y -= 12; }
-  return pdf.bytes("MarginDesk Margin Leak Report");
+  return pdf.bytes("RebateHQ Margin Leak Report");
 }

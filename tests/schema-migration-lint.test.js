@@ -109,6 +109,11 @@ test("migration lint rejects grants of margindesk_app membership", async () => {
   await assertLintFailure(`${validMigration()}\nGRANT "margindesk_app" TO postgres;`, /grants membership in margindesk_app/);
 });
 
+test("migration lint rejects grants of rebatehq_app membership", async () => {
+  await assertLintFailure(`${validMigration()}\nGRANT rebatehq_app TO postgres;`, /grants membership in rebatehq_app/);
+  await assertLintFailure(`${validMigration()}\nGRANT "rebatehq_app" TO postgres;`, /grants membership in rebatehq_app/);
+});
+
 test("migration lint rejects privilege changes on Supabase-managed schemas", async () => {
   for (const statement of [
     "GRANT EXECUTE ON FUNCTION auth.uid() TO margindesk_app;",

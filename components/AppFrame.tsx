@@ -9,7 +9,7 @@ const links = [["Dashboard","/legacy/dashboard"],["Price Lists","/legacy/prices"
 export function AppFrame({ context, children }: { context: AppContext; children: ReactNode }) {
   return <>
     <header className="topbar">
-      <Link className="brand" href="/legacy/dashboard"><span className="mark">M</span>MarginDesk</Link>
+      <Link className="brand" href="/legacy/dashboard"><span className="mark">M</span>RebateHQ</Link>
       <GlobalSearch />
       <span className="status-chip">{context.role}</span>
       <details className="account-menu"><summary className="status-chip">{context.email} ▾</summary><div className="account-panel">
@@ -29,7 +29,7 @@ export function AppFrame({ context, children }: { context: AppContext; children:
       {context.isDemo && <div className="demo-ribbon">DEMO WORKSPACE · Sample records only. Do not upload live customer data.</div>}
       {context.impersonated && <div className="impersonation-ribbon">DEVELOPMENT IMPERSONATION · Actions are recorded with the real actor.</div>}
       {children}
-      <footer className="app-footer">Workspace: {context.tenantName} · {context.role} access · MarginDesk Phase 1 foundation</footer>
+      <footer className="app-footer">Workspace: {context.tenantName} · {context.role} access · RebateHQ Phase 1 foundation</footer>
     </main>
   </>;
 }

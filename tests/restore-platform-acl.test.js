@@ -4,9 +4,10 @@ const path = require('node:path');
 const test = require('node:test');
 const root = path.join(__dirname,'..');
 const cleanup = readFileSync(path.join(root,'scripts/restore-platform-acl-cleanup.sql'),'utf8');
-const historicalCleanup = readFileSync(path.join(root,'supabase/migrations/202610250002_revoke_platform_function_privileges.sql'),'utf8');
+// The locked migration predates the role rename; replay its logic under the current role name.
+const historicalCleanup = readFileSync(path.join(root,'supabase/migrations/202610250002_revoke_platform_function_privileges.sql'),'utf8').replaceAll('margindesk_app','rebatehq_app');
 
-const roles = `CREATE ROLE margindesk_app; CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;`;
+const roles = `CREATE ROLE rebatehq_app; CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;`;
 const oldFunctions = `
 CREATE FUNCTION public.is_tenant_member(uuid) RETURNS boolean LANGUAGE sql AS $$SELECT true$$;
 CREATE FUNCTION public.is_tenant_role(uuid,text[]) RETURNS boolean LANGUAGE sql AS $$SELECT true$$;
@@ -23,7 +24,7 @@ CREATE FUNCTION public.record_failed_login(text,text,text) RETURNS void LANGUAGE
 const laterMigration = `
 CREATE FUNCTION public.convert_quantity(uuid,uuid,numeric,text,text,date) RETURNS numeric LANGUAGE sql SECURITY DEFINER SET search_path=public,pg_temp AS $$SELECT $3$$;
 CREATE FUNCTION public.record_data_quality_issue(uuid,text,text,text,date,jsonb) RETURNS uuid LANGUAGE sql SECURITY DEFINER SET search_path=public,pg_temp AS $$SELECT $1$$;
-GRANT EXECUTE ON FUNCTION public.convert_quantity(uuid,uuid,numeric,text,text,date),public.record_data_quality_issue(uuid,text,text,text,date,jsonb) TO margindesk_app;
+GRANT EXECUTE ON FUNCTION public.convert_quantity(uuid,uuid,numeric,text,text,date),public.record_data_quality_issue(uuid,text,text,text,date,jsonb) TO rebatehq_app;
 `;
 const functionSnapshotSql = `
 SELECT 'public.'||p.oid::regprocedure::text AS object_name,r.rolname AS owner_name,
@@ -58,8 +59,8 @@ test('restore cleanup preserves later-migration dump grants; actual old cleanup 
       ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO anon,authenticated,service_role;
       CREATE TABLE public.tenant(tenant_id uuid);
       CREATE SEQUENCE public.restore_sequence;
-      GRANT SELECT ON public.tenant TO margindesk_app;
-      GRANT USAGE ON public.restore_sequence TO margindesk_app;
+      GRANT SELECT ON public.tenant TO rebatehq_app;
+      GRANT USAGE ON public.restore_sequence TO rebatehq_app;
       GRANT SELECT (tenant_id) ON public.tenant TO anon;
       CREATE ROLE supabase_fixture;
       CREATE FUNCTION public.platform_owned() RETURNS integer LANGUAGE sql AS $$SELECT 1$$;
@@ -83,8 +84,8 @@ test('restore cleanup preserves later-migration dump grants; actual old cleanup 
     log('AFTER DATA RESTORE',await appSnapshot());
     assertFunctionAclSectionsEqual(sourceFunctions,await appSnapshot());
     const privileges = (await target.query(`SELECT
-      has_table_privilege('margindesk_app','public.tenant','SELECT') AS app_table,
-      has_sequence_privilege('margindesk_app','public.restore_sequence','USAGE') AS app_sequence,
+      has_table_privilege('rebatehq_app','public.tenant','SELECT') AS app_table,
+      has_sequence_privilege('rebatehq_app','public.restore_sequence','USAGE') AS app_sequence,
       has_any_column_privilege('anon','public.tenant','SELECT') AS anon_column,
       has_table_privilege('authenticated','public.tenant','SELECT') AS browser_table,
       has_sequence_privilege('service_role','public.restore_sequence','USAGE') AS platform_sequence`)).rows[0];
@@ -98,12 +99,12 @@ test('restore cleanup preserves later-migration dump grants; actual old cleanup 
     await target.exec(historicalCleanup);
     const broken = await appSnapshot();
     log('AFTER HISTORICAL MIGRATION REPLAY (REGRESSION REPRODUCTION ONLY)',broken);
-    assert.throws(()=>assertFunctionAclSectionsEqual(sourceFunctions,broken),/margindesk_app/);
+    assert.throws(()=>assertFunctionAclSectionsEqual(sourceFunctions,broken),/rebatehq_app/);
     const diff=compareFunctionAclSections(sourceFunctions,broken);
     assert.equal(Object.keys(diff).length,2);
     for (const signature of ['public.convert_quantity(uuid,uuid,numeric,text,text,date)','public.record_data_quality_issue(uuid,text,text,text,date,jsonb)']) {
-      assert.equal(diff[signature].margindesk_app.sourceOnly[0].privilege,'EXECUTE');
-      assert.deepEqual(diff[signature].margindesk_app.restoredOnly,[]);
+      assert.equal(diff[signature].rebatehq_app.sourceOnly[0].privilege,'EXECUTE');
+      assert.deepEqual(diff[signature].rebatehq_app.restoredOnly,[]);
     }
   } finally { await source.close(); await target.close(); }
 });

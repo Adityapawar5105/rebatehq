@@ -1,4 +1,4 @@
-# MarginDesk
+# RebateHQ
 
 **Chunk 4E complete — verified in [MarginDesk CI #55](https://github.com/Adityapawar5105/margindesk/actions/runs/41814159704), 4 November 2026, commit `7fe3db82951e82d5ba8a049158a7ef0a17a69597`.** Guardrails, versioned rules, worker simulation, Pricing Owner approval, ERP exports and encrypted backup/restore are available in the local shell. CI passed 163 unit tests and the authenticated 25-check vault/privacy harness. All three local browser harnesses passed. See [CHUNK_4E_VERIFICATION.md](./CHUNK_4E_VERIFICATION.md) and [PHASE_4_VERIFICATION.md](./PHASE_4_VERIFICATION.md). ERP layouts and the real folder picker remain unverified; legacy server routes still exist. 5A has not started.
 
@@ -46,7 +46,7 @@ Chunk 2C and Phase 2 are **verified in [MarginDesk CI #31](https://github.com/Ad
 **Chunk 2B status — verified:** pricing precedence and tiered rebate audit are **verified in [MarginDesk CI #29](https://github.com/Adityapawar5105/margindesk/actions/runs/40729384500) and [MarginDesk Restore Drill #11](https://github.com/Adityapawar5105/margindesk/actions/runs/40730343531), 2026-10-28, commit `13cea5a`**. The migration is locked with its unchanged normalized hash. Both suites passed with **88 fresh / 91 restore-mode pgTAP checks** and **33 tenant tables**. Hosted-target restore, managed backup/PITR and deployed UI flows not exercised by those runs remain **unverified**. See [the verification record](./CHUNK_2B_VERIFICATION.md). This records the earlier Chunk 2B milestone.
 
 
-MarginDesk is being moved from a browser-local prototype to a multi-tenant app for mid-market distributors. Phase 1 adds the production foundation: Supabase Auth magic links, tenant and role enforcement, PostgreSQL RLS, audit logging, and a safe prototype import/export path. It does not add new pricing, rebate, or ERP features.
+RebateHQ is being moved from a browser-local prototype to a multi-tenant app for mid-market distributors. Phase 1 adds the production foundation: Supabase Auth magic links, tenant and role enforcement, PostgreSQL RLS, audit logging, and a safe prototype import/export path. It does not add new pricing, rebate, or ERP features.
 
 ## Roadmap (Blueprint v2.2)
 
@@ -127,14 +127,14 @@ pnpm test:db
 pnpm exec supabase stop --no-backup
 ```
 
-The checked-in GitHub Actions workflow performs these steps on pull requests, pushes to `main`/`master`, or manual `workflow_dispatch`. It needs no database or Supabase secrets. Push the branch to GitHub, then open **Actions → MarginDesk CI → Run workflow**. The database URLs are derived from the local CLI status output, and the restricted app-login password is generated randomly for the disposable local stack and written only to the job environment.
+The checked-in GitHub Actions workflow performs these steps on pull requests, pushes to `main`/`master`, or manual `workflow_dispatch`. It needs no database or Supabase secrets. Push the branch to GitHub, then open **Actions → RebateHQ CI → Run workflow**. The database URLs are derived from the local CLI status output, and the restricted app-login password is generated randomly for the disposable local stack and written only to the job environment.
 
 Run **Actions → MarginDesk Restore Drill → Run workflow** to exercise a logical dump and restore. Dumps are restricted to the application-owned `public` schema; Supabase-managed schemas are excluded. The drill inventories source tables and counts, creates synthetic `auth.users` stand-ins for only referenced IDs, and then compares app-owned ACLs and row counts after restore. `local` mode needs no secrets. `hosted` mode requires the two disposable database URL secrets documented by name in `.env.example`; source must already have the MarginDesk migration applied and target must be a fresh empty Supabase project. Never point the workflow at production. The corrected local-target workflow is verified in [Restore Drill #10](https://github.com/Adityapawar5105/margindesk/actions/runs/40711768732), 2026-10-28, commit `d4c907c`; hosted-target mode remains **unverified**.
 
 ## Phase 1 security model
 
 - Supabase Auth owns verified email sessions. No user can join an existing tenant without an owner-issued, single-use, seven-day invitation.
-- A dedicated PostgreSQL login is a member of `margindesk_app`, which is `NOLOGIN`, `NOSUPERUSER`, and `NOBYPASSRLS`. Each server request verifies the Supabase user, opens a short transaction, sets `LOCAL ROLE margindesk_app`, sets the JWT claims and `app.real_actor_id`, and lets tenant-scoped RLS filter records. The pool rejects a session login that is superuser, `BYPASSRLS`, or not a member of `margindesk_app`.
+- A dedicated PostgreSQL login is a member of `rebatehq_app`, which is `NOLOGIN`, `NOSUPERUSER`, and `NOBYPASSRLS`. Each server request verifies the Supabase user, opens a short transaction, sets `LOCAL ROLE rebatehq_app`, sets the JWT claims and `app.real_actor_id`, and lets tenant-scoped RLS filter records. The pool rejects a session login that is superuser, `BYPASSRLS`, or not a member of `rebatehq_app`.
 - Browser roles have no direct grants on public business tables. User data goes through Next.js APIs. User-facing code never uses the Supabase service-role key.
 - The shared [`margin-engine.js`](./margin-engine.js) remains unchanged and is used for server quote recomputation and prototype import snapshots. Client-provided prices, margin values, and guardrail zones are discarded.
 - Rep responses omit costs, margin dollars, and cost components. Reps see only their own quotes, assigned customers, product prices, guardrail zone, and headroom.

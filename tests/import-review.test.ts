@@ -32,8 +32,8 @@ test('file reviews and per-supplier templates run as restricted tenant users twi
     await db.query("INSERT INTO public.column_mapping_template(tenant_id,name,import_type) VALUES($1,$2,'earlier_upload')",[tb,randomUUID()]);
    }}
    await db.query("SELECT set_config('request.jwt.claim.sub',$1,true),set_config('app.real_actor_id',$1,true)",[ua]);
-   await db.exec('SET LOCAL ROLE margindesk_app;');
-   const role=(await db.query('SELECT current_user AS role,rolsuper,rolbypassrls FROM pg_roles WHERE rolname=current_user')).rows[0];assert.equal(role.role,'margindesk_app');assert.equal(role.rolsuper,false);assert.equal(role.rolbypassrls,false);
+   await db.exec('SET LOCAL ROLE rebatehq_app;');
+   const role=(await db.query('SELECT current_user AS role,rolsuper,rolbypassrls FROM pg_roles WHERE rolname=current_user')).rows[0];assert.equal(role.role,'rebatehq_app');assert.equal(role.rolsuper,false);assert.equal(role.rolbypassrls,false);
    const parsed=parseUpload('messy.xlsx',readFileSync('tests/fixtures/messy-supplier.xlsx'));
    const review=await createImportReview(db,ta,ua,parsed);
    assert.equal((await importReviewIssues(db,ta,review.jobId)).totalIssues,review.totalIssues);
@@ -47,7 +47,7 @@ test('file reviews and per-supplier templates run as restricted tenant users twi
    const box=randomUUID();await db.query("INSERT INTO public.uom(id,tenant_id,code,display_name) VALUES($1,$2,'BOX','Box')",[box,ta]);
    const each=(await db.query("SELECT id FROM public.uom WHERE tenant_id=$1 AND code='EA'",[ta])).rows[0].id;
    await db.query("INSERT INTO public.uom_conversion(id,tenant_id,product_id,from_uom_id,to_uom_id,factor,direction) VALUES($1,$2,$3,$4,$5,12,'multiply')",[randomUUID(),ta,product,box,each]);
-   await db.exec('SET LOCAL ROLE margindesk_app;');
+   await db.exec('SET LOCAL ROLE rebatehq_app;');
    const approved=await createImportReview(db,ta,ua,parsed);assert.ok(approved.issues.some(i=>i.code==='unit_mismatch'));assert.ok(!approved.issues.some(i=>i.code==='missing_conversion'));assert.equal(approved.rows[1].cells[7].value,'1');
    const key={supplier:'Acme',fileType:'xlsx' as const};const payload={...key,fields:parsed.mapping,headers:parsed.headers};
    const first=await saveMappingTemplate(db,ta,ua,payload);const second=await saveMappingTemplate(db,ta,ua,payload);assert.equal(first.id,second.id);

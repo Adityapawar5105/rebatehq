@@ -60,16 +60,16 @@ for(const populated of [false,true])test(`import capacity boundaries and atomic 
    if(populated){
     for(const batch of importBatches(fixtures))await db.query(`INSERT INTO public.product(id,tenant_id,sku,name,category,uom,unit_cost,list_price,supplier)
      SELECT x.id,$1,x.sku,'Original','Fixture','EA',10,20,'Acme' FROM jsonb_to_recordset($2::jsonb) AS x(id uuid,sku text)`,[tenant,JSON.stringify(batch)]);
-    const list=randomUUID();await db.query("INSERT INTO public.price_list(id,tenant_id,name,currency) VALUES($1,$2,'MarginDesk file imports','USD')",[list,tenant]);
+    const list=randomUUID();await db.query("INSERT INTO public.price_list(id,tenant_id,name,currency) VALUES($1,$2,'RebateHQ file imports','USD')",[list,tenant]);
     for(const batch of importBatches(fixtures))await db.query(`INSERT INTO public.price_list_item(tenant_id,price_list_id,product_id,unit_price,effective_from,currency)
      SELECT $1,$2,x.id,20,$3::date,'USD' FROM jsonb_to_recordset($4::jsonb) AS x(id uuid)`,[tenant,list,date,JSON.stringify(batch)]);
     await db.query("INSERT INTO public.product(tenant_id,sku,name,category,uom,unit_cost,list_price) VALUES($1,'UNRELATED','Other tenant','Fixture','EA',7,14)",[other]);
     await db.query("INSERT INTO public.import_job(tenant_id,import_type,status,source_name) VALUES($1,'earlier_upload','committed','prior.csv')",[tenant]);
    }
    await db.query("SELECT set_config('request.jwt.claim.sub',$1,true),set_config('app.real_actor_id',$1,true)",[user]);
-   await db.exec("SET LOCAL ROLE margindesk_app;");
+   await db.exec("SET LOCAL ROLE rebatehq_app;");
    const role=(await db.query("SELECT current_user AS name,rolsuper,rolbypassrls FROM pg_roles WHERE rolname=current_user")).rows[0];
-   assert.equal(role.name,"margindesk_app");assert.equal(role.rolsuper,false);assert.equal(role.rolbypassrls,false);
+   assert.equal(role.name,"rebatehq_app");assert.equal(role.rolsuper,false);assert.equal(role.rolbypassrls,false);
    const text=csvDocument(["SKU","Description","Unit","Cost","Price","Supplier","Date"],Array.from({length:size},(_,i)=>["P-"+String(i).padStart(5,"0"),"Imported","EA","12","25","Acme",date]));
    if(size>MAX_IMPORT_DATA_ROWS){
     const before=await allCounts(db);

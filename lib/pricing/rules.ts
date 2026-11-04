@@ -92,5 +92,5 @@ export async function exportPrices(e: Engine, id: string, profile: ErpProfile, f
   if(format==='xlsx'){const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(table),'Prices');blob=new Blob([XLSX.write(wb,{type:'array',bookType:'xlsx'})],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});}
   else blob=new Blob(['\ufeff'+csv(table)],{type:'text/csv;charset=utf-8'});
   const log=[['SKU','Tier','Before','After','Guardrail','Pricing Owner','Run'],...data.map(r=>[r.product_id,r.tier,centsText(BigInt(r.b)),centsText(BigInt(r.a)),r.guard_status,run.approved_by,id].map(clean))];
-  return {name:`margindesk-${profile}-prices.${format}`,blob,logName:'margindesk-change-log.csv',log:new Blob(['\ufeff'+csv(log)],{type:'text/csv;charset=utf-8'}),warning:`${PROFILES[profile].label}: unverified until tested on a real import.`};
+  return {name:`rebatehq-${profile}-prices.${format}`,blob,logName:'rebatehq-change-log.csv',log:new Blob(['\ufeff'+csv(log)],{type:'text/csv;charset=utf-8'}),warning:`${PROFILES[profile].label}: unverified until tested on a real import.`};
 }

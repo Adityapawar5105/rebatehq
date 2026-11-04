@@ -46,7 +46,7 @@ export const sheetNetwork:SheetNetwork={
  resolve:host=>lookup(host,{all:true,verbatim:true}),
  get:(url,ip,signal,maxBytes)=>new Promise((resolve,reject)=>{
   const req=request(url,{method:"GET",agent:false,family:ip.family,signal,
-   servername:url.hostname,headers:{accept:"text/csv","accept-encoding":"identity","user-agent":"MarginDesk-Sheets/1"},
+   servername:url.hostname,headers:{accept:"text/csv","accept-encoding":"identity","user-agent":"RebateHQ-Sheets/1"},
    // Pin the approved address: a second DNS lookup cannot rebind the host.
    lookup:(_host,_options,callback)=>callback(null,ip.address,ip.family)},res=>{
     const status=res.statusCode||0;

@@ -32,9 +32,9 @@ export async function GET(request: Request) {
         archive.file(`csv/${table}.csv`, csv);
       }
       archive.file("workspace.json", JSON.stringify({ exportedAt: new Date().toISOString(), workspace: { id: context.tenantId, name: context.tenantName }, data: json }, null, 2));
-      archive.file("README.txt", "MarginDesk workspace export. Connector credential ciphertext, nonces, and authentication tags are deliberately excluded; reconnect providers after restore. CSV cells are escaped against spreadsheet formula execution.");
+      archive.file("README.txt", "RebateHQ workspace export. Connector credential ciphertext, nonces, and authentication tags are deliberately excluded; reconnect providers after restore. CSV cells are escaped against spreadsheet formula execution.");
     });
     const bytes = await archive.generateAsync({ type: "uint8array", compression: "DEFLATE", compressionOptions: { level: 6 } });
-    return new Response(Buffer.from(bytes) as unknown as BodyInit, { headers: { "content-type": "application/zip", "content-disposition": `attachment; filename="margindesk-${context.tenantId}-export.zip"`, "cache-control": "no-store" } });
+    return new Response(Buffer.from(bytes) as unknown as BodyInit, { headers: { "content-type": "application/zip", "content-disposition": `attachment; filename="rebatehq-${context.tenantId}-export.zip"`, "cache-control": "no-store" } });
   } catch (error) { return errorResponse(error); }
 }

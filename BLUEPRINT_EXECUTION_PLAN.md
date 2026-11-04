@@ -1,4 +1,4 @@
-# MarginDesk — Blueprint v2.1 execution plan
+# RebateHQ — Blueprint v2.1 execution plan
 
 *Status review and prompt pack, written 2 Nov 2026; updated for blueprint v2.2 the same day. Governs nothing on its own: `BLUEPRINT.md` v2.2 is the source of truth; this file sequences the work.*
 
@@ -39,7 +39,7 @@
 1. **The build started before the architecture was decided.** Phases 1–3 put all customer pricing data in multi-tenant Postgres. Blueprint v2.1 (adopted 2 Nov) moves that data into the browser. Most of the RLS/restore-drill effort for business tables is now sunk cost; only the auth/licence part carries forward.
 2. **Verification overhead outran product.** About 24 of 64 prompts in the chat were CI / pgTAP / restore-drill fix loops (function ACLs, role grants, restore equivalence). That rigor is right for a control plane, but it consumed most of the week while no user-facing margin feature shipped.
 3. **No customer validation, still.** The chat shows the same blocker repeatedly from the start: "No prospect has been contacted." Blueprint §2 and §13 still list "no real ERP file, no customer conversations." The mapper, parser and cleanup work depends on real files.
-4. **Idea drift before the build.** The idea moved from Muse/HVAC intake to a supplier price-list normalizer, then a Vendavo clone ("add all the following things"), then MarginDesk. Each pivot widened the scope instead of narrowing it.
+4. **Idea drift before the build.** The idea moved from Muse/HVAC intake to a supplier price-list normalizer, then a Vendavo clone ("add all the following things"), then RebateHQ. Each pivot widened the scope instead of narrowing it.
 5. **Phase order differs from the blueprint.** Quoting/approvals and rebates were built first; the blueprint makes them Phase 2. Waterfall, leaks, guardrails, rules and export are the blueprint's Phase 1, and none of them is built on real invoice lines yet.
 6. **Scale mismatch.** The server import is capped at 10,000 rows (11.6 s commit on CI Postgres). The blueprint targets 1M rows parsed in under 10 s in the browser, and 2M-line waterfalls in under 300 ms.
 7. **Money as floats** in `margin-engine.js` (DB uses `numeric`, the JS engine uses `Number`).
@@ -369,7 +369,7 @@ No open high/critical findings. Every whitepaper claim has evidence. CI is green
 ```
 [PREAMBLE]
 
-Chunk <ID> is proven in GitHub Actions: MarginDesk CI #<n> green on commit <sha> (<run URL>)<, and Restore Drill #<m> green if control-plane migrations changed>. Do NOT start the next chunk.
+Chunk <ID> is proven in GitHub Actions: RebateHQ CI #<n> green on commit <sha> (<run URL>)<, and Restore Drill #<m> green if control-plane migrations changed>. Do NOT start the next chunk.
 1. If a new migration was added, promote it from pending to locked in migrations.lock (record its hash, no content change). Do not touch any other locked migration.
 2. In README.md, ASSUMPTIONS.md, SECURITY_CHECK.md and the chunk's verification record, mark Chunk <ID> as verified, citing the run and commit. Keep "unverified" for everything the run did not exercise (list them).
 3. Run pnpm test, typecheck, build and the migrations-lock check. Finish with a short summary of the files changed.

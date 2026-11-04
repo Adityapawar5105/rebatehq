@@ -28,8 +28,12 @@
     "20261028173257_chunk2c_foundation_tables.sql",
     "20261029175710_chunk3c_invoice_actual_cost.sql"
   ],
-  "pendingOrder": [],
-  "pendingMigrations": {},
+  "pendingOrder": [
+    "20261104120000_rename_app_role_to_rebatehq.sql"
+  ],
+  "pendingMigrations": {
+    "20261104120000_rename_app_role_to_rebatehq.sql": "5bb6e52a4b94e0b6710c79e952e4e8f7b23004800a47d6f503432551f3a57008"
+  },
   "appliedMigrationEvidence": {
     "202610250001_revoke_platform_public_privileges.sql": {
       "date": "2026-10-26",

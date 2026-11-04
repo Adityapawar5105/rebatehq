@@ -9,12 +9,12 @@ test("restore ACL checkpoint query executes and names the exact stage that loses
   const db = new PGlite();
   try {
     await db.exec(`
-      CREATE ROLE margindesk_app NOLOGIN NOSUPERUSER NOBYPASSRLS;
+      CREATE ROLE rebatehq_app NOLOGIN NOSUPERUSER NOBYPASSRLS;
       CREATE ROLE anon;
       CREATE FUNCTION public.convert_quantity(uuid,uuid,numeric,text,text,date) RETURNS numeric LANGUAGE sql AS $$ SELECT $3 $$;
       CREATE FUNCTION public.record_data_quality_issue(uuid,text,text,text,date,jsonb) RETURNS uuid LANGUAGE sql AS $$ SELECT $1 $$;
       REVOKE ALL ON FUNCTION public.convert_quantity(uuid,uuid,numeric,text,text,date), public.record_data_quality_issue(uuid,text,text,text,date,jsonb) FROM PUBLIC;
-      GRANT EXECUTE ON FUNCTION public.convert_quantity(uuid,uuid,numeric,text,text,date), public.record_data_quality_issue(uuid,text,text,text,date,jsonb) TO margindesk_app;
+      GRANT EXECUTE ON FUNCTION public.convert_quantity(uuid,uuid,numeric,text,text,date), public.record_data_quality_issue(uuid,text,text,text,date,jsonb) TO rebatehq_app;
     `);
     const source = (await db.query(FUNCTION_ACL_SQL)).rows;
     assert.equal(new Set(source.map(row => row.function_name)).size, 2);
@@ -26,7 +26,7 @@ test("restore ACL checkpoint query executes and names the exact stage that loses
     const cleanup = (await db.query(FUNCTION_ACL_SQL)).rows;
     assertAppGrantsPreserved(schema,cleanup,"after-schema","after-cleanup");
     assert.deepEqual(cleanup,source);
-    await db.exec("REVOKE EXECUTE ON FUNCTION public.convert_quantity(uuid,uuid,numeric,text,text,date) FROM margindesk_app");
+    await db.exec("REVOKE EXECUTE ON FUNCTION public.convert_quantity(uuid,uuid,numeric,text,text,date) FROM rebatehq_app");
     const broken = (await db.query(FUNCTION_ACL_SQL)).rows;
     assert.throws(() => assertAppGrantsPreserved(cleanup,broken,"after-cleanup","after-data"), /after-cleanup -> after-data[\s\S]*convert_quantity/);
     assert.throws(() => assertAppGrantsPreserved([],[],"source","after-schema"), /vacuous comparison/);

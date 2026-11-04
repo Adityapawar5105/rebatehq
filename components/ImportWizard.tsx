@@ -12,7 +12,7 @@ function download(name:string,headers:string[],rows:unknown[][]){const url=URL.c
 export function ImportWizard(){
  const [file,setFile]=useState<File|null>(null),[preview,setPreview]=useState<UploadPreview|null>(null),[mapping,setMapping]=useState<ColumnMapping>({}),[step,setStep]=useState(0),[supplier,setSupplier]=useState(""),[busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState("");
  const heading=useRef<HTMLHeadingElement>(null);
- useEffect(()=>{const changed=()=>setNotice("Catalog updated. The source preview below describes the file that was reviewed; see import history for the saved result.");window.addEventListener("margindesk-import",changed);return()=>window.removeEventListener("margindesk-import",changed);},[]);
+ useEffect(()=>{const changed=()=>setNotice("Catalog updated. The source preview below describes the file that was reviewed; see import history for the saved result.");window.addEventListener("rebatehq-import",changed);return()=>window.removeEventListener("rebatehq-import",changed);},[]);
  async function review(options:{sheetId?:string;headerRow?:number;mapping?:ColumnMapping}={},nextStep=1){
   if(!file)return;setBusy(true);setError("");setNotice("");
   try{const data:UploadPreview=await responseData(await fetch("/api/import-preview",{method:"POST",headers:{"content-type":"application/octet-stream","x-file-name":encodeURIComponent(file.name),"x-import-options":JSON.stringify(options)},body:file}));setPreview(data);setMapping(data.mapping);setStep(nextStep);setNotice(nextStep===2?"Review complete. No business data was imported.":"File read. Confirm the sheet, header and column mapping.");requestAnimationFrame(()=>heading.current?.focus());}

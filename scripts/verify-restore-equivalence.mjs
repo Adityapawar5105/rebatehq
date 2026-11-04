@@ -194,7 +194,7 @@ const roleStateSql = `
   LEFT JOIN pg_auth_members m ON m.member=r.oid
   LEFT JOIN pg_roles parent ON parent.oid=m.roleid
   LEFT JOIN pg_roles grantor ON grantor.oid=m.grantor
-  WHERE r.rolname='margindesk_app'
+  WHERE r.rolname='rebatehq_app'
   GROUP BY r.oid,r.rolname,r.rolcanlogin,r.rolsuper,r.rolbypassrls,r.rolcreatedb,r.rolcreaterole,r.rolreplication,r.rolinherit,r.rolconfig
 `;
 
@@ -285,7 +285,7 @@ async function assertApplicationTablesExist(pool, applicationTableNames) {
 async function snapshot(pool, applicationTableNames, authUserIds) {
   await assertApplicationTablesExist(pool, applicationTableNames);
   const role = (await pool.query(roleStateSql)).rows[0];
-  assert.ok(role, "margindesk_app must exist in both source and restored databases.");
+  assert.ok(role, "rebatehq_app must exist in both source and restored databases.");
   const applicationTables = (await pool.query(applicationTableAclSql, [applicationTableNames])).rows;
   const applicationColumns=(await pool.query(applicationColumnsSql,[applicationTableNames])).rows;
   const ingestionEvidence=(await pool.query(ingestionEvidenceSql)).rows[0];
@@ -408,17 +408,17 @@ async function main() {
     }
 
     const failures = [];
-    reportSection("margindesk_app role attributes and memberships", () => {
+    reportSection("rebatehq_app role attributes and memberships", () => {
       assert.deepEqual(targetState.role, sourceState.role, "Role attributes/settings/memberships differ.");
       for (const [label, state] of [["source", sourceState.role], ["restored", targetState.role]]) {
-        assert.equal(state.rolcanlogin, false, `${label} margindesk_app must be NOLOGIN`);
-        assert.equal(state.rolsuper, false, `${label} margindesk_app must be NOSUPERUSER`);
-        assert.equal(state.rolbypassrls, false, `${label} margindesk_app must be NOBYPASSRLS`);
-        assert.equal(state.rolcreatedb, false, `${label} margindesk_app must be NOCREATEDB`);
-        assert.equal(state.rolcreaterole, false, `${label} margindesk_app must be NOCREATEROLE`);
-        assert.equal(state.rolreplication, false, `${label} margindesk_app must be NOREPLICATION`);
-        assert.equal(state.rolinherit, false, `${label} margindesk_app must be NOINHERIT`);
-        assert.deepEqual(state.memberships, [], `${label} margindesk_app must have no role memberships`);
+        assert.equal(state.rolcanlogin, false, `${label} rebatehq_app must be NOLOGIN`);
+        assert.equal(state.rolsuper, false, `${label} rebatehq_app must be NOSUPERUSER`);
+        assert.equal(state.rolbypassrls, false, `${label} rebatehq_app must be NOBYPASSRLS`);
+        assert.equal(state.rolcreatedb, false, `${label} rebatehq_app must be NOCREATEDB`);
+        assert.equal(state.rolcreaterole, false, `${label} rebatehq_app must be NOCREATEROLE`);
+        assert.equal(state.rolreplication, false, `${label} rebatehq_app must be NOREPLICATION`);
+        assert.equal(state.rolinherit, false, `${label} rebatehq_app must be NOINHERIT`);
+        assert.deepEqual(state.memberships, [], `${label} rebatehq_app must have no role memberships`);
       }
     }, failures);
     reportSection("application table ACLs", () => assertApplicationTableAclsEqual(sourceState.applicationTables, targetState.applicationTables), failures);
@@ -442,7 +442,7 @@ async function main() {
     reportSection("restore sentinel identity and content hash", () => assert.deepEqual(targetState.sentinel, sourceState.sentinel, "Sentinel tenant, product ID, or content hash differs."), failures);
     if (failures.length) throw new Error(`Restore equivalence failed in ${failures.length} section(s):\n${failures.map(item => `- ${item}`).join("\n")}`);
 
-    process.stdout.write(`Restored margindesk_app attributes and memberships match: ${JSON.stringify(targetState.role)}\n`);
+    process.stdout.write(`Restored rebatehq_app attributes and memberships match: ${JSON.stringify(targetState.role)}\n`);
     process.stdout.write(`Compared table ACLs for ${sourceState.applicationTables.length} application-owned tables.\n`);
     process.stdout.write(`Compared ACLs for ${sourceState.securityDefiners.length} public SECURITY DEFINER functions.\n`);
     process.stdout.write(`Compared ACLs and execution metadata for ${sourceState.functions.length} public functions.\n`);
@@ -457,7 +457,7 @@ async function main() {
       appendFileSync(summary, [
         "### Restore source/target application equivalence",
         "",
-        "- Restricted `margindesk_app` attributes and empty membership state matched.",
+        "- Restricted `rebatehq_app` attributes and empty membership state matched.",
         `- Matched ACLs for ${sourceState.applicationTables.length} application tables, all ${sourceState.functions.length} public functions (${sourceState.securityDefiners.length} SECURITY DEFINER), and the public schema.`,
         `- Matched ${sourceState.applicationColumns.length} application column names/types/nullability/defaults, including invoice actual-cost evidence; existing template/sync-run data is covered by strict row counts.`,
         "- Matched content hashes for invoice actuals, mappings/schedules and sync runs; source cells and links are never printed.",

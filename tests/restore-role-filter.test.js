@@ -18,26 +18,26 @@ test("role dump filter logs redacted diagnostics and restores only explicitly ow
     "ALTER ROLE postgres SET log_min_messages TO 'warning';",
     "CREATE ROLE anon WITH NOLOGIN;",
     "ALTER ROLE anon SET statement_timeout TO '3s';",
-    "CREATE ROLE margindesk_app WITH NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION;",
-    "ALTER ROLE margindesk_app NOINHERIT;",
+    "CREATE ROLE rebatehq_app WITH NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION;",
+    "ALTER ROLE rebatehq_app NOINHERIT;",
     "GRANT supabase_admin TO postgres;",
-    "GRANT supabase_admin TO margindesk_app;",
+    "GRANT supabase_admin TO rebatehq_app;",
     "RESET ALL;",
   ].join("\n");
   const result = inspectAndFilterRolesDump(dump);
-  assert.match(result.restoreSql, /CREATE ROLE margindesk_app/);
-  assert.match(result.restoreSql, /ALTER ROLE margindesk_app NOINHERIT/);
-  assert.match(result.restoreSql, /GRANT supabase_admin TO margindesk_app/);
+  assert.match(result.restoreSql, /CREATE ROLE rebatehq_app/);
+  assert.match(result.restoreSql, /ALTER ROLE rebatehq_app NOINHERIT/);
+  assert.match(result.restoreSql, /GRANT supabase_admin TO rebatehq_app/);
   assert.match(result.restoreSql, /SET default_transaction_read_only = off;/);
   assert.match(result.restoreSql, /SET client_encoding = 'UTF8';/);
   assert.match(result.restoreSql, /SET standard_conforming_strings = on;/);
   assert.match(result.restoreSql, /RESET ALL;/);
   assert.doesNotMatch(result.restoreSql, /CREATE ROLE postgres|CREATE ROLE anon/);
-  assert.match(result.restoreSql, /GRANT supabase_admin TO margindesk_app/);
+  assert.match(result.restoreSql, /GRANT supabase_admin TO rebatehq_app/);
   assert.equal(result.skipped.length, 7);
   assert.equal(result.retainedOwned.length, 2);
-  assert.ok(result.retainedOwned.some(statement => statement.includes("ALTER ROLE margindesk_app")), "ALTER ROLE margindesk_app is retained.");
-  assert.equal(result.retainedAppGrants.length, 1, "A grant involving margindesk_app must be retained rather than skipped.");
+  assert.ok(result.retainedOwned.some(statement => statement.includes("ALTER ROLE rebatehq_app")), "ALTER ROLE rebatehq_app is retained.");
+  assert.equal(result.retainedAppGrants.length, 1, "A grant involving rebatehq_app must be retained rather than skipped.");
   assert.ok(result.skipped.some(item => item.statement.includes("GRANT SET ON PARAMETER") && item.reason.includes("supabase_realtime_admin")));
   assert.ok(result.diagnostics.some(line => line.includes("16:")), "line 16 and context must be logged");
   assert.ok(result.diagnostics.some(line => line.includes('16: GRANT SET ON PARAMETER "log_min_messages"')));
@@ -51,17 +51,17 @@ test("role dump filter logs redacted diagnostics and restores only explicitly ow
 test("role dump filter fails closed for any skipped role outside the explicit managed-role allowlist", async () => {
   const { inspectAndFilterRolesDump } = await import("../scripts/filter-restore-roles.mjs");
   const dump = [
-    "CREATE ROLE margindesk_app WITH NOLOGIN;",
+    "CREATE ROLE rebatehq_app WITH NOLOGIN;",
     "CREATE ROLE customer_custom_role WITH NOLOGIN;",
   ].join("\n");
   const result = inspectAndFilterRolesDump(dump);
   assert.match(result.errors.join("\n"), /outside the explicit owned\/managed role allowlists/);
 });
 
-test("parameter grants to margindesk_app, PUBLIC, or unknown roles fail; unknown session SET fails", async () => {
+test("parameter grants to rebatehq_app, PUBLIC, or unknown roles fail; unknown session SET fails", async () => {
   const { inspectAndFilterRolesDump } = await import("../scripts/filter-restore-roles.mjs");
-  const prefix = "CREATE ROLE margindesk_app WITH NOLOGIN;\n";
-  for (const target of ["margindesk_app", "PUBLIC", "customer_unknown_role"]) {
+  const prefix = "CREATE ROLE rebatehq_app WITH NOLOGIN;\n";
+  for (const target of ["rebatehq_app", "PUBLIC", "customer_unknown_role"]) {
     const result = inspectAndFilterRolesDump(`${prefix}GRANT SET ON PARAMETER \"log_min_messages\" TO ${target};`);
     assert.match(result.errors.join("\n"), /Parameter privilege grant is not allowlisted/);
   }
@@ -71,7 +71,7 @@ test("parameter grants to margindesk_app, PUBLIC, or unknown roles fail; unknown
   const alterSystem = inspectAndFilterRolesDump(`${prefix}GRANT ALTER SYSTEM ON PARAMETER "log_min_messages" TO "supabase_realtime_admin";`);
   assert.equal(alterSystem.errors.length, 0);
   assert.ok(alterSystem.skipped.some(item => item.statement.includes("GRANT ALTER SYSTEM ON PARAMETER")));
-  const alterSystemToApp = inspectAndFilterRolesDump(`${prefix}GRANT ALTER SYSTEM ON PARAMETER "log_min_messages" TO "margindesk_app";`);
+  const alterSystemToApp = inspectAndFilterRolesDump(`${prefix}GRANT ALTER SYSTEM ON PARAMETER "log_min_messages" TO "rebatehq_app";`);
   assert.match(alterSystemToApp.errors.join("\n"), /Parameter privilege grant is not allowlisted/);
 });
 
@@ -107,8 +107,8 @@ test("restore workflow filters roles, snapshots source before shutdown, and keep
   assert.match(workflow, /Restore application data \(hosted\)/);
   assert.match(workflow, /--set ON_ERROR_STOP=1/);
   assert.match(workflow, /verify-restore-equivalence\.mjs --compare/);
-  assert.match(workflow, /--file=\/tmp\/margindesk-roles\.sql --file=\/tmp\/margindesk-schema\.sql/);
-  assert.match(workflow, /--file \/restore\/margindesk-roles\.sql --file \/restore\/schema\.sql/);
+  assert.match(workflow, /--file=\/tmp\/rebatehq-roles\.sql --file=\/tmp\/rebatehq-schema\.sql/);
+  assert.match(workflow, /--file \/restore\/rebatehq-roles\.sql --file \/restore\/schema\.sql/);
   assert.ok(workflow.indexOf("prepare-restore-auth-users.mjs") < workflow.indexOf("Restore application data (local)"), "Referenced auth users must exist before public data restore.");
   assert.ok(workflow.indexOf("prepare-restore-auth-users.mjs") < workflow.indexOf("Restore application data (hosted)"), "Referenced auth users must exist before public data restore.");
   assert.ok(workflow.indexOf("Remove target platform ACL additions (local)") < workflow.indexOf("Restore application data (local)"), "Platform defaults must be cleaned before data restore.");
@@ -129,7 +129,7 @@ test("restore workflow filters roles, snapshots source before shutdown, and keep
   assert.match(equivalence, /restore sentinel identity and content hash/);
   assert.match(workflow, /pnpm setup:test-db-role/);
   assert.match(workflow, /pnpm check:db-role/);
-  assert.match(workflow, /Re-run full RLS and append-only suite against restored database[\s\S]*?RESTORE_TEST_MODE: "true"[\s\S]*?RESTORE_BASELINE_PATH: \$\{\{ runner\.temp \}\}\/margindesk-dump\/source-equivalence\.json[\s\S]*?pnpm test:db:repeat/);
+  assert.match(workflow, /Re-run full RLS and append-only suite against restored database[\s\S]*?RESTORE_TEST_MODE: "true"[\s\S]*?RESTORE_BASELINE_PATH: \$\{\{ runner\.temp \}\}\/rebatehq-dump\/source-equivalence\.json[\s\S]*?pnpm test:db:repeat/);
   assert.match(workflow, /Stop and discard source stack before starting a fresh target \(local\)[\s\S]*?if: always\(\) && inputs\.target == 'local'/);
   assert.match(workflow, /Stop local target stack[\s\S]*?if: always\(\) && inputs\.target == 'local'/);
   assert.doesNotMatch(workflow, /supabase stop[^\n]*(?:\|\|\s*true|;\s*true)/);

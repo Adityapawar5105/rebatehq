@@ -29,7 +29,7 @@ export function ImportActions({file,preview,initialPlan}:{file:File|null;preview
   try{
    const response=await fetch("/api/imports",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"commit",id:plan.id,acknowledgeRejected:skip})});
    const data=await response.json();if(!response.ok)throw new Error(data.error||"The import could not be committed.");
-   setSuccess(`Imported ${data.accepted} rows; ${data.rejected} rows were rejected. Open Import history to undo. Refresh the page to see the current catalog.`);setPlan(null);window.dispatchEvent(new Event("margindesk-import"));
+   setSuccess(`Imported ${data.accepted} rows; ${data.rejected} rows were rejected. Open Import history to undo. Refresh the page to see the current catalog.`);setPlan(null);window.dispatchEvent(new Event("rebatehq-import"));
   }catch(e){setError((e as Error).message);setPlan(null);setDecisions({});}finally{setBusy(false);}
  }
  return <section className="import-commit" aria-busy={busy}>

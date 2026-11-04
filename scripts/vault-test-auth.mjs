@@ -57,7 +57,7 @@ export async function signInLocal(context, page, base) {
   const { data, error: userError } = await supabase.auth.getUser(); assert.ok(!userError && data.user?.id, "The local Supabase session was not verified");
   const db = new pg.Client({ connectionString: process.env.APP_DATABASE_URL }); await db.connect();
   try {
-    await db.query("BEGIN"); await db.query("SET LOCAL ROLE margindesk_app");
+    await db.query("BEGIN"); await db.query("SET LOCAL ROLE rebatehq_app");
     await db.query("SELECT set_config('request.jwt.claim.sub',$1::text,true),set_config('request.jwt.claims',$2::text,true)", [data.user.id, JSON.stringify({ sub: data.user.id, role: "authenticated" })]);
     await db.query("SELECT public.create_tenant_with_owner($1::text)", ["Synthetic privacy gate"]); await db.query("COMMIT");
   } catch (e) { await db.query("ROLLBACK"); throw e; } finally { await db.end(); }

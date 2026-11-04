@@ -1,4 +1,4 @@
-/* Shared, deterministic MarginDesk margin calculations. Safe to load in a browser or Node. */
+/* Shared, deterministic RebateHQ margin calculations. Safe to load in a browser or Node. */
 (function attachMarginEngine(root, factory) {
   const api = factory();
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

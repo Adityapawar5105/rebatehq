@@ -1,4 +1,4 @@
-name: MarginDesk CI
+name: RebateHQ CI
 on:
   push:
     branches: [main, master]

@@ -19,7 +19,7 @@ export async function calculateServerQuote(db:PoolClient,tenantId:string,custome
    COALESCE((SELECT jsonb_agg(jsonb_build_object('id',i.id,'unit_price',i.unit_price::text,'currency',i.currency,
     'effective_from',i.effective_from::text,'effective_to',i.effective_to::text) ORDER BY i.effective_from)
     FROM public.price_list_item i JOIN public.price_list pl ON pl.tenant_id=i.tenant_id AND pl.id=i.price_list_id
-    WHERE i.tenant_id=p.tenant_id AND i.product_id=p.id AND pl.name='MarginDesk file imports' AND pl.active=true),'[]'::jsonb) AS list_history
+    WHERE i.tenant_id=p.tenant_id AND i.product_id=p.id AND pl.name='RebateHQ file imports' AND pl.active=true),'[]'::jsonb) AS list_history
    FROM public.product p WHERE p.tenant_id=$1 AND p.id=ANY($2::uuid[]) AND p.active=true`,[tenantId,ids,tenant.currency]);
   if(productResult.rows.length!==ids.length)throw Object.assign(new Error("One or more products are unavailable in this workspace."),{status:422});
   const products=productResult.rows.map(engineProduct);

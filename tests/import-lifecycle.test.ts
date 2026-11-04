@@ -48,8 +48,8 @@ test("catalog lifecycle is isolated, audited, conflict-aware and exactly reversi
    await db.query("INSERT INTO public.cost_history(tenant_id,product_id,cost,basis,effective_from,effective_to,source,currency) VALUES($1,$2,10,'standard','2020-01-01','2030-01-01','old','EUR'),($1,$2,20,'standard','2030-01-01',NULL,'future','EUR')",[tenant,p1]);
    if(populated)await db.query("INSERT INTO public.import_job(tenant_id,import_type,status,source_name) VALUES($1,'catalog_import_v1','dry_run','earlier.csv'),($2,'catalog_export_v1','dry_run','other.csv')",[tenant,other]);
    await db.query("SELECT set_config('request.jwt.claim.sub',$1,true),set_config('app.real_actor_id',$1,true)",[user]);
-   await db.exec("SET LOCAL ROLE margindesk_app;");
-   const role=(await db.query("SELECT current_user AS name,rolsuper,rolbypassrls FROM pg_roles WHERE rolname=current_user")).rows[0];assert.equal(role.name,"margindesk_app");assert.equal(role.rolsuper,false);assert.equal(role.rolbypassrls,false);
+   await db.exec("SET LOCAL ROLE rebatehq_app;");
+   const role=(await db.query("SELECT current_user AS name,rolsuper,rolbypassrls FROM pg_roles WHERE rolname=current_user")).rows[0];assert.equal(role.name,"rebatehq_app");assert.equal(role.rolsuper,false);assert.equal(role.rolbypassrls,false);
    const date=(await db.query("SELECT current_date::text AS day")).rows[0].day;
    const exported=parse(await exportLifeline(db,tenant,user,"Acme"));assert.equal(exported.headers[0],"md_row_id");assert.equal(exported.rows.length,2);
    const edited=structuredClone(exported);edited.rows[0].cells[3].value="File name";edited.rows[0].cells[5].value="12";edited.rows[0].cells[6].value="25";
@@ -86,7 +86,7 @@ test("catalog lifecycle is isolated, audited, conflict-aware and exactly reversi
    }
    await db.exec("SAVEPOINT later_edit;");await db.query("UPDATE public.product SET name='Later edit' WHERE id=$1",[p1]);await assert.rejects(undoImport(db,tenant,user,plan.id),denied(409));await db.exec("ROLLBACK TO SAVEPOINT later_edit;");
    await db.exec("SAVEPOINT undo_currency;");await db.query("UPDATE public.tenant SET currency='USD' WHERE tenant_id=$1",[tenant]);await assert.rejects(undoImport(db,tenant,user,plan.id),denied(409));await db.exec("ROLLBACK TO SAVEPOINT undo_currency;");
-   await db.exec("SAVEPOINT later_list;");const pl=(await db.query("SELECT id FROM public.price_list WHERE tenant_id=$1 AND name='MarginDesk file imports'",[tenant])).rows[0].id;
+   await db.exec("SAVEPOINT later_list;");const pl=(await db.query("SELECT id FROM public.price_list WHERE tenant_id=$1 AND name='RebateHQ file imports'",[tenant])).rows[0].id;
    await db.query("INSERT INTO public.price_list_item(tenant_id,price_list_id,product_id,unit_price,effective_from,currency) VALUES($1,$2,$3,35,$4::date,'EUR')",[tenant,pl,p2,date]);
    await assert.rejects(undoImport(db,tenant,user,plan.id),denied(409));await db.exec("ROLLBACK TO SAVEPOINT later_list;");
    await db.exec("SAVEPOINT later_version;");await db.query("INSERT INTO public.price_list_version(tenant_id,price_list_id,version_no,status) VALUES($1,$2,1,'published')",[tenant,pl]);await assert.rejects(undoImport(db,tenant,user,plan.id),denied(409));await db.exec("ROLLBACK TO SAVEPOINT later_version;");
@@ -121,13 +121,13 @@ test("same-day updates, future gaps, explicit unit conversion and stale/key cont
   await db.query("INSERT INTO public.tenant(tenant_id,name,currency) VALUES($1,'Lifecycle','EUR')",[tenant]);
   await db.query("INSERT INTO public.membership(tenant_id,user_id,email,role) VALUES($1,$2,$3,'manager')",[tenant,user,user+"@example.invalid"]);
   await db.query("INSERT INTO public.product(id,tenant_id,sku,name,category,uom,unit_cost,list_price) VALUES($1,$2,'P','Part','Test','EA',10,20)",[p,tenant]);
-  await db.query("INSERT INTO public.price_list(id,tenant_id,name,currency) VALUES($1,$2,'MarginDesk file imports','EUR')",[pl,tenant]);
+  await db.query("INSERT INTO public.price_list(id,tenant_id,name,currency) VALUES($1,$2,'RebateHQ file imports','EUR')",[pl,tenant]);
   const date=(await db.query("SELECT current_date::text AS value")).rows[0].value;
   await db.query("INSERT INTO public.price_list_item(tenant_id,price_list_id,product_id,unit_price,effective_from,effective_to,currency) VALUES($1,$2,$3,20,$4::date,'2030-01-01','EUR'),($1,$2,$3,30,'2030-01-01',NULL,'EUR')",[tenant,pl,p,date]);
   await db.query("INSERT INTO public.uom(id,tenant_id,code,display_name) VALUES($1,$2,'BOX','Box')",[box,tenant]);
   const ea=(await db.query("SELECT id FROM public.uom WHERE tenant_id=$1 AND code='EA'",[tenant])).rows[0].id,conversion=randomUUID();
   await db.query("INSERT INTO public.uom_conversion(id,tenant_id,product_id,from_uom_id,to_uom_id,factor,direction) VALUES($1,$2,$3,$4,$5,12,'multiply')",[conversion,tenant,p,box,ea]);
-  await db.query("SELECT set_config('request.jwt.claim.sub',$1,true),set_config('app.real_actor_id',$1,true)",[user]);await db.exec("SET LOCAL ROLE margindesk_app;");
+  await db.query("SELECT set_config('request.jwt.claim.sub',$1,true),set_config('app.real_actor_id',$1,true)",[user]);await db.exec("SET LOCAL ROLE rebatehq_app;");
   const input=parse(`SKU,Description,Unit,Cost,Price,Date\nP,Part,BOX,144,300,${date}`),base=await domain(db,tenant);
   assert.equal((await previewImport(db,tenant,user,"x.csv",input,options(date))).counts.rejected,1,"unit conversion requires approval");
   assert.equal((await previewImport(db,tenant,user,"x.csv",input,options(date,{approveTextNumbers:false,approveUnits:true}))).counts.rejected,1,"text conversion requires approval");

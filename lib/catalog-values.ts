@@ -3,7 +3,7 @@ import type {PoolClient} from "pg";
 export async function currentImportPrices(db:Pick<PoolClient,"query">,tenantId:string,ids:string[]){
  const rows=(await db.query(`SELECT i.product_id,i.unit_price::text AS value FROM public.price_list_item i
   JOIN public.price_list p ON p.tenant_id=i.tenant_id AND p.id=i.price_list_id
-  WHERE i.tenant_id=$1 AND i.product_id=ANY($2::uuid[]) AND p.name='MarginDesk file imports' AND p.active=true
+  WHERE i.tenant_id=$1 AND i.product_id=ANY($2::uuid[]) AND p.name='RebateHQ file imports' AND p.active=true
   AND i.effective_from<=current_date AND (i.effective_to IS NULL OR i.effective_to>current_date)`,[tenantId,ids])).rows;
  const result=new Map<string,string>();for(const row of rows){if(result.has(row.product_id))throw new Error("Conflicting file-import lists");result.set(row.product_id,row.value);}return result;
 }

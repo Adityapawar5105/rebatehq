@@ -1,9 +1,9 @@
-# MarginDesk project direction
+# RebateHQ project direction
 
 ## Governing blueprint
 
-Read `BLUEPRINT.md` before planning or implementing MarginDesk work. It is the
-user-approved **MarginDesk Blueprint v2.2**: v2.1 (Final) was adopted by the user on
+Read `BLUEPRINT.md` before planning or implementing RebateHQ work. It is the
+user-approved **RebateHQ Blueprint v2.2**: v2.1 (Final) was adopted by the user on
 2 November 2026, and v2.2 corrections were made on 2 November 2026 with the
 user's standing permission and are listed in its section 22. It supersedes earlier
 product plans where they conflict. Later explicit user instructions still take
@@ -36,6 +36,20 @@ Key decisions:
 - Follow the exact tier limits, feature placement, roadmap and evidence rules in
   the full blueprint. Capacity/performance numbers and marketing promises are
   targets, not verified product capabilities.
+
+## Product name
+
+The product was renamed from MarginDesk to **RebateHQ** on 4 Nov 2026 (blueprint
+section 22, items 13-14) because margindesk.ai already trades under that name.
+The old name intentionally remains only in applied migrations (which still create
+`margindesk_app`; pending migration `20261104120000_rename_app_role_to_rebatehq.sql`
+renames it to `rebatehq_app`), `schema.sql`, the GitHub repo/URLs until the repo is
+renamed, and past CI/restore evidence lines. Browser storage keys were renamed
+with a carry-forward from the legacy keys; vaults saved before the rename stay in
+the legacy OPFS folder `margindesk-vaults` (Chromium cannot rename OPFS directories)
+and are opened in place. Do not edit applied migrations. `tests/brand-name.test.js`
+fails if the old name appears outside those legacy bridges and past-evidence
+records; add a file to its `LEGACY_FILES` only for a deliberate bridge.
 
 ## Existing implementation and task scope
 

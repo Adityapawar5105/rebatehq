@@ -5,15 +5,15 @@ import {MAX_IMPORT_DATA_ROWS} from "@/lib/import-config";
 export function ImportHistory(){
  const [rows,setRows]=useState<History[]>([]),[busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState(""),[supplier,setSupplier]=useState(""),[confirm,setConfirm]=useState<string|null>(null);
  const load=useCallback(async()=>{setBusy(true);setError("");try{const r=await fetch("/api/imports",{cache:"no-store"}),data=await r.json();if(!r.ok)throw new Error(data.error||"History is unavailable.");setRows(data.history);}catch(e){setError((e as Error).message);}finally{setBusy(false);}},[]);
- useEffect(()=>{void load();const refresh=()=>{void load();};window.addEventListener("margindesk-import",refresh);return()=>window.removeEventListener("margindesk-import",refresh);},[load]);
+ useEffect(()=>{void load();const refresh=()=>{void load();};window.addEventListener("rebatehq-import",refresh);return()=>window.removeEventListener("rebatehq-import",refresh);},[load]);
  async function action(kind:"export"|"undo",id?:string){
   setBusy(true);setError("");setNotice("");
   try{
    const r=await fetch("/api/imports",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(kind==="export"?{action:kind,supplier:supplier||undefined}:{action:kind,id})});
    if(!r.ok){const data=await r.json();throw new Error(data.error||"This action could not be completed.");}
    if(kind==="export"){
-    const url=URL.createObjectURL(await r.blob()),link=document.createElement("a");link.href=url;link.download="margindesk-lifeline.csv";link.click();URL.revokeObjectURL(url);setNotice("Export ready. Keep md_row_id, md_version, SKU and Unit unchanged. Re-upload to review edits.");
-   }else{setNotice("Import undone. Catalog rows and dated history were restored; audit and import history remain. Refresh the page to see the catalog.");setConfirm(null);window.dispatchEvent(new Event("margindesk-import"));await load();}
+    const url=URL.createObjectURL(await r.blob()),link=document.createElement("a");link.href=url;link.download="rebatehq-lifeline.csv";link.click();URL.revokeObjectURL(url);setNotice("Export ready. Keep md_row_id, md_version, SKU and Unit unchanged. Re-upload to review edits.");
+   }else{setNotice("Import undone. Catalog rows and dated history were restored; audit and import history remain. Refresh the page to see the catalog.");setConfirm(null);window.dispatchEvent(new Event("rebatehq-import"));await load();}
   }catch(e){setError((e as Error).message);}finally{setBusy(false);}
  }
  return <section className="app-card import-wizard" aria-busy={busy}>
