@@ -94,3 +94,14 @@ These are "measured on this machine in headless Chrome", not capability claims.
   only. No real ERP export was available; run the assistant on a pilot file in 6A before relying on it.
 - Edge, the real folder picker and the mobile layout of the new panels beyond the existing no-overflow
   check were not exercised.
+
+## Real file run (4 November 2026, local)
+
+The only real export available is the public UCI Online Retail file (`test-results/real/`, git-ignored, never committed): 526,088 source rows, 392,729 loaded at first, 3,941 products. It is a retail file with no cost, tier, category or unit columns, so it exercises duplicates and roles but not cost basis or unit/category fixes. It is **not** a wholesale-distributor ERP export; 6A still needs those.
+
+- **Duplicate SKUs**: 112 extra product IDs found, all "certain" case variants (for example `85123A` / `85123a`, 2,325 lines). No punctuation-only duplicates, no unit issues. The list shows the 100 largest groups; 12 more appear after merging.
+- **Every merge kept the invoice totals** (lines, net pocket, list, credits) identical and every undo restored them exactly. This held for 15 groups one at a time and for 100 groups merged together then undone in reverse. Product count went 3,941 to 3,841 and back. The audit chain stayed valid.
+- **Cost basis**: all lines are "unknown" under every basis (no cost in the file); nothing was costed at zero.
+- **Roles**: in a Sales Rep preview status cost and margin were null and the margin waterfall was refused.
+- **Checklist**: import and fix done; the others correctly not done.
+- **Timing (393k lines)**: scan 60 ms, cost basis 84 ms. One merge (including aggregate rebuild and encrypted save) took about 2.1 s and its undo about 2.1 s, so 100 merges took 206 s. Merges are one click per group; a "merge all certain" action is not built and would help on real catalogs.
