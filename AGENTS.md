@@ -43,8 +43,8 @@ The product was renamed from MarginDesk to **RebateHQ** on 4 Nov 2026 (blueprint
 section 22, items 13-14) because margindesk.ai already trades under that name.
 The old name intentionally remains only in applied migrations (which still create
 `margindesk_app`; migration `20261104120000_rename_app_role_to_rebatehq.sql`
-renames it to `rebatehq_app` and passed CI #57, but stays pending in
-`migrations.lock` until a Restore Drill passes), `schema.sql`, and past CI/restore
+renames it to `rebatehq_app`; locked in `migrations.lock` after CI #58 and Restore
+Drill #14 passed on `251efef`), `schema.sql`, and past CI/restore
 evidence lines. The GitHub repo is now `rebatehq`. Browser storage keys were renamed
 with a carry-forward from the legacy keys; vaults saved before the rename stay in
 the legacy OPFS folder `margindesk-vaults` (Chromium cannot rename OPFS directories)
