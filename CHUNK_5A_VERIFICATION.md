@@ -1,9 +1,8 @@
 # Chunk 5A: item master cleanup, cost basis, setup checklist, ROI v1 and roles
 
-**Local evidence only. Not yet CI-verified.** Baseline: CI #58 and Restore Drill #14 on `251efef`
-(rename migration locked in `c8b78eb`). Only 5A was built; 5B has not started. No Supabase
-migration was added or changed, and `migrations.lock` is unchanged. Nothing below is a CI or
-restore result, and the authenticated privacy gate (`--auth`) runs only in CI.
+**5A CI-verified** in [RebateHQ CI #59](https://github.com/Adityapawar5105/rebatehq/actions/runs/41854329390) on `632b24f`, [CI #60](https://github.com/Adityapawar5105/rebatehq/actions/runs/41855953059) on `7ec683e` (real-export evidence), and [CI #61](https://github.com/Adityapawar5105/rebatehq/actions/runs/41858525178) on `2fbb283` (merge-all and batch undo), 4 November 2026.
+
+No server migration was added or changed, so no Restore Drill is needed. CI #61’s required authenticated local-vault privacy gate completed successfully (not skipped). Measurements and the real UCI export exercise below are **local only**; CI #60 verifies the evidence commit, not a replay of that private local file. Deployed sign-in, real ERP files and headed/manual behaviour not exercised by CI remain unverified.
 
 ## What was built
 
@@ -82,8 +81,7 @@ These are "measured on this machine in headless Chrome", not capability claims.
 
 ## Not verified
 
-- **CI.** Nothing here has run on GitHub Actions. The authenticated `--auth` privacy gate, pgTAP and
-  the restore drill (unaffected: no control-plane migration changed) are pending a push.
+- **Restore:** not required for 5A: no server schema or restore inventory changed. The local-stack authenticated privacy gate and existing pgTAP suite passed in the CI runs cited above; hosted restore and deployed behaviour remain unverified.
 - **Roles are a worker policy, not cryptography.** Whoever holds the passphrase on the device can open
   the whole vault with developer tools. Per-user separation needs the Phase 2 relay and per-user keys.
   Two real sign-ins on one vault were not tested; roles are tested through the dispatcher and a preview.
