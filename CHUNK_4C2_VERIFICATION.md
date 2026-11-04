@@ -1,6 +1,6 @@
 # Chunk 4C-2 — ERP mapper, resilient parser, Fix Later, health score, Playground
 
-**4 Nov 2026. Local evidence; CI evidence pending.** Built on 4C-1 (CI #48, `ea4e5b6`). Real-file results: [REAL_FILE_RESULTS.md](./REAL_FILE_RESULTS.md).
+**4 Nov 2026. CI-verified in [MarginDesk CI #51](https://github.com/Adityapawar5105/margindesk/actions/runs/41783684531) on commit `a9ca8f7` (9m 31s)**, including the required authenticated privacy gate. The gate now drives the mapping confirmation and a Fix Later bulk fix through the UI. CI #50 on the work-in-progress commit `f1397bf` failed in that gate; the cause and fix are below. Measurements are local. Built on 4C-1 (CI #48, `ea4e5b6`). Real-file results: [REAL_FILE_RESULTS.md](./REAL_FILE_RESULTS.md).
 
 ## What was built
 
@@ -45,4 +45,4 @@ Ryzen 5 5600H, about 8 GB, Windows 11; Chrome 156, Edge 156, Playwright Chromium
 
 ## Still unverified
 
-CI for this chunk; the five ERP profiles on real exports from those ERPs; spreadsheets above the 300,000-row cap (real exports exceed it); returns/credits (rejected until 4D); headed manual checks; deployed Supabase sign-in.
+The five ERP profiles on real exports from those ERPs; spreadsheets above the 300,000-row cap (real exports exceed it); returns/credits (rejected until 4D); headed manual checks; deployed Supabase sign-in.

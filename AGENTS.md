@@ -53,7 +53,7 @@ gates, and distinguish local checks from passing CI/restore evidence.
 Do only the chunk the user's current prompt names; never start the next chunk on
 your own. Chunks 4.0, 4A, 4B and 4C-1 are done and CI-verified (4C-1: CI #48,
 `ea4e5b6`). 4C-2 (ERP mapper, resilient parser, Fix Later, health score,
-Playground) is built; see `CHUNK_4C2_VERIFICATION.md` for its CI status. The
+Playground) is done and CI-verified (CI #51, `a9ca8f7`). The
 next chunk is 4D (pocket-margin engine and margin intelligence); its leak finder
 must reproduce `tests/fixtures/playground-manifest.json`. Real-export files stay
 in git-ignored `test-results/real/` and are never committed.
