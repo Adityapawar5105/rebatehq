@@ -1,3 +1,4 @@
+import { setRequestIdentity } from "./request-identity";
 import { Pool, type PoolClient } from "pg";
 import { isIP } from "node:net";
 
@@ -44,7 +45,8 @@ export async function withDatabase<T>(context: DbContext, operation: (db: PoolCl
     await db.query("SET LOCAL ROLE rebatehq_app");
     const subject = context.userId || "";
     await db.query("SELECT set_config('request.jwt.claim.sub',$1::text,true), set_config('request.jwt.claim.role','authenticated',true), set_config('request.jwt.claims',$2::text,true)", [subject, JSON.stringify({ sub: subject || null, role: "authenticated" })]);
-    await db.query("SELECT set_config('app.real_actor_id',$1::text,true), set_config('app.client_ip',$2::text,true), set_config('app.user_agent',$3::text,true)", [context.realActorId || context.actorId || context.userId || "", clientIp(context.headers), context.headers?.get("user-agent") || ""]);
+    await setRequestIdentity(db,subject,context.realActorId || context.actorId || subject);
+    await db.query("SELECT set_config('app.client_ip',$1::text,true),set_config('app.user_agent',$2::text,true)",[clientIp(context.headers),(context.headers?.get('user-agent')||'').slice(0,1000)]);
     await db.query("SET LOCAL statement_timeout='8s'");
     const value = await operation(db);
     await db.query("COMMIT");

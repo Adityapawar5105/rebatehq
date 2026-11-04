@@ -1,5 +1,7 @@
+import { createPrivateKey, sign, generateKeyPairSync } from 'node:crypto';
+import { RETIRED_API_PATHS } from '../config/http-boundary.mjs';
 import assert from "node:assert/strict";
-import { readFile, writeFile, mkdir, mkdtemp } from "node:fs/promises";
+import { readFile, writeFile, mkdir, mkdtemp, readdir } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { build } from "esbuild";
@@ -10,16 +12,29 @@ const channel = process.argv.find(v => v.startsWith("--browser="))?.split("=")[1
 const base = process.env.VAULT_TEST_URL || "http://127.0.0.1:3100", route = auth ? "/home" : "/lab/vault";
 const secret = "synthetic-local-vault-passphrase", marker = "MD-PRIVATE-" + crypto.randomUUID(), numericMarker = "98765.43";
 const markers = [marker, numericMarker, "9876543", "98,765.43", secret];
+// Independent fixture key: never put the app's issuer private key in any browser bundle.
+const fixturePair=generateKeyPairSync('ed25519');
+const fixturePublic=fixturePair.publicKey.export({format:'der',type:'spki'}).toString('base64');
+const fixturePrivate=fixturePair.privateKey.export({format:'der',type:'pkcs8'}).toString('base64');
 const failures = [], requests = [], headerChecks = [];
 let dataPlaneActive = false;
+// Assert the actual issuer/HMAC secret is absent from every served client asset.
+async function checkBundleKeys(dir){for(const item of await readdir(dir,{withFileTypes:true})){const file=path.join(dir,item.name);if(item.isDirectory())await checkBundleKeys(file);else if(/\.(js|json|html)$/.test(item.name)){const text=await readFile(file,'utf8');for(const value of [process.env.LICENCE_SIGNING_KEY,process.env.ACTOR_SIGNING_SECRET].filter(Boolean))assert.ok(!text.includes(value),'A server signing secret was bundled into a served client asset');}}}
+await checkBundleKeys('public/spike');await checkBundleKeys('.next/static');
+
 await mkdir("test-results", { recursive: true });
-await build({ entryPoints: ["tests/browser/vault-worker.ts"], outfile: "test-results/vault-tests.js", bundle: true, platform: "browser", format: "esm", minify: true });
+await build({ entryPoints: ["tests/browser/vault-worker.ts"], outfile: "test-results/vault-tests.js", bundle: true, platform: "browser", format: "esm", minify: true,define:{"process.env.NEXT_PUBLIC_LICENCE_VERIFY_KEY":JSON.stringify(fixturePublic),"process.env.TEST_LICENCE_PRIVATE_KEY":JSON.stringify(fixturePrivate)} });
 const testCode = await readFile("test-results/vault-tests.js", "utf8");
 const profile = await mkdtemp(path.join(os.tmpdir(), "rebatehq-vault-"));
 const browserOptions = { ...(channel === "chromium" ? {} : { channel }), headless: true, viewport: { width: 1365, height: 900 } };
 let context = await chromium.launchPersistentContext(profile, browserOptions);
 const results = { date: new Date().toISOString(), auth, channel, browser: context.browser().version(), machine: { cpu: os.cpus()[0].model, ram: String(os.totalmem()), os: os.type() + " " + os.release() }, checks: {}, measurements: {} };
 async function configureContext() {
+if(!auth)await context.route('**/api/licence?device=*',async r=>{
+ const issued=Math.floor(Date.now()/1000),device=new URL(r.request().url()).searchParams.get('device'),payload=JSON.stringify({v:1,sub:'synthetic-lab-user',workspace:'synthetic-lab-workspace',device,tier:'scale',state:'active',issued,expires:issued+3600,offlineUntil:issued+86400,reason:''});
+ const key=createPrivateKey({key:Buffer.from(process.env.LICENCE_SIGNING_KEY,'base64'),format:'der',type:'pkcs8'});
+ await r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({payload,signature:sign(null,Buffer.from(payload),key).toString('base64')})});
+});
 await context.route("**/spike/vault-tests.js", r => r.fulfill({ status: 200, contentType: "application/javascript", headers: { "Cross-Origin-Embedder-Policy": "require-corp", "Cross-Origin-Resource-Policy": "same-origin" }, body: testCode }));
 context.on("request", r => {
   headerChecks.push(r.allHeaders().then(headers => {
@@ -27,7 +42,7 @@ context.on("request", r => {
     if (markers.some(m => text.includes(m))) failures.push("Private fixture value appeared in a network request");
   }).catch(() => { failures.push("Could not inspect complete request headers"); }));
   const url = new URL(r.url());
-  if (dataPlaneActive && (url.origin !== new URL(base).origin || !["GET", "HEAD"].includes(r.method()) || url.pathname.startsWith("/api/"))) failures.push("Vault flow made an unexpected external or API request");
+  if (dataPlaneActive && (url.origin !== new URL(base).origin || !["GET", "HEAD"].includes(r.method()) || (url.pathname.startsWith("/api/") && !(url.pathname==="/api/licence"&&r.method()==="GET"&&[...url.searchParams.keys()].every(k=>k==="device")&&!r.postData())))) failures.push("Vault flow made an unexpected external or API request");
   requests.push(new URL(r.url()).pathname);
 });
 context.on("console", m => {
@@ -89,9 +104,18 @@ async function clearBatch() { await page.getByRole("button", { name: "Clear batc
 await build({ entryPoints: ["tests/helpers/studio-fixtures.ts"], outfile: "test-results/studio-fixtures.mjs", bundle: true, platform: "node", format: "esm" });
 const fixtures = await import(new URL("../test-results/studio-fixtures.mjs", import.meta.url).href);
 try {
-  if (auth) await signInLocal(context, page, base);
+  if (auth) {
+    assert.notEqual(process.env.LEGACY_BUSINESS_ENABLED,'true','Privacy gate must run with legacy business routes OFF');
+    await signInLocal(context,page,base);
+    let testedHandlers=0;
+    for(const path of RETIRED_API_PATHS){const source=await readFile('app/api/'+path+'/route.ts','utf8'),methods=[...source.matchAll(/export async function (GET|POST|PUT|PATCH|DELETE)/g)].map(m=>m[1]);assert.ok(methods.length);
+      for(const method of methods){const result=await context.request.fetch(base+'/api/'+path.replace('[quoteId]','00000000-0000-4000-8000-000000000001'),{method,...(method==='GET'?{}:{data:'{}',headers:{'Content-Type':'application/json'}})});assert.equal(result.status(),410,'Retired API '+method+' '+path);assert.deepEqual(Object.keys(await result.json()),['error']);testedHandlers++;}}
+    results.checks.retiredHandlers=testedHandlers;
+    results.checks.retiredRoutesOff={routes:RETIRED_API_PATHS.length,noData:true};
+  }
   const response = await page.goto(base + route); assert.equal(response.status(), 200); assert.equal(response.headers()["cross-origin-embedder-policy"], "require-corp"); assert.ok(!response.headers()["content-security-policy"].includes("'unsafe-eval'"));
   await ready();
+  await page.getByTestId("licence-status").filter({hasText:"Licensed: scale"}).waitFor();results.checks.signedLicence=true;
   dataPlaneActive = true;
   if (makeFixture) {
     const raw = await worker("fixture");
@@ -134,7 +158,7 @@ try {
   await review([capPath]);
   await page.getByRole("alert").filter({ hasText: /exceeds your starter limit/ }).waitFor();
   assert.ok(await page.getByRole("button", { name: "Confirm and import locally" }).isDisabled(), "Over-cap batch must not be importable");
-  assert.equal(await page.getByTestId("line-count").innerText(), "100000"); results.checks.capRollback = true; await clearBatch();
+  assert.equal(await page.getByTestId("line-count").innerText(), "100000"); assert.match(await page.getByRole("alert").filter({hasText:/exceeds your starter limit/}).innerText(),/upgrade/i);results.checks.licenceUpgradePrompt=true;results.checks.capRollback = true; await clearBatch();
   const invalid = path.resolve("test-results", "synthetic-invalid.csv"); await writeFile(invalid, header + `1,1,1,2025-01-01,1,${marker},0.00,0.00,0.00,1.00\n`);
   await review([invalid]);
   await page.getByText(/Row 2, column F: Use a non-negative amount/).waitFor(); await page.getByRole("alert").filter({ hasText: /No valid rows to load/ }).waitFor();
@@ -288,6 +312,13 @@ try {
       results.checks[`firstChange${rows}Under2sAfterWarmup`] = change.underTwoSeconds && Math.max(0, ...changeTasks) <= 200;
       console.log(`First change at ${rows} lines: background warm-up ${change.warmupMs} ms (read during warm-up ${change.readDuringWarmupMs} ms), post-warm-up first change committed/encrypted ${change.postWarmupFirstChangeMs} ms, max observed UI long task ${Math.max(0, ...changeTasks)} ms.`);
     }
+  }
+  if(auth){
+    const device=await page.evaluate(()=>{const key=Object.keys(localStorage).find(k=>k.startsWith('rebatehq-device-v1:'));return localStorage.getItem(key);});assert.ok(device);
+    const revoked=await context.request.post(base+'/api/licence/devices',{data:{id:device,status:'revoked'}});assert.equal(revoked.status(),200);
+    await page.reload();await ready();await page.getByTestId('licence-status').filter({hasText:'Read-only'}).waitFor();await unlock();
+    await page.getByRole('link',{name:'Settings',exact:true}).click();const backup=page.waitForEvent('download');await page.getByRole('button',{name:'Download encrypted backup',exact:true}).click();assert.ok((await readFile(await(await backup).path())).subarray(0,8).toString()==='MDVAULT1');
+    results.checks.revokedReadOnlyRecovery=true;
   }
   await page.setViewportSize({ width: 390, height: 844 });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "Mobile shell overflows"); results.checks.mobile = true;

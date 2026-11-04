@@ -1,3 +1,4 @@
+import { testIdentity, installTestIdentityKey } from './helpers/signed-context';
 import test from "node:test";
 import assert from "node:assert/strict";
 import {randomUUID} from "node:crypto";
@@ -20,7 +21,7 @@ test("Readiness matches sourced invoice evidence exactly, never counts model/def
    await db.query("INSERT INTO public.product(id,tenant_id,sku,name,category,uom,unit_cost,list_price) VALUES($1,$2,'R','Readiness product','Test','EA',10,20)",[product,tenant]);
    await db.query("INSERT INTO public.uom(tenant_id,code,display_name) VALUES($1,'BOX','Box')",[tenant]);
    if(populated)await db.query("INSERT INTO public.import_job(tenant_id,import_type,status) VALUES($1,'preexisting','committed'),($2,'preexisting','committed')",[tenant,other]);
-   await db.query("SELECT set_config('request.jwt.claim.sub',$1,true),set_config('app.real_actor_id',$1,true)",[user]);await db.exec("SET LOCAL ROLE rebatehq_app;");
+   await db.query("SELECT set_config('request.jwt.claim.sub',$1,true),set_config('app.real_actor_id',$1,true)",[user]);await testIdentity(db,user);await db.exec("SET LOCAL ROLE rebatehq_app;");
    assert.equal((await dataReadiness(db,tenant)).score,null);
    const ids=Array.from({length:4},()=>randomUUID());
    for(const id of ids)await db.query("INSERT INTO public.invoice(id,tenant_id,customer_id,invoice_date,currency,source_ref) VALUES($1,$2,$3,'2026-10-01','USD',$4)",[id,tenant,customer,id]);

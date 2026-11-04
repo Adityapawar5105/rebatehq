@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const { randomUUID } = require("node:crypto");
+const { randomUUID,randomBytes } = require("node:crypto");
 const test = require("node:test");
 
 const root = path.join(__dirname, "..");
@@ -92,6 +92,7 @@ test("full pgTAP SQL executes in PGlite with assertion stubs and planned checks 
     for (const name of fs.readdirSync(path.join(root, 'supabase/migrations')).filter(n => n.endsWith('.sql')).sort()) {
       await db.exec(fs.readFileSync(path.join(root, 'supabase/migrations', name), 'utf8'));
     }
+    await db.query("INSERT INTO rebatehq_private.actor_key(id,secret) VALUES('actor-v1',decode($1::text,'hex'))",[randomBytes(32).toString('hex')]);
     const { loadDatabaseTestSql } = await import("../scripts/load-db-test-sql.mjs");
     const sql = materialize(await loadDatabaseTestSql()).replace(
       /^CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;\s*$/m,
@@ -99,7 +100,7 @@ test("full pgTAP SQL executes in PGlite with assertion stubs and planned checks 
     );
     const snapshot = async () => {
       const tables=(await db.query("SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('r','p') AND EXISTS(SELECT 1 FROM pg_attribute a WHERE a.attrelid=c.oid AND a.attname='tenant_id') ORDER BY c.relname")).rows;
-      assert.ok(tables.length>=38);
+      assert.ok(tables.length>=42);
       const counts={};
       for(const t of tables) counts[t.relname]=(await db.query(`SELECT count(*)::text AS n FROM public.${t.relname}`)).rows[0].n;
       return counts;
@@ -135,6 +136,11 @@ test("full pgTAP SQL executes in PGlite with assertion stubs and planned checks 
     const restoredCustomer = randomUUID();
     const restoredQuote = randomUUID();
     await db.query("INSERT INTO auth.users(id,email) VALUES($1,'restore-row@example.invalid')", [restoredUser]);
+    await db.query("INSERT INTO public.membership(tenant_id,user_id,email,role) VALUES($1,$2,'restore-row@example.invalid','owner')",[sentinelTenant,restoredUser]);
+    await db.query("INSERT INTO public.workspace_licence(tenant_id,tier,valid_until) VALUES($1,'scale',now()+interval '7 days')",[sentinelTenant]);
+    await db.query('INSERT INTO public.licence_seat(tenant_id,user_id) VALUES($1,$2)',[sentinelTenant,restoredUser]);
+    await db.query("INSERT INTO public.licence_location(tenant_id,name,erp_profile) VALUES($1,'Restored location','generic')",[sentinelTenant]);
+    await db.query('INSERT INTO public.licence_device(id,tenant_id,user_id) VALUES($1,$2,$3)',[randomUUID(),sentinelTenant,restoredUser]);
     await db.query("INSERT INTO public.customer(id,tenant_id,account_no,name) VALUES($1,$2,'RESTORE-CUSTOMER','Restored customer')", [restoredCustomer,sentinelTenant]);
     await db.query("INSERT INTO public.quote(id,tenant_id,customer_id,created_by,status,margin_zone) VALUES($1,$2,$3,$4,'draft','green')", [restoredQuote,sentinelTenant,restoredCustomer,restoredUser]);
     for (let i=0;i<2;i++) {

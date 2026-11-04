@@ -1,5 +1,9 @@
 # RebateHQ security verification
 
+## Chunk 5B — pending CI and user-run Restore Drill (4 November 2026)
+
+Implemented locally; **unverified in GitHub Actions**. New migration `20261104160022_chunk5b_control_plane.sql` stays pending. Eight applied migrations and their hashes are unchanged. Current suite plan: **188 fresh / 191 restore-mode checks**, **42 public tenant tables**, plus an owner-only private issuer table and a nontransactional login-budget sequence. See [CHUNK_5B_VERIFICATION.md](./CHUNK_5B_VERIFICATION.md). No 6A work or table retirement is authorized.
+
 **Chunk 4B — CI-verified in [MarginDesk CI #44](https://github.com/Adityapawar5105/rebatehq/actions/runs/41660146540), 3 November 2026, commit `c382f7d`.** The GitHub job API confirms step 18, "Required authenticated local-vault privacy gate", completed successfully (not skipped). Its log records `pnpm test:vault:privacy --browser=chromium`, `auth: true`, `status: passed`: **one authenticated harness with 14 named checks**, not a Playwright test-runner count. The separate unit suite passed **67 JavaScript + 56 TypeScript = 123 tests**.
 
 Privacy acceptance covers the **local vault flow only**. Legacy server business-data routes still exist; no app-wide "data never leaves your device" claim is made. **Unverified:** deployed Supabase sign-in, headed manual checks, physical crash/quota/multi-tab recovery, the historical storage-estimate discrepancy, and CI validation of the locally measured **~7.6 s / ~15–16 s first-change latency** (open item for 4C-1). Those timings remain local observations; Scale retains its 1M-line cap. 4C-1 has not started.
@@ -338,3 +342,9 @@ CI #39 passed the readiness golden results, upload/fetch security and ingestion 
 **Real-Postgres benchmark verified in CI #39:** 10,000 rows; `commitImport` **11,605 ms**, `undoImport` **3,442 ms**, PostgreSQL **17.11**, restricted **`margindesk_app`**. Role attributes, audits, exact undo and all-table no-residue checks passed. Parsing, setup, network and durable COMMIT/WAL flush are excluded; **this is not a serverless latency guarantee**.
 
 **Unverified:** authenticated Next.js behavior, the deployed Supabase app, hosted-target restore, serverless time limits, recurring schedule execution (needs an operator-configured runner), live email and SFTP ingestion, and browser UI beyond the local harness. Independent worker contention/crash recovery and formal accessibility also remain unverified. Existing Phase 1 actor trust and failed-login bounds/rate-limit issues carry to Phase 4, not fixed here. See [CHUNK_3C_VERIFICATION.md](./CHUNK_3C_VERIFICATION.md).
+
+## 5B privacy and actor boundary — pending CI
+
+The required statement is **pending**, not verified: it will be recorded only as “verified by the privacy gate and route test in CI run <link>” after that run passes. It applies to the default-off retired API configuration and the new local vault flow. Historical server business rows remain retained; there is no app-wide historical zero-storage claim.
+
+Actor trust now uses a private HMAC verifier and reviewed append boundary; app.real_actor_id is ignored by the replacement trigger/policy. Raw JWT changes, actor-GUC spoofing and transaction replay are rejected in local SQL tests. Failed-login input limits and independent DB throttling are implemented locally, preserving fixed-event and EXECUTE allowlists. Their prior Phase 1 open-item descriptions above are historical; production/real-Postgres verification remains pending. New public functions are in config/function-acl-allowlist.sql. The global key table is private, forced-RLS and owner-only, with operation-only audit.

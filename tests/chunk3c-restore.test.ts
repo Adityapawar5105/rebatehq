@@ -1,3 +1,4 @@
+import { testIdentity, installTestIdentityKey } from './helpers/signed-context';
 import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync,readdirSync} from "node:fs";
@@ -66,7 +67,7 @@ test("The checked-in demo invoices have unit coverage but no invented actual cos
   await db.query("INSERT INTO auth.users(id,email) VALUES($1,$2)",[user,user+"@example.invalid"]);
   await db.query("INSERT INTO public.tenant(tenant_id,name,currency) VALUES($1,'Real demo seed','USD')",[tenant]);
   await db.query("INSERT INTO public.membership(tenant_id,user_id,email,role) VALUES($1,$2,$3,'owner')",[tenant,user,user+"@example.invalid"]);
-  await db.query("SELECT set_config('request.jwt.claim.sub',$1,true),set_config('app.real_actor_id',$1,true)",[user]);await db.exec("SET LOCAL ROLE rebatehq_app;");
+  await db.query("SELECT set_config('request.jwt.claim.sub',$1,true),set_config('app.real_actor_id',$1,true)",[user]);await testIdentity(db,user);await db.exec("SET LOCAL ROLE rebatehq_app;");
   const plan=validatePrototype(seed),job=(await db.query("INSERT INTO public.import_job(tenant_id,import_type,status) VALUES($1,'prototype','dry_run') RETURNING id",[tenant])).rows[0].id;
   await importPrototypeData(db,tenant,user,plan,job);
   const readiness=await dataReadiness(db,tenant);

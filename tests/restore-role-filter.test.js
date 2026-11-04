@@ -135,12 +135,12 @@ test("restore workflow filters roles, snapshots source before shutdown, and keep
   assert.doesNotMatch(workflow, /supabase stop[^\n]*(?:\|\|\s*true|;\s*true)/);
 });
 
-test("restore dump schema builder permits only public and rejects a storage-inclusive dump", async () => {
+test("restore dump schema builder permits only owned schemas and rejects a storage-inclusive dump", async () => {
   const { APPLICATION_SCHEMAS, EXCLUDED_SUPABASE_SCHEMAS, assertMigrationsFitApplicationSchemas, buildApplicationDumpArgs } = await import("../scripts/restore-dump-scope.mjs");
-  assert.deepEqual(APPLICATION_SCHEMAS, ["public"]);
+  assert.deepEqual(APPLICATION_SCHEMAS, ["public", "rebatehq_private"]);
   assert.ok(EXCLUDED_SUPABASE_SCHEMAS.includes("storage"));
   assert.ok(assertMigrationsFitApplicationSchemas() >= 1, "All current SQL migrations must fit the reviewed application schema scope.");
-  assert.deepEqual(buildApplicationDumpArgs(), ["--schema", "public"]);
+  assert.deepEqual(buildApplicationDumpArgs(), ["--schema", "public,rebatehq_private"]);
   assert.throws(() => buildApplicationDumpArgs(["public", "storage"]), /only the application schema allowlist/);
   assert.throws(() => buildApplicationDumpArgs(["public", "auth"]), /only the application schema allowlist/);
 });
@@ -160,7 +160,7 @@ test("restore dump inspection parses application tables and redacts COPY payload
   const context = redactDataDumpContext(data, 2, 1);
   assert.match(context.lines.join("\n"), /\[COPY DATA REDACTED\]/);
   assert.doesNotMatch(context.lines.join("\n"), /secret-user-row|other-secret/);
-  const tenantTables = Array.from({ length: 33 }, (_, index) => ({ schema: "public", table: `tenant_table_${index}` }));
-  assert.equal(assertApplicationTableMinimum(tenantTables), 33);
-  assert.throws(() => assertApplicationTableMinimum(tenantTables.slice(0, 32)), /expected at least 33 after Chunk 2B/);
+  const tenantTables = Array.from({ length: 42 }, (_, index) => ({ schema: "public", table: `tenant_table_${index}` }));
+  assert.equal(assertApplicationTableMinimum(tenantTables), 42);
+  assert.throws(() => assertApplicationTableMinimum(tenantTables.slice(0, 41)), /expected at least 42 after Chunk 5B/);
 });

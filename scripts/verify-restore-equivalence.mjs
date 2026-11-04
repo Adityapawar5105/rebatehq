@@ -1,8 +1,15 @@
+import { APPLICATION_SCHEMAS } from "./restore-dump-scope.mjs";
 import assert from "node:assert/strict";
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import pg from "pg";
 
 const { Pool } = pg;
+export const privateIssuerSql=`SELECT c.relname,c.relkind,c.relrowsecurity,c.relforcerowsecurity,pg_get_userbyid(c.relowner)::text AS owner,
+ COALESCE((SELECT jsonb_agg(jsonb_build_object('grantor',pg_get_userbyid(a.grantor),'grantee',CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END,'privilege',a.privilege_type,'grantable',a.is_grantable) ORDER BY a.grantee,a.privilege_type) FROM aclexplode(COALESCE(c.relacl,acldefault(CASE WHEN c.relkind='S' THEN 'S'::"char" ELSE 'r'::"char" END,c.relowner)))a),'[]'::jsonb) AS acl,
+ CASE WHEN c.relname='actor_key' THEN (SELECT md5(COALESCE(string_agg(id||encode(secret,'hex'),'|' ORDER BY id),'')) FROM rebatehq_private.actor_key) ELSE NULL END AS key_fingerprint,
+ CASE WHEN c.relname='login_budget' THEN (SELECT last_value::text||':'||is_called::text FROM rebatehq_private.login_budget) ELSE NULL END AS counter_state
+ FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='rebatehq_private' AND c.relkind IN ('r','S') ORDER BY c.relname`;
+
 export const applicationColumnsSql=`
  SELECT c.relname::text AS table_name,a.attname::text AS column_name,
   format_type(a.atttypid,a.atttypmod) AS data_type,a.attnotnull AS not_null,
@@ -244,8 +251,8 @@ const schemaAclSql = `
   LEFT JOIN LATERAL aclexplode(COALESCE(n.nspacl,acldefault('n',n.nspowner))) acl ON true
   LEFT JOIN pg_roles grantor ON grantor.oid=acl.grantor
   LEFT JOIN pg_roles grantee ON grantee.oid=acl.grantee
-  WHERE n.nspname='public'
-  GROUP BY n.oid,n.nspname,owner.rolname
+  WHERE n.nspname IN ('public','rebatehq_private')
+  GROUP BY n.oid,n.nspname,owner.rolname ORDER BY n.nspname
 `;
 
 const defaultPrivilegesSql = `
@@ -284,6 +291,7 @@ async function assertApplicationTablesExist(pool, applicationTableNames) {
 
 async function snapshot(pool, applicationTableNames, authUserIds) {
   await assertApplicationTablesExist(pool, applicationTableNames);
+  const privateIssuer=(await pool.query(privateIssuerSql)).rows;
   const role = (await pool.query(roleStateSql)).rows[0];
   assert.ok(role, "rebatehq_app must exist in both source and restored databases.");
   const applicationTables = (await pool.query(applicationTableAclSql, [applicationTableNames])).rows;
@@ -294,7 +302,7 @@ async function snapshot(pool, applicationTableNames, authUserIds) {
   const schemas = (await pool.query(schemaAclSql)).rows;
   const defaultPrivileges = (await pool.query(defaultPrivilegesSql)).rows;
   assert.equal(applicationTables.length, applicationTableNames.length, "Application table ACL inventory is incomplete.");
-  assert.equal(schemas.length, 1, "The application-owned schema ACL inventory must contain public exactly once.");
+  assert.equal(schemas.length, 2, "The application-owned schema ACL inventory must contain public and rebatehq_private exactly once.");
 
   const applicationRows = {};
   const tenantRowCounts = {};
@@ -311,8 +319,8 @@ async function snapshot(pool, applicationTableNames, authUserIds) {
   const authUserCount = authUserIds.length
     ? Number((await pool.query("SELECT count(*)::int AS count FROM auth.users WHERE id=ANY($1::uuid[])", [authUserIds])).rows[0].count)
     : 0;
-  assert.ok(Object.keys(tenantRowCounts).length >= 38,
-    `Restore equivalence found only ${Object.keys(tenantRowCounts).length} tenant tables; expected at least 38 after Chunk 2C.`);
+  assert.ok(Object.keys(tenantRowCounts).length >= 42,
+    `Restore equivalence found only ${Object.keys(tenantRowCounts).length} tenant tables; expected at least 42 after Chunk 5B.`);
   assert.equal(authUserCount, authUserIds.length, "A referenced auth.users ID is missing from the source or restored target.");
   const sentinelResult = await pool.query(`
     SELECT p.tenant_id::text,p.id::text,md5(jsonb_build_object(
@@ -327,7 +335,7 @@ async function snapshot(pool, applicationTableNames, authUserIds) {
     ORDER BY p.tenant_id,p.id
   `, ["61000000-0000-4000-8000-000000000001", "62000000-0000-4000-8000-000000000001"]);
   const sentinel = sentinelResult.rows.length === 1 ? sentinelResult.rows[0] : null;
-  return { role, applicationTableNames: [...applicationTableNames].sort(), applicationTables, applicationColumns, ingestionEvidence, securityDefiners, functions, schemas, defaultPrivileges, applicationRows, tenantRowCounts, authUserCount, sentinel };
+  return { privateIssuer, role, applicationTableNames: [...applicationTableNames].sort(), applicationTables, applicationColumns, ingestionEvidence, securityDefiners, functions, schemas, defaultPrivileges, applicationRows, tenantRowCounts, authUserCount, sentinel };
 }
 
 function comparableAcl(items) {
@@ -355,10 +363,10 @@ async function main() {
   const databaseUrl = mode === "--snapshot" ? process.env.RESTORE_TEST_SOURCE_DATABASE_URL : process.env.RESTORE_TEST_TARGET_DATABASE_URL;
   if (!databaseUrl) throw new Error(`${mode === "--snapshot" ? "RESTORE_TEST_SOURCE_DATABASE_URL" : "RESTORE_TEST_TARGET_DATABASE_URL"} is required.`);
   const inventory = JSON.parse(readFileSync(inventoryPath, "utf8"));
-  assert.deepEqual(inventory.applicationSchemas, ["public"], "Restore equivalence only accepts the reviewed public application schema allowlist.");
-  assert.ok(Array.isArray(inventory.schemaTables) && inventory.schemaTables.length >= 38,
-    `Dump inventory contains ${inventory.schemaTables?.length ?? 0} application tables; expected at least 38 after Chunk 2C.`);
-  const applicationTableNames = inventory.schemaTables.map(item => {
+  assert.deepEqual(inventory.applicationSchemas, [...APPLICATION_SCHEMAS], "Restore equivalence only accepts the reviewed public application schema allowlist.");
+  assert.ok(Array.isArray(inventory.schemaTables) && inventory.schemaTables.filter(t=>t.schema==='public').length >= 42,
+    `Dump inventory contains ${inventory.schemaTables?.length ?? 0} application tables; expected at least 42 after Chunk 5B.`);
+  const applicationTableNames = inventory.schemaTables.filter(t=>t.schema==='public').map(item => {
     assert.equal(item.schema, "public", `Unexpected non-application table ${item.schema}.${item.table}.`);
     return item.table;
   });
@@ -408,6 +416,7 @@ async function main() {
     }
 
     const failures = [];
+    reportSection("private issuer key fingerprint, counter, RLS and ACL",()=>assert.deepEqual(targetState.privateIssuer,sourceState.privateIssuer,"Private issuer material differs (fingerprints only)."),failures);
     reportSection("rebatehq_app role attributes and memberships", () => {
       assert.deepEqual(targetState.role, sourceState.role, "Role attributes/settings/memberships differ.");
       for (const [label, state] of [["source", sourceState.role], ["restored", targetState.role]]) {

@@ -1,3 +1,4 @@
+import { testIdentity, installTestIdentityKey } from './helpers/signed-context';
 import test from "node:test";
 import assert from "node:assert/strict";
 import {randomUUID} from "node:crypto";
@@ -27,7 +28,7 @@ test("Sheets schedules stage tenant-isolated audited reviews, reject changed dat
     await db.query("INSERT INTO public.import_job(tenant_id,import_type,status) VALUES($1,'preexisting','committed')",[other]);
     await db.query("INSERT INTO public.connector_sync_run(tenant_id,provider,direction,status,started_at,finished_at) VALUES($1,'fixture','inbound','succeeded',now(),now())",[other]);
    }
-   await db.query("SELECT set_config('request.jwt.claim.sub',$1,true),set_config('app.real_actor_id',$1,true)",[user]);await db.exec("SET LOCAL ROLE rebatehq_app;");
+   await db.query("SELECT set_config('request.jwt.claim.sub',$1,true),set_config('app.real_actor_id',$1,true)",[user]);await testIdentity(db,user);await db.exec("SET LOCAL ROLE rebatehq_app;");
    const role=(await db.query("SELECT current_user AS role,rolsuper,rolbypassrls FROM pg_roles WHERE rolname=current_user")).rows[0];
    assert.equal(role.role,"rebatehq_app");assert.equal(role.rolsuper,false);assert.equal(role.rolbypassrls,false);
    const bytes=new TextEncoder().encode("\uFEFFSKU,Description,Unit,Cost,Price\nP,Part,EA,10,20");
@@ -93,7 +94,7 @@ test("Sheets schedules stage tenant-isolated audited reviews, reject changed dat
    const rejected=await ingestionState(db,tenant,flags);
    assert.equal(rejected.runs.find(r=>r.id===rejected.schedules[0].lastRunId)!.failed_count,"1");
    // Tenant B cannot read or run A's schedule. Table ACL/RLS still do the work.
-   await db.query("SELECT set_config('request.jwt.claim.sub',$1,true),set_config('app.real_actor_id',$1,true)",[otherUser]);
+   await db.query("SELECT set_config('request.jwt.claim.sub',$1,true),set_config('app.real_actor_id',$1,true)",[otherUser]);await testIdentity(db,otherUser);
    assert.equal((await ingestionState(db,tenant,flags)).schedules.length,0);
    await assert.rejects(saveSchedule(db,tenant,otherUser,input,flags),(e:any)=>e.status===403);
    await assert.rejects(claimSchedule(db,other,otherUser,saved.id,flags),(e:any)=>e.status===404);
@@ -112,6 +113,7 @@ test("Drop interfaces are inert feature-flagged tenant-specific stubs, not live 
 });
 test("The real-Postgres CI benchmark's SQL executes locally and leaves no residue",async()=>{
  const db=await testDatabase(executed);
+ const priorSecret=process.env.ACTOR_SIGNING_SECRET;process.env.ACTOR_SIGNING_SECRET=await installTestIdentityKey(db);
  try{for(let i=0;i<2;i++){const result=await benchmarkImport(db,251);assert.equal(result.rows,251);assert.equal(result.role,"rebatehq_app");assert.ok(result.commit_ms>=0&&result.undo_ms>=0);}}
  finally{await db.close();}
 });

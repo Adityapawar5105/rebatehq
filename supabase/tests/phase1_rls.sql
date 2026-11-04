@@ -1,8 +1,24 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT extensions.plan(162 + CASE WHEN current_setting('app.restore_test_mode',true)='true' THEN 3 ELSE 0 END);
+SELECT extensions.plan(188 + CASE WHEN current_setting('app.restore_test_mode',true)='true' THEN 3 ELSE 0 END);
 SELECT set_config('app.phase1_migration_owner',current_user,true);
 -- INCLUDE FUNCTION ACL ALLOWLIST
+
+-- Test helper simulates the trusted web request signer within this rollback transaction.
+-- Never call it in the actor-forgery assertions. It is not installed by a migration.
+CREATE FUNCTION pg_temp.use_identity(subject text) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $identity$
+DECLARE body text; key_bytes bytea;
+BEGIN
+ PERFORM set_config('request.jwt.claim.sub',subject,true);
+ PERFORM set_config('request.jwt.claims',jsonb_build_object('sub',NULLIF(subject,''),'role','authenticated')::text,true);
+ SELECT secret INTO key_bytes FROM rebatehq_private.actor_key WHERE id='actor-v1';
+ IF key_bytes IS NULL THEN RAISE EXCEPTION 'Install the actor signing key before database tests'; END IF;
+ body:=jsonb_build_object('sub',subject,'actor',subject,'pid',pg_backend_pid(),'tx',txid_current()::text,'exp',floor(extract(epoch FROM clock_timestamp()))+300,'nonce',gen_random_uuid())::text;
+ PERFORM set_config('app.identity_payload',body,true);
+ PERFORM set_config('app.identity_signature',encode(extensions.hmac(convert_to(body,'UTF8'),key_bytes,'sha256'),'hex'),true);
+END $identity$;
+GRANT EXECUTE ON FUNCTION pg_temp.use_identity(text) TO rebatehq_app;
+
 
 -- The runner replaces every named fixture ID with an independent fresh UUID
 -- and checks them against public.id/public.tenant_id and auth.users. All test
@@ -25,7 +41,7 @@ ORDER BY c.oid;
 DO $$ DECLARE t text; n integer; v_sentinel jsonb; v_expected_hash text; v_actual_hash text;
   v_count_match boolean:=true; v_sentinel_present boolean:=false; v_detail text:=''; BEGIN
   SELECT count(*) INTO n FROM pg_temp.phase1_rls_tables;
-  IF n<38 THEN RAISE EXCEPTION 'Expected at least 38 application tenant tables; found %',n; END IF;
+  IF n<42 THEN RAISE EXCEPTION 'Expected at least 42 application tenant tables; found %',n; END IF;
   IF current_setting('app.restore_test_mode',true)='true' THEN
     v_expected_hash:=current_setting('app.restore_sentinel_content_hash');
     SELECT jsonb_build_object('tenant_id',p.tenant_id::text,'id',p.id::text,
@@ -74,6 +90,9 @@ DO $$ DECLARE t text; n integer; v_sentinel jsonb; v_expected_hash text; v_actua
   )::text,true);
 END $$;
 
+-- The retained foundation fixtures have 38 tables. Four operation-specific licence
+-- tables are tested in chunk5b_control.sql, including exact ACLs and cross writes.
+DELETE FROM pg_temp.phase1_rls_tables WHERE table_name IN ('workspace_licence','licence_seat','licence_location','licence_device');
 -- Suite-owned auth users and tenants are inserted before dependent rows.
 INSERT INTO auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,created_at,updated_at)
 VALUES
@@ -521,6 +540,9 @@ SELECT extensions.ok(
   'anon has no effective CRUD table privileges across the application schema; representative statements fail at ACL checks: '||current_setting('app.phase1_anon_privilege_result')
 );
 
+INSERT INTO public.workspace_licence(tenant_id,tier,valid_until) VALUES('__PHASE1_TENANT_A_ID__','scale',now()+interval '7 days'),('__PHASE1_TENANT_B_ID__','scale',now()+interval '7 days');
+INSERT INTO public.licence_seat(tenant_id,user_id) VALUES('__PHASE1_TENANT_A_ID__','__PHASE1_USER_A_ID__'),('__PHASE1_TENANT_B_ID__','__PHASE1_USER_B_ID__');
+
 SET LOCAL ROLE rebatehq_app;
 SELECT set_config(
   'app.phase1_role_context',
@@ -532,12 +554,12 @@ SELECT set_config(
    FROM pg_roles WHERE rolname=current_user),
   true
 );
-SET LOCAL request.jwt.claim.sub = '__PHASE1_USER_A_ID__';
+SELECT pg_temp.use_identity('__PHASE1_USER_A_ID__');
 SET LOCAL request.jwt.claim.role = 'authenticated';
 SET LOCAL request.jwt.claims = '{"sub":"__PHASE1_USER_A_ID__","role":"authenticated"}';
 
 DO $$ DECLARE n integer; v_state text; v_msg text; BEGIN
-  PERFORM set_config('request.jwt.claim.sub','__PHASE1_USER_REP_ID__',true);
+  PERFORM pg_temp.use_identity('__PHASE1_USER_REP_ID__');
   PERFORM set_config('request.jwt.claims','{"sub":"__PHASE1_USER_REP_ID__","role":"authenticated"}',true);
   BEGIN
     SELECT count(*) INTO n FROM public.customer
@@ -548,7 +570,7 @@ DO $$ DECLARE n integer; v_state text; v_msg text; BEGIN
     GET STACKED DIAGNOSTICS v_state=RETURNED_SQLSTATE,v_msg=MESSAGE_TEXT;
     PERFORM set_config('app.phase1_auth_policy_result',jsonb_build_object('passed',false,'visible_rows',0,'state',v_state,'message',v_msg)::text,true);
   END;
-  PERFORM set_config('request.jwt.claim.sub','__PHASE1_USER_A_ID__',true);
+  PERFORM pg_temp.use_identity('__PHASE1_USER_A_ID__');
   PERFORM set_config('request.jwt.claims','{"sub":"__PHASE1_USER_A_ID__","role":"authenticated"}',true);
 END $$;
 
@@ -693,7 +715,7 @@ DO $$ DECLARE n integer; v_state text; v_msg text; BEGIN
 END $$;
 
 DO $$ DECLARE v_before integer; v_deleted integer; v_after integer; v_state text; v_msg text; BEGIN
-  PERFORM set_config('request.jwt.claim.sub','__PHASE1_USER_REP_ID__',true);
+  PERFORM pg_temp.use_identity('__PHASE1_USER_REP_ID__');
   PERFORM set_config('request.jwt.claim.role','authenticated',true);
   PERFORM set_config('request.jwt.claims','{"sub":"__PHASE1_USER_REP_ID__","role":"authenticated"}',true);
   BEGIN
@@ -717,7 +739,7 @@ DO $$ DECLARE v_before integer; v_deleted integer; v_after integer; v_state text
       'visible_after',COALESCE(v_after,0),'state',v_state,'message',v_msg
     )::text,true);
   END;
-  PERFORM set_config('request.jwt.claim.sub','__PHASE1_USER_A_ID__',true);
+  PERFORM pg_temp.use_identity('__PHASE1_USER_A_ID__');
   PERFORM set_config('request.jwt.claims','{"sub":"__PHASE1_USER_A_ID__","role":"authenticated"}',true);
 END $$;
 
@@ -742,9 +764,9 @@ END $$;
 DO $$ DECLARE t text; n integer; expected_count integer; v_bad text:='';
   v_state text; v_msg text; BEGIN
   IF current_setting('app.restore_test_mode',true)='true' THEN
-    SELECT count(*) INTO expected_count FROM jsonb_object_keys(current_setting('app.phase1_tenant_a_fixtures')::jsonb);
-    IF expected_count<38 THEN RAISE EXCEPTION 'Restore isolation check expected at least 38 tenant tables; found %',expected_count; END IF;
-    FOR t IN SELECT jsonb_object_keys(current_setting('app.phase1_tenant_a_fixtures')::jsonb) LOOP
+    SELECT count(*) INTO expected_count FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='r';
+    IF expected_count<42 THEN RAISE EXCEPTION 'Restore isolation check expected at least 42 tenant tables; found %',expected_count; END IF;
+    FOR t IN SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='r' LOOP
       BEGIN
         EXECUTE format('SELECT count(*) FROM public.%I WHERE tenant_id=$1',t)
           INTO n USING current_setting('app.restore_sentinel_tenant_id')::uuid;
@@ -843,7 +865,7 @@ END $$;
 -- This authenticated rep belongs to Tenant B, which has an audit fixture.
 -- A zero count therefore proves the audit policy is role-restricted, not just
 -- tenant-isolated.
-SET LOCAL request.jwt.claim.sub = '__PHASE1_USER_REP_ID__';
+SELECT pg_temp.use_identity('__PHASE1_USER_REP_ID__');
 SET LOCAL request.jwt.claim.role = 'authenticated';
 SET LOCAL request.jwt.claims = '{"sub":"__PHASE1_USER_REP_ID__","role":"authenticated"}';
 SELECT set_config(
@@ -852,7 +874,7 @@ SELECT set_config(
   true
 );
 
-SET LOCAL request.jwt.claim.sub = '';
+SELECT pg_temp.use_identity('');
 SET LOCAL request.jwt.claim.role = 'authenticated';
 SET LOCAL request.jwt.claims = '{}';
 SELECT set_config(
@@ -883,7 +905,7 @@ END $$;
 -- Exercise effective history and conversions through the same app role used
 -- by the server. Results survive RESET ROLE for pgTAP assertions below.
 DO $$ DECLARE v_box numeric; v_each numeric; v_rounded numeric; v_missing numeric; v_issue_count integer; BEGIN
-  PERFORM set_config('request.jwt.claim.sub','__PHASE1_USER_A_ID__',true);
+  PERFORM pg_temp.use_identity('__PHASE1_USER_A_ID__');
   PERFORM set_config('request.jwt.claims','{"sub":"__PHASE1_USER_A_ID__","role":"authenticated"}',true);
   SELECT public.convert_quantity('__PHASE1_TENANT_A_ID__','__PHASE1_PRODUCT_A_ID__',10,'EA','BOX',current_date) INTO v_box;
   SELECT public.convert_quantity('__PHASE1_TENANT_A_ID__','__PHASE1_PRODUCT_A_ID__',10,'BOX','EA',current_date) INTO v_each;
@@ -1030,7 +1052,7 @@ SELECT extensions.ok(NOT EXISTS (
 -- Check the actual platform ACL; Supabase owns auth.uid(), so this migration
 -- role cannot manage its grants. The connection/runner prints the full ACL.
 SET LOCAL ROLE rebatehq_app;
-SET LOCAL request.jwt.claim.sub = '__PHASE1_USER_REP_ID__';
+SELECT pg_temp.use_identity('__PHASE1_USER_REP_ID__');
 SET LOCAL request.jwt.claims = '{"sub":"__PHASE1_USER_REP_ID__","role":"authenticated"}';
 DO $$ DECLARE n integer; v_state text; v_msg text; BEGIN
   BEGIN
@@ -1050,7 +1072,7 @@ SELECT extensions.ok(
 );
 
 SET LOCAL ROLE rebatehq_app;
-SET LOCAL request.jwt.claim.sub = '';
+SELECT pg_temp.use_identity('');
 SET LOCAL request.jwt.claims = '{}';
 DO $$ DECLARE n integer; v_state text; v_msg text; BEGIN
   BEGIN
@@ -1290,7 +1312,7 @@ SELECT extensions.ok(
 ) WHERE current_setting('app.restore_test_mode',true)='true';
 SELECT extensions.ok(
   current_setting('app.phase1_restore_real_isolation_result')::jsonb->>'passed'='true'
-    AND (current_setting('app.phase1_restore_real_isolation_result')::jsonb->>'checked_tables')::integer>=38,
+    AND (current_setting('app.phase1_restore_real_isolation_result')::jsonb->>'checked_tables')::integer>=42,
   'Restore-only: synthetic Tenant A sees zero rows from the real restored sentinel tenant in every application table: '||
     (current_setting('app.phase1_restore_real_isolation_result')::jsonb->>'detail')
 ) WHERE current_setting('app.restore_test_mode',true)='true';
@@ -1438,7 +1460,7 @@ SELECT extensions.ok(NOT EXISTS (
  AND (SELECT count(*) FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.customer_group'::regclass AND a.grantee='rebatehq_app'::regrole)=4
  AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.customer_group'::regclass AND attacl IS NOT NULL),'customer_group: exact owner/app CRUD ACL');
 SET LOCAL ROLE rebatehq_app;
-SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_A_ID__',true);
+SELECT pg_temp.use_identity('__PHASE1_USER_A_ID__');
 DO $$ DECLARE v_id uuid; n integer; BEGIN
  INSERT INTO public.customer_group SELECT (jsonb_populate_record(NULL::public.customer_group,current_setting('app.phase1_tenant_a_fixtures')::jsonb->'customer_group' || jsonb_build_object('id',gen_random_uuid(),'name',gen_random_uuid()::text))).* RETURNING id INTO v_id;
  UPDATE public.customer_group SET id=id WHERE id=v_id; GET DIAGNOSTICS n=ROW_COUNT;
@@ -1481,7 +1503,7 @@ SELECT extensions.ok(NOT EXISTS (
  AND (SELECT count(*) FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.customer_price'::regclass AND a.grantee='rebatehq_app'::regrole)=4
  AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.customer_price'::regclass AND attacl IS NOT NULL),'customer_price: exact owner/app CRUD ACL');
 SET LOCAL ROLE rebatehq_app;
-SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_A_ID__',true);
+SELECT pg_temp.use_identity('__PHASE1_USER_A_ID__');
 DO $$ DECLARE v_id uuid; n integer; BEGIN
  INSERT INTO public.customer_price SELECT (jsonb_populate_record(NULL::public.customer_price,current_setting('app.phase1_tenant_a_fixtures')::jsonb->'customer_price' || jsonb_build_object('id',gen_random_uuid(),'effective_from','1900-01-01','effective_to','1900-01-02'))).* RETURNING id INTO v_id;
  UPDATE public.customer_price SET id=id WHERE id=v_id; GET DIAGNOSTICS n=ROW_COUNT;
@@ -1524,7 +1546,7 @@ SELECT extensions.ok(NOT EXISTS (
  AND (SELECT count(*) FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.rebate_tier'::regclass AND a.grantee='rebatehq_app'::regrole)=4
  AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.rebate_tier'::regclass AND attacl IS NOT NULL),'rebate_tier: exact owner/app CRUD ACL');
 SET LOCAL ROLE rebatehq_app;
-SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_A_ID__',true);
+SELECT pg_temp.use_identity('__PHASE1_USER_A_ID__');
 DO $$ DECLARE v_id uuid; n integer; BEGIN
  INSERT INTO public.rebate_tier SELECT (jsonb_populate_record(NULL::public.rebate_tier,current_setting('app.phase1_tenant_a_fixtures')::jsonb->'rebate_tier' || jsonb_build_object('id',gen_random_uuid(),'from_amount',10,'to_amount',11))).* RETURNING id INTO v_id;
  UPDATE public.rebate_tier SET id=id WHERE id=v_id; GET DIAGNOSTICS n=ROW_COUNT;
@@ -1567,7 +1589,7 @@ SELECT extensions.ok(NOT EXISTS (
  AND (SELECT count(*) FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.rebate_entry'::regclass AND a.grantee='rebatehq_app'::regrole)=4
  AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.rebate_entry'::regclass AND attacl IS NOT NULL),'rebate_entry: exact owner/app CRUD ACL');
 SET LOCAL ROLE rebatehq_app;
-SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_A_ID__',true);
+SELECT pg_temp.use_identity('__PHASE1_USER_A_ID__');
 DO $$ DECLARE v_id uuid; n integer; BEGIN
  INSERT INTO public.rebate_entry SELECT (jsonb_populate_record(NULL::public.rebate_entry,current_setting('app.phase1_tenant_a_fixtures')::jsonb->'rebate_entry' || jsonb_build_object('id',gen_random_uuid(),'source_ref',gen_random_uuid()::text))).* RETURNING id INTO v_id;
  UPDATE public.rebate_entry SET id=id WHERE id=v_id; GET DIAGNOSTICS n=ROW_COUNT;
@@ -1625,7 +1647,7 @@ SELECT extensions.ok(NOT EXISTS(
  AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.import_job'::regclass AND attacl IS NOT NULL),
  'import_job: exact owner/app CRUD ACL, no platform/column grants');
 SET LOCAL ROLE rebatehq_app;
-SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_A_ID__',true),
+SELECT pg_temp.use_identity('__PHASE1_USER_A_ID__'),
  set_config('request.jwt.claims','{"sub":"__PHASE1_USER_A_ID__","role":"authenticated"}',true),
  set_config('app.real_actor_id','__PHASE1_USER_A_ID__',true);
 DO $$ DECLARE v_id uuid; n integer; BEGIN
@@ -1689,7 +1711,7 @@ END $$;
 RESET ROLE;
 SELECT extensions.ok(current_setting('app.chunk2c_import_job_authenticated')='true','import_job: authenticated CRUD permission denied independent of RLS');
 SET LOCAL ROLE rebatehq_app;
-SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_REP_ID__',true),
+SELECT pg_temp.use_identity('__PHASE1_USER_REP_ID__'),
  set_config('request.jwt.claims','{"sub":"__PHASE1_USER_REP_ID__","role":"authenticated"}',true);
 DO $$ DECLARE n integer; message text; BEGIN
  IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe rep policy test role'; END IF;
@@ -1724,7 +1746,7 @@ SELECT extensions.ok(NOT EXISTS(
  AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.column_mapping_template'::regclass AND attacl IS NOT NULL),
  'column_mapping_template: exact owner/app CRUD ACL, no platform/column grants');
 SET LOCAL ROLE rebatehq_app;
-SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_A_ID__',true),
+SELECT pg_temp.use_identity('__PHASE1_USER_A_ID__'),
  set_config('request.jwt.claims','{"sub":"__PHASE1_USER_A_ID__","role":"authenticated"}',true),
  set_config('app.real_actor_id','__PHASE1_USER_A_ID__',true);
 DO $$ DECLARE v_id uuid; n integer; BEGIN
@@ -1788,7 +1810,7 @@ END $$;
 RESET ROLE;
 SELECT extensions.ok(current_setting('app.chunk2c_column_mapping_template_authenticated')='true','column_mapping_template: authenticated CRUD permission denied independent of RLS');
 SET LOCAL ROLE rebatehq_app;
-SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_REP_ID__',true),
+SELECT pg_temp.use_identity('__PHASE1_USER_REP_ID__'),
  set_config('request.jwt.claims','{"sub":"__PHASE1_USER_REP_ID__","role":"authenticated"}',true);
 DO $$ DECLARE n integer; message text; BEGIN
  IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe rep policy test role'; END IF;
@@ -1823,7 +1845,7 @@ SELECT extensions.ok(NOT EXISTS(
  AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.connector_sync_run'::regclass AND attacl IS NOT NULL),
  'connector_sync_run: exact owner/app CRUD ACL, no platform/column grants');
 SET LOCAL ROLE rebatehq_app;
-SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_A_ID__',true),
+SELECT pg_temp.use_identity('__PHASE1_USER_A_ID__'),
  set_config('request.jwt.claims','{"sub":"__PHASE1_USER_A_ID__","role":"authenticated"}',true),
  set_config('app.real_actor_id','__PHASE1_USER_A_ID__',true);
 DO $$ DECLARE v_id uuid; n integer; BEGIN
@@ -1887,7 +1909,7 @@ END $$;
 RESET ROLE;
 SELECT extensions.ok(current_setting('app.chunk2c_connector_sync_run_authenticated')='true','connector_sync_run: authenticated CRUD permission denied independent of RLS');
 SET LOCAL ROLE rebatehq_app;
-SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_REP_ID__',true),
+SELECT pg_temp.use_identity('__PHASE1_USER_REP_ID__'),
  set_config('request.jwt.claims','{"sub":"__PHASE1_USER_REP_ID__","role":"authenticated"}',true);
 DO $$ DECLARE n integer; message text; BEGIN
  IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe rep policy test role'; END IF;
@@ -1922,7 +1944,7 @@ SELECT extensions.ok(NOT EXISTS(
  AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.quote_share_link'::regclass AND attacl IS NOT NULL),
  'quote_share_link: exact owner/app CRUD ACL, no platform/column grants');
 SET LOCAL ROLE rebatehq_app;
-SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_A_ID__',true),
+SELECT pg_temp.use_identity('__PHASE1_USER_A_ID__'),
  set_config('request.jwt.claims','{"sub":"__PHASE1_USER_A_ID__","role":"authenticated"}',true),
  set_config('app.real_actor_id','__PHASE1_USER_A_ID__',true);
 DO $$ DECLARE v_id uuid; n integer; BEGIN
@@ -1986,7 +2008,7 @@ END $$;
 RESET ROLE;
 SELECT extensions.ok(current_setting('app.chunk2c_quote_share_link_authenticated')='true','quote_share_link: authenticated CRUD permission denied independent of RLS');
 SET LOCAL ROLE rebatehq_app;
-SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_REP_ID__',true),
+SELECT pg_temp.use_identity('__PHASE1_USER_REP_ID__'),
  set_config('request.jwt.claims','{"sub":"__PHASE1_USER_REP_ID__","role":"authenticated"}',true);
 DO $$ DECLARE n integer; message text; BEGIN
  IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe rep policy test role'; END IF;
@@ -2021,7 +2043,7 @@ SELECT extensions.ok(NOT EXISTS(
  AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.approval_rule'::regclass AND attacl IS NOT NULL),
  'approval_rule: exact owner/app CRUD ACL, no platform/column grants');
 SET LOCAL ROLE rebatehq_app;
-SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_A_ID__',true),
+SELECT pg_temp.use_identity('__PHASE1_USER_A_ID__'),
  set_config('request.jwt.claims','{"sub":"__PHASE1_USER_A_ID__","role":"authenticated"}',true),
  set_config('app.real_actor_id','__PHASE1_USER_A_ID__',true);
 DO $$ DECLARE v_id uuid; n integer; BEGIN
@@ -2085,7 +2107,7 @@ END $$;
 RESET ROLE;
 SELECT extensions.ok(current_setting('app.chunk2c_approval_rule_authenticated')='true','approval_rule: authenticated CRUD permission denied independent of RLS');
 SET LOCAL ROLE rebatehq_app;
-SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_REP_ID__',true),
+SELECT pg_temp.use_identity('__PHASE1_USER_REP_ID__'),
  set_config('request.jwt.claims','{"sub":"__PHASE1_USER_REP_ID__","role":"authenticated"}',true);
 DO $$ DECLARE n integer; message text; BEGIN
  IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe rep policy test role'; END IF;
@@ -2120,7 +2142,7 @@ SELECT extensions.ok(NOT EXISTS(
  AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.plan_feature'::regclass AND attacl IS NOT NULL),
  'plan_feature: exact owner/app CRUD ACL, no platform/column grants');
 SET LOCAL ROLE rebatehq_app;
-SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_A_ID__',true),
+SELECT pg_temp.use_identity('__PHASE1_USER_A_ID__'),
  set_config('request.jwt.claims','{"sub":"__PHASE1_USER_A_ID__","role":"authenticated"}',true),
  set_config('app.real_actor_id','__PHASE1_USER_A_ID__',true);
 DO $$ DECLARE v_id uuid; n integer; BEGIN
@@ -2184,7 +2206,7 @@ END $$;
 RESET ROLE;
 SELECT extensions.ok(current_setting('app.chunk2c_plan_feature_authenticated')='true','plan_feature: authenticated CRUD permission denied independent of RLS');
 SET LOCAL ROLE rebatehq_app;
-SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_REP_ID__',true),
+SELECT pg_temp.use_identity('__PHASE1_USER_REP_ID__'),
  set_config('request.jwt.claims','{"sub":"__PHASE1_USER_REP_ID__","role":"authenticated"}',true);
 DO $$ DECLARE n integer; message text; BEGIN
  IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe rep policy test role'; END IF;
@@ -2219,7 +2241,7 @@ SELECT extensions.ok(NOT EXISTS(
  AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.margin_snapshot'::regclass AND attacl IS NOT NULL),
  'margin_snapshot: exact owner/app CRUD ACL, no platform/column grants');
 SET LOCAL ROLE rebatehq_app;
-SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_A_ID__',true),
+SELECT pg_temp.use_identity('__PHASE1_USER_A_ID__'),
  set_config('request.jwt.claims','{"sub":"__PHASE1_USER_A_ID__","role":"authenticated"}',true),
  set_config('app.real_actor_id','__PHASE1_USER_A_ID__',true);
 DO $$ DECLARE v_id uuid; n integer; BEGIN
@@ -2283,7 +2305,7 @@ END $$;
 RESET ROLE;
 SELECT extensions.ok(current_setting('app.chunk2c_margin_snapshot_authenticated')='true','margin_snapshot: authenticated CRUD permission denied independent of RLS');
 SET LOCAL ROLE rebatehq_app;
-SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_REP_ID__',true),
+SELECT pg_temp.use_identity('__PHASE1_USER_REP_ID__'),
  set_config('request.jwt.claims','{"sub":"__PHASE1_USER_REP_ID__","role":"authenticated"}',true);
 DO $$ DECLARE n integer; message text; BEGIN
  IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe rep policy test role'; END IF;
@@ -2328,7 +2350,7 @@ SELECT extensions.throws_ok($c$UPDATE public.quote_share_link SET quote_id='__PH
 
 -- No authenticated context must hide every Chunk 2C table and margin snapshots.
 SET LOCAL ROLE rebatehq_app;
-SELECT set_config('request.jwt.claim.sub','',true),set_config('request.jwt.claims','{}',true);
+SELECT pg_temp.use_identity(''),set_config('request.jwt.claims','{}',true);
 DO $$ DECLARE t text; n integer; checked integer:=0; BEGIN
  IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe no-context test role'; END IF;
  FOREACH t IN ARRAY ARRAY['import_job','column_mapping_template','connector_sync_run','quote_share_link','approval_rule','plan_feature','margin_snapshot'] LOOP
@@ -2345,7 +2367,7 @@ SELECT extensions.ok(current_setting('app.chunk2c_no_context')='true','Chunk 2C 
 -- Manager may view governance records but cannot edit owner-only plan/rule rows.
 UPDATE public.membership SET role='manager' WHERE tenant_id='__PHASE1_TENANT_B_ID__' AND user_id='__PHASE1_USER_B_ID__';
 SET LOCAL ROLE rebatehq_app;
-SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_B_ID__',true),
+SELECT pg_temp.use_identity('__PHASE1_USER_B_ID__'),
  set_config('request.jwt.claims','{"sub":"__PHASE1_USER_B_ID__","role":"authenticated"}',true),
  set_config('app.real_actor_id','__PHASE1_USER_B_ID__',true);
 DO $$ DECLARE t text; n integer; checked integer:=0; message text; v_row jsonb; BEGIN
@@ -2386,7 +2408,7 @@ SELECT extensions.throws_ok($c$UPDATE public.invoice_line SET actual_cost_amount
 SELECT set_config('app.chunk3c_audit_before',(SELECT count(*)::text FROM public.audit_log
  WHERE tenant_id='__PHASE1_TENANT_B_ID__' AND action='invoice_line.update'),true);
 SET LOCAL ROLE rebatehq_app;
-SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_B_ID__',true),
+SELECT pg_temp.use_identity('__PHASE1_USER_B_ID__'),
  set_config('request.jwt.claims','{"sub":"__PHASE1_USER_B_ID__","role":"authenticated"}',true),
  set_config('app.real_actor_id','__PHASE1_USER_B_ID__',true);
 DO $$ DECLARE n integer; BEGIN
@@ -2420,7 +2442,7 @@ END $$;
 RESET ROLE;
 SELECT extensions.ok(current_setting('app.chunk3c_actuals_isolation')='true','Chunk 3C: cross-tenant actuals are invisible and reassignment fails with RLS 42501');
 SET LOCAL ROLE rebatehq_app;
-SELECT set_config('request.jwt.claim.sub','__PHASE1_USER_REP_ID__',true),
+SELECT pg_temp.use_identity('__PHASE1_USER_REP_ID__'),
  set_config('request.jwt.claims','{"sub":"__PHASE1_USER_REP_ID__","role":"authenticated"}',true);
 DO $$ DECLARE n integer; BEGIN
  IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe Chunk 3C rep test role'; END IF;
@@ -2433,5 +2455,6 @@ END $$;
 RESET ROLE;
 SELECT extensions.ok(current_setting('app.chunk3c_actuals_rep')='true','Chunk 3C: rep cannot read or mutate invoice actual cost evidence');
 
+-- INCLUDE CHUNK 5B CHECKS
 SELECT * FROM extensions.finish();
 ROLLBACK;

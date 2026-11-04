@@ -23,7 +23,7 @@ BEGIN
   FOR v_owner IN
     SELECT DISTINCT r.oid,r.rolname
     FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace JOIN pg_roles r ON r.oid=c.relowner
-    WHERE n.nspname='public' AND c.relkind IN ('r','p')
+    WHERE n.nspname IN ('public','rebatehq_private') AND c.relkind IN ('r','p')
       AND EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid=c.oid AND a.attname='tenant_id' AND a.attnum>0 AND NOT a.attisdropped)
       AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid='pg_class'::regclass AND d.objid=c.oid AND d.deptype='e')
   LOOP
@@ -35,9 +35,9 @@ BEGIN
       RAISE EXCEPTION 'Restore role % cannot clean ACLs owned by %',current_user,v_owner.rolname;
     END IF;
     FOR v_object IN
-      SELECT c.oid,c.relname,c.relkind
+      SELECT c.oid,c.relname,c.relkind,n.nspname
       FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
-      WHERE n.nspname='public' AND c.relowner=v_owner.oid AND c.relkind IN ('r','p','S','v','m','f')
+      WHERE n.nspname IN ('public','rebatehq_private') AND c.relowner=v_owner.oid AND c.relkind IN ('r','p','S','v','m','f')
         AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid='pg_class'::regclass AND d.objid=c.oid AND d.deptype='e')
     LOOP
       v_kind:=CASE WHEN v_object.relkind='S' THEN 'SEQUENCE' ELSE 'TABLE' END;
@@ -48,20 +48,20 @@ BEGIN
         WHERE c.oid=v_object.oid AND a.grantee=ANY(v_banned)
       LOOP
         RAISE NOTICE 'Restore cleanup: REVOKE ALL ON % public.% FROM %',v_kind,v_object.relname,v_acl.grantee_sql;
-        EXECUTE format('REVOKE ALL ON %s public.%I FROM %s',v_kind,v_object.relname,v_acl.grantee_sql);
+        EXECUTE format('REVOKE ALL ON %s %I.%I FROM %s',v_kind,v_object.nspname,v_object.relname,v_acl.grantee_sql);
       END LOOP;
       FOR v_acl IN
         SELECT DISTINCT a.attname,x.privilege_type,CASE WHEN x.grantee=0 THEN 'PUBLIC' ELSE quote_ident(r.rolname) END AS grantee_sql
         FROM pg_attribute a CROSS JOIN LATERAL aclexplode(a.attacl) x LEFT JOIN pg_roles r ON r.oid=x.grantee
         WHERE a.attrelid=v_object.oid AND a.attnum>0 AND NOT a.attisdropped AND x.grantee=ANY(v_banned)
       LOOP
-        EXECUTE format('REVOKE %s (%I) ON TABLE public.%I FROM %s',v_acl.privilege_type,v_acl.attname,v_object.relname,v_acl.grantee_sql);
+        EXECUTE format('REVOKE %s (%I) ON TABLE %I.%I FROM %s',v_acl.privilege_type,v_acl.attname,v_object.nspname,v_object.relname,v_acl.grantee_sql);
       END LOOP;
     END LOOP;
     FOR v_object IN
-      SELECT p.oid,p.proname,p.prokind,pg_get_function_identity_arguments(p.oid) AS args
+      SELECT p.oid,p.proname,p.prokind,n.nspname,pg_get_function_identity_arguments(p.oid) AS args
       FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
-      WHERE n.nspname='public' AND p.proowner=v_owner.oid
+      WHERE n.nspname IN ('public','rebatehq_private') AND p.proowner=v_owner.oid
         AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid='pg_proc'::regclass AND d.objid=p.oid AND d.deptype='e')
     LOOP
       FOR v_acl IN
@@ -71,17 +71,17 @@ BEGIN
         WHERE p.oid=v_object.oid AND a.grantee=ANY(v_banned)
       LOOP
         RAISE NOTICE 'Restore cleanup: REVOKE ALL ON FUNCTION public.%(%) FROM %',v_object.proname,v_object.args,v_acl.grantee_sql;
-        EXECUTE format('REVOKE ALL ON %s public.%I(%s) FROM %s',CASE WHEN v_object.prokind='p' THEN 'PROCEDURE' ELSE 'FUNCTION' END,v_object.proname,v_object.args,v_acl.grantee_sql);
+        EXECUTE format('REVOKE ALL ON %s %I.%I(%s) FROM %s',CASE WHEN v_object.prokind='p' THEN 'PROCEDURE' ELSE 'FUNCTION' END,v_object.nspname,v_object.proname,v_object.args,v_acl.grantee_sql);
       END LOOP;
     END LOOP;
     FOR v_default IN
       SELECT DISTINCT d.defaclnamespace,d.defaclobjtype,a.grantee,
         CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE quote_ident(r.rolname) END AS grantee_sql
       FROM pg_default_acl d CROSS JOIN LATERAL aclexplode(d.defaclacl) a LEFT JOIN pg_roles r ON r.oid=a.grantee
-      WHERE d.defaclrole=v_owner.oid AND d.defaclnamespace IN (0,'public'::regnamespace)
+      WHERE d.defaclrole=v_owner.oid AND d.defaclnamespace IN (0,'public'::regnamespace,to_regnamespace('rebatehq_private'))
         AND d.defaclobjtype IN ('r','S','f') AND a.grantee=ANY(v_banned)
     LOOP
-      v_scope:=CASE WHEN v_default.defaclnamespace=0 THEN '' ELSE ' IN SCHEMA public' END;
+      v_scope:=CASE WHEN v_default.defaclnamespace=0 THEN '' ELSE format(' IN SCHEMA %I',v_default.defaclnamespace::regnamespace::text) END;
       v_kind:=CASE v_default.defaclobjtype WHEN 'r' THEN 'TABLES' WHEN 'S' THEN 'SEQUENCES' ELSE 'FUNCTIONS' END;
       EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE %I%s REVOKE ALL ON %s FROM %s',v_owner.rolname,v_scope,v_kind,v_default.grantee_sql);
     END LOOP;

@@ -23,6 +23,13 @@ export async function seedRestoreData(db:DB){
   nextRunAt:new Date().toISOString(),inFlightUntil:null,lastRunId:run,lastPlanId:null,lastReviewId:null,lastError:null};
  // This disabled configuration is restore evidence, not a live Google document.
  await db.query("INSERT INTO public.column_mapping_template(id,tenant_id,name,import_type,column_mapping) VALUES($1,$2,$3,'sheets_ingestion_v1',$4::jsonb)",[schedule,tenant,"sheets:"+schedule,JSON.stringify(value)]);
+ const owner=randomUUID(),device=randomUUID();
+ await db.query("INSERT INTO auth.users(id,email,email_confirmed_at) VALUES($1::uuid,$2::text,now())",[owner,owner+'@example.test']);
+ await db.query("INSERT INTO public.membership(tenant_id,user_id,email,role) VALUES($1::uuid,$2::uuid,$3::text,'owner')",[tenant,owner,owner+'@example.test']);
+ await db.query("INSERT INTO public.workspace_licence(tenant_id,tier,valid_until) VALUES($1::uuid,'scale',now()+interval '7 days')",[tenant]);
+ await db.query("INSERT INTO public.licence_seat(tenant_id,user_id) VALUES($1::uuid,$2::uuid)",[tenant,owner]);
+ await db.query("INSERT INTO public.licence_location(tenant_id,name,erp_profile) VALUES($1::uuid,'Synthetic restore location','generic')",[tenant]);
+ await db.query("INSERT INTO public.licence_device(id,tenant_id,user_id) VALUES($1::uuid,$2::uuid,$3::uuid)",[device,tenant,owner]);
  return {tenant,product,invoice,line,schedule,run};
 }
 async function main(){

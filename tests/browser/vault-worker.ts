@@ -2,7 +2,7 @@ import { backupConfig, storeBackupConfig } from "../../lib/vault/backup";
 import { dispatch } from "../../lib/vault/dispatch";
 // Test-only worker, bundled under test-results and intercepted by Playwright.
 // It is never included by the production asset build or exposed by app routes.
-import { VaultService } from "../../lib/vault/service";
+import { VaultService as ProductionVaultService } from "../../lib/vault/service";
 import { VaultStorage, storageStatus } from "../../lib/vault/storage";
 import { openMemory, snapshotBytes, closeMemory, makeWritable } from "../../lib/vault/engine";
 import { appendAudit, GENESIS, verifyAudit } from "../../lib/vault/audit";
@@ -18,6 +18,16 @@ import { rha } from "../../lib/margin/decimal";
 import { findLeaks, hitKinds, hitRows } from "../../lib/margin/leaks";
 import { REBUILD_SQL, findDifferences } from "../../lib/margin/aggregate";
 import { moneyText } from "../../lib/spike/exact";
+// Test-only signed metadata. Private test key is injected into this intercepted test bundle only.
+class VaultService extends ProductionVaultService {
+ override async init(scope:import('../../lib/vault/protocol').Scope){
+  await super.init(scope);
+  const key=await crypto.subtle.importKey('pkcs8',Uint8Array.from(atob(process.env.TEST_LICENCE_PRIVATE_KEY!),c=>c.charCodeAt(0)),'Ed25519',false,['sign']);
+  const issued=Math.floor(Date.now()/1000),payload=JSON.stringify({v:1,sub:scope.userId,workspace:scope.tenantId,device:'test-only',tier:'scale',state:'active',issued,expires:issued+3600,offlineUntil:issued+86400,reason:''});
+  const bytes=new Uint8Array(await crypto.subtle.sign('Ed25519',key,new TextEncoder().encode(payload)));
+  return this.licenceSet({payload,signature:btoa(String.fromCharCode(...bytes))},'test-only',false);
+ }
+}
 const labScope = { userId: "synthetic-lab-user", tenantId: "synthetic-lab-workspace" };
 const fixtureScope = { userId: "synthetic-v1-fixture-user", tenantId: "synthetic-v1-fixture-workspace" };
 const secret = "synthetic-local-vault-passphrase";

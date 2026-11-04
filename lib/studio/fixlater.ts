@@ -1,3 +1,4 @@
+import { fitsLicenceCapacity } from "../licence-policy";
 // Fix Later queue: rejected rows kept at import (canonical values in rejected_rows
 // v0..v11), corrected singly or in bulk, then re-checked with the same exact SQL and
 // loaded under their original source file and row. Nothing is guessed or auto-fixed.
@@ -73,7 +74,7 @@ export async function recheck(engine: Engine, sourceId: string, code: string, ti
   const ok = String(counts.ok), bad = String(counts.bad);
   if (ok === "0") { await resetStage(engine); return { loaded: "0", stillRejected: bad }; }
   const usage = await capUsage(engine, new Set([role]), null), cap = CAPS[tier];
-  if (usage.lines > BigInt(cap.lines) || usage.products > BigInt(cap.products)) { await resetStage(engine); throw new StudioError(`Loading these rows would exceed your ${tier} limit of ${cap.lines.toLocaleString("en-US")} invoice lines or ${cap.products.toLocaleString("en-US")} products.`); }
+  if (!fitsLicenceCapacity(tier,usage.products,usage.lines)) { await resetStage(engine); throw new StudioError(`Loading these rows would exceed your ${tier} limit of ${cap.lines.toLocaleString("en-US")} invoice lines or ${cap.products.toLocaleString("en-US")} products. Upgrade your workspace licence or filter the file.`); }
   const messages = CODES(role).map(code => `(0,${sqlText(code)},${sqlText(code.includes(":") ? code.split(":")[0] : "")},${sqlText(issueMessage(code, CANONICAL))})`).join(",");
   await engine.conn.query("BEGIN");
   try {

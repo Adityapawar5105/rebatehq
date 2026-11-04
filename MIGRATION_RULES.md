@@ -25,3 +25,7 @@ Every pull request runs these gates:
 - `pnpm test:db` runs the full pgTAP tenant-isolation, role, audit, and append-only suite against every application table.
 
 Keep every database assertion non-vacuous: provide valid positive fixtures and assert expected RLS failures are policy violations rather than missing table privileges. Do not delete or relax checks to obtain a passing run.
+
+## 5B global security metadata exception
+
+The explicitly reviewed owner-only table rebatehq_private.actor_key has a nullable tenant_id constrained to NULL (global issuer material), forced RLS, zero app/platform privileges, and redacted operation-only audit coverage. No new private/global table is accepted by the schema lint without a new review. The private login_budget sequence has no app privileges and deliberately survives rollback. Include both in restore scope/inventory and compare key fingerprints (never values), counter state, owner, RLS and full ACLs. The public tenant-table minimum is now 42. Neither object stores customer business data. Public functions still require the single exact function ACL registry. Legitimate CREATE OR REPLACE across different NEW migrations is allowed; duplicate definitions within a migration and non-replacement duplicates still fail.

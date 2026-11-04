@@ -147,6 +147,13 @@ export function lintMigrationSet(migrations, { frozenMigrationNames = [] } = {})
       }
     }
   }
+  // The only global, non-tenant table is issuer material in an unexposed schema.
+  for(const m of allSql.matchAll(/CREATE\s+TABLE\s+([a-z_][a-z0-9_]*)\.([a-z_][a-z0-9_]*)/gi)){
+    if(m[1]!=='public' && (m[1]!=='rebatehq_private'||m[2]!=='actor_key'))errors.push('Unreviewed private/global table '+m[1]+'.'+m[2]);
+  }
+  if(/CREATE TABLE rebatehq_private.actor_key/i.test(allSql)){
+    for(const required of ['tenant_id uuid CHECK(tenant_id IS NULL)','ALTER TABLE rebatehq_private.actor_key ENABLE ROW LEVEL SECURITY','ALTER TABLE rebatehq_private.actor_key FORCE ROW LEVEL SECURITY','REVOKE ALL ON rebatehq_private.actor_key FROM PUBLIC,anon,authenticated,service_role,rebatehq_app','ON rebatehq_private.actor_key'])if(!allSql.includes(required))errors.push('Private issuer key protection missing: '+required);
+  }
   const tables = readTableDefinitions(allSql);
   if (!tables.length) errors.push("No public tables found in migrations.");
 
@@ -241,9 +248,14 @@ export function lintMigrationSet(migrations, { frozenMigrationNames = [] } = {})
   errors.push(...duplicateErrors(constraints, "CONSTRAINT"));
 
   const functions = [];
+  const priorFunctions = new Map();
   for (const migration of migrations) {
     for (const match of migration.sql.matchAll(/CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+((?:[a-z_][a-z0-9_]*\.)?[a-z_][a-z0-9_]*)\s*\(([^)]*)\)/gi)) {
-      functions.push({ name: `${match[1].toLowerCase()}(${match[2].replace(/\s+/g, "").toLowerCase()})`, table: "function", source: migration.name });
+      const signature = match[1].toLowerCase()+'('+match[2].replace(/\s+/g,'').toLowerCase()+')';
+      const prior = priorFunctions.get(signature);
+      if (prior && prior !== migration.name && /^CREATE\s+OR\s+REPLACE/i.test(match[0])) { priorFunctions.set(signature,migration.name); continue; }
+      functions.push({ name: signature, table: 'function', source: migration.name });
+      priorFunctions.set(signature,migration.name);
     }
   }
   errors.push(...duplicateErrors(functions, "FUNCTION", object => object.name));

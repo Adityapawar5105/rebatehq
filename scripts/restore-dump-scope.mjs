@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-export const APPLICATION_SCHEMAS = Object.freeze(["public"]);
+export const APPLICATION_SCHEMAS = Object.freeze(["public", "rebatehq_private"]);
 
 export const EXCLUDED_SUPABASE_SCHEMAS = Object.freeze([
   "auth", "storage", "extensions", "realtime", "vault", "graphql", "graphql_public",
@@ -9,7 +9,7 @@ export const EXCLUDED_SUPABASE_SCHEMAS = Object.freeze([
 ]);
 
 export function buildApplicationDumpArgs(schemas = APPLICATION_SCHEMAS) {
-  if (!Array.isArray(schemas) || schemas.length !== APPLICATION_SCHEMAS.length || schemas[0] !== "public") {
+  if (!Array.isArray(schemas) || schemas.length !== APPLICATION_SCHEMAS.length || schemas.some((s,i)=>s!==APPLICATION_SCHEMAS[i])) {
     throw new Error(`Restore dumps may include only the application schema allowlist: ${APPLICATION_SCHEMAS.join(", ")}.`);
   }
   return ["--schema", schemas.join(",")];
@@ -20,7 +20,7 @@ export function assertMigrationsFitApplicationSchemas(migrationsDirectory = "sup
   if (migrationFiles.length === 0) throw new Error("No SQL migrations were found; refusing to construct a restore dump allowlist.");
   for (const file of migrationFiles) {
     const sql = readFileSync(join(migrationsDirectory, file), "utf8");
-    if (/\bCREATE\s+SCHEMA\b/i.test(sql)) {
+    if ([...sql.matchAll(/\bCREATE\s+SCHEMA\s+([a-z_][a-z0-9_]*)/gi)].some(m=>!APPLICATION_SCHEMAS.includes(m[1]))) {
       throw new Error(`${file} creates a schema; review and explicitly expand the restore schema allowlist before dumping.`);
     }
     const declarations = [...sql.matchAll(/\bCREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+("(?:[^"]|"")*"|[a-zA-Z_][a-zA-Z0-9_$]*)(?:\.("(?:[^"]|"")*"|[a-zA-Z_][a-zA-Z0-9_$]*))?/gi)];

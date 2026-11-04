@@ -49,7 +49,7 @@ export const intersect = (a: Cap[], b: Cap[]) => a.filter(c => b.includes(c));
  * fail when a new command is added without a decision.
  */
 export const ACTION_CAP: Record<Action, Cap | null> = {
-  init: null, create: null, unlock: null, lock: null, touch: null, cancel: null, save: null, storage: null,
+  licenceSet: null, init: null, create: null, unlock: null, lock: null, touch: null, cancel: null, save: null, storage: null,
   status: null, home: "view", checklist: "view", checklistMark: "roles", roleList: "view",
   // Previewing a role can only remove capabilities (see accessFor), so anyone may use it, which also lets an Owner leave a preview.
   roleSet: "roles", roleRemove: "roles", accessSet: "roles", rolePreview: "view",

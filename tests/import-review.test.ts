@@ -1,3 +1,4 @@
+import { testIdentity, installTestIdentityKey } from './helpers/signed-context';
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync,readdirSync } from "node:fs";
@@ -15,9 +16,10 @@ test('file reviews and per-supplier templates run as restricted tenant users twi
    CREATE TABLE auth.users(id uuid PRIMARY KEY,email text);
    CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;`);
   for(const name of readdirSync('supabase/migrations').filter(n=>n.endsWith('.sql')).sort())await db.exec(readFileSync('supabase/migrations/'+name,'utf8'));
+ await installTestIdentityKey(db);
   const snapshot=async()=>{
    const tables=(await db.query(`SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='r' AND EXISTS(SELECT 1 FROM pg_attribute a WHERE a.attrelid=c.oid AND a.attname='tenant_id') ORDER BY c.relname`)).rows;
-   assert.equal(tables.length,38);const counts:Record<string,string>={};for(const t of tables)counts[t.relname]=(await db.query(`SELECT count(*)::text AS n FROM public.${t.relname}`)).rows[0].n;return counts;
+   assert.equal(tables.length,42);const counts:Record<string,string>={};for(const t of tables)counts[t.relname]=(await db.query(`SELECT count(*)::text AS n FROM public.${t.relname}`)).rows[0].n;return counts;
   };
   const baseline=await snapshot();
   for(const populated of [false,true])for(let run=0;run<2;run++){
@@ -31,7 +33,7 @@ test('file reviews and per-supplier templates run as restricted tenant users twi
     await db.query("INSERT INTO public.import_job(tenant_id,import_type,status) VALUES($1,'earlier_upload','dry_run')",[tb]);
     await db.query("INSERT INTO public.column_mapping_template(tenant_id,name,import_type) VALUES($1,$2,'earlier_upload')",[tb,randomUUID()]);
    }}
-   await db.query("SELECT set_config('request.jwt.claim.sub',$1,true),set_config('app.real_actor_id',$1,true)",[ua]);
+   await db.query("SELECT set_config('request.jwt.claim.sub',$1,true),set_config('app.real_actor_id',$1,true)",[ua]);await testIdentity(db,ua);
    await db.exec('SET LOCAL ROLE rebatehq_app;');
    const role=(await db.query('SELECT current_user AS role,rolsuper,rolbypassrls FROM pg_roles WHERE rolname=current_user')).rows[0];assert.equal(role.role,'rebatehq_app');assert.equal(role.rolsuper,false);assert.equal(role.rolbypassrls,false);
    const parsed=parseUpload('messy.xlsx',readFileSync('tests/fixtures/messy-supplier.xlsx'));
@@ -55,7 +57,7 @@ test('file reviews and per-supplier templates run as restricted tenant users twi
    assert.equal(await loadMappingTemplate(db,ta,{supplier:'NorthStar',fileType:'xlsx'}),null);assert.equal(await loadMappingTemplate(db,ta,{supplier:'Acme',fileType:'csv'}),null);
    assert.equal(await loadMappingTemplate(db,tb,key),null);
    await db.exec('SAVEPOINT foreign_write;');await assert.rejects(saveMappingTemplate(db,tb,ua,payload),(e:any)=>e.code==='42501'&&/row-level security/i.test(e.message));await db.exec('ROLLBACK TO SAVEPOINT foreign_write;');
-   await db.query("SELECT set_config('request.jwt.claim.sub',$1,true),set_config('app.real_actor_id',$1,true)",[ub]);
+   await db.query("SELECT set_config('request.jwt.claim.sub',$1,true),set_config('app.real_actor_id',$1,true)",[ub]);await testIdentity(db,ub);
    await assert.rejects(importReviewIssues(db,ta,review.jobId),(e:any)=>e.status===404);
    assert.equal(await loadMappingTemplate(db,ta,key),null);const other=await saveMappingTemplate(db,tb,ub,{...payload,fields:{sku:0}});assert.notEqual(other.id,first.id);
    assert.deepEqual((await loadMappingTemplate(db,tb,key))!.fields,{sku:0});

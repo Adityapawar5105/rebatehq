@@ -133,3 +133,7 @@ Plan: when 4C-2 creates the Playground generator and 4D moves the golden cases t
 - `margin-engine.js` uses JavaScript floats; blueprint rule 5 requires integer/decimal money. Fixed in 4D.
 - `next.config.ts` sets COOP but not COEP; multi-threaded DuckDB needs both. Addressed in 4A.
 - Phase 1 security items still open (audit actor GUC trust, `record_failed_login` input bounds, DB-side failed-login rate limit). They stay relevant because auth remains server-side; scheduled for 5B.
+
+## Chunk 5B transition (pending CI)
+
+Class C/X handlers and pages are now behind default-off LEGACY_BUSINESS_ENABLED; the browser shell hides their links. The control audit endpoint projects fixed event metadata, never before/after business JSON. Workspace bootstrap no longer creates a margin_policy row. The scheduled server ingestion entry point fails closed while the flag is off; the purge job is suspended pending the retirement decision. These are local implementation claims, unverified until the route test and authenticated privacy gate pass in CI. All old tables remain protected and are still tested. New licence/seats/location/device tables are class A. No 6A work or destructive migration has been started.

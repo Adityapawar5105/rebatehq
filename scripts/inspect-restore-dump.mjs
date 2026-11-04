@@ -32,9 +32,9 @@ export function parseDumpTableNames(sql, kind) {
   return [...found.values()].sort((a, b) => `${a.schema}.${a.table}`.localeCompare(`${b.schema}.${b.table}`));
 }
 
-export function assertApplicationTableMinimum(tables, expected = 33) {
+export function assertApplicationTableMinimum(tables, expected = 42) {
   const count = tables.filter(table => table.schema === "public").length;
-  assert.ok(count >= expected, `Restore inventory found ${count} public application tables; expected at least ${expected} after Chunk 2B.`);
+  assert.ok(count >= expected, `Restore inventory found ${count} public application tables; expected at least ${expected} after Chunk 5B.`);
   return count;
 }
 
@@ -111,12 +111,12 @@ async function main() {
     assert.equal(hasAuthTrigger, false, "Application migrations must not install triggers on Supabase-managed auth tables.");
     const migrationFootprint = {
       migrations: migrationFiles,
-      applicationSchemas: ["public"],
+      applicationSchemas: [...APPLICATION_SCHEMAS],
       createsApplicationSchema: /CREATE\s+SCHEMA\b/i.test(migrationSql),
       extensionStatements: [...migrationSql.matchAll(/CREATE\s+EXTENSION[^;]*;/gi)].map(match => match[0].replace(/\s+/g, " ").trim()),
       createsAuthTableTriggers: hasAuthTrigger,
     };
-    assert.equal(migrationFootprint.createsApplicationSchema, false, "Application migrations unexpectedly create another schema; update the explicit dump allowlist only after review.");
+    for(const m of migrationSql.matchAll(/CREATE\s+SCHEMA\s+([a-z_][a-z0-9_]*)/gi))assert.ok(APPLICATION_SCHEMAS.includes(m[1]),"Unknown application schema "+m[1]);
 
     const authFkResult = await pool.query(`
       SELECT tn.nspname AS table_schema, tc.relname AS table_name, con.conname AS constraint_name,
@@ -202,7 +202,7 @@ async function main() {
         "",
         `- Included schemas: ${APPLICATION_SCHEMAS.join(", ")}`,
         `- Excluded Supabase-managed schemas: ${EXCLUDED_SUPABASE_SCHEMAS.join(", ")}; all schemas outside the allowlist are excluded.`,
-        `- Source schema dump tables: ${schemaTables.length} (minimum 33); data dump COPY tables: ${dataTables.length}.`,
+        `- Source schema dump tables: ${schemaTables.length} (minimum 42); data dump COPY tables: ${dataTables.length}.`,
         "- Source counts are for application-owned public tables only.",
         "",
         "| Table | Source rows | In data dump |",

@@ -19,6 +19,7 @@ export type Scope = { userId: string; tenantId: string };
 /** What the signed-in person may do in this vault. Computed in the worker; the UI only mirrors it. */
 export type Access = { role: RoleId; roleLabel: string; assigned: boolean; viewAs: RoleId | null; caps: Cap[]; sections: string[]; ownerNamed: boolean; repSeesCost: boolean };
 export type VaultStatus = {
+  licence?: {writable:boolean;tier:Tier;offline:boolean;until:string|null;reason:string};
   state: "locked" | "unlocked"; exists: boolean; dirty: boolean; recovered: boolean;
   /** writable: the first change will not need a copy; preparing: that copy is running in the background. */
   writable: boolean; preparing: boolean;
@@ -72,6 +73,7 @@ export type Commands = {
   backupRestore: { file:Blob; passphrase:string };
   init: { scope: Scope };
   /** ownerName is required: a vault always starts with a named Pricing Owner. */
+  licenceSet: { envelope: import("../licence-policy").LicenceEnvelope | null; device:string; offline:boolean };
   create: { passphrase: string; tier: Tier; ownerName: string };
   unlock: { passphrase: string };
   lock: Record<string, never>;
@@ -118,6 +120,7 @@ export type Commands = {
 export type LeaksView = { result: LeakResult; roi: RoiSummary; sample: boolean; recorded: number };
 export type CommitResult = { loaded: string; rejected: string; files: string; cleanup: boolean };
 export type Results = {
+  licenceSet: VaultStatus;
   home: HomeData; checklist: Checklist; checklistMark: Checklist; roleList: RoleList; roleSet: RoleList; roleRemove: RoleList; accessSet: RoleList; rolePreview: RoleList;
   cleanupScan: Scan; cleanupHistory: FixView[]; cleanupApply: CleanupApplied; cleanupUndo: CleanupUndone; cleanupMergeAll: CleanupMergedAll; cleanupUndoMany: CleanupUndone;
   costBasis: CostBasisView; costBasisSet: CostBasisView;
@@ -157,15 +160,13 @@ export type Response = { [K in Action]: { id: string; action: K; result: Results
   | { id: string; error: { code: string; message: string } }
   | { event: "progress"; stage: string; done: string; total: string }
   | { event: "locked"; reason: string }
-  | { event: "writable" };
+  | { event: "writable" }
+  | { event: "licence"; status:VaultStatus };
 export class VaultError extends Error {
   constructor(public code: string, message: string) { super(message); }
 }
-export const CAPS = {
-  starter: { products: 20_000, lines: 200_000 },
-  professional: { products: 100_000, lines: 1_000_000 },
-  scale: { products: 200_000, lines: 1_000_000 },
-} as const;
+// One reviewed limit definition is shared with assertion issuance and tests.
+export { LICENCE_LIMITS as CAPS } from '../licence-policy';
 export const MAX_CSV_BYTES = 256 * 1024 * 1024;
 export const AUTO_LOCK_MS = 10 * 60 * 1000;
 // A closed or crashed tab's lease is released by the browser shortly after its

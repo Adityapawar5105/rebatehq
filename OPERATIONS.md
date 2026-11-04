@@ -1,5 +1,9 @@
 # RebateHQ operations (Phase 1)
 
+## Chunk 5B — pending CI and user-run Restore Drill (4 November 2026)
+
+Implemented locally; **unverified in GitHub Actions**. New migration `20261104160022_chunk5b_control_plane.sql` stays pending. Eight applied migrations and their hashes are unchanged. Current suite plan: **188 fresh / 191 restore-mode checks**, **42 public tenant tables**, plus an owner-only private issuer table and a nontransactional login-budget sequence. See [CHUNK_5B_VERIFICATION.md](./CHUNK_5B_VERIFICATION.md). No 6A work or table retirement is authorized.
+
 ## Chunk 4B local vault — CI-verified
 
 Verified in [MarginDesk CI #44](https://github.com/Adityapawar5105/rebatehq/actions/runs/41660146540), 3 November 2026, commit `c382f7d`; the authenticated local-vault gate ran 14 named checks.
@@ -271,3 +275,11 @@ Restore seeds include sourced invoice actuals, a disabled Sheets schedule, its m
 The **Time a 10,000-row audited commit and undo on real Postgres** step passed in [CI #39](https://github.com/Adityapawar5105/rebatehq/actions/runs/40937330833): `commitImport` **11,605 ms**, `undoImport` **3,442 ms**, PostgreSQL **17.11**, restricted **`margindesk_app`**. `pnpm benchmark:import` verifies role/audits/exact restoration, rolls back its fixture and compares every table count. Parsing, setup, network and durable COMMIT/WAL flush are excluded; **this is not a serverless latency guarantee**.
 
 **Unverified:** authenticated Next.js behavior, the deployed Supabase app, hosted-target restore, serverless time limits, recurring schedule execution (requires an operator-configured runner), live email and SFTP ingestion, and browser UI beyond the local harness. Distributed worker contention/crash recovery, formal accessibility and the Phase 1 security open items also remain open. See [CHUNK_3C_VERIFICATION.md](./CHUNK_3C_VERIFICATION.md).
+
+## 5B restore additions — unverified until the next manual drill
+
+The explicit dump allowlist is public,rebatehq_private; Supabase-managed schemas stay excluded. The source installs the private audit signer from the operator/CI environment BEFORE dump, and seeds synthetic licence, seat, location and device metadata alongside the retained sentinel. Preserve the source signer key via the dump; never install a different key on the restored target to make tests pass. Keep encrypted, access-controlled operator backups; dumps contain issuer security material and must never be published as artifacts. Rotation requires coordinated server environment + DB key updates; browser licence verification keys must be rebuilt with the issuer key. Hosted target restoration and a production rotation rehearsal remain unverified.
+
+Restore owned roles, then schema with the dump's grants, then run the idempotent restore-only platform ACL cleanup (now covers the private schema as well). Restore synthetic auth references and application data with ON_ERROR_STOP and existing strict trigger handling. Never replay historical migrations on the restored schema. Compare all public table/function ACLs and counts, both schema ACLs, and the private table/sequence owner, RLS, ACL, key fingerprint and counter state. Do not widen target grants. Then create the restricted login, run the signed-context runtime/no-user check and the full 188-fresh / 191-restore suite twice, with identical tenant row counts. The sequence may advance during tests by design; tenant rows may not change.
+
+After 5B CI is green, the user must manually run RebateHQ Restore Drill. The new migration stays pending until both CI and that run pass. Do not label 5B verified based on PGlite or browser-only tests. The table-retirement proposal is separate and requires user approval; no DROP or purge is authorized.

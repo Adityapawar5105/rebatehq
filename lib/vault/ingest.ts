@@ -1,3 +1,4 @@
+import { fitsLicenceCapacity } from "../licence-policy";
 // Chunk 4B single-CSV ingest into a v1 schema. The app now imports through the
 // Import Studio (lib/studio); this remains only to rebuild the committed v1
 // compatibility fixture (tests/browser/vault-worker.ts --make-fixture).
@@ -10,7 +11,7 @@ import { appendAudit } from "./audit";
 export type Progress = (stage: string, done: string, total: string) => void;
 export function estimateImport(file: Pick<File, "name" | "size">, tier: Tier): ImportEstimate {
   if (!/\.csv$/i.test(file.name) || file.name.length > 200 || file.size < 1 || file.size > MAX_CSV_BYTES) throw new VaultError("FILE", "Choose a non-empty .csv file below 256 MiB with a name under 200 characters.");
-  return { bytes: String(file.size), estimatedMemoryBytes: String(file.size * 6), maxLines: String(CAPS[tier].lines), maxProducts: String(CAPS[tier].products), warning: "Estimated additional memory is six times the file size, not a guarantee. Close other tabs. Filter the date range if this is too large. No rows are changed until validation passes." };
+  return { bytes: String(file.size), estimatedMemoryBytes: String(file.size * 6), maxLines: String(CAPS[tier].lines), maxProducts: String(CAPS[tier].products), warning: "Estimated additional memory is six times the file size, not a guarantee. Close other tabs. Upgrade your workspace licence or filter the date range if this is too large. No rows are changed until validation passes." };
 }
 export const STAGE_SQL = `CREATE TEMP TABLE import_stage(line_id BIGINT,product_id INTEGER,customer_id INTEGER,sale_date DATE,quantity INTEGER,list_cents BIGINT,discount_cents BIGINT,freight_cents BIGINT,rebate_cents BIGINT,cost_cents BIGINT,source_file VARCHAR)`;
 export async function ingest(engine: Engine, file: File, tier: Tier, signal: AbortSignal, progress: Progress) {
@@ -35,7 +36,7 @@ export async function ingest(engine: Engine, file: File, tier: Tier, signal: Abo
     }
     const combined = (await engine.conn.query(`SELECT (SELECT count(*) FROM sales_lines)+(SELECT count(*) FROM import_stage) AS lines,
 (SELECT count(DISTINCT product_id) FROM (SELECT product_id FROM products UNION ALL SELECT product_id::VARCHAR FROM import_stage)) AS products`)).toArray()[0];
-    if (BigInt(combined.lines) > BigInt(CAPS[tier].lines) || BigInt(combined.products) > BigInt(CAPS[tier].products)) throw new VaultError("CAP", `This import exceeds your ${tier} limit of ${CAPS[tier].lines.toLocaleString()} invoice lines or ${CAPS[tier].products.toLocaleString()} products. Filter the file first.`);
+    if (!fitsLicenceCapacity(tier,BigInt(combined.products),BigInt(combined.lines))) throw new VaultError("CAP", `This import exceeds your ${tier} limit of ${CAPS[tier].lines.toLocaleString()} invoice lines or ${CAPS[tier].products.toLocaleString()} products. Upgrade your workspace licence or filter the file first.`);
     signal.throwIfAborted();
     // Existing products are preserved. Rows from this file supply missing IDs;
     // no current cost or master price is guessed from invoice line amounts.

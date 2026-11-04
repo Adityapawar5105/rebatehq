@@ -1,3 +1,4 @@
+import { testIdentity, installTestIdentityKey } from './helpers/signed-context';
 import test from "node:test";
 import assert from "node:assert/strict";
 import {randomUUID} from "node:crypto";
@@ -16,11 +17,12 @@ async function boot(){
   CREATE TABLE auth.users(id uuid PRIMARY KEY,email text);
   CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;`);
  for(const n of readdirSync("supabase/migrations").filter(n=>n.endsWith(".sql")).sort())await db.exec(readFileSync("supabase/migrations/"+n,"utf8"));
+ await installTestIdentityKey(db);
  return db;
 }
 async function allCounts(db:any){
  const tables=(await db.query("SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='r' AND EXISTS(SELECT 1 FROM pg_attribute a WHERE a.attrelid=c.oid AND a.attname='tenant_id') ORDER BY c.relname")).rows;
- assert.equal(tables.length,38);const result:Record<string,number>={};
+ assert.equal(tables.length,42);const result:Record<string,number>={};
  for(const t of tables)result[t.relname]=(await db.query(`SELECT count(*)::integer AS n FROM public.${t.relname}`)).rows[0].n;
  return result;
 }
@@ -66,7 +68,7 @@ for(const populated of [false,true])test(`import capacity boundaries and atomic 
     await db.query("INSERT INTO public.product(tenant_id,sku,name,category,uom,unit_cost,list_price) VALUES($1,'UNRELATED','Other tenant','Fixture','EA',7,14)",[other]);
     await db.query("INSERT INTO public.import_job(tenant_id,import_type,status,source_name) VALUES($1,'earlier_upload','committed','prior.csv')",[tenant]);
    }
-   await db.query("SELECT set_config('request.jwt.claim.sub',$1,true),set_config('app.real_actor_id',$1,true)",[user]);
+   await db.query("SELECT set_config('request.jwt.claim.sub',$1,true),set_config('app.real_actor_id',$1,true)",[user]);await testIdentity(db,user);
    await db.exec("SET LOCAL ROLE rebatehq_app;");
    const role=(await db.query("SELECT current_user AS name,rolsuper,rolbypassrls FROM pg_roles WHERE rolname=current_user")).rows[0];
    assert.equal(role.name,"rebatehq_app");assert.equal(role.rolsuper,false);assert.equal(role.rolbypassrls,false);

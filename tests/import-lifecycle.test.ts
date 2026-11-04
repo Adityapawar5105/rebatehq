@@ -1,3 +1,4 @@
+import { testIdentity, installTestIdentityKey } from './helpers/signed-context';
 import test from "node:test";
 import assert from "node:assert/strict";
 import {randomUUID} from "node:crypto";
@@ -20,12 +21,13 @@ async function database(){
   CREATE TABLE auth.users(id uuid PRIMARY KEY,email text);
   CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;`);
  for(const name of readdirSync("supabase/migrations").filter(n=>n.endsWith(".sql")).sort())await db.exec(readFileSync("supabase/migrations/"+name,"utf8"));
+ await installTestIdentityKey(db);
  const query=db.query.bind(db);db.query=(sql:string,...args:any[])=>{executedSql.add(normalizeSql(sql));return query(sql,...args);};
  return db;
 }
 async function counts(db:any){
  const tables=(await db.query("SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='r' AND EXISTS(SELECT 1 FROM pg_attribute a WHERE a.attrelid=c.oid AND a.attname='tenant_id') ORDER BY c.relname")).rows;
- assert.equal(tables.length,38);const result:Record<string,number>={};for(const t of tables)result[t.relname]=(await db.query(`SELECT count(*)::int AS n FROM public.${t.relname}`)).rows[0].n;return result;
+ assert.equal(tables.length,42);const result:Record<string,number>={};for(const t of tables)result[t.relname]=(await db.query(`SELECT count(*)::int AS n FROM public.${t.relname}`)).rows[0].n;return result;
 }
 async function domain(db:any,tenant:string){
  const result:Record<string,unknown>={};
@@ -47,7 +49,7 @@ test("catalog lifecycle is isolated, audited, conflict-aware and exactly reversi
    await db.query("DELETE FROM public.cost_history WHERE tenant_id=$1 AND product_id=$2",[tenant,p1]);
    await db.query("INSERT INTO public.cost_history(tenant_id,product_id,cost,basis,effective_from,effective_to,source,currency) VALUES($1,$2,10,'standard','2020-01-01','2030-01-01','old','EUR'),($1,$2,20,'standard','2030-01-01',NULL,'future','EUR')",[tenant,p1]);
    if(populated)await db.query("INSERT INTO public.import_job(tenant_id,import_type,status,source_name) VALUES($1,'catalog_import_v1','dry_run','earlier.csv'),($2,'catalog_export_v1','dry_run','other.csv')",[tenant,other]);
-   await db.query("SELECT set_config('request.jwt.claim.sub',$1,true),set_config('app.real_actor_id',$1,true)",[user]);
+   await db.query("SELECT set_config('request.jwt.claim.sub',$1,true),set_config('app.real_actor_id',$1,true)",[user]);await testIdentity(db,user);
    await db.exec("SET LOCAL ROLE rebatehq_app;");
    const role=(await db.query("SELECT current_user AS name,rolsuper,rolbypassrls FROM pg_roles WHERE rolname=current_user")).rows[0];assert.equal(role.name,"rebatehq_app");assert.equal(role.rolsuper,false);assert.equal(role.rolbypassrls,false);
    const date=(await db.query("SELECT current_date::text AS day")).rows[0].day;
@@ -105,7 +107,7 @@ test("catalog lifecycle is isolated, audited, conflict-aware and exactly reversi
    assert.equal((await importHistory(db,tenant)).find(r=>r.id===plan.id)!.status,"undone");
    assert.equal((await importHistory(db,tenant)).find(r=>r.id===plan.id)!.who,user+"@example.invalid");
    assert.equal((await importHistory(db,tenant)).find(r=>r.id===plan.id)!.filename,"edited.csv");
-   await db.query("SELECT set_config('request.jwt.claim.sub',$1,true),set_config('app.real_actor_id',$1,true)",[otherUser]);
+   await db.query("SELECT set_config('request.jwt.claim.sub',$1,true),set_config('app.real_actor_id',$1,true)",[otherUser]);await testIdentity(db,otherUser);
    assert.equal((await importHistory(db,tenant)).length,0);await assert.rejects(commitImport(db,other,otherUser,plan.id,true),denied(404));
    const foreign=await previewImport(db,other,otherUser,"foreign.csv",exported,options(date));assert.equal(foreign.counts.rejected,2);assert.equal(foreign.canCommit,false);
    await db.exec("RESET ROLE;ROLLBACK;");assert.deepEqual(await counts(db),empty,"both runs roll back every tenant row, journal and audit event");
@@ -127,7 +129,7 @@ test("same-day updates, future gaps, explicit unit conversion and stale/key cont
   await db.query("INSERT INTO public.uom(id,tenant_id,code,display_name) VALUES($1,$2,'BOX','Box')",[box,tenant]);
   const ea=(await db.query("SELECT id FROM public.uom WHERE tenant_id=$1 AND code='EA'",[tenant])).rows[0].id,conversion=randomUUID();
   await db.query("INSERT INTO public.uom_conversion(id,tenant_id,product_id,from_uom_id,to_uom_id,factor,direction) VALUES($1,$2,$3,$4,$5,12,'multiply')",[conversion,tenant,p,box,ea]);
-  await db.query("SELECT set_config('request.jwt.claim.sub',$1,true),set_config('app.real_actor_id',$1,true)",[user]);await db.exec("SET LOCAL ROLE rebatehq_app;");
+  await db.query("SELECT set_config('request.jwt.claim.sub',$1,true),set_config('app.real_actor_id',$1,true)",[user]);await testIdentity(db,user);await db.exec("SET LOCAL ROLE rebatehq_app;");
   const input=parse(`SKU,Description,Unit,Cost,Price,Date\nP,Part,BOX,144,300,${date}`),base=await domain(db,tenant);
   assert.equal((await previewImport(db,tenant,user,"x.csv",input,options(date))).counts.rejected,1,"unit conversion requires approval");
   assert.equal((await previewImport(db,tenant,user,"x.csv",input,options(date,{approveTextNumbers:false,approveUnits:true}))).counts.rejected,1,"text conversion requires approval");

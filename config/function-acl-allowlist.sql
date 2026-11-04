@@ -19,7 +19,13 @@ INSERT INTO pg_temp.phase1_function_allowlist(signature,grantees) VALUES
  ('public.record_failed_login(text,text,text)',ARRAY['$owner','rebatehq_app']),
  ('public.record_data_quality_issue(uuid,text,text,text,date,jsonb)',ARRAY['$owner','rebatehq_app']),
  ('public.convert_quantity(uuid,uuid,numeric,text,text,date)',ARRAY['$owner','rebatehq_app']),
- ('public.sync_product_standard_cost_history()',ARRAY['$owner']);
+ ('public.sync_product_standard_cost_history()',ARRAY['$owner']),
+ ('public.verified_request_actor()',ARRAY['$owner','rebatehq_app']),
+ ('public.append_control_audit(uuid,text,text,text,jsonb,jsonb)',ARRAY['$owner','rebatehq_app']),
+ ('public.audit_actor_key_change()',ARRAY['$owner']),
+ ('public.control_member(uuid,boolean)',ARRAY['$owner','rebatehq_app']),
+ ('public.enforce_licence_limits()',ARRAY['$owner']),
+ ('public.invite_licence_limit()',ARRAY['$owner']);
 
 CREATE TEMP VIEW phase1_public_function_inventory AS
 SELECT p.oid,p.proowner,p.prosecdef,p.proacl,

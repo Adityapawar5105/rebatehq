@@ -1,3 +1,4 @@
+import { setRequestIdentity } from "../lib/request-identity.ts";
 // CI-only real local Supabase PKCE login. No auth bypass and no admin key.
 import assert from "node:assert/strict";
 import { createServerClient } from "@supabase/ssr";
@@ -56,10 +57,19 @@ export async function signInLocal(context, page, base) {
   assert.ok(!new URL(page.url()).searchParams.has("error"), "Magic-link callback rejected the real session");
   const { data, error: userError } = await supabase.auth.getUser(); assert.ok(!userError && data.user?.id, "The local Supabase session was not verified");
   const db = new pg.Client({ connectionString: process.env.APP_DATABASE_URL }); await db.connect();
-  try {
-    await db.query("BEGIN"); await db.query("SET LOCAL ROLE rebatehq_app");
-    await db.query("SELECT set_config('request.jwt.claim.sub',$1::text,true),set_config('request.jwt.claims',$2::text,true)", [data.user.id, JSON.stringify({ sub: data.user.id, role: "authenticated" })]);
-    await db.query("SELECT public.create_tenant_with_owner($1::text)", ["Synthetic privacy gate"]); await db.query("COMMIT");
-  } catch (e) { await db.query("ROLLBACK"); throw e; } finally { await db.end(); }
+  let tenant;try{tenant=await createPrivacyWorkspace(db,data.user.id);}finally{await db.end();}
+  const seedUrl=new URL(process.env.SEED_DATABASE_URL);assert.ok(['localhost','127.0.0.1','[::1]'].includes(seedUrl.hostname),'Test licence issuer must target the disposable local stack');
+  const admin=new pg.Client({connectionString:process.env.SEED_DATABASE_URL});await admin.connect();
+  try{await admin.query('BEGIN');await admin.query("INSERT INTO workspace_licence(tenant_id,tier,valid_until) VALUES($1::uuid,'scale',now()+interval '2 days')",[tenant]);await admin.query('INSERT INTO licence_seat(tenant_id,user_id) VALUES($1::uuid,$2::uuid)',[tenant,data.user.id]);await admin.query('COMMIT');}catch(e){await admin.query('ROLLBACK');throw e;}finally{await admin.end();}
   await page.goto(new URL("/home", base).href); await page.getByRole("navigation", { name: "Main navigation" }).waitFor();
+}
+
+export async function createPrivacyWorkspace(db,userId){
+ try{
+  await db.query("BEGIN");await db.query("SET LOCAL ROLE rebatehq_app");
+  await db.query("SELECT set_config('request.jwt.claim.sub',$1::text,true),set_config('request.jwt.claims',$2::text,true)",[userId,JSON.stringify({sub:userId,role:'authenticated'})]);
+  await setRequestIdentity(db,userId);
+  const result=await db.query("SELECT public.create_tenant_with_owner($1::text) AS tenant",["Synthetic privacy gate"]);
+  await db.query("COMMIT");return result.rows[0].tenant;
+ }catch(e){await db.query("ROLLBACK");throw e;}
 }

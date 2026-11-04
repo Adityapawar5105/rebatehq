@@ -19,6 +19,8 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Generate disposable signing keys (masked)
+        run: node scripts/control-plane-keys.mjs --ci-env
       - name: Verify applied migration hashes
         run: pnpm check:migrations-lock
       - run: pnpm typecheck
@@ -50,6 +52,8 @@ jobs:
             printf 'SEED_DATABASE_URL=%s\n' "$db_url"
             printf 'TEST_DATABASE_URL=%s\n' "$db_url"
           } >> "$GITHUB_ENV"
+      - name: Install private audit signer key
+        run: node scripts/control-plane-keys.mjs --install
       - name: Create restricted app login (pgTAP creates disposable test users)
         run: pnpm setup:test-db-role
       - name: Verify runtime pool role and missing-auth isolation

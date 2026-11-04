@@ -24,7 +24,8 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
     let active = true;
     const c = new VaultClient(scope, event => {
       if (!active) return;
-      if (event.event === "progress") { setProgress(event); window.dispatchEvent(new CustomEvent("vault-progress", { detail: { stage: event.stage } })); }
+      if(event.event === "licence"){setStatus(event.status);}
+      else if (event.event === "progress") { setProgress(event); window.dispatchEvent(new CustomEvent("vault-progress", { detail: { stage: event.stage } })); }
       else if (event.event === "writable") { void c.call("status", {}).then(s => { if (active) setStatus(s); }).catch(() => undefined); }
       else { setPassphrase(""); setMessage(event.reason); void c.call("status", {}).then(s => { if (active) setStatus(s); }); }
     });
@@ -57,6 +58,7 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
         {!supported && <p className={styles.notice}>For local vault support, use the latest Chrome or Edge. Other browsers have not been validated.</p>}
         <p role="status" aria-live="polite">{message}</p>
         {error && <p role="alert" className={styles.error}>⚠ {error}</p>}
+        {status?.licence && <p role="status" data-testid="licence-status" className={status.licence.writable?styles.muted:styles.error}>{status.licence.writable?('Licensed: '+status.licence.tier+(status.licence.offline?' · offline grace':'')):('⚠ Read-only · '+status.licence.reason)} · <a href="/account/licence">Licence, seats and devices</a></p>}
         {status?.preparing && <p className={styles.muted} data-testid="preparing">Preparing for edits… You can browse now; an import started meanwhile waits for this step.</p>}
         {status?.recovered && <p className={styles.error}>⚠ Opened the retained previous generation because the current save was damaged. Review the last import before continuing.</p>}
         {progress && <div className={styles.progress}><label htmlFor="vault-progress">{progress.stage}</label><progress id="vault-progress" value={Number(progress.done)} max={Math.max(1, Number(progress.total))}/>{!progress.stage.startsWith("Saving") && progress.stage !== "Saved" && <button onClick={() => void client.current!.call("cancel", {})}>Cancel import</button>}</div>}
@@ -66,10 +68,10 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
           <form onSubmit={event => { event.preventDefault(); const secret = passphrase; setPassphrase(""); void operation(async () => { const start = performance.now(); const result = status.exists ? await client.current!.call("unlock", { passphrase: secret }) : await client.current!.call("create", { passphrase: secret, tier, ownerName }); setStatus(result); setMessage(`Vault ready. ${Math.round(performance.now() - start)} ms from submitting the passphrase. Changes are saved as encrypted snapshots.`); window.dispatchEvent(new CustomEvent("vault-ready")); }); }}>
             <label>Vault passphrase<input type="password" minLength={12} maxLength={256} required autoComplete={status.exists ? "current-password" : "new-password"} value={passphrase} onChange={event => setPassphrase(event.target.value)} disabled={busy}/></label>
             {!status.exists && <label>Pricing Owner (name)<input required maxLength={160} value={ownerName} onChange={event => setOwnerName(event.target.value)} disabled={busy} aria-describedby="owner-help"/><span id="owner-help" className={styles.small}>The person accountable for pricing. They approve every price change. You become the vault Owner and this person (you) can be changed later.</span></label>}
-            {!status.exists && <label>Local capacity profile<select value={tier} onChange={event => setTier(event.target.value as Tier)} disabled={busy}><option value="starter">Starter · 20k products / 200k lines</option><option value="professional">Professional · 100k products / 1M lines</option><option value="scale">Scale pilot · 200k products / 1M lines</option></select></label>}
+            {!status.exists && <label>Vault capacity (licensed tier or lower)<select value={tier} onChange={event => setTier(event.target.value as Tier)} disabled={busy}><option value="starter">Starter · 20k products / 200k lines</option><option value="professional" disabled={status.licence?.tier==='starter'}>Professional · 100k products / 1M lines</option><option value="scale" disabled={status.licence?.tier!=='scale'}>Scale pilot · 200k products / 1M lines</option></select></label>}
             <button className={styles.primary} disabled={busy || (!status.exists && !ownerName.trim())}>{busy ? "Opening…" : status.exists ? "Unlock vault" : "Create encrypted vault"}</button>
           </form>
-          <p className={styles.muted}>Auto-lock after 10 minutes of inactivity. Local capacity profiles are provisional guardrails; licence enforcement belongs to the control plane.</p>
+          <p className={styles.muted}>Auto-lock after 10 minutes of inactivity. Capacity is enforced by your signed workspace licence. Professional and Scale currently allow at most 1M invoice lines.</p>
           {client.current&&<BackupView client={client.current} busy={busy} operation={operation} unlocked={false} onStatus={setStatus}/>}
         </section> : <>
           {access?.viewAs && <section className={styles.warning} role="status" data-testid="preview-banner">Previewing the {access.roleLabel} view. You see only what that role sees. <button disabled={busy} onClick={() => void operation(async () => { await client.current!.call("rolePreview", { role: null }); setStatus(await client.current!.call("status", {})); })}>Return to my own view</button></section>}

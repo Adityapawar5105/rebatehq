@@ -2,6 +2,7 @@ import {z} from "zod";
 import {withDatabase,closeDatabasePool} from "../lib/db";
 import {runSchedule} from "../lib/ingestion";
 async function main(){
+ if(process.env.LEGACY_BUSINESS_ENABLED!=="true")throw Error("Server ingestion is retired.");
  const tenant=z.uuid().parse(process.env.TENANT_ID),user=z.uuid().parse(process.env.ACTOR_ID);
  // Trusted operator identity, checked against active owner/manager membership
  // by runSchedule. Uses the NOBYPASSRLS app pool; never the seed/admin URL.

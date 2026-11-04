@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync,readdirSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { getRebateAudit } from "../lib/rebates";
@@ -35,6 +35,7 @@ async function createDatabase(): Promise<any> {
   await db.exec(foundation);
   await db.exec(chunk2a);
   await db.exec(readFileSync(path.join(root, 'supabase/migrations/20261028162156_chunk2b_pricing_rebate_tiers.sql'), 'utf8'));
+  for(const name of readdirSync('supabase/migrations').filter(n=>n.endsWith('.sql')&&n>'20261028162156_chunk2b_pricing_rebate_tiers.sql').sort())await db.exec(readFileSync('supabase/migrations/'+name,'utf8'));
   return db;
 }
 

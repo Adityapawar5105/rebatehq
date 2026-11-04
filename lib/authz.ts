@@ -11,6 +11,9 @@ export function assertPermission(context: AppContext | null, permission: Permiss
 export function errorResponse(error: unknown): Response {
   if (error instanceof HttpError) return Response.json({ error: error.message }, { status: error.status });
   const code = typeof error === "object" && error !== null && "code" in error ? String((error as {code?:unknown}).code || "") : "";
+  const message = error instanceof Error ? error.message : "";
+  if (code === "23514" && /licence|seat limit|Location\/ERP/i.test(message)) return Response.json({error:"Licence limit reached. Ask your workspace owner to upgrade or renew the licence."},{status:409});
+  if (code === "54000" && message === "failed-login database rate limit") return Response.json({error:"Too many sign-in attempts. Wait before trying again."},{status:429});
   console.error(JSON.stringify({ event: "request.error", name: error instanceof Error ? error.name : "Unknown", code: code.slice(0, 30) }));
   return Response.json({ error: "We couldn't complete that request. Please try again or contact support." }, { status: 500 });
 }

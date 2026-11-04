@@ -1,3 +1,4 @@
+import { fitsLicenceCapacity } from "../licence-policy";
 // Import Studio orchestration inside the vault worker. Files stay in worker memory
 // (File handles; bounded grids for spreadsheets/JSON/XML) and nothing is uploaded.
 import JSZip from "jszip";
@@ -381,9 +382,9 @@ export class Studio {
       for (const r of (await engine.conn.query(`SELECT b.fingerprint, s.name, s.imported_at FROM import_batches b JOIN source_files s ON s.id=b.source_id WHERE b.fingerprint IN (${prints})${replaces ? ` AND s.id<>${sqlText(replaces)}` : ""}`)).toArray())
         warnings.push(`${String(r.name)} looks identical to a file already imported on ${String(r.imported_at).slice(0, 10)}. Duplicate rows will be rejected.`);
       const usage = await capUsage(engine, roles, replaces), cap = CAPS[tier];
-      const capOk = usage.lines <= BigInt(cap.lines) && usage.products <= BigInt(cap.products);
+      const capOk = fitsLicenceCapacity(tier,usage.products,usage.lines);
       this.report = { files: reports.sort((a, b) => load.findIndex(e => e.id === a.id) - load.findIndex(e => e.id === b.id)), warnings, loaded: loaded.toString(), rejected: rejected.toString(), capOk,
-        capMessage: capOk ? null : `This import exceeds your ${tier} limit of ${cap.lines.toLocaleString("en-US")} invoice lines or ${cap.products.toLocaleString("en-US")} products (it would hold ${usage.lines.toString()} lines and ${usage.products.toString()} products). Remove files or filter them first.`, replaces };
+        capMessage: capOk ? null : `This import exceeds your ${tier} limit of ${cap.lines.toLocaleString("en-US")} invoice lines or ${cap.products.toLocaleString("en-US")} products (it would hold ${usage.lines.toString()} lines and ${usage.products.toString()} products). Upgrade your workspace licence, remove files or filter them first.`, replaces };
       this.staged = { files, stats, entries: load, replaces, roles };
       return this.report;
     } catch (error) { await resetStage(engine).catch(() => undefined); throw error; }
