@@ -1,6 +1,6 @@
 # Chunk 4B — local vault and app shell
 
-**Chunk 4B — CI-verified in [MarginDesk CI #44](https://github.com/Adityapawar5105/margindesk/actions/runs/41660146540), 3 November 2026, commit `c382f7d`.** The GitHub job API confirms step 18, "Required authenticated local-vault privacy gate", completed successfully (not skipped). Its log records `pnpm test:vault:privacy --browser=chromium`, `auth: true`, `status: passed`: **one authenticated harness with 14 named checks**, not a Playwright test-runner count. The separate unit suite passed **67 JavaScript + 56 TypeScript = 123 tests**.
+**Chunk 4B — CI-verified in [MarginDesk CI #44](https://github.com/Adityapawar5105/rebatehq/actions/runs/41660146540), 3 November 2026, commit `c382f7d`.** The GitHub job API confirms step 18, "Required authenticated local-vault privacy gate", completed successfully (not skipped). Its log records `pnpm test:vault:privacy --browser=chromium`, `auth: true`, `status: passed`: **one authenticated harness with 14 named checks**, not a Playwright test-runner count. The separate unit suite passed **67 JavaScript + 56 TypeScript = 123 tests**.
 
 Privacy acceptance covers the **local vault flow only**. Legacy server business-data routes still exist; no app-wide "data never leaves your device" claim is made. **Unverified:** deployed Supabase sign-in, headed manual checks, physical crash/quota/multi-tab recovery, the historical storage-estimate discrepancy, and CI validation of the locally measured **~7.6 s / ~15–16 s first-change latency** (open item for 4C-1). Those timings remain local observations; Scale retains its 1M-line cap. 4C-1 has not started.
 
@@ -14,7 +14,7 @@ DuckDB tables do not belong in the server's 38-table tenant inventory.
 ## CI #44 evidence
 
 CI #44 evidence was read through the GitHub tools on 3 November 2026:
-[verify job / logs](https://github.com/Adityapawar5105/margindesk/actions/runs/41660146540/job/126000885095).
+[verify job / logs](https://github.com/Adityapawar5105/rebatehq/actions/runs/41660146540/job/126000885095).
 Step 18 is `completed / success`, not skipped. The actual authenticated
 Chromium invocation logged results at 15:19:27 UTC, after starting at
 15:18:31 UTC. Its **14 named checks** were: `v1`, `integrity`, `capRollback`,

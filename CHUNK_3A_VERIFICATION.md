@@ -4,13 +4,13 @@
 
 This chunk adds server-side data-only XLSX and UTF-8 CSV/TSV review, a Price Lists mapping wizard, supplier/file-type mapping templates, and a generated messy-workbook regression fixture. It reuses `import_job`, `column_mapping_template`, `data_quality_issue`, `product`, and `convert_quantity`. It adds **no migration, table, SQL function, or function ACL entry**. All six locked migration SQL files and `migrations.lock` are unchanged. The last CI-proven baseline remains 38 tenant tables and 156 fresh / 159 restore-mode pgTAP checks. Chunk 3B is untouched.
 
-**Status: verified in [MarginDesk CI #33](https://github.com/Adityapawar5105/margindesk/actions/runs/40751595777), 2026-10-29, commit `7b27ba4`**, for the automated tests listed below. The run completed successfully at 2026-10-28 19:12:48 UTC (2026-10-29 00:42:48 Asia/Calcutta). It passed typecheck, all 66 JavaScript and 20 TypeScript tests, build, the migration-lock/schema/service-role gates, clean migration application, runtime pool/no-context checks, and the existing 156 fresh pgTAP checks twice with repeatability.
+**Status: verified in [MarginDesk CI #33](https://github.com/Adityapawar5105/rebatehq/actions/runs/40751595777), 2026-10-29, commit `7b27ba4`**, for the automated tests listed below. The run completed successfully at 2026-10-28 19:12:48 UTC (2026-10-29 00:42:48 Asia/Calcutta). It passed typecheck, all 66 JavaScript and 20 TypeScript tests, build, the migration-lock/schema/service-role gates, clean migration application, runtime pool/no-context checks, and the existing 156 fresh pgTAP checks twice with repeatability.
 
-No Restore Drill was run for Chunk 3A because it added no migration and changed no restore inventory. The 159 restore-mode checks remain verified by Phase 2 [Restore Drill #12](https://github.com/Adityapawar5105/margindesk/actions/runs/40740709133) on `ed2aa6d`. CI #33 does not prove authenticated Next.js behavior, the deployed Supabase app, hosted restore, or browser UI beyond the local harness; these remain **unverified**. Chunk 3B has not started.
+No Restore Drill was run for Chunk 3A because it added no migration and changed no restore inventory. The 159 restore-mode checks remain verified by Phase 2 [Restore Drill #12](https://github.com/Adityapawar5105/rebatehq/actions/runs/40740709133) on `ed2aa6d`. CI #33 does not prove authenticated Next.js behavior, the deployed Supabase app, hosted restore, or browser UI beyond the local harness; these remain **unverified**. Chunk 3B has not started.
 
 ## Tests confirmed in CI #33
 
-The [verify job log](https://github.com/Adityapawar5105/margindesk/actions/runs/40751595777/job/123039436217) records these eight parser/upload tests as passing:
+The [verify job log](https://github.com/Adityapawar5105/rebatehq/actions/runs/40751595777/job/123039436217) records these eight parser/upload tests as passing:
 
 1. Messy XLSX fixture keeps every value and identifies every known problem by row and column: 11 exact issues; formula cache values are not used.
 2. Sheet and header are explicit choices, and header similarity suggests all eight mappings.

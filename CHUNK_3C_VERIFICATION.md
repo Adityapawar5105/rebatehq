@@ -1,6 +1,6 @@
 # Chunk 3C verification
 
-**Chunk 3C and Phase 3: verified in [MarginDesk CI #39](https://github.com/Adityapawar5105/margindesk/actions/runs/40937330833) and [MarginDesk Restore Drill #13](https://github.com/Adityapawar5105/margindesk/actions/runs/40938982321), 2026-10-30 (Asia/Calcutta), commit `2f8b06de5b50564c186a2bf2c38a7ba884ca0958`.** GitHub run metadata, step results and downloaded job logs were inspected for this close-out. Actions timestamps are 2026-10-29 UTC, corresponding to 2026-10-30 locally. Implementation began 2026-10-29. Phase 4 has not started.
+**Chunk 3C and Phase 3: verified in [MarginDesk CI #39](https://github.com/Adityapawar5105/rebatehq/actions/runs/40937330833) and [MarginDesk Restore Drill #13](https://github.com/Adityapawar5105/rebatehq/actions/runs/40938982321), 2026-10-30 (Asia/Calcutta), commit `2f8b06de5b50564c186a2bf2c38a7ba884ca0958`.** GitHub run metadata, step results and downloaded job logs were inspected for this close-out. Actions timestamps are 2026-10-29 UTC, corresponding to 2026-10-30 locally. Implementation began 2026-10-29. Phase 4 has not started.
 
 | Acceptance | Verified evidence |
 |---|---|

@@ -1,8 +1,8 @@
 # Chunk 4E — guardrails, rules, export and encrypted backup
 
-**4E CI-verified in [MarginDesk CI #55](https://github.com/Adityapawar5105/margindesk/actions/runs/41814159704), 4 November 2026, commit `7fe3db82951e82d5ba8a049158a7ef0a17a69597`.**
+**4E CI-verified in [MarginDesk CI #55](https://github.com/Adityapawar5105/rebatehq/actions/runs/41814159704), 4 November 2026, commit `7fe3db82951e82d5ba8a049158a7ef0a17a69597`.**
 
-The verify job completed successfully, including step 18, Required authenticated local-vault privacy gate (success, not skipped). Downloaded job logs show 67 JS + 96 TS tests (163 total) and one authenticated Chromium harness with 25 named checks, including pricing, pricingUi and privacy; status passed, auth true. Results were logged at 10:42:41 UTC. [Verify job/logs](https://github.com/Adityapawar5105/margindesk/actions/runs/41814159704/job/126520564314). Privacy acceptance covers the local vault flow only; legacy server business-data routes still exist.
+The verify job completed successfully, including step 18, Required authenticated local-vault privacy gate (success, not skipped). Downloaded job logs show 67 JS + 96 TS tests (163 total) and one authenticated Chromium harness with 25 named checks, including pricing, pricingUi and privacy; status passed, auth true. Results were logged at 10:42:41 UTC. [Verify job/logs](https://github.com/Adityapawar5105/rebatehq/actions/runs/41814159704/job/126520564314). Privacy acceptance covers the local vault flow only; legacy server business-data routes still exist.
 
 Local measurements below remain local evidence. Baseline: CI #53,
 `6d21cf0` (4D). Only 4E; 5A has not started.

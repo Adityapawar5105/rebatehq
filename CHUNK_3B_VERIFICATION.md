@@ -1,12 +1,12 @@
 # Chunk 3B verification — 2026-10-29
 
-**Baseline status: verified in [MarginDesk CI #35](https://github.com/Adityapawar5105/margindesk/actions/runs/40844679109), 2026-10-29, commit `87d7d90`**, for the automated checks listed below, with the former **200-total-data-row** limit. The run completed successfully at 2026-10-29 08:51:21 UTC (14:21:21 Asia/Calcutta). The current configurable **10,000-row** implementation is a later follow-up, **verified in [CI #37 on `32aff35`](https://github.com/Adityapawar5105/margindesk/commit/32aff35cd2842723206272a4147769779aa5a0d3/checks), 2026-10-29, job duration 10m 24s**; its evidence and remaining unverified scope are in [IMPORT_CAPACITY_VERIFICATION.md](./IMPORT_CAPACITY_VERIFICATION.md). Chunk 3C had not started at that milestone; its current status is recorded in CHUNK_3C_VERIFICATION.md.
+**Baseline status: verified in [MarginDesk CI #35](https://github.com/Adityapawar5105/rebatehq/actions/runs/40844679109), 2026-10-29, commit `87d7d90`**, for the automated checks listed below, with the former **200-total-data-row** limit. The run completed successfully at 2026-10-29 08:51:21 UTC (14:21:21 Asia/Calcutta). The current configurable **10,000-row** implementation is a later follow-up, **verified in [CI #37 on `32aff35`](https://github.com/Adityapawar5105/rebatehq/commit/32aff35cd2842723206272a4147769779aa5a0d3/checks), 2026-10-29, job duration 10m 24s**; its evidence and remaining unverified scope are in [IMPORT_CAPACITY_VERIFICATION.md](./IMPORT_CAPACITY_VERIFICATION.md). Chunk 3C had not started at that milestone; its current status is recorded in CHUNK_3C_VERIFICATION.md.
 
-No Restore Drill was run because no migration or restore inventory changed. The **159 restore-mode** checks remain proven by Phase 2 [Restore Drill #12](https://github.com/Adityapawar5105/margindesk/actions/runs/40740709133); CI #35 passed the existing **156 fresh** checks twice across **38 tenant tables**. Authenticated Next.js behavior, the deployed Supabase app, hosted restore and browser UI beyond the local harness remain **unverified**.
+No Restore Drill was run because no migration or restore inventory changed. The **159 restore-mode** checks remain proven by Phase 2 [Restore Drill #12](https://github.com/Adityapawar5105/rebatehq/actions/runs/40740709133); CI #35 passed the existing **156 fresh** checks twice across **38 tenant tables**. Authenticated Next.js behavior, the deployed Supabase app, hosted restore and browser UI beyond the local harness remain **unverified**.
 
 ## CI #35 evidence
 
-The [verify job log](https://github.com/Adityapawar5105/margindesk/actions/runs/40844679109/job/123349158802) confirms these tests passed:
+The [verify job log](https://github.com/Adityapawar5105/rebatehq/actions/runs/40844679109/job/123349158802) confirms these tests passed:
 
 - Catalog lifecycle tenant isolation, audit entries, app/file conflicts and exact commit/undo restoration, twice on fresh and populated PGlite fixtures.
 - Same-day updates, future gaps, explicit unit conversion, protected keys, expired/stale plans, changed settings and late-created SKU controls.

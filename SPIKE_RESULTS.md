@@ -1,6 +1,6 @@
 # Chunk 4A — local-first spike results
 
-**Chunk 4A — CI-verified in [MarginDesk CI #42](https://github.com/Adityapawar5105/margindesk/actions/runs/41613748478), 3 November 2026, commit `395154d21efb45fb03397f5545c3ffd6a6f3ded4`.**
+**Chunk 4A — CI-verified in [MarginDesk CI #42](https://github.com/Adityapawar5105/rebatehq/actions/runs/41613748478), 3 November 2026, commit `395154d21efb45fb03397f5545c3ffd6a6f3ded4`.**
 Base: `7387f11`. Only chunk 4A was built; 4B has not started.
 
 The passing run exercised frozen-lockfile installation, the seven-migration
@@ -213,7 +213,7 @@ into a pass. No 4B code was started. Local command outcomes are recorded in
 
 ## Chunk 4B follow-up — local measurements, CI acceptance verified
 
-CI acceptance: [MarginDesk CI #44](https://github.com/Adityapawar5105/margindesk/actions/runs/41660146540), 3 November 2026, commit `c382f7d`, authenticated local-vault flow only.
+CI acceptance: [MarginDesk CI #44](https://github.com/Adityapawar5105/rebatehq/actions/runs/41660146540), 3 November 2026, commit `c382f7d`, authenticated local-vault flow only.
 Performance measurements below remain local evidence, unverified in CI.
 
 Close-out status: **4B CI-verified (CI #44, c382f7d)**. The requested startup

@@ -42,9 +42,10 @@ Key decisions:
 The product was renamed from MarginDesk to **RebateHQ** on 4 Nov 2026 (blueprint
 section 22, items 13-14) because margindesk.ai already trades under that name.
 The old name intentionally remains only in applied migrations (which still create
-`margindesk_app`; pending migration `20261104120000_rename_app_role_to_rebatehq.sql`
-renames it to `rebatehq_app`), `schema.sql`, the GitHub repo/URLs until the repo is
-renamed, and past CI/restore evidence lines. Browser storage keys were renamed
+`margindesk_app`; migration `20261104120000_rename_app_role_to_rebatehq.sql`
+renames it to `rebatehq_app` and passed CI #57, but stays pending in
+`migrations.lock` until a Restore Drill passes), `schema.sql`, and past CI/restore
+evidence lines. The GitHub repo is now `rebatehq`. Browser storage keys were renamed
 with a carry-forward from the legacy keys; vaults saved before the rename stay in
 the legacy OPFS folder `margindesk-vaults` (Chromium cannot rename OPFS directories)
 and are opened in place. Do not edit applied migrations. `tests/brand-name.test.js`
@@ -71,5 +72,5 @@ Playground) is done and CI-verified (CI #51, `a9ca8f7`). 4D (decimal
 pocket-margin engine, reconciliation, show-the-math, leak finder, Leak Report,
 ROI v1, credits; vault schema v5) is done and CI-verified (CI #53, `6d21cf0`);
 its leak finder reproduces `tests/fixtures/playground-manifest.json` exactly.
-4E (guardrails, versioned rules, preview, owner approval, ERP export, encrypted backup/restore; vault v6) is done and CI-verified in [CI #55](https://github.com/Adityapawar5105/margindesk/actions/runs/41814159704), commit `7fe3db8` (163 unit tests, 25 named authenticated privacy checks). Local timings and real ERP/picker limits are in `CHUNK_4E_VERIFICATION.md`. The next chunk is 5A; do not start it without an explicit user prompt. Real-export files stay
+4E (guardrails, versioned rules, preview, owner approval, ERP export, encrypted backup/restore; vault v6) is done and CI-verified in [CI #55](https://github.com/Adityapawar5105/rebatehq/actions/runs/41814159704), commit `7fe3db8` (163 unit tests, 25 named authenticated privacy checks). Local timings and real ERP/picker limits are in `CHUNK_4E_VERIFICATION.md`. The next chunk is 5A; do not start it without an explicit user prompt. Real-export files stay
 in git-ignored `test-results/real/` and are never committed.

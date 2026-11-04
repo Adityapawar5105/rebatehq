@@ -1,6 +1,6 @@
 # Chunk 2C verification record — 2026-10-28
 
-Status: Chunk 2C and Phase 2 are **verified in [MarginDesk CI #31](https://github.com/Adityapawar5105/margindesk/actions/runs/40739445610) and [MarginDesk Restore Drill #12](https://github.com/Adityapawar5105/margindesk/actions/runs/40740709133), 2026-10-28, commit `ed2aa6d`**. Current acceptance is **156 fresh / 159 restore-mode pgTAP checks**, planned = ran with two-run repeatability, across **38 tenant tables**. The Chunk 2C migration is locked with its unchanged normalized hash. Hosted-target restore, managed backup/PITR and deployed UI flows not exercised by these runs remain **unverified**. Phase 3 has not started.
+Status: Chunk 2C and Phase 2 are **verified in [MarginDesk CI #31](https://github.com/Adityapawar5105/rebatehq/actions/runs/40739445610) and [MarginDesk Restore Drill #12](https://github.com/Adityapawar5105/rebatehq/actions/runs/40740709133), 2026-10-28, commit `ed2aa6d`**. Current acceptance is **156 fresh / 159 restore-mode pgTAP checks**, planned = ran with two-run repeatability, across **38 tenant tables**. The Chunk 2C migration is locked with its unchanged normalized hash. Hosted-target restore, managed backup/PITR and deployed UI flows not exercised by these runs remain **unverified**. Phase 3 has not started.
 
 ## Scope and migration
 
@@ -36,8 +36,8 @@ PGlite uses real Postgres catalog, RLS, grants and constraints, with a minimal l
 
 ## Phase 2 CI acceptance — verified (2026-10-28)
 
-- **Verified in [MarginDesk CI #31](https://github.com/Adityapawar5105/margindesk/actions/runs/40739445610), 2026-10-28, commit `ed2aa6d`:** fresh real Supabase migration application, ignored-privilege warning gate, runtime role/no-context probe and 156-check suite twice with unchanged counts. pnpm test, typecheck and build also passed in that run; populated-upgrade SQL is covered by the PGlite tests within pnpm test.
-- **Verified in [MarginDesk Restore Drill #12](https://github.com/Adityapawar5105/margindesk/actions/runs/40740709133), 2026-10-28, commit `ed2aa6d`:** local-target logical dump/restore, dump grants plus restore-only platform cleanup, four function ACL checkpoints, every strict source/target ACL/metadata/count comparison, sentinel/runtime checks and 159-check suite twice. The inventory includes 38 tenant tables; planned = ran and no fixture residue.
+- **Verified in [MarginDesk CI #31](https://github.com/Adityapawar5105/rebatehq/actions/runs/40739445610), 2026-10-28, commit `ed2aa6d`:** fresh real Supabase migration application, ignored-privilege warning gate, runtime role/no-context probe and 156-check suite twice with unchanged counts. pnpm test, typecheck and build also passed in that run; populated-upgrade SQL is covered by the PGlite tests within pnpm test.
+- **Verified in [MarginDesk Restore Drill #12](https://github.com/Adityapawar5105/rebatehq/actions/runs/40740709133), 2026-10-28, commit `ed2aa6d`:** local-target logical dump/restore, dump grants plus restore-only platform cleanup, four function ACL checkpoints, every strict source/target ACL/metadata/count comparison, sentinel/runtime checks and 159-check suite twice. The inventory includes 38 tenant tables; planned = ran and no fixture residue.
 - Hosted-target restore and managed backup/PITR remain unverified; no UI, connectors, workers or public quote-sharing endpoint is built or claimed tested.
 
 See ASSUMPTIONS.md for the Phase 3 handoff, including the Phase 1 caller-settable audit actor GUC, record_failed_login input bounds and independent DB rate-limiting gaps. These are documented open items, not fixes made in this chunk.

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "baselineRun": "https://github.com/Adityapawar5105/margindesk/actions/runs/40137557258",
+  "baselineRun": "https://github.com/Adityapawar5105/rebatehq/actions/runs/40137557258",
   "baselineDate": "2026-10-24",
   "baselineCommit": "8e758e980dddc89abde5ada7eb98fa0301b5ea51",
   "hashNormalization": "strip UTF-8 BOM; convert CRLF and lone CR to LF before SHA-256",
@@ -38,38 +38,38 @@
     "202610250001_revoke_platform_public_privileges.sql": {
       "date": "2026-10-26",
       "commit": "aabfb20541f38af0f4b465e09ead4227e565f612",
-      "ciRun": "https://github.com/Adityapawar5105/margindesk/actions/runs/40290388651/job/121463801598",
-      "restoreRun": "https://github.com/Adityapawar5105/margindesk/actions/runs/40291362616/job/121466953508"
+      "ciRun": "https://github.com/Adityapawar5105/rebatehq/actions/runs/40290388651/job/121463801598",
+      "restoreRun": "https://github.com/Adityapawar5105/rebatehq/actions/runs/40291362616/job/121466953508"
     },
     "202610250002_revoke_platform_function_privileges.sql": {
       "date": "2026-10-26",
       "commit": "aabfb20541f38af0f4b465e09ead4227e565f612",
-      "ciRun": "https://github.com/Adityapawar5105/margindesk/actions/runs/40290388651/job/121463801598",
-      "restoreRun": "https://github.com/Adityapawar5105/margindesk/actions/runs/40291362616/job/121466953508"
+      "ciRun": "https://github.com/Adityapawar5105/rebatehq/actions/runs/40290388651/job/121463801598",
+      "restoreRun": "https://github.com/Adityapawar5105/rebatehq/actions/runs/40291362616/job/121466953508"
     },
     "202610280001_chunk2a_cost_units_currency.sql": {
       "date": "2026-10-28",
       "commit": "d4c907c67e8bb7600c51bd2c0a18fc09f7e4579b",
-      "ciRun": "https://github.com/Adityapawar5105/margindesk/actions/runs/40711121913",
-      "restoreRun": "https://github.com/Adityapawar5105/margindesk/actions/runs/40711768732"
+      "ciRun": "https://github.com/Adityapawar5105/rebatehq/actions/runs/40711121913",
+      "restoreRun": "https://github.com/Adityapawar5105/rebatehq/actions/runs/40711768732"
     },
     "20261028162156_chunk2b_pricing_rebate_tiers.sql": {
       "date": "2026-10-28",
       "commit": "13cea5a7d17c614e8bd9ccd18bacf2d97b6bd12a",
-      "ciRun": "https://github.com/Adityapawar5105/margindesk/actions/runs/40729384500",
-      "restoreRun": "https://github.com/Adityapawar5105/margindesk/actions/runs/40730343531"
+      "ciRun": "https://github.com/Adityapawar5105/rebatehq/actions/runs/40729384500",
+      "restoreRun": "https://github.com/Adityapawar5105/rebatehq/actions/runs/40730343531"
     },
     "20261028173257_chunk2c_foundation_tables.sql": {
       "date": "2026-10-28",
       "commit": "ed2aa6d1ced347e27e04774e0d09806dd14c929c",
-      "ciRun": "https://github.com/Adityapawar5105/margindesk/actions/runs/40739445610",
-      "restoreRun": "https://github.com/Adityapawar5105/margindesk/actions/runs/40740709133"
+      "ciRun": "https://github.com/Adityapawar5105/rebatehq/actions/runs/40739445610",
+      "restoreRun": "https://github.com/Adityapawar5105/rebatehq/actions/runs/40740709133"
     },
     "20261029175710_chunk3c_invoice_actual_cost.sql": {
       "date": "2026-10-30",
       "commit": "2f8b06de5b50564c186a2bf2c38a7ba884ca0958",
-      "ciRun": "https://github.com/Adityapawar5105/margindesk/actions/runs/40937330833",
-      "restoreRun": "https://github.com/Adityapawar5105/margindesk/actions/runs/40938982321"
+      "ciRun": "https://github.com/Adityapawar5105/rebatehq/actions/runs/40937330833",
+      "restoreRun": "https://github.com/Adityapawar5105/rebatehq/actions/runs/40938982321"
     }
   }
 }

@@ -1,6 +1,6 @@
 # Migration rules
 
-Applied migrations are immutable. The passing Phase 1 baseline is recorded in [`migrations.lock`](./migrations.lock) from [MarginDesk CI #14](https://github.com/Adityapawar5105/margindesk/actions/runs/40137557258) on 2026-10-24. Add schema changes in a new, timestamped SQL migration. Never edit a locked migration. When a new migration has passed CI and is applied, add its SHA-256 to `migrations.lock` and advance `appliedThrough` in a follow-up change.
+Applied migrations are immutable. The passing Phase 1 baseline is recorded in [`migrations.lock`](./migrations.lock) from [MarginDesk CI #14](https://github.com/Adityapawar5105/rebatehq/actions/runs/40137557258) on 2026-10-24. Add schema changes in a new, timestamped SQL migration. Never edit a locked migration. When a new migration has passed CI and is applied, add its SHA-256 to `migrations.lock` and advance `appliedThrough` in a follow-up change.
 
 Every new application table must:
 
