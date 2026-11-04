@@ -43,7 +43,7 @@ BEGIN
       v_kind:=CASE WHEN v_object.relkind='S' THEN 'SEQUENCE' ELSE 'TABLE' END;
       FOR v_acl IN
         SELECT DISTINCT a.grantee,CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE quote_ident(r.rolname) END AS grantee_sql
-        FROM pg_class c CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault(CASE WHEN c.relkind='S' THEN 'S'::"char" ELSE 'r'::"char" END,c.relowner))) a
+        FROM pg_class c CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault(CASE WHEN c.relkind='S' THEN 's'::"char" ELSE 'r'::"char" END,c.relowner))) a
         LEFT JOIN pg_roles r ON r.oid=a.grantee
         WHERE c.oid=v_object.oid AND a.grantee=ANY(v_banned)
       LOOP

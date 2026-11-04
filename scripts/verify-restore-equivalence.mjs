@@ -5,7 +5,7 @@ import pg from "pg";
 
 const { Pool } = pg;
 export const privateIssuerSql=`SELECT c.relname,c.relkind,c.relrowsecurity,c.relforcerowsecurity,pg_get_userbyid(c.relowner)::text AS owner,
- COALESCE((SELECT jsonb_agg(jsonb_build_object('grantor',pg_get_userbyid(a.grantor),'grantee',CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END,'privilege',a.privilege_type,'grantable',a.is_grantable) ORDER BY a.grantee,a.privilege_type) FROM aclexplode(COALESCE(c.relacl,acldefault(CASE WHEN c.relkind='S' THEN 'S'::"char" ELSE 'r'::"char" END,c.relowner)))a),'[]'::jsonb) AS acl,
+ COALESCE((SELECT jsonb_agg(jsonb_build_object('grantor',pg_get_userbyid(a.grantor),'grantee',CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END,'privilege',a.privilege_type,'grantable',a.is_grantable) ORDER BY a.grantee,a.privilege_type) FROM aclexplode(COALESCE(c.relacl,acldefault(CASE WHEN c.relkind='S' THEN 's'::"char" ELSE 'r'::"char" END,c.relowner)))a),'[]'::jsonb) AS acl,
  CASE WHEN c.relname='actor_key' THEN (SELECT md5(COALESCE(string_agg(id||encode(secret,'hex'),'|' ORDER BY id),'')) FROM rebatehq_private.actor_key) ELSE NULL END AS key_fingerprint,
  CASE WHEN c.relname='login_budget' THEN (SELECT last_value::text||':'||is_called::text FROM rebatehq_private.login_budget) ELSE NULL END AS counter_state
  FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='rebatehq_private' AND c.relkind IN ('r','S') ORDER BY c.relname`;
