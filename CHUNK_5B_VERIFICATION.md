@@ -86,7 +86,7 @@ Measured on this machine with the synthetic lab. Not a serverless, production, o
 - Hosted-target restore, deployed sign-in/key configuration, real device crash/quota/multi-tab recovery, physical headed checks, offline cold navigation/PWA, production key rotation and wall-clock tampering remain unverified/outside this chunk.
 - Offline grace supports an already loaded shell. It cannot learn a new revocation while disconnected, and is not DRM against the device owner. No data is deleted on licence denial.
 - Migration rollback: prefer a new forward correction. Keep legacy routes off and preserve encrypted local vaults. Reverting the server to code that does not sign requests would fail closed after this migration. A full rollback requires the pre-migration disposable/operational database backup and matching application/key configuration; do not drop these tables or edit any locked migration as an improvised rollback.
-- RETIREMENT_PROPOSAL.md requires a separate user decision. No DROP/purge or 6A work was implemented. **Blueprint unchanged.**
+- RETIREMENT_PROPOSAL.md required a separate user decision; the user approved a revised version on 5 Nov 2026 (wave 1 = chunk 6R, wave 2 = chunk 8R; blueprint section 22, item 15). No DROP/purge or 6A work was implemented in 5B, and 5B itself left the blueprint unchanged.
 
 ## Changed-file inventory
 

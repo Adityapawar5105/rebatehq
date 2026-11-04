@@ -377,7 +377,7 @@ Only 5A; no 5B. Supabase migrations and `migrations.lock` are untouched. New loc
 
 # Chunk 5B assumptions — CI-verified (CI #65, Restore Drill #16)
 
-- Scope is control-plane slimming, authoritative pilot licences and the carried security items. No 6A and no destructive table retirement. RETIREMENT_PROPOSAL.md needs separate user approval.
+- Scope is control-plane slimming, authoritative pilot licences and the carried security items. No 6A and no destructive table retirement. RETIREMENT_PROPOSAL.md needed separate user approval; it was approved with revisions on 5 Nov 2026 (tables drop in chunks 6R and 8R, not in 5B).
 - LEGACY_BUSINESS_ENABLED defaults off and is server-only. Class C/X APIs stop before reading a request or accessing data; pages 404. Historical business audit JSON is never returned by the control audit endpoint.
 - Licence assertions are Ed25519-signed server-side, bound to workspace/user/device, with a one-hour normal life and up to 24 hours of offline grace, never beyond the licence end date. Online refresh is attempted every five minutes. Expiry, an explicit revocation/unseated result, invalid signature, or no valid cached assertion makes the vault read-only; no data is deleted. Revocation while truly offline can only take effect by the fixed grace deadline.
 - Starter: one seat and one location/ERP profile; Professional: five seats and multiple locations/profiles; Scale: 15 seats, multiple locations/profiles, 200k SKUs and the provisional 1M-line cap. Professional remains 100k/1M, Starter 20k/200k. No artificial numerical location cap is added to the two multi-location tiers. plan_feature is never authoritative.

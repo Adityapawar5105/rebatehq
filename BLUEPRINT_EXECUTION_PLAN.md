@@ -2,7 +2,7 @@
 
 *Status review and prompt pack, written 2 Nov 2026; updated for blueprint v2.2 the same day. Governs nothing on its own: `BLUEPRINT.md` v2.2 is the source of truth; this file sequences the work.*
 
-**Progress:** chunk 4.0 is committed (`7387f11`); 4A remains CI-verified in [CI #42](https://github.com/Adityapawar5105/rebatehq/actions/runs/41613748478), commit `395154d`; **4B done and CI-verified** in [MarginDesk CI #44](https://github.com/Adityapawar5105/rebatehq/actions/runs/41660146540), 3 November 2026, commit `c382f7d`, including the authenticated local-vault privacy gate (14 named checks). **4C-1 done and CI-verified** in [MarginDesk CI #48](https://github.com/Adityapawar5105/rebatehq/actions/runs/41690570143), commit `ea4e5b6` (built in Claude Code), see `CHUNK_4C1_VERIFICATION.md`. **4C-2 done and CI-verified** in [CI #51](https://github.com/Adityapawar5105/rebatehq/actions/runs/41783684531), commit `a9ca8f7` (built in Claude Code; tested on the real UCI Online Retail export), see `CHUNK_4C2_VERIFICATION.md` and `REAL_FILE_RESULTS.md`. **4D done and CI-verified** in [CI #53](https://github.com/Adityapawar5105/rebatehq/actions/runs/41797151106), commit `6d21cf0` (built in Claude Code; all five Playground leaks reproduced exactly; the Playground L2 leak was revised, see blueprint section 22 entry 12), see `CHUNK_4D_VERIFICATION.md`. **4E done and CI-verified** in [CI #55](https://github.com/Adityapawar5105/rebatehq/actions/runs/41814159704), commit `7fe3db8` (guardrails, versioned rules, preview/owner approval, ERP exports, encrypted backup/restore; 163 unit tests and the 25-check authenticated privacy gate). See `CHUNK_4E_VERIFICATION.md` and `PHASE_4_VERIFICATION.md`. **5A CI-verified** in [RebateHQ CI #59](https://github.com/Adityapawar5105/rebatehq/actions/runs/41854329390) on `632b24f`, [CI #60](https://github.com/Adityapawar5105/rebatehq/actions/runs/41855953059) on `7ec683e` (real-export evidence), and [CI #61](https://github.com/Adityapawar5105/rebatehq/actions/runs/41858525178) on `2fbb283` (merge-all and batch undo), 4 November 2026. **5B CI-verified** in [RebateHQ CI #65](https://github.com/Adityapawar5105/rebatehq/actions/runs/41883249192) on `38911ee` (CI #63/#64 also passed) and [Restore Drill #16](https://github.com/Adityapawar5105/rebatehq/actions/runs/41886437905), local target, 4 November 2026; migration `20261104160022_chunk5b_control_plane.sql` locked. See `CHUNK_5B_VERIFICATION.md`. Stop before 6A and await the retirement-proposal decision. Performance and remaining unverified items are recorded in `VAULT_RESULTS.md`.
+**Progress:** chunk 4.0 is committed (`7387f11`); 4A remains CI-verified in [CI #42](https://github.com/Adityapawar5105/rebatehq/actions/runs/41613748478), commit `395154d`; **4B done and CI-verified** in [MarginDesk CI #44](https://github.com/Adityapawar5105/rebatehq/actions/runs/41660146540), 3 November 2026, commit `c382f7d`, including the authenticated local-vault privacy gate (14 named checks). **4C-1 done and CI-verified** in [MarginDesk CI #48](https://github.com/Adityapawar5105/rebatehq/actions/runs/41690570143), commit `ea4e5b6` (built in Claude Code), see `CHUNK_4C1_VERIFICATION.md`. **4C-2 done and CI-verified** in [CI #51](https://github.com/Adityapawar5105/rebatehq/actions/runs/41783684531), commit `a9ca8f7` (built in Claude Code; tested on the real UCI Online Retail export), see `CHUNK_4C2_VERIFICATION.md` and `REAL_FILE_RESULTS.md`. **4D done and CI-verified** in [CI #53](https://github.com/Adityapawar5105/rebatehq/actions/runs/41797151106), commit `6d21cf0` (built in Claude Code; all five Playground leaks reproduced exactly; the Playground L2 leak was revised, see blueprint section 22 entry 12), see `CHUNK_4D_VERIFICATION.md`. **4E done and CI-verified** in [CI #55](https://github.com/Adityapawar5105/rebatehq/actions/runs/41814159704), commit `7fe3db8` (guardrails, versioned rules, preview/owner approval, ERP exports, encrypted backup/restore; 163 unit tests and the 25-check authenticated privacy gate). See `CHUNK_4E_VERIFICATION.md` and `PHASE_4_VERIFICATION.md`. **5A CI-verified** in [RebateHQ CI #59](https://github.com/Adityapawar5105/rebatehq/actions/runs/41854329390) on `632b24f`, [CI #60](https://github.com/Adityapawar5105/rebatehq/actions/runs/41855953059) on `7ec683e` (real-export evidence), and [CI #61](https://github.com/Adityapawar5105/rebatehq/actions/runs/41858525178) on `2fbb283` (merge-all and batch undo), 4 November 2026. **5B CI-verified** in [RebateHQ CI #65](https://github.com/Adityapawar5105/rebatehq/actions/runs/41883249192) on `38911ee` (CI #63/#64 also passed) and [Restore Drill #16](https://github.com/Adityapawar5105/rebatehq/actions/runs/41886437905), local target, 4 November 2026; migration `20261104160022_chunk5b_control_plane.sql` locked. See `CHUNK_5B_VERIFICATION.md`. Retirement plan approved 5 Nov 2026 (wave 1 = chunk 6R after 6A, wave 2 = chunk 8R). Next chunk: 6A, only on an explicit prompt. Performance and remaining unverified items are recorded in `VAULT_RESULTS.md`.
 
 ---
 
@@ -56,9 +56,11 @@
 | 0–3 | Foundations | **Done, verified** (CI #39, Restore Drill #13) |
 | **4** | Phase 1 core | 4.0 housekeeping · 4A spike · 4B shell + vault · 4C-1 Import Studio converter · 4C-2 mapper/parser/Fix Later/Playground · 4D margin intelligence (pocket-margin engine, reconciliation, show-me-the-math) · 4E pricing, export, backup |
 | **5** | Phase 1b + control plane | 5A cleanup, cost basis, checklist, ROI v1, roles · 5B licences/tiers, retire server business-data paths, carried security items |
-| **6** | Pilot hardening + security | 6A real files, 8 GB laptop benchmarks · 6B security review + whitepaper → **sellable v1** |
+| **6** | Pilot hardening + security | 6A real files, 8 GB laptop benchmarks · 6R legacy table retirement, wave 1 · 6B security review + whitepaper → **sellable v1** |
 | **7** | Phase 2 | 7A relay · 7B Quote Desk · 7C bridge/versions/exceptions · 7D rebates · 7E vendor review + simulator · 7F packs/digest/PWA/converters |
-| **8** | Phase 3 | guidance, agents, indices, dead stock, cross-sell, offline, templates |
+| **8** | Phase 3 | guidance, agents, indices, dead stock, cross-sell, offline, templates · 8R legacy table retirement, wave 2 |
+
+6R and 8R were added on 5 Nov 2026, when the user approved the revised `RETIREMENT_PROPOSAL.md` (blueprint section 22, item 15). 6R adds roughly 2–4 working days before 6B; the sellable-v1 window is unchanged but has less slack.
 
 ---
 
@@ -343,13 +345,32 @@ DONE WHEN
 Every real file imports to a Leak Report without manual code edits. Each failure has a regression fixture. The capacity table is updated with measured numbers.
 ```
 
+### Prompt 6R — Legacy table retirement, wave 1
+
+```
+[PREAMBLE]
+
+CONTEXT
+6A is done. The user approved RETIREMENT_PROPOSAL.md (5 Nov 2026). Do wave 1 only.
+
+TASKS
+1. Precondition: confirm no hosted Supabase project holds business rows. If one does, stop and report; do not drop anything.
+2. In ONE NEW migration (never edit a locked one), drop the 21 wave-1 tables listed in RETIREMENT_PROPOSAL.md with their policies, triggers and functions, after reviewing FK dependencies. Drop plan_feature too only if nothing reads it.
+3. Remove the database-bound code that only served those tables: legacy class C/X routes and pages, prototype-import, ingestion and connector-secret modules, and their tests. Keep pure logic and its golden cases (margin engine, rebate-engine.js, rebate tier maths, rep-safe quote projection).
+4. Rework the pgTAP suite, fixture graph, restore seed/sentinel, restore inventory minimum and the CI import benchmark for the smaller schema. Update counts honestly; never weaken a remaining check. Wave-2 tables stay fully tested.
+5. Update ARCHITECTURE_TRANSITION.md, SECURITY_CHECK.md and the README with what the server still stores.
+
+DONE WHEN
+CI is green (pgTAP, privacy gate), the user-run Restore Drill passes, the new migration is locked, and no wave-1 table or its code path remains.
+```
+
 ### Prompt 6B — Security review and whitepaper
 
 ```
 [PREAMBLE]
 
 CONTEXT
-6A is done. Prepare to charge money.
+6A and 6R are done. Prepare to charge money.
 
 TASKS
 1. Threat model (STRIDE) for the data plane, vault, backups, control plane and the future relay.
@@ -402,6 +423,7 @@ Run each with the preamble and the same "Done when / close-out" pattern. The ord
 - **8B:** Margin Drain agents (local background checks), cost index triggers (uploads first), dead-stock optimiser (idle 90+ days, floored at replacement cost).
 - **8C:** win/loss log, offline PWA mode, audit and compliance pack, and templates (increase letters, vendor negotiation sheets, rebate agreements).
 - **8D (only with explicit consent design):** opt-in anonymous benchmarks.
+- **8R Legacy table retirement, wave 2:** after 7A, 7B, 7D and 8B, drop the 12 wave-2 tables in `RETIREMENT_PROPOSAL.md` (quotes, approvals, rebates, supplier credits, alerts, FX) the same way as 6R: precondition check, one new migration, CI and a user-run Restore Drill.
 
 ---
 
