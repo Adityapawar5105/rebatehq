@@ -1,3 +1,4 @@
+import { legacyBusinessEnabled, retiredBusinessResponse } from "@/lib/legacy-gate";
 import { databaseContext } from "@/lib/context";
 import { NextResponse } from "next/server";
 import { getAppContext } from "@/lib/context";
@@ -5,7 +6,7 @@ import { errorResponse, HttpError } from "@/lib/authz";
 import { withDatabase } from "@/lib/db";
 import { assertRepResponseSafe } from "@/lib/rep-response";
 export const runtime = "nodejs";
-export async function GET(request: Request) {
+export async function GET(request: Request) {if (!legacyBusinessEnabled()) return retiredBusinessResponse();
   try {
     const context = await getAppContext(request.headers); if (!context) throw new HttpError(401, "Please sign in to search.");
     const query = new URL(request.url).searchParams.get("q")?.trim().slice(0, 100) || "";

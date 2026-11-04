@@ -1,3 +1,4 @@
+import { legacyBusinessEnabled, retiredBusinessResponse } from "@/lib/legacy-gate";
 import {NextResponse} from "next/server";
 import {z} from "zod";
 import {assertPermission,errorResponse,HttpError} from "@/lib/authz";
@@ -12,7 +13,7 @@ export const runtime="nodejs";
 export const dynamic="force-dynamic";
 export const maxDuration=300;
 const Options=z.object({sheetId:z.string().max(4),headerRow:z.number().int().min(1).max(UPLOAD_LIMITS.rows),mapping:z.record(z.string(),z.number().int().min(0).max(63)),rules:ImportOptions}).strict();
-export async function POST(request:Request){try{
+export async function POST(request:Request){if (!legacyBusinessEnabled()) return retiredBusinessResponse();try{
  const context=await getAppContext(request.headers);assertPermission(context,"files.review");
  if(!(await rateLimit(request,"import-plan",30,60*60_000)).ok)throw new HttpError(429,"Too many import previews. Try again later.");
  let filename:string;try{filename=decodeURIComponent(request.headers.get("x-file-name")||"");}catch{throw new HttpError(400,"Choose a file with a valid name.");}

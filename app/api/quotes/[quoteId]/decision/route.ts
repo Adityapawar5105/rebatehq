@@ -1,3 +1,4 @@
+import { legacyBusinessEnabled, retiredBusinessResponse } from "@/lib/legacy-gate";
 import { readJsonLimited } from "@/lib/request";
 import { databaseContext, getAppContext } from "@/lib/context";
 import { NextResponse } from "next/server";
@@ -10,7 +11,7 @@ import { assertNotQuoteCreator } from "@/lib/quote-approval";
 
 export const runtime = "nodejs";
 
-export async function POST(request: Request, { params }: { params: Promise<{ quoteId: string }> }) {
+export async function POST(request: Request, { params }: { params: Promise<{ quoteId: string }> }) {if (!legacyBusinessEnabled()) return retiredBusinessResponse();
   try {
     const context = await getAppContext(request.headers);
     assertPermission(context, "quotes.approve");

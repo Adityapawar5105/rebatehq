@@ -1,3 +1,4 @@
+import { legacyBusinessEnabled, retiredBusinessResponse } from "@/lib/legacy-gate";
 import { databaseContext } from "@/lib/context";
 import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
@@ -16,7 +17,7 @@ export const dynamic = "force-dynamic";
 const Body = z.object({ prototype: z.unknown(), commit: z.boolean().default(false), dryRunId: z.string().uuid().optional() });
 const MAX_BYTES = 2 * 1024 * 1024;
 
-export async function POST(request: Request) {
+export async function POST(request: Request) {if (!legacyBusinessEnabled()) return retiredBusinessResponse();
   try {
     const context = await getAppContext(request.headers);
     assertPermission(context, "prototype.import");

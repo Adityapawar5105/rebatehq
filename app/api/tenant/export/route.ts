@@ -1,3 +1,4 @@
+import { legacyBusinessEnabled, retiredBusinessResponse } from "@/lib/legacy-gate";
 import { databaseContext } from "@/lib/context";
 import JSZip from "jszip";
 import { NextResponse } from "next/server";
@@ -12,7 +13,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const tables = ["tenant","membership","invite","customer","product","price_list","price_list_version","price_list_item","margin_policy","quote","quote_line","approval","sales_order","rebate_agreement","rebate_progress","invoice","invoice_line","cost_component","supplier_credit","alert","margin_snapshot","connector_secret","import_job","audit_log","uom","cost_history","uom_conversion","fx_rate","data_quality_issue","customer_group","customer_price","rebate_tier","rebate_entry"] as const;
 
-export async function GET(request: Request) {
+export async function GET(request: Request) {if (!legacyBusinessEnabled()) return retiredBusinessResponse();
   try {
     const context = await getAppContext(request.headers); assertPermission(context, "tenant.export");
     const rate = await rateLimit(request, "tenant-export", 3, 60 * 60_000); if (!rate.ok) throw new HttpError(429, "Too many workspace exports. Try again later.");

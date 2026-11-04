@@ -13,7 +13,7 @@ import { RolesView } from "./RolesView";
 import styles from "./vault.module.css";
 const sections = ["Home", "Data Hub", "Margin", "Pricing", "Reports", "Settings"] as const;
 type Section = typeof sections[number];
-export function VaultApp({ scope, email, workspace, lab = false }: { scope: Scope; email: string; workspace: string; lab?: boolean }) {
+export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled = false }: { scope: Scope; email: string; workspace: string; lab?: boolean; legacyEnabled?: boolean }) {
   const client = useRef<VaultClient | null>(null);
   const [status, setStatus] = useState<VaultStatus | null>(null), [section, setSection] = useState<Section>("Home");
   const [error, setError] = useState(""), [message, setMessage] = useState("Opening local storage…"), [busy, setBusy] = useState(false);
@@ -51,7 +51,7 @@ export function VaultApp({ scope, email, workspace, lab = false }: { scope: Scop
     <header className={styles.header}><a href="/home" className={styles.brand}>M <span>RebateHQ</span></a><span>{workspace}</span><span className={styles.identity}>{email}</span>{!lab && <form method="post" action="/api/auth/logout"><button>Sign out</button></form>}</header>
     {lab && <aside className={styles.notice}>LOCAL TEST HARNESS · synthetic identity only. The signed-in application is /home. This route does not prove authentication.</aside>}
     <div className={styles.layout}>
-      <nav aria-label="Main navigation" className={styles.nav}>{sections.filter(item => !unlocked || visible.includes(item)).map(item => <a key={item} href={`#${item.toLowerCase().replace(" ", "-")}`} aria-current={shown === item ? "page" : undefined} onClick={() => setSection(item)}>{item}</a>)}<a href="/legacy/dashboard">Legacy · server-backed</a></nav>
+      <nav aria-label="Main navigation" className={styles.nav}>{sections.filter(item => !unlocked || visible.includes(item)).map(item => <a key={item} href={`#${item.toLowerCase().replace(" ", "-")}`} aria-current={shown === item ? "page" : undefined} onClick={() => setSection(item)}>{item}</a>)}{legacyEnabled && <a href="/legacy/dashboard">Legacy · server-backed</a>}</nav>
       <main id="local-content" className={styles.content}>
         <div className={styles.title}><div><span className={styles.eyebrow}>LOCAL WORKSPACE</span><h1>{shown}</h1></div>{unlocked && <button disabled={busy} onClick={() => void operation(async () => { setStatus(await client.current!.call("lock", {})); setPassphrase(""); setMessage("Vault locked. The key and working database were released."); })}>Lock vault</button>}</div>
         {!supported && <p className={styles.notice}>For local vault support, use the latest Chrome or Edge. Other browsers have not been validated.</p>}

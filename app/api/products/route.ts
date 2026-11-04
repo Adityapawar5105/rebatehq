@@ -1,3 +1,4 @@
+import { legacyBusinessEnabled, retiredBusinessResponse } from "@/lib/legacy-gate";
 import { databaseContext, getAppContext } from "@/lib/context";
 import { NextResponse } from "next/server";
 import { withDatabase } from "@/lib/db";
@@ -8,7 +9,7 @@ import { currentImportPrices,currentStandardCosts } from "@/lib/catalog-values";
 
 export const runtime = "nodejs";
 
-export async function GET(request: Request) {
+export async function GET(request: Request) {if (!legacyBusinessEnabled()) return retiredBusinessResponse();
   try {
     const context = await getAppContext(request.headers);
     assertPermission(context, "products.read");

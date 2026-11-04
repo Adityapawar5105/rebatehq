@@ -1,3 +1,4 @@
+import { legacyBusinessEnabled, retiredBusinessResponse } from "@/lib/legacy-gate";
 import {NextResponse} from "next/server";
 import {z} from "zod";
 import {assertPermission,errorResponse,HttpError} from "@/lib/authz";
@@ -17,7 +18,7 @@ const Action=z.discriminatedUnion("action",[
  z.object({action:z.literal("resolve"),id:z.uuid(),offset:z.number().int().min(0).max(MAX_IMPORT_DATA_ROWS),
   choices:z.record(z.string().regex(/^\d+$/),z.enum(["app","file","review"])).refine(v=>Object.keys(v).length<=IMPORT_PREVIEW_PAGE_SIZE),acknowledgeWarnings:z.boolean().optional()}).strict()
 ]);
-export async function GET(request:Request){try{
+export async function GET(request:Request){if (!legacyBusinessEnabled()) return retiredBusinessResponse();try{
  const context=await getAppContext(request.headers);assertPermission(context,"files.review");
  const params=new URL(request.url).searchParams;
  if(params.has("plan")){
@@ -29,7 +30,7 @@ export async function GET(request:Request){try{
  const history=await withDatabase(databaseContext(context,request.headers),db=>importHistory(db,context.tenantId));
  return NextResponse.json({history},{headers:{"cache-control":"no-store"}});
 }catch(error){return errorResponse(error);}}
-export async function POST(request:Request){let actionName="";try{
+export async function POST(request:Request){if (!legacyBusinessEnabled()) return retiredBusinessResponse();let actionName="";try{
  const context=await getAppContext(request.headers);assertPermission(context,"files.review");
  if(!(await rateLimit(request,"import-actions",Math.max(30,Math.ceil(MAX_IMPORT_DATA_ROWS/IMPORT_PREVIEW_PAGE_SIZE)*2+30),60*60_000)).ok)throw new HttpError(429,"Too many import actions. Try again later.");
  const parsed=Action.safeParse(await readJsonLimited(request));if(!parsed.success)throw new HttpError(400,"Choose a valid import action.");

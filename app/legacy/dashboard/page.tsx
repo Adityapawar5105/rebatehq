@@ -1,3 +1,5 @@
+import { legacyBusinessEnabled } from "@/lib/legacy-gate";
+import { notFound } from "next/navigation";
 import { databaseContext } from "@/lib/context";
 import { AppFrame } from "@/components/AppFrame";
 import { requireAppPageContext } from "@/lib/context";
@@ -8,7 +10,7 @@ import {dataReadiness} from "@/lib/readiness";
 import {DataReadiness} from "@/components/DataReadiness";
 export const dynamic = "force-dynamic";
 const money = (value: unknown, currency: string) => new Intl.NumberFormat("en-US", { style: "currency", currency, maximumFractionDigits: 0 }).format(Number(value || 0));
-export default async function DashboardPage() {
+export default async function DashboardPage() {if (!legacyBusinessEnabled()) notFound();
   const context = await requireAppPageContext();
   const data = await withDatabase(databaseContext(context), async db => {
     const snapshots = can(context.role, "costs.read") ? (await db.query(`SELECT period_month,order_count,pocket_revenue,pocket_margin,margin_pct FROM margin_snapshot WHERE tenant_id=$1 AND entity_type='company' AND entity_id=$1::text ORDER BY period_month DESC LIMIT 12`, [context.tenantId])).rows : [];

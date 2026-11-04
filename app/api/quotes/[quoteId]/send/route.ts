@@ -1,3 +1,4 @@
+import { legacyBusinessEnabled, retiredBusinessResponse } from "@/lib/legacy-gate";
 import { databaseContext, getAppContext } from "@/lib/context";
 import { NextResponse } from "next/server";
 import { assertPermission, errorResponse, HttpError } from "@/lib/authz";
@@ -8,7 +9,7 @@ import { assertRepResponseSafe } from "@/lib/rep-response";
 
 export const runtime = "nodejs";
 
-export async function POST(request: Request, { params }: { params: Promise<{ quoteId: string }> }) {
+export async function POST(request: Request, { params }: { params: Promise<{ quoteId: string }> }) {if (!legacyBusinessEnabled()) return retiredBusinessResponse();
   try {
     const context = await getAppContext(request.headers);
     assertPermission(context, "quotes.send");

@@ -1,3 +1,4 @@
+import { legacyBusinessEnabled, retiredBusinessResponse } from "@/lib/legacy-gate";
 import { databaseContext } from "@/lib/context";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -11,7 +12,7 @@ import { readJsonLimited } from "@/lib/request";
 
 export const runtime = "nodejs";
 const Connector = z.object({ provider: z.enum(["netsuite", "quickbooks", "business_central", "hubspot", "salesforce"]), credential: z.string().min(1).max(20_000) });
-export async function GET(request: Request) {
+export async function GET(request: Request) {if (!legacyBusinessEnabled()) return retiredBusinessResponse();
   try {
     const context = await getAppContext(request.headers); assertPermission(context, "tenant.export");
     const data = await withDatabase(databaseContext(context,request.headers), async db =>
@@ -19,7 +20,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ data });
   } catch (error) { return errorResponse(error); }
 }
-export async function POST(request: Request) {
+export async function POST(request: Request) {if (!legacyBusinessEnabled()) return retiredBusinessResponse();
   try {
     const context = await getAppContext(request.headers); assertPermission(context, "tenant.export");
     const rate = await rateLimit(request, "connector-secret", 10, 60 * 60_000); if (!rate.ok) throw new HttpError(429, "Too many credential updates. Try again later.");

@@ -1,3 +1,4 @@
+import { legacyBusinessEnabled, retiredBusinessResponse } from "@/lib/legacy-gate";
 import {z} from "zod";
 import {assertPermission,errorResponse,HttpError} from "@/lib/authz";
 import {getAppContext,databaseContext} from "@/lib/context";
@@ -14,12 +15,12 @@ const Action=z.discriminatedUnion("action",[
  z.object({action:z.literal("resume"),id:z.uuid()}).strict(),
  z.object({action:z.literal("run"),id:z.uuid().optional()}).strict()
 ]);
-export async function GET(request:Request){try{
+export async function GET(request:Request){if (!legacyBusinessEnabled()) return retiredBusinessResponse();try{
  const context=await getAppContext(request.headers);assertPermission(context,"files.review");
  const data=await withDatabase(databaseContext(context,request.headers),db=>ingestionState(db,context.tenantId));
  return Response.json(data,{headers:{"cache-control":"no-store"}});
 }catch(e){return errorResponse(e);}}
-export async function POST(request:Request){try{
+export async function POST(request:Request){if (!legacyBusinessEnabled()) return retiredBusinessResponse();try{
  const context=await getAppContext(request.headers);assertPermission(context,"files.review");
  if(!(await rateLimit(request,"ingestion",30,60*60_000)).ok)throw new HttpError(429,"Too many ingestion requests. Try again later.");
  const input=Action.safeParse(await readJsonLimited(request,12_000));

@@ -1,3 +1,5 @@
+import { legacyBusinessEnabled } from "@/lib/legacy-gate";
+import { notFound } from "next/navigation";
 import { databaseContext } from "@/lib/context";
 import { AppFrame } from "@/components/AppFrame";
 import { requireAppPageContext } from "@/lib/context";
@@ -8,7 +10,7 @@ import { currentImportPrices,currentStandardCosts } from "@/lib/catalog-values";
 import { can } from "@/lib/permissions";
 export const dynamic = "force-dynamic";
 const money = (value: unknown, currency: string) => new Intl.NumberFormat("en-US", { style: "currency", currency, maximumFractionDigits: 2 }).format(Number(value || 0));
-export default async function PricesPage({searchParams}:{searchParams:Promise<{ingestion?:string}>}) {
+export default async function PricesPage({searchParams}:{searchParams:Promise<{ingestion?:string}>}) {if (!legacyBusinessEnabled()) notFound();
   const context = await requireAppPageContext();
   const data = await withDatabase(databaseContext(context), async db => {
     const products = (await db.query(`SELECT id,sku,name,category,supplier,uom,list_price,tier_prices${can(context.role,"costs.read")?",unit_cost,freight_cost,payment_terms_cost":""} FROM product WHERE tenant_id=$1 AND active=true ORDER BY sku LIMIT 1000`, [context.tenantId])).rows;

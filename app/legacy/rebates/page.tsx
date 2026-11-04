@@ -1,3 +1,5 @@
+import { legacyBusinessEnabled } from "@/lib/legacy-gate";
+import { notFound } from "next/navigation";
 import { databaseContext } from "@/lib/context";
 import { AppFrame } from "@/components/AppFrame";
 import { requireAppPageContext } from "@/lib/context";
@@ -6,7 +8,7 @@ import { getRebateAudit } from "@/lib/rebates";
 import { can } from "@/lib/permissions";
 export const dynamic = "force-dynamic";
 const money = (value: unknown, currency: string) => new Intl.NumberFormat("en-US", { style: "currency", currency, maximumFractionDigits: 0 }).format(Number(value || 0));
-export default async function RebatesPage() {
+export default async function RebatesPage() {if (!legacyBusinessEnabled()) notFound();
   const context = await requireAppPageContext();
   if (!can(context.role,"rebates.read")) return <AppFrame context={context}><div className="page-head"><div><h1>Rebates</h1><p>You don&apos;t have permission to view rebate records. Ask an owner or manager.</p></div></div></AppFrame>;
   const data = await withDatabase(databaseContext(context), db => getRebateAudit(db,context.tenantId));
