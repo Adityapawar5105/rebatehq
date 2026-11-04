@@ -1,10 +1,11 @@
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 const V1_TABLES = ["vault_meta", "products", "customers", "price_matrix", "price_guardrails", "source_files", "import_batches", "sales_lines", "vendor_costs", "cost_basis_settings", "rules", "rule_runs", "price_versions", "roi_ledger", "audit_log", "import_issues", "converter_recipes"] as const;
 const V4_TABLES = [...V1_TABLES, "rejected_rows"] as const;
 const V5_TABLES = [...V4_TABLES, "agg_cpm", "agg_cm", "agg_p", "recon_issues"] as const;
-export const TABLES = [...V5_TABLES, "pricing_settings", "rule_revisions", "rule_changes"] as const;
+const V6_TABLES = [...V5_TABLES, "pricing_settings", "rule_revisions", "rule_changes"] as const;
+export const TABLES = [...V6_TABLES, "role_assignments", "access_settings", "cleanup_fixes", "cleanup_changes", "setup_progress"] as const;
 /** Tables that exist at a schema version (in creation order, so copy-on-write inserts parents first). */
-export function tablesFor(version: number): readonly string[] { return version >= 6 ? TABLES : version >= 5 ? V5_TABLES : version >= 4 ? V4_TABLES : V1_TABLES; }
+export function tablesFor(version: number): readonly string[] { return version >= 7 ? TABLES : version >= 6 ? V6_TABLES : version >= 5 ? V5_TABLES : version >= 4 ? V4_TABLES : V1_TABLES; }
 // These are local DuckDB migrations, not Supabase migrations. V1 stays frozen
 // so the committed encrypted compatibility fixture exercises a real upgrade.
 export const V1_SQL = `
@@ -88,7 +89,18 @@ ALTER TABLE rule_runs ADD COLUMN rule_version INTEGER;
 ALTER TABLE rule_runs ADD COLUMN base_revision BIGINT;
 ALTER TABLE rule_runs ADD COLUMN approved_by VARCHAR;
 CREATE TABLE rule_changes(run_id VARCHAR NOT NULL, product_id VARCHAR NOT NULL, tier VARCHAR NOT NULL, before_cents BIGINT NOT NULL CHECK(before_cents>=0), after_cents BIGINT NOT NULL CHECK(after_cents>=0), cost_cents BIGINT, quantity DECIMAL(18,4) NOT NULL, impact_cents BIGINT NOT NULL, guard_status VARCHAR NOT NULL CHECK(guard_status IN ('green','yellow','red','unset')), PRIMARY KEY(run_id,product_id,tier));`;
-const STEPS = [V1_SQL, V2_SQL, V3_SQL, V4_SQL, V5_SQL, V6_SQL];
+// V7 (5A). Local roles, the owner's "reps may see cost" switch, the item-master cleanup
+// journal (every fix keeps the cells it changed so it can be undone) and the setup
+// checklist. No seed rows: copy-on-write copies whole tables into a fresh schema.
+export const ROLE_IDS = ["owner", "pricing_owner", "pricing_manager", "sales_manager", "sales_rep", "accountant", "admin"] as const;
+export const SETUP_STEPS = ["import", "map", "fix", "report", "rule", "export", "team"] as const;
+const list = (values: readonly string[]) => values.map(v => `'${v}'`).join(",");
+export const V7_SQL = `CREATE TABLE role_assignments(user_id VARCHAR PRIMARY KEY, display_name VARCHAR NOT NULL, role VARCHAR NOT NULL CHECK(role IN (${list(ROLE_IDS)})), assigned_by VARCHAR NOT NULL, assigned_at VARCHAR NOT NULL);
+CREATE TABLE access_settings(id INTEGER PRIMARY KEY CHECK(id=1), rep_sees_cost BOOLEAN NOT NULL);
+CREATE TABLE cleanup_fixes(id VARCHAR PRIMARY KEY, kind VARCHAR NOT NULL CHECK(kind IN ('merge_duplicates','normalize_uom','set_category')), summary VARCHAR NOT NULL, cells BIGINT NOT NULL CHECK(cells>=0), applied_at VARCHAR NOT NULL, applied_by VARCHAR NOT NULL, undone_at VARCHAR, undone_by VARCHAR);
+CREATE TABLE cleanup_changes(fix_id VARCHAR NOT NULL, seq BIGINT NOT NULL CHECK(seq>0), tbl VARCHAR NOT NULL, key1 VARCHAR NOT NULL, key2 VARCHAR, col VARCHAR NOT NULL, before_value VARCHAR, after_value VARCHAR, PRIMARY KEY(fix_id,seq));
+CREATE TABLE setup_progress(step VARCHAR PRIMARY KEY CHECK(step IN (${list(SETUP_STEPS)})), done_at VARCHAR NOT NULL, how VARCHAR NOT NULL CHECK(how IN ('auto','manual')));`;
+const STEPS = [V1_SQL, V2_SQL, V3_SQL, V4_SQL, V5_SQL, V6_SQL, V7_SQL];
 function checkVersion(version: number) {
   if (!Number.isInteger(version) || version < 1 || version > SCHEMA_VERSION) throw new Error("Unsupported vault schema version; update the app before opening this vault.");
 }

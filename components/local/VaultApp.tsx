@@ -5,7 +5,11 @@ import type { Scope, StorageStatus, Tier, VaultStatus } from "@/lib/vault/protoc
 import { PricingView } from "./PricingView";
 import { BackupView } from "./BackupView";
 import { ImportStudio } from "./ImportStudio";
-import { MarginView, RoiCard, LeakReportButton } from "./MarginView";
+import { MarginView, LeakReportButton } from "./MarginView";
+import { HomeView } from "./HomeView";
+import { CleanupView } from "./CleanupView";
+import { CostBasisView } from "./CostBasisView";
+import { RolesView } from "./RolesView";
 import styles from "./vault.module.css";
 const sections = ["Home", "Data Hub", "Margin", "Pricing", "Reports", "Settings"] as const;
 type Section = typeof sections[number];
@@ -13,7 +17,7 @@ export function VaultApp({ scope, email, workspace, lab = false }: { scope: Scop
   const client = useRef<VaultClient | null>(null);
   const [status, setStatus] = useState<VaultStatus | null>(null), [section, setSection] = useState<Section>("Home");
   const [error, setError] = useState(""), [message, setMessage] = useState("Opening local storage…"), [busy, setBusy] = useState(false);
-  const [passphrase, setPassphrase] = useState(""), [tier, setTier] = useState<Tier>("starter");
+  const [passphrase, setPassphrase] = useState(""), [tier, setTier] = useState<Tier>("starter"), [ownerName, setOwnerName] = useState("");
   const [storage, setStorage] = useState<StorageStatus | null>(null), [progress, setProgress] = useState<{ stage: string; done: string; total: string } | null>(null);
   const [supported, setSupported] = useState(true);
   useEffect(() => {
@@ -41,15 +45,15 @@ export function VaultApp({ scope, email, workspace, lab = false }: { scope: Scop
     try { await work(); } catch (e) { setError(e instanceof Error ? e.message : "The local operation failed."); try { setStatus(await client.current!.call("status", {})); } catch {} }
     finally { setBusy(false); setProgress(null); }
   }
-  const unlocked = status?.state === "unlocked";
+  const unlocked = status?.state === "unlocked", access = status?.access, caps = access?.caps ?? [], visible = access?.sections ?? [...sections], shown: Section = visible.includes(section) ? section : "Home";
   return <div className={styles.shell}>
     <a className={styles.skip} href="#local-content">Skip to content</a>
     <header className={styles.header}><a href="/home" className={styles.brand}>M <span>RebateHQ</span></a><span>{workspace}</span><span className={styles.identity}>{email}</span>{!lab && <form method="post" action="/api/auth/logout"><button>Sign out</button></form>}</header>
     {lab && <aside className={styles.notice}>LOCAL TEST HARNESS · synthetic identity only. The signed-in application is /home. This route does not prove authentication.</aside>}
     <div className={styles.layout}>
-      <nav aria-label="Main navigation" className={styles.nav}>{sections.map(item => <a key={item} href={`#${item.toLowerCase().replace(" ", "-")}`} aria-current={section === item ? "page" : undefined} onClick={() => setSection(item)}>{item}</a>)}<a href="/legacy/dashboard">Legacy · server-backed</a></nav>
+      <nav aria-label="Main navigation" className={styles.nav}>{sections.filter(item => !unlocked || visible.includes(item)).map(item => <a key={item} href={`#${item.toLowerCase().replace(" ", "-")}`} aria-current={shown === item ? "page" : undefined} onClick={() => setSection(item)}>{item}</a>)}<a href="/legacy/dashboard">Legacy · server-backed</a></nav>
       <main id="local-content" className={styles.content}>
-        <div className={styles.title}><div><span className={styles.eyebrow}>LOCAL WORKSPACE</span><h1>{section}</h1></div>{unlocked && <button disabled={busy} onClick={() => void operation(async () => { setStatus(await client.current!.call("lock", {})); setPassphrase(""); setMessage("Vault locked. The key and working database were released."); })}>Lock vault</button>}</div>
+        <div className={styles.title}><div><span className={styles.eyebrow}>LOCAL WORKSPACE</span><h1>{shown}</h1></div>{unlocked && <button disabled={busy} onClick={() => void operation(async () => { setStatus(await client.current!.call("lock", {})); setPassphrase(""); setMessage("Vault locked. The key and working database were released."); })}>Lock vault</button>}</div>
         {!supported && <p className={styles.notice}>For local vault support, use the latest Chrome or Edge. Other browsers have not been validated.</p>}
         <p role="status" aria-live="polite">{message}</p>
         {error && <p role="alert" className={styles.error}>⚠ {error}</p>}
@@ -59,20 +63,23 @@ export function VaultApp({ scope, email, workspace, lab = false }: { scope: Scop
         {!status ? <section className={styles.card} aria-busy="true">Starting the local worker…</section> : !unlocked ? <section className={styles.card}>
           <h2>{status.exists ? "Unlock this device's vault" : "Create your local vault"}</h2>
           <p>Your passphrase stays on this device. There is no server-side passphrase recovery. Keep a safe copy of your passphrase.</p>
-          <form onSubmit={event => { event.preventDefault(); const secret = passphrase; setPassphrase(""); void operation(async () => { const start = performance.now(); const result = status.exists ? await client.current!.call("unlock", { passphrase: secret }) : await client.current!.call("create", { passphrase: secret, tier }); setStatus(result); setMessage(`Vault ready. ${Math.round(performance.now() - start)} ms from submitting the passphrase. Changes are saved as encrypted snapshots.`); window.dispatchEvent(new CustomEvent("vault-ready")); }); }}>
+          <form onSubmit={event => { event.preventDefault(); const secret = passphrase; setPassphrase(""); void operation(async () => { const start = performance.now(); const result = status.exists ? await client.current!.call("unlock", { passphrase: secret }) : await client.current!.call("create", { passphrase: secret, tier, ownerName }); setStatus(result); setMessage(`Vault ready. ${Math.round(performance.now() - start)} ms from submitting the passphrase. Changes are saved as encrypted snapshots.`); window.dispatchEvent(new CustomEvent("vault-ready")); }); }}>
             <label>Vault passphrase<input type="password" minLength={12} maxLength={256} required autoComplete={status.exists ? "current-password" : "new-password"} value={passphrase} onChange={event => setPassphrase(event.target.value)} disabled={busy}/></label>
+            {!status.exists && <label>Pricing Owner (name)<input required maxLength={160} value={ownerName} onChange={event => setOwnerName(event.target.value)} disabled={busy} aria-describedby="owner-help"/><span id="owner-help" className={styles.small}>The person accountable for pricing. They approve every price change. You become the vault Owner and this person (you) can be changed later.</span></label>}
             {!status.exists && <label>Local capacity profile<select value={tier} onChange={event => setTier(event.target.value as Tier)} disabled={busy}><option value="starter">Starter · 20k products / 200k lines</option><option value="professional">Professional · 100k products / 1M lines</option><option value="scale">Scale pilot · 200k products / 1M lines</option></select></label>}
-            <button className={styles.primary} disabled={busy}>{busy ? "Opening…" : status.exists ? "Unlock vault" : "Create encrypted vault"}</button>
+            <button className={styles.primary} disabled={busy || (!status.exists && !ownerName.trim())}>{busy ? "Opening…" : status.exists ? "Unlock vault" : "Create encrypted vault"}</button>
           </form>
           <p className={styles.muted}>Auto-lock after 10 minutes of inactivity. Local capacity profiles are provisional guardrails; licence enforcement belongs to the control plane.</p>
           {client.current&&<BackupView client={client.current} busy={busy} operation={operation} unlocked={false} onStatus={setStatus}/>}
         </section> : <>
+          {access?.viewAs && <section className={styles.warning} role="status" data-testid="preview-banner">Previewing the {access.roleLabel} view. You see only what that role sees. <button disabled={busy} onClick={() => void operation(async () => { await client.current!.call("rolePreview", { role: null }); setStatus(await client.current!.call("status", {})); })}>Return to my own view</button></section>}
           {status.dirty && <section className={styles.error}>⚠ A change is not yet saved. Keep this tab open. <button onClick={() => void operation(async () => { setStatus(await client.current!.call("save", {})); setMessage("Encrypted save completed."); })}>Retry Save</button></section>}
           <div className={styles.stats}><div><span>Invoice lines</span><strong data-testid="line-count">{status.lines}</strong></div><div><span>Products</span><strong>{status.products}</strong></div><div><span>Customers</span><strong>{status.customers}</strong></div><div><span>Encrypted generation</span><strong>{status.generation}</strong></div></div>
-          {section === "Home" && <><section className={styles.card}><h2>Your data stays in the local vault</h2><p>Drop your ERP and supplier files in Data Hub to begin. Working and staging data live in worker memory. OPFS holds encrypted snapshots only.</p><a className={styles.primary} href="#data-hub">Open Data Hub</a><p className={styles.muted}>The margin waterfall, leak finder and Leak Report are under Margin. Guardrails, rules, change approval and ERP file exports are under Pricing; encrypted backups are under Settings.</p></section>
-            {client.current && <RoiCard client={client.current} version={`${status.lines}|${status.generation}`}/>}</>}
-          {section === "Data Hub" && client.current && <>
+          {shown === "Home" && client.current && <HomeView client={client.current} userId={scope.userId} version={`${status.lines}|${status.generation}|${access?.role}`} busy={busy} operation={operation} refresh={async () => setStatus(await client.current!.call("status", {}))}/>}
+          {shown === "Data Hub" && client.current && <>
             <ImportStudio client={client.current} status={status} busy={busy} operation={operation} onStatus={setStatus} setMessage={setMessage}/>
+            <CleanupView client={client.current} version={`${status.lines}|${status.generation}`} busy={busy} operation={operation} onStatus={setStatus} setMessage={setMessage}/>
+            {caps.includes("cost") && <CostBasisView client={client.current} version={`${status.lines}|${status.generation}`} busy={busy} operation={operation} canChoose={caps.includes("data")}/>}
             <details className={styles.card}><summary>Columns each file type needs</summary>
               <p className={styles.small}><strong>Sales history:</strong> line_id, product_id, customer_id, sale_date, quantity, list_amount, discount_amount, freight_amount, rebate_amount, cost_amount (amounts are line totals).</p>
               <p className={styles.small}><strong>Item master:</strong> product_id, and any of description, category, uom, current_cost, list_price. <strong>Customer list:</strong> customer_id, and any of name, tier, branch, region, payment_terms.</p>
@@ -80,12 +87,13 @@ export function VaultApp({ scope, email, workspace, lab = false }: { scope: Scop
               <p className={styles.muted}>Header names are matched ignoring case, spaces and punctuation, in any column order. Mapping other ERP header names arrives in the next chunk. Amounts use up to two decimals with no currency symbols or grouping.</p>
             </details>
           </>}
-          {section === "Margin" && client.current && <MarginView client={client.current} status={status} busy={busy} operation={operation} setMessage={setMessage} onStatus={setStatus}/>}
-          {section === "Pricing" && client.current && <PricingView client={client.current} userId={scope.userId} busy={busy} operation={operation} refresh={async()=>setStatus(await client.current!.call("status",{}))}/>}
-          {section === "Reports" && client.current && <section className={styles.card}><h2>Margin Leak Report</h2><p>A PDF of your waterfall and top leaks with their evidence rows, built on this device. Nothing is uploaded; each export is recorded in the audit log.</p><LeakReportButton client={client.current} busy={busy || status.lines === "0"} operation={operation} setMessage={setMessage} onStatus={setStatus}/></section>}
-          {section === "Reports" && <section className={styles.card}><h2>Verify local audit history</h2><p>{status.auditEntries} hash-chained entries. Schema version {status.schemaVersion}.</p><button className={styles.primary} disabled={busy} onClick={() => void operation(async () => { const result = await client.current!.call("verify", {}); if (!result.valid) throw new Error("Audit verification failed. Keep your encrypted backup."); setMessage(`Audit chain verified: ${result.entries} entries.`); })}>Verify audit chain</button><p className={styles.muted}>A local hash chain detects changed, missing or reordered records against its encrypted tip. It cannot prove that a device owner did not rewrite the whole vault or restore an older snapshot.</p></section>}
-          {section === "Settings" && client.current && <BackupView client={client.current} busy={busy} operation={operation} unlocked onStatus={setStatus}/>}
-          {section === "Settings" && <section className={styles.card}><h2>Storage and security</h2><p>Auto-lock: 10 minutes. Working database: memory only. Last encrypted save: {status.lastSaved || "none"}.</p><p>Browser persistence: {storage ? storage.persistent ? "granted" : "not granted" : "unknown"}. Used estimate: {storage?.usage || "unknown"}; quota: {storage?.quota || "unknown"}; named OPFS files: {storage?.namedOpfsBytes || "unknown"} bytes.</p><button className={styles.primary} onClick={() => void operation(async () => { await navigator.storage.persist(); setStorage(await client.current!.call("storage", {})); setMessage("Storage status refreshed. A persistence grant is not a backup."); })}>Request persistent storage</button><p className={styles.muted}>The browser's quota estimate can differ from file sizes. Closing a tab cannot guarantee an asynchronous save; each completed import is saved before success is shown.</p>{!lab && <p><a href="/account/users">Team and invitations</a> · <a href="/account/workspace">Identity workspace settings</a></p>}</section>}
+          {shown === "Margin" && client.current && <MarginView client={client.current} status={status} busy={busy} operation={operation} setMessage={setMessage} onStatus={setStatus}/>}
+          {shown === "Pricing" && client.current && <PricingView client={client.current} userId={scope.userId} caps={caps} busy={busy} operation={operation} refresh={async()=>setStatus(await client.current!.call("status",{}))}/>}
+          {shown === "Reports" && caps.includes("cost") && client.current && <section className={styles.card}><h2>Margin Leak Report</h2><p>A PDF of your waterfall and top leaks with their evidence rows, built on this device. Nothing is uploaded; each export is recorded in the audit log.</p><LeakReportButton client={client.current} busy={busy || status.lines === "0"} operation={operation} setMessage={setMessage} onStatus={setStatus}/></section>}
+          {shown === "Reports" && caps.includes("audit") && <section className={styles.card}><h2>Verify local audit history</h2><p>{status.auditEntries} hash-chained entries. Schema version {status.schemaVersion}.</p><button className={styles.primary} disabled={busy} onClick={() => void operation(async () => { const result = await client.current!.call("verify", {}); if (!result.valid) throw new Error("Audit verification failed. Keep your encrypted backup."); setMessage(`Audit chain verified: ${result.entries} entries.`); })}>Verify audit chain</button><p className={styles.muted}>A local hash chain detects changed, missing or reordered records against its encrypted tip. It cannot prove that a device owner did not rewrite the whole vault or restore an older snapshot.</p></section>}
+          {shown === "Settings" && client.current && caps.includes("backup") && <BackupView client={client.current} busy={busy} operation={operation} unlocked onStatus={setStatus}/>}
+          {shown === "Settings" && client.current && <RolesView client={client.current} busy={busy} operation={operation} refresh={async () => setStatus(await client.current!.call("status", {}))}/>}
+          {shown === "Settings" && <section className={styles.card}><h2>Storage and security</h2><p>Auto-lock: 10 minutes. Working database: memory only. Last encrypted save: {status.lastSaved || "none"}.</p><p>Browser persistence: {storage ? storage.persistent ? "granted" : "not granted" : "unknown"}. Used estimate: {storage?.usage || "unknown"}; quota: {storage?.quota || "unknown"}; named OPFS files: {storage?.namedOpfsBytes || "unknown"} bytes.</p><button className={styles.primary} onClick={() => void operation(async () => { await navigator.storage.persist(); setStorage(await client.current!.call("storage", {})); setMessage("Storage status refreshed. A persistence grant is not a backup."); })}>Request persistent storage</button><p className={styles.muted}>The browser's quota estimate can differ from file sizes. Closing a tab cannot guarantee an asynchronous save; each completed import is saved before success is shown.</p>{!lab && <p><a href="/account/users">Team and invitations</a> · <a href="/account/workspace">Identity workspace settings</a></p>}</section>}
         </>}
       </main>
     </div>

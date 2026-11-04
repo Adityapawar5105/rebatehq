@@ -1,4 +1,5 @@
 import { backupConfig, storeBackupConfig } from "../../lib/vault/backup";
+import { dispatch } from "../../lib/vault/dispatch";
 // Test-only worker, bundled under test-results and intercepted by Playwright.
 // It is never included by the production asset build or exposed by app routes.
 import { VaultService } from "../../lib/vault/service";
@@ -49,7 +50,7 @@ async function testFixture(bytes: Uint8Array) {
   await closeMemory(probe);
   const service = new VaultService(() => undefined); await service.init(fixtureScope);
   const result = await service.unlock(secret);
-  assert(result.schemaVersion === "6" && result.lines === "1", "V1 snapshot did not upgrade with its row intact");
+  assert(result.schemaVersion === "7" && result.lines === "1", "V1 snapshot did not upgrade with its row intact");
   const agg = (await service.engine!.conn.query("SELECT count(*)::VARCHAR AS n, sum(list_cents)::VARCHAR AS l, max(line_kind) AS k FROM agg_cpm")).toArray()[0];
   assert(agg.n === "1" && agg.l === "1250" && agg.k === "sale", "V1 upgrade must build the margin pre-aggregate from existing lines");
   assert((await service.marginWaterfall()).margin === "375", "Upgraded v1 line waterfall wrong");
@@ -392,7 +393,7 @@ async function margin() {
   const service = new VaultService(() => undefined); await service.init(scope); await service.create(secret, "professional");
   const result: Record<string, unknown> = {};
   const out = await service.playgroundLoad(noop), manifest = out.manifest;
-  assert((await service.status()).schemaVersion === "6", "New vaults must be schema v6");
+  assert((await service.status()).schemaVersion === "7", "New vaults must be schema v7");
   // 1. The waterfall equals the imported lines recomputed one by one with the JS engine.
   const raw = await rowsOf(service, "SELECT invoice_id, customer_id, strftime(sale_date, '%Y-%m') AS m, list_cents::VARCHAR AS l, discount_cents::VARCHAR AS d, rebate_cents::VARCHAR AS r, freight_cents::VARCHAR AS f, cost_cents::VARCHAR AS c, line_kind AS k FROM sales_lines");
   let list = Z, discount = Z, rebate = Z, freight = Z, pocket = Z, costedPocket = Z, cost = Z, marginJs = Z;
@@ -680,10 +681,105 @@ async function pricingBenchmark(){
  }finally{await service.lock();await reset(scope);}
 }
 
+// 5A: roles, item cleanup with undo, cost basis, checklist and ROI, driven through the same command door the UI uses.
+async function phase5a() {
+ const scope={userId:'p5a-'+crypto.randomUUID(),tenantId:'p5a-'+crypto.randomUUID()};
+ const hooks={signal:()=>new AbortController().signal,progress:()=>undefined};
+ const call=(s:VaultService,action:string,data:unknown={})=>dispatch(s,{id:'1',action,data} as never,hooks) as Promise<any>;
+ const refuses=async(s:VaultService,action:string,data:unknown={})=>{try{await call(s,action,data);return false;}catch(e){return (e as Error).message.includes('cannot do this');}};
+ let service=new VaultService(()=>undefined);await service.init(scope);
+ try {
+  let refusedNoOwner=false;try{await call(service,'create',{passphrase:secret,tier:'professional',ownerName:'  '});}catch(e){refusedNoOwner=(e as Error).message.includes('Pricing Owner');}
+  assert(refusedNoOwner&&!(await service.status()).exists,'A vault was created without a named Pricing Owner');
+  const created=await call(service,'create',{passphrase:secret,tier:'professional',ownerName:'Synthetic Pricing Owner'});
+  assert(created.schemaVersion==='7'&&created.access.role==='owner'&&created.access.ownerNamed&&created.access.caps.includes('approve'),'The creator is not the Owner and named Pricing Owner');
+  assert((await call(service,'pricingState')).owner.name==='Synthetic Pricing Owner','Pricing Owner was not stored at setup');
+  // Sample data never completes setup steps; it still feeds every view.
+  await service.playgroundLoad(()=>undefined);
+  let list=await call(service,'checklist');assert(list.total===7&&list.steps.every((s:{step:string;done:boolean})=>!s.done||s.step==='fix'),'Playground data completed a setup step');
+  const e=service.engine!,src=String((await e.conn.query("SELECT id FROM source_files WHERE role='sales_history' LIMIT 1")).toArray()[0].id),customer=String((await e.conn.query('SELECT customer_id FROM customers LIMIT 1')).toArray()[0].customer_id);
+  await e.conn.query(`BEGIN;INSERT INTO products(product_id,category,uom,current_cost) VALUES('ZED-1','Zeds','Each',8123457),('zed-1','','EA',NULL);
+INSERT INTO sales_lines(source_id,line_id,product_id,customer_id,sale_date,quantity,list_cents,discount_cents,freight_cents,rebate_cents,cost_cents,source_row) VALUES('${src}',9000001,'ZED-1','${customer}',DATE '2025-02-01',1,9000000,0,0,0,8123457,99999),('${src}',9000002,'zed-1','${customer}',DATE '2025-02-02',1,5000,0,0,0,3000,99998);COMMIT`);
+  await(service as unknown as {derived(value:typeof e):Promise<void>}).derived(e);await service.save();
+  // Item master cleanup: merge, unit spelling and category; each changes the vault and each undo restores it exactly.
+  const before=await call(service,'marginWaterfall'),scan=await call(service,'cleanupScan');
+  const group=scan.duplicates.find((g:{key:string})=>g.key==='ZED1');assert(group&&group.members.length===2&&group.canonical==='ZED-1'&&group.confidence==='certain','Duplicate SKUs were not found');
+  const merged=await call(service,'cleanupApply',{kind:'merge_duplicates',key:'ZED1'});assert(merged.finished,'Duplicate rows were not removed');
+  assert((await e.conn.query("SELECT count(*)::VARCHAR AS n FROM products WHERE upper(product_id)='ZED-1'")).toArray()[0].n==='1','Merge left a look-alike product');
+  const after=await call(service,'marginWaterfall');assert(after.netPocket===before.netPocket&&after.cost===before.cost&&after.margin===before.margin&&after.lines===before.lines,'Merging changed invoice totals');
+  assert((await e.conn.query("SELECT count(*)::VARCHAR AS n FROM sales_lines WHERE line_id IN (9000001,9000002) AND product_id='ZED-1'")).toArray()[0].n==='2'&&(await call(service,'marginMath',{metric:'cost',filters:{by:[{dim:'product',value:'ZED-1'}]}})).rowCount==='2','Merged lines do not point at the kept product');
+  const mergeFix=merged.history[0];await call(service,'cleanupUndo',{id:mergeFix.id});
+  assert((await e.conn.query("SELECT count(*)::VARCHAR AS n FROM products WHERE upper(product_id)='ZED-1'")).toArray()[0].n==='2','Undo did not restore the duplicate product');
+  assert((await call(service,'marginWaterfall')).margin===before.margin,'Undo changed the waterfall');
+  const unit=await call(service,'cleanupApply',{kind:'normalize_uom',key:'Each'});assert((await e.conn.query("SELECT uom FROM products WHERE product_id='ZED-1'")).toArray()[0].uom==='EA','Unit was not respelled');
+  await call(service,'cleanupUndo',{id:unit.history[0].id});assert((await e.conn.query("SELECT uom FROM products WHERE product_id='ZED-1'")).toArray()[0].uom==='Each','Unit undo failed');
+  let twice=false;try{await call(service,'cleanupUndo',{id:unit.history[0].id});}catch(err){twice=(err as Error).message.includes('already undone');}assert(twice,'A fix was undone twice');
+  assert((await service.verify()).valid,'Audit chain broke after cleanup');
+  const actions=(await e.conn.query("SELECT action FROM audit_log WHERE action LIKE 'cleanup.%'")).toArray().map(r=>String(r.action));assert(actions.filter(a=>a==='cleanup.applied').length===2&&actions.filter(a=>a==='cleanup.undone').length===2,'Cleanup fixes were not audited');
+  // Cost basis: the invoice column reconciles to the waterfall; a choice is stored and survives a lock.
+  const basis=await call(service,'costBasis'),wf=await call(service,'marginWaterfall');
+  assert(basis.groups.length>0&&BigInt(basis.total.invoice.margin)===BigInt(wf.margin),'Invoice-cost margin by group does not add up to the waterfall');
+  const zeds=basis.groups.find((g:{group:string})=>g.group==='Zeds');assert(zeds&&BigInt(zeds.replacement.cost)===BigInt(8123457),'Replacement cost for the Zeds group is wrong');
+  await call(service,'costBasisSet',{group:'Zeds',basis:'replacement'});
+  // Rules, checklist progress and ROI.
+  const roiAtStart=await call(service,'home');assert(roiAtStart.roi&&roiAtStart.roi.findings==='0','Sample findings were counted in the ROI total');
+  await call(service,'leaks');const home=await call(service,'home');assert(home.roi.sampleFindings!=='0'&&home.roi.findings==='0'&&home.margin,'Home lacks the ROI tracker or counts sample findings');
+  await call(service,'ruleSave',{input:{name:'Valves cost pass-through',category:'Valves',vendor:'Valves Mills',threshold:'5',increase:'4.5'}});
+  list=await call(service,'checklist');assert(list.steps.find((s:{step:string})=>s.step==='rule').done&&!list.steps.find((s:{step:string})=>s.step==='import').done,'Checklist did not follow the vault');
+  // People: a second person gets a role; self-edits are refused; Owner stays.
+  await call(service,'roleSet',{userId:'colleague-1',name:'Sam Sales',role:'sales_rep'});
+  let selfEdit=false;try{await call(service,'roleSet',{userId:scope.userId,name:'Me',role:'sales_rep'});}catch(err){selfEdit=(err as Error).message.includes('own role');}assert(selfEdit,'A role was self-assigned');
+  assert((await call(service,'roleList')).people.length===2,'Role assignment was not stored');
+  list=await call(service,'checklist');assert(list.steps.find((s:{step:string})=>s.step==='team').done,'Adding a person did not complete the team step');
+  // Rep view (a preview of the same vault): no cost reaches the caller, enforced by the worker.
+  const ownerStatus=await call(service,'status'),ownerMath=JSON.stringify(await call(service,'marginMath',{metric:'cost',filters:{by:[{dim:'product',value:'ZED-1'}]}}));
+  assert(ownerStatus.totals.cost!==null&&ownerMath.includes('8123457'),'The Owner cannot see cost');
+  await call(service,'rolePreview',{role:'sales_rep'});
+  for(const [action,data] of [['marginWaterfall',{}],['marginDrill',{dim:'product'}],['marginWhale',{}],['marginMath',{metric:'cost'}],['leaks',{}],['leakReport',{}],['roi',{}],['costBasis',{}],['ruleSimulate',{id:'x'}],['rulePreview',{id:'x'}],['priceExport',{id:'x',profile:'generic',format:'csv'}],['ruleApprove',{id:'x'}],['cleanupApply',{kind:'merge_duplicates',key:'ZED1'}],['studioAdd',{files:[]}],['health',{}],['roleSet',{userId:'u',name:'n',role:'owner'}],['backupNow',{}]] as Array<[string,unknown]>)assert(await refuses(service,action,data),`The Sales Rep view was allowed to run ${action}`);
+  const repStatus=await call(service,'status'),repHome=await call(service,'home'),repPricing=await call(service,'pricingState');
+  assert(repStatus.access.role==='sales_rep'&&repStatus.totals.cost===null&&repStatus.totals.margin===null&&repStatus.totals.list!=='0','The Sales Rep status carries cost');
+  assert(!('margin' in repHome)&&!('roi' in repHome)&&repPricing.rules.length===0&&repPricing.runs.length===0,'The Sales Rep home or pricing view carries cost-derived data');
+  const seen=JSON.stringify([repStatus,repHome,repPricing,await call(service,'checklist'),await call(service,'roleList')]);
+  assert(!seen.includes('8123457')&&!seen.includes('"cost":"'),'A cost value reached the Sales Rep view');
+  assert(repStatus.access.sections.join()==='Home,Pricing','The Sales Rep sees more sections than Home and Pricing');
+  await call(service,'rolePreview',{role:null});assert((await call(service,'status')).access.role==='owner','Leaving the preview did not restore the Owner view');
+  await call(service,'accessSet',{repSeesCost:true});await call(service,'rolePreview',{role:'sales_rep'});
+  assert((await call(service,'marginWaterfall')).margin===wf.margin&&await refuses(service,'ruleSimulate',{id:'x'})&&await refuses(service,'studioAdd',{files:[]}),'The owner switch must give reps cost and nothing else');
+  await call(service,'rolePreview',{role:null});await call(service,'accessSet',{repSeesCost:false});
+  // Everything above is stored in the encrypted vault: lock, unlock and check.
+  await call(service,'lock');service=new VaultService(()=>undefined);await service.init(scope);await call(service,'unlock',{passphrase:secret});
+  assert((await call(service,'status')).access.viewAs===null,'A role preview survived a lock');
+  list=await call(service,'checklist');assert(list.steps.find((s:{step:string})=>s.step==='rule').done&&list.steps.find((s:{step:string})=>s.step==='team').done,'Checklist progress was not stored in the vault');
+  assert((await call(service,'costBasis')).groups.find((g:{group:string})=>g.group==='Zeds').selected==='replacement','The cost basis choice was not stored');
+  assert((await call(service,'roleList')).people.some((p:{userId:string})=>p.userId==='colleague-1'),'Roles were not stored');
+  assert((await call(service,'cleanupHistory')).length===2&&(await service.verify()).valid,'Cleanup history or audit chain lost');
+  return {ownerRequiredAtSetup:true,schemaV7:true,sampleDataNeverCompletesSteps:true,mergeAndUndo:true,unitFixAndUndo:true,invoiceTotalsUnchangedByCleanup:true,costBasisReconcilesToWaterfall:true,roiAndHomeSampleSeparated:true,checklistStored:true,repCostNeverCrossesWorker:true,ownerSwitchGivesRepsCostOnly:true};
+ }finally{await service.lock().catch(()=>undefined);await reset(scope);}
+}
+// 5A timings on a synthetic 1M-line vault (100,000 products, 1,000 look-alike duplicates, 500 odd unit spellings, 2,000 uncategorised).
+async function phase5aBenchmark(){
+ const scope={userId:'p5b-'+crypto.randomUUID(),tenantId:'p5b-'+crypto.randomUUID()},call=(s:VaultService,action:string,data:unknown={})=>dispatch(s,{id:'1',action,data} as never,{signal:()=>new AbortController().signal,progress:()=>undefined}) as Promise<any>;
+ const service=new VaultService(()=>undefined);await service.init(scope);await call(service,'create',{passphrase:secret,tier:'scale',ownerName:'Benchmark Owner'});
+ try{const e=service.engine!,src=crypto.randomUUID();
+  await e.conn.query(`BEGIN;INSERT INTO products(product_id,category,uom,current_cost,list_price) SELECT 'P'||i,CASE WHEN i%50=0 THEN '' ELSE 'Cat'||(i%40) END,CASE WHEN i%200=0 THEN 'Each' ELSE 'EA' END,6000,10000 FROM range(100000)t(i);
+INSERT INTO products(product_id,category,uom,current_cost,list_price) SELECT 'p'||i,'Cat'||(i%40),'EA',6000,10000 FROM range(1000)t(i) WHERE i%1<>2;
+INSERT INTO customers(customer_id,tier) SELECT 'C'||i,'T'||(i%50) FROM range(2000)t(i);INSERT INTO source_files VALUES('${src}','synthetic benchmark.csv','sales_history',0,'2026-11-04');
+INSERT INTO vendor_costs(id,vendor,product_id,cost,effective_date,source_file) SELECT 'old'||i,'Mills','P'||i,6000,'2024-01-01','synthetic' FROM range(100000)t(i);INSERT INTO vendor_costs(id,vendor,product_id,cost,effective_date,source_file) SELECT 'new'||i,'Mills','P'||i,6600,'2025-01-01','synthetic' FROM range(100000)t(i)`);
+  for(let at=0;at<1000000;at+=50000)await e.conn.query(`INSERT INTO sales_lines(source_id,line_id,product_id,customer_id,sale_date,quantity,list_cents,discount_cents,freight_cents,rebate_cents,cost_cents,source_row) SELECT '${src}',i+1,CASE WHEN i%1000=7 THEN 'p'||(i%1000) ELSE 'P'||(i%100000) END,'C'||(i%2000),DATE '2025-01-01'+INTERVAL (i%12) MONTH,1,10000,100,50,0,6000,i+2 FROM range(${at},${at+50000})t(i)`);
+  await e.conn.query('COMMIT');await(service as unknown as {derived(value:typeof e):Promise<void>}).derived(e);await service.save();await service.lock();await call(service,'unlock',{passphrase:secret});await service.warmup();
+  const time=async(f:()=>Promise<any>)=>{const t=performance.now(),r=await f();return [Math.round(performance.now()-t),r] as const;};
+  const [scanMs,scan]=await time(()=>call(service,'cleanupScan')),[basisMs,basis]=await time(()=>call(service,'costBasis')),[homeMs]=await time(()=>call(service,'home')),[statusMs]=await time(()=>call(service,'status'));
+  const group=scan.duplicates.find((g:{key:string})=>g.key==='P7');assert(group&&group.confidence==='certain','Benchmark duplicates not found');
+  const [mergeMs,merged]=await time(()=>call(service,'cleanupApply',{kind:'merge_duplicates',key:'P7'})),[undoMs]=await time(()=>call(service,'cleanupUndo',{id:merged.history[0].id}));
+  const [unitMs]=await time(()=>call(service,'cleanupApply',{kind:'normalize_uom',key:'Each'}));
+  assert(scan.duplicates.length>=100&&basis.groups.length>=40,'Benchmark data not what was expected');
+  return {lines:'1000000',products:'101000',duplicateGroups:scan.totals.duplicateProducts,cleanupScanMs:scanMs,costBasisMs:basisMs,homeMs,statusMs,mergeOneGroupInclRebuildAndSaveMs:mergeMs,undoMergeInclRebuildAndSaveMs:undoMs,unitFixAllSpellingsInclSaveMs:unitMs,memoryLimit:'512MB'};
+ }finally{await service.lock().catch(()=>undefined);await reset(scope);}
+}
 self.onmessage = async event => {
   try {
     const { action } = event.data;
-    const result = action === "pricing" ? await pricingFlow() : action === "legacyStorage" ? await legacyStorage() : action === "pricingBenchmark" ? await pricingBenchmark() : action === "fixture" ? await fixture() : action === "v1" ? await testFixture(event.data.bytes) : action === "seed" ? await seed(event.data.rows) : action === "firstChange" ? await firstChange(event.data.rows) : action === "integrity" ? await integrity() : action === "studio" ? await studio() : action === "mapper" ? await mapper() : action === "playground" ? await playground() : action === "margin" ? await margin() : action === "marginBenchmark" ? await marginBenchmark(event.data.rows) : action === "studioBenchmark" ? await studioBenchmark(event.data.rows) : action === "warmup" ? await warmup() : action === "cipherOnly" ? await cipherOnly() : await storageStatus();
+    const result = action === "phase5aBenchmark" ? await phase5aBenchmark() : action === "phase5a" ? await phase5a() : action === "pricing" ? await pricingFlow() : action === "legacyStorage" ? await legacyStorage() : action === "pricingBenchmark" ? await pricingBenchmark() : action === "fixture" ? await fixture() : action === "v1" ? await testFixture(event.data.bytes) : action === "seed" ? await seed(event.data.rows) : action === "firstChange" ? await firstChange(event.data.rows) : action === "integrity" ? await integrity() : action === "studio" ? await studio() : action === "mapper" ? await mapper() : action === "playground" ? await playground() : action === "margin" ? await margin() : action === "marginBenchmark" ? await marginBenchmark(event.data.rows) : action === "studioBenchmark" ? await studioBenchmark(event.data.rows) : action === "warmup" ? await warmup() : action === "cipherOnly" ? await cipherOnly() : await storageStatus();
     self.postMessage({ result });
   } catch (e) { self.postMessage({ error: e instanceof Error ? e.message : "test worker failed" }); }
 };

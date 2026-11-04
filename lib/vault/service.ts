@@ -19,6 +19,12 @@ import { findLeaks, leakRows, type LeakResult } from "../margin/leaks";
 import { REMOVE_SAMPLE_SQL, ledgerSql, roiSummary } from "../margin/roi";
 import { leakReport } from "../margin/report";
 import { loadCredits } from "../margin/credits";
+import * as cleanup from "../cleanup/item-master";
+import { basisSql, costBasis, type BasisId } from "../cost/basis";
+import * as setup from "../setup/checklist";
+import * as roles from "../roles/store";
+import { isRole, type Cap, type RoleId } from "../roles/access";
+import type { Access, CleanupApplied, CleanupUndone, HomeData, RoleList } from "./protocol";
 export class VaultService {
   engine: Engine | null = null;
   private identity!: Scope;
@@ -29,6 +35,8 @@ export class VaultService {
   private dirty = false;
   private recovered = false;
   private tier: Tier = "starter";
+  private accessCache: Access | null = null;
+  private viewAs: RoleId | null = null;
   private releaseLease: (() => void) | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
   readonly studio = new Studio();
@@ -55,9 +63,11 @@ export class VaultService {
     if (this.engine) this.timer = setTimeout(this.onIdle, this.idleMs);
     return { ok: true };
   }
-  async create(passphrase: string, tier: Tier) {
+  /** `ownerName` names the Pricing Owner at setup (the worker requires it; direct harness calls may omit it). */
+  async create(passphrase: string, tier: Tier, ownerName?: string) {
     if (this.engine || await this.storage.exists()) throw new VaultError("EXISTS", "A vault already exists. Unlock it instead of replacing it.");
     if (!["starter", "professional", "scale"].includes(tier)) throw new VaultError("TIER", "Choose a supported plan.");
+    const owner = ownerName === undefined ? undefined : pricing.label(ownerName);
     await this.lease();
     try {
       this.key = await deriveKey(passphrase); passphrase = "";
@@ -65,8 +75,16 @@ export class VaultService {
       await this.engine.conn.query(`BEGIN; ${V1_SQL} INSERT INTO vault_meta VALUES(1,1,${sqlText(tier)},${sqlText(this.storage.scope)},${sqlText(GENESIS)},0)`);
       await appendAudit(this.engine, "vault.created", { schema_version: "1" });
       await this.engine.conn.query("COMMIT");
-      await this.migrate(); this.dirty = true; await this.save(); this.touch(); return this.status();
+      await this.migrate(); this.dirty = true; await this.save();
+      if (owner !== undefined) await this.setupOwner(owner);
+      this.touch(); return this.status();
     } catch (error) { await this.dispose(); if (error instanceof VaultError && error.code === "SAVE") throw new VaultError("SAVE", "Initial vault setup could not be saved. Free storage and retry; no existing vault was replaced."); throw error; }
+  }
+  /** The person creating the vault is its first Owner and names themselves Pricing Owner (required at setup). */
+  private async setupOwner(name: string) {
+    const id = this.identity.userId, at = new Date().toISOString();
+    await this.write("pricing.owner_set", { actor: id, setup: "true" }, async e => { await e.conn.query(`INSERT INTO pricing_settings VALUES(1,${sqlText(id)},${sqlText(name)},7); ${roles.seedSql(id, name, at)} UPDATE vault_meta SET pricing_revision=pricing_revision+1 WHERE id=1`); });
+    this.accessCache = null;
   }
   private async migrate() {
     const engine = this.requireEngine();
@@ -307,22 +325,124 @@ export class VaultService {
     return { status: await this.status(), recon: await reconSummary(engine, d, new Date().toISOString()) };
   }
 
-  private async pricingWrite(action: string, work: (e: Engine) => Promise<void>) {
+  private async pricingWrite(action: string, work: (e: Engine) => Promise<void>) { await this.write(action, { actor: this.identity.userId }, work); }
+  /** One audited, atomic change that is saved before it returns. */
+  private async write(action: string, details: Record<string, string>, work: (e: Engine) => Promise<void>) {
     const e=await this.writable(); await e.conn.query('BEGIN');
-    try {await work(e);await appendAudit(e,action,{actor:this.identity.userId});await e.conn.query('COMMIT');}
+    try {await work(e);await appendAudit(e,action,details);await e.conn.query('COMMIT');}
     catch(error){await e.conn.query('ROLLBACK').catch(()=>undefined);throw error;}
     this.dirty=true;this.dataVersion++;this.leakCache=null;await this.save();this.touch();
   }
-  async pricingState(){return pricing.pricingState(this.requireEngine());}
+  // ---- 5A: access, home, checklist, item cleanup, cost basis -----------------------------
+  /** What the signed-in person may do here (cached until a role, the owner or the preview changes). */
+  async access(): Promise<Access> { const e = this.requireEngine(); return this.accessCache ??= await roles.accessFor(e, this.identity.userId, this.viewAs); }
+  /** Called by the command dispatcher before every command: a role that may not do something never reaches its query. */
+  async guard(cap: Cap | null) {
+    if (!cap || !this.engine) return;
+    const a = await this.access();
+    if (!a.caps.includes(cap)) throw new VaultError("FORBIDDEN", `${a.roleLabel} cannot do this. Ask an Owner or Pricing Owner.`);
+  }
+  /** A vault from before roles existed has none; whoever unlocks it becomes its Owner, once. */
+  private async seedRoles() {
+    const e = this.requireEngine();
+    if (Number((await e.conn.query("SELECT count(*) AS n FROM role_assignments")).toArray()[0].n) > 0) return;
+    const owner = (await pricing.pricingState(e)).owner, id = this.identity.userId;
+    await this.write("roles.seeded", { actor: id }, async w => { await w.conn.query(roles.seedSql(id, owner && owner.id === id ? owner.name : "Vault owner", new Date().toISOString())); });
+    this.accessCache = null;
+  }
+  async home(): Promise<HomeData> {
+    const e = this.requireEngine(), access = await this.access(), has = (c: Cap) => access.caps.includes(c), state = await pricing.pricingState(e);
+    const out: HomeData = { access, checklist: await this.checklist(), pricingOwner: state.owner?.name ?? null, guardrails: String(state.guards.length) };
+    const count = async (sql: string) => String((await e.conn.query(sql)).toArray()[0].n);
+    if (has("cost")) { const w = await waterfall(e); out.margin = { netPocket: w.netPocket, margin: w.margin, rate: w.rate, uncostedLines: w.uncostedLines, lines: w.lines }; out.roi = await roiSummary(e); }
+    if (has("data")) out.openFixLater = await count("SELECT count(*) AS n FROM rejected_rows WHERE status='open'");
+    if (has("reconcile")) out.openRecon = await count("SELECT count(*) AS n FROM recon_issues WHERE status='open'");
+    if (has("pricing")) { out.previews = await count("SELECT count(*) AS n FROM rule_runs WHERE status='preview'"); out.rules = await count("SELECT count(*) AS n FROM rules"); }
+    return out;
+  }
+  async checklist() {
+    const e = this.requireEngine(), { view, newly } = await setup.read(e);
+    // Persist newly reached steps only when that costs nothing extra (no unsaved change, vault already writable).
+    if (newly.length && !this.dirty && (e.writable || e.warmReady)) {
+      await this.write("setup.steps", { steps: newly.join(",") }, async w => { await w.conn.query(setup.saveSql(newly, "auto", new Date().toISOString())); });
+      return (await setup.read(this.requireEngine())).view;
+    }
+    return view;
+  }
+  async checklistMark(step: setup.Step) {
+    if (!setup.STEP_INFO[step]?.manual) throw new VaultError("SETUP", "Only the team step is marked by hand; the others are detected from your data.");
+    await this.write("setup.marked", { step }, async w => { await w.conn.query(setup.saveSql([step], "manual", new Date().toISOString())); });
+    return this.checklist();
+  }
+  private async actor() { const a = await roles.accessFor(this.requireEngine(), this.identity.userId, null); const owner = (await pricing.pricingState(this.requireEngine())).owner; return { userId: this.identity.userId, role: a.role, namedOwner: owner?.id === this.identity.userId }; }
+  async roleList(): Promise<RoleList> {
+    await this.seedRoles();
+    const e = this.requireEngine(), you = await this.access(), canManage = you.caps.includes("roles"), all = await roles.people(e, this.identity.userId);
+    return { people: canManage ? all : all.filter(p => p.you), you, repSeesCost: you.repSeesCost, pricingOwner: (await pricing.pricingState(e)).owner?.name ?? null, canManage };
+  }
+  async roleSet(userId: string, name: string, role: RoleId) {
+    await this.seedRoles();
+    const e = this.requireEngine(), plan = await roles.setSql(e, await this.actor(), { userId, name, role }, new Date().toISOString());
+    await this.write("roles.assigned", { actor: this.identity.userId, user: plan.userId, role }, async w => { await w.conn.query(plan.sql); });
+    this.accessCache = null; return this.roleList();
+  }
+  async roleRemove(userId: string) {
+    const sql = await roles.removeSql(this.requireEngine(), { userId: this.identity.userId }, userId);
+    await this.write("roles.removed", { actor: this.identity.userId, user: userId }, async w => { await w.conn.query(sql); });
+    this.accessCache = null; return this.roleList();
+  }
+  async accessSet(repSeesCost: boolean) {
+    await this.write("access.rep_cost", { actor: this.identity.userId, allowed: String(!!repSeesCost) }, async w => { await w.conn.query(roles.accessSql(!!repSeesCost)); });
+    this.accessCache = null; return this.roleList();
+  }
+  /** Preview another role's view. It only ever removes capabilities from your own, and resets on lock. */
+  async rolePreview(role: RoleId | null) {
+    if (role !== null && !isRole(role)) throw new VaultError("ROLES", "Choose one of the seven roles.");
+    this.requireEngine(); this.viewAs = role; this.accessCache = null; return this.roleList();
+  }
+  async costBasis() { return costBasis(this.requireEngine()); }
+  async costBasisSet(group: string, basis: BasisId | null) {
+    const sql = basisSql(group, basis);
+    await this.write("costbasis.set", { actor: this.identity.userId, group: group.slice(0, 160), basis: basis ?? "invoice" }, async w => { await w.conn.query(sql); });
+    return costBasis(this.requireEngine());
+  }
+  async cleanupScan() { return cleanup.scan(this.requireEngine()); }
+  async cleanupHistory() { return cleanup.history(this.requireEngine()); }
+  async cleanupApply(kind: cleanup.FixKind, key: string, target: string | null = null): Promise<CleanupApplied> {
+    const e = await this.writable(), p = await cleanup.plan(e, kind, key, target, this.identity.userId, new Date().toISOString());
+    await e.conn.query("BEGIN");
+    try { await e.conn.query(p.sql); await appendAudit(e, "cleanup.applied", { fix_id: p.fixId, kind, cells: String(p.cells) }); await e.conn.query("COMMIT"); }
+    catch (error) { await e.conn.query("ROLLBACK").catch(() => undefined); throw error; }
+    let finished = true;
+    if (p.finishSql) { try { await e.conn.query(`BEGIN; ${p.finishSql} COMMIT`); } catch { await e.conn.query("ROLLBACK").catch(() => undefined); finished = false; } }
+    this.dirty = true; if (kind === "merge_duplicates") await this.derived(e); else { this.dataVersion++; this.leakCache = null; }
+    await this.save(); this.touch();
+    return { fix: p.summary, finished, status: await this.status(), scan: await cleanup.scan(e), history: await cleanup.history(e) };
+  }
+  async cleanupUndo(id: string): Promise<CleanupUndone> {
+    const e = await this.writable(), p = await cleanup.undoPlan(e, id, this.identity.userId, new Date().toISOString());
+    await e.conn.query("BEGIN");
+    try { await e.conn.query(p.sql); await appendAudit(e, "cleanup.undone", { fix_id: id, kind: p.kind, restored: String(p.restored), skipped: String(p.skipped) }); await e.conn.query("COMMIT"); }
+    catch (error) { await e.conn.query("ROLLBACK").catch(() => undefined); throw error; }
+    this.dirty = true; if (p.kind === "merge_duplicates") await this.derived(e); else { this.dataVersion++; this.leakCache = null; }
+    await this.save(); this.touch();
+    return { summary: p.summary, restored: String(p.restored), skipped: String(p.skipped), status: await this.status(), scan: await cleanup.scan(e), history: await cleanup.history(e) };
+  }
+  /** Guardrails and price floors are visible to every role; rules, simulations and their costs only to roles that edit pricing. */
+  async pricingState(){const state=await pricing.pricingState(this.requireEngine());if((await this.access()).caps.includes('pricing'))return state;return {...state,rules:[],runs:[]};}
+  /** Pricing changes need a named Pricing Owner (required at setup). */
+  private async requireOwnerNamed(){if(!(await pricing.pricingState(this.requireEngine())).owner)throw new VaultError('OWNER','Name a Pricing Owner on Home before changing prices. Every price change is approved by that person.');}
   async pricingOwner(name:string, userId:string, backupDays=7){
     name=pricing.label(name);userId=pricing.label(userId);
     if(!Number.isInteger(backupDays)||backupDays<1||backupDays>90)throw new VaultError('PRICING','Choose a backup reminder from 1 to 90 days.');
+    await this.seedRoles();
     await this.pricingWrite('pricing.owner_set',async e=>{if((await pricing.pricingState(e)).owner)await pricing.owner(e,this.identity.userId);else if(userId!==this.identity.userId)throw new VaultError('PRICING','First name yourself as Pricing Owner.');await e.conn.query(`DELETE FROM pricing_settings WHERE id=1;INSERT INTO pricing_settings VALUES(1,${sqlText(userId)},${sqlText(name)},${backupDays});UPDATE vault_meta SET pricing_revision=pricing_revision+1 WHERE id=1`);});
+    this.accessCache=null;
     return this.pricingState();
   }
-  async guardSet(input: pricing.GuardInput){await this.pricingWrite('pricing.guardrail',async e=>{await e.conn.query(pricing.guardSql(input));});return this.pricingState();}
-  async ruleSave(input: pricing.RuleInput){let id='';await this.pricingWrite('pricing.rule_version',async e=>{const r=await pricing.ruleSql(e,input);id=r.id;await e.conn.query(r.sql);});return {id,state:await this.pricingState()};}
-  async ruleSimulate(id:string){let result:{id:string;count:number;ms:number}|undefined;
+  async guardSet(input: pricing.GuardInput){await this.requireOwnerNamed();await this.pricingWrite('pricing.guardrail',async e=>{await e.conn.query(pricing.guardSql(input));});return this.pricingState();}
+  async ruleSave(input: pricing.RuleInput){await this.requireOwnerNamed();let id='';await this.pricingWrite('pricing.rule_version',async e=>{const r=await pricing.ruleSql(e,input);id=r.id;await e.conn.query(r.sql);});return {id,state:await this.pricingState()};}
+  async ruleSimulate(id:string){await this.requireOwnerNamed();let result:{id:string;count:number;ms:number}|undefined;
     await this.pricingWrite('pricing.simulated',async e=>{const r=await pricing.simulate(e,id);await e.conn.query(r.sql);result=r;});
     return {...await pricing.preview(this.requireEngine(),result!.id),ms:result!.ms};
   }
@@ -366,7 +486,7 @@ export class VaultService {
   }
   private async dispose() {
     if (this.timer) clearTimeout(this.timer); this.timer = null;
-    const engine = this.engine; this.engine = null; this.key = null; this.studio.clear(); this.leakCache = null;
+    const engine = this.engine; this.engine = null; this.key = null; this.studio.clear(); this.leakCache = null; this.accessCache = null; this.viewAs = null;
     if (engine) await closeMemory(engine).catch(() => undefined);
     this.releaseLease?.(); this.releaseLease = null; this.dirty = false;
   }
@@ -375,7 +495,9 @@ export class VaultService {
       writable: !!this.engine?.writable || !!this.engine?.warmReady, preparing: !!this.engine && !this.engine.writable && !!this.engine.warming && !this.engine.warmDone, recovered: this.recovered, lines: "0", products: "0", customers: "0", auditEntries: "0", schemaVersion: "0", generation: this.generation, tier: this.tier, lastSaved: this.lastSaved };
     if (!this.engine) return base;
     const data = (await this.engine.conn.query(`SELECT (SELECT count(*) FROM sales_lines)::VARCHAR AS lines,(SELECT count(*) FROM products)::VARCHAR AS products,(SELECT count(*) FROM customers)::VARCHAR AS customers,audit_count::VARCHAR AS entries,schema_version::VARCHAR AS version FROM vault_meta WHERE id=1`)).toArray()[0];
-    const totals = (await this.engine.conn.query(`SELECT coalesce(sum(list_cents),0)::VARCHAR AS list,coalesce(sum(discount_cents),0)::VARCHAR AS discounts,coalesce(sum(freight_cents),0)::VARCHAR AS freight,coalesce(sum(rebate_cents),0)::VARCHAR AS rebates,coalesce(sum(list_cents-discount_cents-freight_cents-rebate_cents),0)::VARCHAR AS pocket,coalesce(sum(cost_cents),0)::VARCHAR AS cost,coalesce(sum(list_cents-discount_cents-freight_cents-rebate_cents-cost_cents),0)::VARCHAR AS margin FROM sales_lines`)).toArray()[0];
-    return { ...base, lines: String(data.lines), products: String(data.products), customers: String(data.customers), auditEntries: String(data.entries), schemaVersion: String(data.version), totals: { ...totals } as VaultStatus["totals"] };
+    // A role without cost access never has cost or margin selected: the query itself leaves them out.
+    const access = await this.access(), cost = access.caps.includes("cost");
+    const totals = (await this.engine.conn.query(`SELECT coalesce(sum(list_cents),0)::VARCHAR AS list,coalesce(sum(discount_cents),0)::VARCHAR AS discounts,coalesce(sum(freight_cents),0)::VARCHAR AS freight,coalesce(sum(rebate_cents),0)::VARCHAR AS rebates,coalesce(sum(list_cents-discount_cents-freight_cents-rebate_cents),0)::VARCHAR AS pocket${cost ? `,coalesce(sum(cost_cents),0)::VARCHAR AS cost,coalesce(sum(list_cents-discount_cents-freight_cents-rebate_cents-cost_cents),0)::VARCHAR AS margin` : ""} FROM sales_lines`)).toArray()[0];
+    return { ...base, lines: String(data.lines), products: String(data.products), customers: String(data.customers), auditEntries: String(data.entries), schemaVersion: String(data.version), totals: { cost: null, margin: null, ...totals } as VaultStatus["totals"], access };
   }
 }

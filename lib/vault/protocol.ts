@@ -10,19 +10,50 @@ import type { Dim, Drill, Filters, MathPanel, Metric, Waterfall, Whale } from ".
 import type { LeakResult, LeakRow } from "../margin/leaks";
 import type { RoiSummary } from "../margin/roi";
 import type { ReconSummary } from "../margin/aggregate";
+import type { Cap, RoleId } from "../roles/access";
+import type { Checklist, Step } from "../setup/checklist";
+import type { FixKind, FixView, Scan } from "../cleanup/item-master";
+import type { BasisId, CostBasisView } from "../cost/basis";
 export type Tier = "starter" | "professional" | "scale";
 export type Scope = { userId: string; tenantId: string };
+/** What the signed-in person may do in this vault. Computed in the worker; the UI only mirrors it. */
+export type Access = { role: RoleId; roleLabel: string; assigned: boolean; viewAs: RoleId | null; caps: Cap[]; sections: string[]; ownerNamed: boolean; repSeesCost: boolean };
 export type VaultStatus = {
   state: "locked" | "unlocked"; exists: boolean; dirty: boolean; recovered: boolean;
   /** writable: the first change will not need a copy; preparing: that copy is running in the background. */
   writable: boolean; preparing: boolean;
   lines: string; products: string; customers: string; auditEntries: string;
   schemaVersion: string; generation: string; tier: Tier; lastSaved: string | null;
-  totals?: { list: string; discounts: string; freight: string; rebates: string; pocket: string; cost: string; margin: string };
+  /** cost and margin are null for roles that may not see cost: the worker never selects them. */
+  totals?: { list: string; discounts: string; freight: string; rebates: string; pocket: string; cost: string | null; margin: string | null };
+  access?: Access;
 };
+export type Person = { userId: string; name: string; role: RoleId; roleLabel: string; assignedAt: string; you: boolean };
+export type RoleList = { people: Person[]; you: Access; repSeesCost: boolean; pricingOwner: string | null; canManage: boolean };
+export type HomeData = {
+  access: Access; checklist: Checklist; pricingOwner: string | null; guardrails: string;
+  roi?: RoiSummary; margin?: { netPocket: string; margin: string; rate: string; uncostedLines: string; lines: string };
+  openFixLater?: string; openRecon?: string; previews?: string; rules?: string; cleanup?: { duplicates: string; units: string; categories: string };
+};
+export type CleanupApplied = { fix: string; finished: boolean; status: VaultStatus; scan: Scan; history: FixView[] };
+export type CleanupUndone = { summary: string; restored: string; skipped: string; status: VaultStatus; scan: Scan; history: FixView[] };
 export type StorageStatus = { persistent: boolean; usage: string; quota: string; namedOpfsBytes: string; files: string };
 export type ImportEstimate = { bytes: string; estimatedMemoryBytes: string; maxLines: string; maxProducts: string; warning: string };
 export type Commands = {
+  home: Record<string, never>;
+  checklist: Record<string, never>;
+  checklistMark: { step: Step };
+  roleList: Record<string, never>;
+  roleSet: { userId: string; name: string; role: RoleId };
+  roleRemove: { userId: string };
+  accessSet: { repSeesCost: boolean };
+  rolePreview: { role: RoleId | null };
+  cleanupScan: Record<string, never>;
+  cleanupHistory: Record<string, never>;
+  cleanupApply: { kind: FixKind; key: string; target?: string | null };
+  cleanupUndo: { id: string };
+  costBasis: Record<string, never>;
+  costBasisSet: { group: string; basis: BasisId | null };
   pricingState: Record<string, never>;
   pricingOwner: { name:string; userId:string; backupDays:number };
   guardSet: { input:GuardInput };
@@ -37,7 +68,8 @@ export type Commands = {
   backupExport: Record<string, never>;
   backupRestore: { file:Blob; passphrase:string };
   init: { scope: Scope };
-  create: { passphrase: string; tier: Tier };
+  /** ownerName is required: a vault always starts with a named Pricing Owner. */
+  create: { passphrase: string; tier: Tier; ownerName: string };
   unlock: { passphrase: string };
   lock: Record<string, never>;
   touch: Record<string, never>;
@@ -83,6 +115,9 @@ export type Commands = {
 export type LeaksView = { result: LeakResult; roi: RoiSummary; sample: boolean; recorded: number };
 export type CommitResult = { loaded: string; rejected: string; files: string; cleanup: boolean };
 export type Results = {
+  home: HomeData; checklist: Checklist; checklistMark: Checklist; roleList: RoleList; roleSet: RoleList; roleRemove: RoleList; accessSet: RoleList; rolePreview: RoleList;
+  cleanupScan: Scan; cleanupHistory: FixView[]; cleanupApply: CleanupApplied; cleanupUndo: CleanupUndone;
+  costBasis: CostBasisView; costBasisSet: CostBasisView;
   pricingState: Awaited<ReturnType<VaultService['pricingState']>>;
   pricingOwner: Awaited<ReturnType<VaultService['pricingOwner']>>;
   guardSet: Awaited<ReturnType<VaultService['guardSet']>>;

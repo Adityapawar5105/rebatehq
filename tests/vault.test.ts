@@ -103,13 +103,14 @@ test("committed encrypted v1 fixture stays frozen", () => {
   assert.equal(createHash("sha256").update(readFileSync("tests/fixtures/vault/v1.enc")).digest("hex"), "4ef3fd0ae32310ec712f0763671c52d01f6e0ed47ad8442e2f04c24e4068b492");
 });
 test("schema inventory, forward-only migration, capacity and memory warning are explicit", () => {
-  assert.equal(TABLES.length, 25); for (const table of tablesFor(1)) assert.ok(V1_SQL.includes(`CREATE TABLE ${table}(`));
+  assert.equal(TABLES.length, 30); for (const table of tablesFor(1)) assert.ok(V1_SQL.includes(`CREATE TABLE ${table}(`));
   assert.deepEqual([...tablesFor(4)].filter(t => !tablesFor(3).includes(t)), ["rejected_rows"]);
   assert.ok(upgradeSql(1).includes("ALTER TABLE import_batches") && upgradeSql(1).includes("ADD COLUMN source_id") && upgradeSql(1).includes("CREATE TABLE rejected_rows"));
   assert.ok(upgradeSql(2).startsWith("ALTER TABLE products ADD COLUMN source_id"));
-  assert.ok(upgradeSql(3).includes("ALTER COLUMN cost_cents DROP NOT NULL") && upgradeSql(3).startsWith("DROP INDEX")); assert.ok(upgradeSql(4).startsWith("CREATE TEMP TABLE md_v4_sales") && upgradeSql(4).includes("line_kind")); assert.ok(upgradeSql(5).includes("CREATE TABLE rule_changes")); assert.equal(upgradeSql(6), ""); assert.throws(() => upgradeSql(7));
+  assert.ok(upgradeSql(3).includes("ALTER COLUMN cost_cents DROP NOT NULL") && upgradeSql(3).startsWith("DROP INDEX")); assert.ok(upgradeSql(4).startsWith("CREATE TEMP TABLE md_v4_sales") && upgradeSql(4).includes("line_kind")); assert.ok(upgradeSql(5).includes("CREATE TABLE rule_changes")); assert.ok(upgradeSql(6).startsWith("CREATE TABLE role_assignments") && upgradeSql(6).includes("CREATE TABLE cleanup_changes") && upgradeSql(6).includes("CREATE TABLE setup_progress")); assert.equal(upgradeSql(7), ""); assert.throws(() => upgradeSql(8));
+  assert.deepEqual([...tablesFor(7)].filter(t => !tablesFor(6).includes(t)), ["role_assignments", "access_settings", "cleanup_fixes", "cleanup_changes", "setup_progress"]);
   assert.deepEqual([...tablesFor(5)].filter(t => !tablesFor(4).includes(t)), ["agg_cpm", "agg_cm", "agg_p", "recon_issues"]);
-  assert.equal(schemaSql(6), [V1_SQL, upgradeSql(1)].join("\n"));
+  assert.equal(schemaSql(7), [V1_SQL, upgradeSql(1)].join("\n"));
   assert.equal(CAPS.scale.lines, 1000000); assert.equal(CAPS.starter.products, 20000);
   assert.equal(estimateImport({ name: "sales.csv", size: 1000 }, "professional").estimatedMemoryBytes, "6000");
   assert.throws(() => estimateImport({ name: "sales.xlsx", size: 1000 }, "starter"));

@@ -100,6 +100,7 @@ try {
   }
   if (process.argv.includes("--margin-bench")) { const m = await worker("marginBenchmark", { rows: Number(process.env.MARGIN_BENCH_ROWS || 2000000) }, 900000); console.log(JSON.stringify(m, null, 2)); await writeFile(`test-results/vault-margin-bench-${channel}.json`, JSON.stringify({ date: new Date().toISOString(), browser: results.browser, machine: results.machine, margin2M: m }, null, 2)); process.exit(0); }
   if(process.argv.includes('--pricing-bench')){const m=await worker('pricingBenchmark',{},900000);console.log(JSON.stringify(m,null,2));await writeFile('test-results/pricing-benchmark-'+channel+'.json',JSON.stringify({browser:results.browser,machine:results.machine,...m},null,2));process.exit(0);}
+  if(process.argv.includes('--phase5a-bench')){const m=await worker('phase5aBenchmark',{},900000);console.log(JSON.stringify(m,null,2));await writeFile('test-results/phase5a-benchmark-'+channel+'.json',JSON.stringify({browser:results.browser,machine:results.machine,...m},null,2));process.exit(0);}
   if(process.argv.includes('--pricing-only')){console.log(JSON.stringify(await worker('pricing',{},600000),null,2));process.exit(0);}
   const fixture = await readFile("tests/fixtures/vault/v1.enc");
   results.checks.v1 = await worker("v1", { bytes: new Uint8Array(fixture) });
@@ -111,10 +112,13 @@ try {
   results.checks.margin = await worker("margin");
   results.checks.legacyStorage = await worker("legacyStorage",{},120000);
   results.checks.pricing = await worker("pricing",{},600000);
+  results.checks.phase5a = await worker("phase5a",{},600000);
   // The recovery suite intentionally deleted every OPFS handle, including the shell’s empty scope. Reinitialise it.
   await page.reload(); await ready();
   if (process.argv.includes("--margin-only")) { console.log(JSON.stringify(results.checks.margin, null, 2)); process.exit(0); }
-  await page.getByLabel("Vault passphrase").fill(secret); await page.getByRole("button", { name: "Create encrypted vault", exact: true }).click();
+  await page.getByLabel("Vault passphrase").fill(secret); await page.getByLabel("Pricing Owner (name)").fill("Synthetic Pricing Owner");
+  assert.ok(await page.getByRole("button", { name: "Create encrypted vault", exact: true }).isEnabled()); await page.getByLabel("Pricing Owner (name)").fill(""); assert.ok(await page.getByRole("button", { name: "Create encrypted vault", exact: true }).isDisabled(), "A vault can be created without naming the Pricing Owner");
+  await page.getByLabel("Pricing Owner (name)").fill("Synthetic Pricing Owner"); await page.getByRole("button", { name: "Create encrypted vault", exact: true }).click();
   await page.getByRole("button", { name: "Lock vault", exact: true }).waitFor();
   await page.getByRole("link", { name: "Data Hub", exact: true }).click();
   const csvPath = path.resolve("test-results", marker + ".csv"); await writeFile(csvPath, csv(100000));
@@ -214,6 +218,23 @@ try {
   await page.getByRole("status").filter({ hasText: /nothing was uploaded/ }).waitFor();
   await page.getByRole("link", { name: "Home", exact: true }).click(); await page.getByTestId("roi-total").waitFor();
   results.checks.marginUi = { creditLoaded: true, mathPanel: true, leakReportBytes: pdfBytes.length, roiTracker: true };
+  // 5A UI: role banner, 7-day checklist, cleanup and cost basis panels, and a role preview that hides cost.
+  await page.getByTestId("setup-checklist").waitFor();
+  assert.match(await page.getByTestId("setup-progress-text").innerText(), /of 7 steps done/);
+  assert.equal(await page.getByTestId("setup-import").getAttribute("data-done"), "yes", "A real import did not complete the first checklist step");
+  assert.equal(await page.getByTestId("setup-team").getAttribute("data-done"), "no");
+  await page.getByTestId("role-banner").getByText("Owner / CFO").waitFor();
+  await page.getByRole("link", { name: "Data Hub", exact: true }).click();
+  await page.getByTestId("cleanup").waitFor({ timeout: 60000 }); await page.getByTestId("cost-basis").waitFor({ timeout: 60000 });
+  await page.getByRole("table", { name: "Margin by cost basis" }).waitFor();
+  await page.getByRole("link", { name: "Settings", exact: true }).click(); await page.getByTestId("roles").waitFor();
+  await page.getByLabel("Preview as").selectOption("sales_rep"); await page.getByTestId("preview-banner").waitFor();
+  for (const hidden of ["Margin", "Data Hub", "Settings"]) assert.equal(await page.getByRole("link", { name: hidden, exact: true }).count(), 0, `${hidden} is visible in the Sales Rep preview`);
+  await page.getByRole("link", { name: "Home", exact: true }).click(); await page.getByText("Cost and margin are not shown to this role.").waitFor();
+  assert.equal(await page.getByTestId("roi-total").count(), 0, "The Sales Rep preview shows the ROI total"); assert.equal(await page.getByTestId("home-margin").count(), 0, "The Sales Rep preview shows margin");
+  await page.getByRole("button", { name: "Return to my own view" }).click(); await page.getByTestId("preview-banner").waitFor({ state: "detached" });
+  await page.getByRole("link", { name: "Margin", exact: true }).waitFor(); await page.getByTestId("roi-total").waitFor();
+  results.checks.roleViewsUi = { banner: true, checklist: true, cleanupPanel: true, costBasisPanel: true, repPreviewHidesCost: true };
 
   // 4E: UI flow stays under the same marker sensors, including --auth in CI.
   await page.getByRole('link',{name:'Data Hub',exact:true}).click();
