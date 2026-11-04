@@ -2,6 +2,8 @@
 import { useEffect, useRef, useState } from "react";
 import { VaultClient } from "@/lib/vault/client";
 import type { Scope, StorageStatus, Tier, VaultStatus } from "@/lib/vault/protocol";
+import { PricingView } from "./PricingView";
+import { BackupView } from "./BackupView";
 import { ImportStudio } from "./ImportStudio";
 import { MarginView, RoiCard, LeakReportButton } from "./MarginView";
 import styles from "./vault.module.css";
@@ -63,10 +65,11 @@ export function VaultApp({ scope, email, workspace, lab = false }: { scope: Scop
             <button className={styles.primary} disabled={busy}>{busy ? "Opening…" : status.exists ? "Unlock vault" : "Create encrypted vault"}</button>
           </form>
           <p className={styles.muted}>Auto-lock after 10 minutes of inactivity. Local capacity profiles are provisional guardrails; licence enforcement belongs to the control plane.</p>
+          {client.current&&<BackupView client={client.current} busy={busy} operation={operation} unlocked={false} onStatus={setStatus}/>}
         </section> : <>
           {status.dirty && <section className={styles.error}>⚠ A change is not yet saved. Keep this tab open. <button onClick={() => void operation(async () => { setStatus(await client.current!.call("save", {})); setMessage("Encrypted save completed."); })}>Retry Save</button></section>}
           <div className={styles.stats}><div><span>Invoice lines</span><strong data-testid="line-count">{status.lines}</strong></div><div><span>Products</span><strong>{status.products}</strong></div><div><span>Customers</span><strong>{status.customers}</strong></div><div><span>Encrypted generation</span><strong>{status.generation}</strong></div></div>
-          {section === "Home" && <><section className={styles.card}><h2>Your data stays in the local vault</h2><p>Drop your ERP and supplier files in Data Hub to begin. Working and staging data live in worker memory. OPFS holds encrypted snapshots only.</p><a className={styles.primary} href="#data-hub">Open Data Hub</a><p className={styles.muted}>The margin waterfall, leak finder and Leak Report are under Margin. Guardrails, rules and ERP-ready export arrive in the next chunk.</p></section>
+          {section === "Home" && <><section className={styles.card}><h2>Your data stays in the local vault</h2><p>Drop your ERP and supplier files in Data Hub to begin. Working and staging data live in worker memory. OPFS holds encrypted snapshots only.</p><a className={styles.primary} href="#data-hub">Open Data Hub</a><p className={styles.muted}>The margin waterfall, leak finder and Leak Report are under Margin. Guardrails, rules, change approval and ERP file exports are under Pricing; encrypted backups are under Settings.</p></section>
             {client.current && <RoiCard client={client.current} version={`${status.lines}|${status.generation}`}/>}</>}
           {section === "Data Hub" && client.current && <>
             <ImportStudio client={client.current} status={status} busy={busy} operation={operation} onStatus={setStatus} setMessage={setMessage}/>
@@ -78,9 +81,10 @@ export function VaultApp({ scope, email, workspace, lab = false }: { scope: Scop
             </details>
           </>}
           {section === "Margin" && client.current && <MarginView client={client.current} status={status} busy={busy} operation={operation} setMessage={setMessage} onStatus={setStatus}/>}
-          {section === "Pricing" && <section className={styles.card}><h2>Pricing foundation</h2><p>Local matrix, guardrail, rule and version tables are ready. The rule editor and approval/export workflow arrive in later chunks.</p></section>}
+          {section === "Pricing" && client.current && <PricingView client={client.current} userId={scope.userId} busy={busy} operation={operation} refresh={async()=>setStatus(await client.current!.call("status",{}))}/>}
           {section === "Reports" && client.current && <section className={styles.card}><h2>Margin Leak Report</h2><p>A PDF of your waterfall and top leaks with their evidence rows, built on this device. Nothing is uploaded; each export is recorded in the audit log.</p><LeakReportButton client={client.current} busy={busy || status.lines === "0"} operation={operation} setMessage={setMessage} onStatus={setStatus}/></section>}
           {section === "Reports" && <section className={styles.card}><h2>Verify local audit history</h2><p>{status.auditEntries} hash-chained entries. Schema version {status.schemaVersion}.</p><button className={styles.primary} disabled={busy} onClick={() => void operation(async () => { const result = await client.current!.call("verify", {}); if (!result.valid) throw new Error("Audit verification failed. Keep your encrypted backup."); setMessage(`Audit chain verified: ${result.entries} entries.`); })}>Verify audit chain</button><p className={styles.muted}>A local hash chain detects changed, missing or reordered records against its encrypted tip. It cannot prove that a device owner did not rewrite the whole vault or restore an older snapshot.</p></section>}
+          {section === "Settings" && client.current && <BackupView client={client.current} busy={busy} operation={operation} unlocked onStatus={setStatus}/>}
           {section === "Settings" && <section className={styles.card}><h2>Storage and security</h2><p>Auto-lock: 10 minutes. Working database: memory only. Last encrypted save: {status.lastSaved || "none"}.</p><p>Browser persistence: {storage ? storage.persistent ? "granted" : "not granted" : "unknown"}. Used estimate: {storage?.usage || "unknown"}; quota: {storage?.quota || "unknown"}; named OPFS files: {storage?.namedOpfsBytes || "unknown"} bytes.</p><button className={styles.primary} onClick={() => void operation(async () => { await navigator.storage.persist(); setStorage(await client.current!.call("storage", {})); setMessage("Storage status refreshed. A persistence grant is not a backup."); })}>Request persistent storage</button><p className={styles.muted}>The browser's quota estimate can differ from file sizes. Closing a tab cannot guarantee an asynchronous save; each completed import is saved before success is shown.</p>{!lab && <p><a href="/account/users">Team and invitations</a> · <a href="/account/workspace">Identity workspace settings</a></p>}</section>}
         </>}
       </main>

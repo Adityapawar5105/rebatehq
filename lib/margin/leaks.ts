@@ -1,3 +1,5 @@
+import { rhaSql } from "./sql";
+import { dec, rescale } from "./decimal";
 // Leak finder (chunk 4D). Generic, documented rules over the vault's sales lines; nothing
 // here knows about the Playground. Each finding has a type, a scope, a dollar amount and
 // evidence rows (source file + row). Credit lines are never leaks. Unknown cost is never
@@ -37,7 +39,7 @@ export async function findLeaks(engine: Engine): Promise<LeakResult> {
   // (finding hash, source number, line, leak, basis), so a 2M-line vault fits the 512 MB guardrail.
   await run(`DROP VIEW IF EXISTS temp.lf_excess; DROP VIEW IF EXISTS temp.lf_lines; DROP TABLE IF EXISTS temp.lf_tiers; DROP TABLE IF EXISTS temp.lf_hits; DROP TABLE IF EXISTS temp.lf_keys; DROP TABLE IF EXISTS temp.lf_shift; DROP TABLE IF EXISTS temp.lf_shift0; DROP TABLE IF EXISTS temp.lf_floor; DROP TABLE IF EXISTS temp.lf_scatter; DROP TABLE IF EXISTS temp.lf_src;
 CREATE TEMP TABLE lf_src AS SELECT id AS source_id, (row_number() OVER (ORDER BY id))::INTEGER AS sid FROM source_files;
-CREATE TEMP VIEW lf_lines AS SELECT x.sid, s.source_id, s.line_id, s.source_row, s.invoice_id, s.product_id, s.customer_id, s.sale_date, c.tier, p.category, s.list_cents, s.discount_cents, s.rebate_cents, s.freight_cents, s.cost_cents,
+CREATE TEMP VIEW lf_lines AS SELECT x.sid, s.source_id, s.line_id, s.source_row, s.invoice_id, s.product_id, s.customer_id, s.sale_date, s.quantity, c.tier, p.category, s.list_cents, s.discount_cents, s.rebate_cents, s.freight_cents, s.cost_cents,
  ${POCKET} AS pocket, ${MARGIN} AS margin, ${discountBpSql()} AS rate_bp
 FROM sales_lines s JOIN lf_src x USING (source_id) JOIN customers c USING (customer_id) JOIN products p USING (product_id) WHERE s.line_kind = 'sale' AND s.list_cents > 0;
 CREATE TEMP TABLE lf_tiers AS WITH t AS (SELECT tier, count(*) AS n, count(DISTINCT customer_id) AS nc FROM lf_lines WHERE tier <> '' GROUP BY tier),
@@ -45,7 +47,7 @@ CREATE TEMP TABLE lf_tiers AS WITH t AS (SELECT tier, count(*) AS n, count(DISTI
  r AS (SELECT tier, rate_bp, k, row_number() OVER (PARTITION BY tier ORDER BY k DESC, rate_bp) AS rk, sum(k) OVER (PARTITION BY tier) AS mk FROM m)
 SELECT t.tier, CAST(r.rate_bp AS INTEGER) AS tier_bp FROM t JOIN r ON r.tier = t.tier AND r.rk = 1 WHERE t.nc >= ${R.minTierCustomers} AND t.n >= ${R.minTierLines} AND r.k * 100 >= r.mk * ${Math.round(R.modeShare * 100)};
 CREATE TEMP VIEW lf_excess AS SELECT l.*, t.tier_bp, CAST(l.discount_cents - ${atRateSql("l.list_cents", "t.tier_bp")} AS BIGINT) AS excess,
- (l.discount_cents - ${atRateSql("l.list_cents", "t.tier_bp")} > 0 AND l.rate_bp - t.tier_bp >= ${R.excessBp}) AS flag FROM lf_lines l JOIN lf_tiers t USING (tier);
+ (NOT EXISTS(SELECT 1 FROM price_guardrails g WHERE g.tier=l.tier AND g.category=l.category) AND l.discount_cents - ${atRateSql("l.list_cents", "t.tier_bp")} > 0 AND l.rate_bp - t.tier_bp >= ${R.excessBp}) AS flag FROM lf_lines l JOIN lf_tiers t USING (tier);
 CREATE TEMP TABLE lf_keys(h UBIGINT, finding VARCHAR, type VARCHAR);
 CREATE TEMP TABLE lf_hits(h UBIGINT, sid INTEGER, line_id BIGINT, leak BIGINT, basis_bp INTEGER);
 CREATE TEMP TABLE lf_shift0 AS WITH c AS (SELECT customer_id, any_value(tier) AS tier, any_value(tier_bp) AS tier_bp, count(*) AS n, count(*) FILTER (WHERE flag) AS nf FROM lf_excess GROUP BY customer_id),
@@ -74,6 +76,9 @@ INSERT INTO lf_hits SELECT hash('negative_margin|cost_rise'), l.sid, l.line_id, 
 CREATE OR REPLACE TEMP TABLE lf_loss AS SELECT sid, line_id FROM lf_hits WHERE h = hash('negative_margin|cost_rise');
 INSERT INTO lf_hits SELECT CASE WHEN l.list_cents - l.discount_cents < l.cost_cents THEN hash('below_cost|all') ELSE hash('negative_margin|other') END, l.sid, l.line_id, -l.margin, NULL
  FROM lf_lines l WHERE l.margin < 0 AND NOT EXISTS (SELECT 1 FROM lf_loss x WHERE x.sid = l.sid AND x.line_id = l.line_id);
+CREATE OR REPLACE TEMP VIEW lf_guard AS SELECT l.sid,l.line_id,'below_floor|'||l.customer_id||'|'||l.category AS finding,CAST(${rhaSql('CAST(g.floor AS HUGEINT)*CAST(l.quantity*10000 AS HUGEINT)','10000')}-(l.list_cents-l.discount_cents) AS BIGINT) AS leak FROM lf_lines l JOIN price_guardrails g ON g.tier=l.tier AND g.category=l.category;
+INSERT INTO lf_keys SELECT DISTINCT hash(finding),finding,'below_floor' FROM lf_guard WHERE leak>0 AND finding NOT IN(SELECT finding FROM lf_keys);
+INSERT INTO lf_hits SELECT hash(finding),sid,line_id,leak,NULL FROM lf_guard WHERE leak>0;
 DELETE FROM lf_keys WHERE h NOT IN (SELECT DISTINCT h FROM lf_hits);`);
   const keys = (await q(engine, "SELECT count(*) AS n, count(DISTINCT h) AS d FROM lf_keys"))[0];
   if (String(keys.n) !== String(keys.d)) throw new Error("Leak finding keys collided; no findings were recorded.");
@@ -105,8 +110,8 @@ function describe(id: string, g: Record<string, unknown>, shift: Map<string, Rec
       return { ...base, scope: { customer: a, ...(lines ? { pattern: "scattered lines" } : {}) }, title: lines ? `${a}: lines discounted far above tier peers` : `${a} is discounted far above its tier's peers`,
         formula: `Leak per line = discount - list x the tier's peer rate${s ? ` (${tier}: ${bp(s.tier_bp)})` : ""}, rounded to the cent.`, detail: s ? `Typical discount ${bp(s.modal_bp)}, which matches no better tier's rate.` : `Lines at least ${RULES.scatteredBp / 100} points above the tier's peer rate.` }; }
     case "below_floor":
-      return { ...base, scope: { customer: a, category: b! }, title: `${a}: ${b} lines priced below the tier floor`, formula: `Leak per line = discount - list x the tier floor rate (${bp(g.basis)}), rounded to the cent.`,
-        detail: `Until price guardrails are set (Pricing), a tier's floor is its peer rate. ${base.lines} ${b} lines are over-discounted while the customer's other categories are not.` };
+      return { ...base, scope: { customer: a, category: b! }, title: `${a}: ${b} lines priced below the tier floor`, formula: g.basis === null ? 'Leak per line = max(configured unit floor × quantity − billed net, 0), rounded half away from zero to cents.' : `Leak per line = discount - list x the tier floor rate (${bp(g.basis)}), rounded to the cent.`,
+        detail: `Configured unit floors take precedence; without them, the tier's floor is its peer rate. ${base.lines} ${b} lines are over-discounted while the customer's other categories are not.` };
     case "unrecovered_freight":
       return { ...base, scope: { rule: `freight > ${RULES.freightShareBp / 100}% of list` }, title: "Freight not billed back on small lines", formula: `Leak per line = freight, on lines where freight is more than ${RULES.freightShareBp / 100}% of list.`,
         detail: `${S(g.customers)} customers, ${S(g.products)} products.` };
@@ -129,14 +134,14 @@ export async function leakRows(engine: Engine, id: string, offset = 0, limit = 2
   const page = `(SELECT * FROM lf_hits h ${where} ORDER BY h.leak DESC, h.sid, h.line_id LIMIT ${Math.max(1, Math.min(200, limit))} OFFSET ${Math.max(0, Math.floor(offset))})`;
   const rows = await q(engine, `SELECT f.name AS file, l.source_row::VARCHAR AS source_row, l.line_id::VARCHAR AS line_id, coalesce(l.invoice_id,'') AS invoice, l.sale_date::VARCHAR AS d, l.product_id, l.category, l.customer_id, l.tier,
  l.list_cents::VARCHAR AS list, l.discount_cents::VARCHAR AS discount, l.rebate_cents::VARCHAR AS rebate, l.freight_cents::VARCHAR AS freight, l.cost_cents::VARCHAR AS cost, l.pocket::VARCHAR AS pocket, l.margin::VARCHAR AS margin,
- l.rate_bp::VARCHAR AS rate, p.basis_bp::VARCHAR AS basis, p.leak::VARCHAR AS leak, k.type
-FROM ${page} p JOIN lf_keys k ON k.h = p.h JOIN lf_lines l ON l.sid = p.sid AND l.line_id = p.line_id JOIN source_files f ON f.id = l.source_id
+ l.quantity::VARCHAR AS quantity, g.floor::VARCHAR AS configured_floor, l.rate_bp::VARCHAR AS rate, p.basis_bp::VARCHAR AS basis, p.leak::VARCHAR AS leak, k.type
+FROM ${page} p JOIN lf_keys k ON k.h = p.h JOIN lf_lines l ON l.sid = p.sid AND l.line_id = p.line_id JOIN source_files f ON f.id = l.source_id LEFT JOIN price_guardrails g ON g.tier=l.tier AND g.category=l.category
 ORDER BY p.leak DESC, p.sid, p.line_id`);
   let agrees = true;
   const out = rows.map(r => {
     const n = (k: string) => BigInt(S(r[k])), type = S(r.type) as LeakType;
     const w = lineFromCents({ list: n("list"), discount: n("discount"), rebate: n("rebate"), freight: n("freight"), cost: r.cost === null ? null : n("cost") });
-    const engineLeak = type === "unrecovered_freight" ? n("freight") : ["negative_margin", "below_cost"].includes(type) ? -(w.margin ?? BigInt(0)) : n("discount") - rha(n("list") * n("basis"), BigInt(10000));
+    const engineLeak = type === 'below_floor' && r.configured_floor !== null ? rha(BigInt(S(r.configured_floor))*rescale(dec(S(r.quantity)),4).v,BigInt(10000))-(n('list')-n('discount')) : type === "unrecovered_freight" ? n("freight") : ["negative_margin", "below_cost"].includes(type) ? -(w.margin ?? BigInt(0)) : n("discount") - rha(n("list") * n("basis"), BigInt(10000));
     if (String(engineLeak) !== S(r.leak)) agrees = false;
     return { sourceFile: S(r.file), sourceRow: S(r.source_row), lineId: S(r.line_id), invoice: S(r.invoice), date: S(r.d), product: S(r.product_id), category: S(r.category), customer: S(r.customer_id), tier: S(r.tier),
       list: S(r.list), discount: S(r.discount), rebate: S(r.rebate), freight: S(r.freight), cost: r.cost === null ? null : S(r.cost), pocket: S(r.pocket), margin: r.margin === null ? null : S(r.margin),

@@ -1,9 +1,10 @@
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 const V1_TABLES = ["vault_meta", "products", "customers", "price_matrix", "price_guardrails", "source_files", "import_batches", "sales_lines", "vendor_costs", "cost_basis_settings", "rules", "rule_runs", "price_versions", "roi_ledger", "audit_log", "import_issues", "converter_recipes"] as const;
 const V4_TABLES = [...V1_TABLES, "rejected_rows"] as const;
-export const TABLES = [...V4_TABLES, "agg_cpm", "agg_cm", "agg_p", "recon_issues"] as const;
+const V5_TABLES = [...V4_TABLES, "agg_cpm", "agg_cm", "agg_p", "recon_issues"] as const;
+export const TABLES = [...V5_TABLES, "pricing_settings", "rule_revisions", "rule_changes"] as const;
 /** Tables that exist at a schema version (in creation order, so copy-on-write inserts parents first). */
-export function tablesFor(version: number): readonly string[] { return version >= 5 ? TABLES : version >= 4 ? V4_TABLES : V1_TABLES; }
+export function tablesFor(version: number): readonly string[] { return version >= 6 ? TABLES : version >= 5 ? V5_TABLES : version >= 4 ? V4_TABLES : V1_TABLES; }
 // These are local DuckDB migrations, not Supabase migrations. V1 stays frozen
 // so the committed encrypted compatibility fixture exercises a real upgrade.
 export const V1_SQL = `
@@ -76,7 +77,18 @@ CREATE TABLE recon_issues(id VARCHAR PRIMARY KEY, level VARCHAR NOT NULL CHECK(l
 ALTER TABLE roi_ledger ADD COLUMN finding VARCHAR;
 ALTER TABLE roi_ledger ADD COLUMN sample BOOLEAN;
 ALTER TABLE roi_ledger ADD COLUMN updated_at VARCHAR;`;
-const STEPS = [V1_SQL, V2_SQL, V3_SQL, V4_SQL, V5_SQL];
+// V6 (4E). V1–V5 remain immutable. Preview rows are price pairs, never invoice copies.
+export const V6_SQL = `ALTER TABLE vault_meta ADD COLUMN pricing_revision BIGINT DEFAULT 0;
+ALTER TABLE price_guardrails ADD COLUMN tier VARCHAR;
+ALTER TABLE price_guardrails ADD COLUMN category VARCHAR;
+CREATE UNIQUE INDEX guardrail_tier_category ON price_guardrails(tier,category);
+CREATE TABLE pricing_settings(id INTEGER PRIMARY KEY CHECK(id=1), owner_id VARCHAR NOT NULL, owner_name VARCHAR NOT NULL, backup_days INTEGER NOT NULL CHECK(backup_days BETWEEN 1 AND 90));
+CREATE TABLE rule_revisions(rule_id VARCHAR NOT NULL, version INTEGER NOT NULL CHECK(version>0), definition VARCHAR NOT NULL, explanation VARCHAR NOT NULL, created_at VARCHAR NOT NULL, PRIMARY KEY(rule_id,version));
+ALTER TABLE rule_runs ADD COLUMN rule_version INTEGER;
+ALTER TABLE rule_runs ADD COLUMN base_revision BIGINT;
+ALTER TABLE rule_runs ADD COLUMN approved_by VARCHAR;
+CREATE TABLE rule_changes(run_id VARCHAR NOT NULL, product_id VARCHAR NOT NULL, tier VARCHAR NOT NULL, before_cents BIGINT NOT NULL CHECK(before_cents>=0), after_cents BIGINT NOT NULL CHECK(after_cents>=0), cost_cents BIGINT, quantity DECIMAL(18,4) NOT NULL, impact_cents BIGINT NOT NULL, guard_status VARCHAR NOT NULL CHECK(guard_status IN ('green','yellow','red','unset')), PRIMARY KEY(run_id,product_id,tier));`;
+const STEPS = [V1_SQL, V2_SQL, V3_SQL, V4_SQL, V5_SQL, V6_SQL];
 function checkVersion(version: number) {
   if (!Number.isInteger(version) || version < 1 || version > SCHEMA_VERSION) throw new Error("Unsupported vault schema version; update the app before opening this vault.");
 }

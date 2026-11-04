@@ -1,3 +1,5 @@
+import * as pricing from '../pricing/rules';
+import { backupConfig, storeBackupConfig, writeBackup } from './backup';
 import { openMemory, snapshotBytes, closeMemory, makeWritable, startWarmup, type Engine } from "./engine";
 import { VaultStorage } from "./storage";
 import { decrypt, deriveKey, type Key } from "./crypto";
@@ -19,6 +21,7 @@ import { leakReport } from "../margin/report";
 import { loadCredits } from "../margin/credits";
 export class VaultService {
   engine: Engine | null = null;
+  private identity!: Scope;
   storage!: VaultStorage;
   private key: Key | null = null;
   private generation = "0";
@@ -34,7 +37,7 @@ export class VaultService {
   async init(scope: Scope) {
     if (this.storage) throw new VaultError("STATE", "Workspace is already selected. Reload to switch workspace.");
     if (!navigator.storage?.getDirectory || !navigator.locks) throw new VaultError("BROWSER", "Use a current Chrome or Edge browser with local storage and Web Locks enabled.");
-    this.storage = await VaultStorage.open(scope); return this.status();
+    this.identity = { ...scope }; this.storage = await VaultStorage.open(scope); return this.status();
   }
   private async lease() {
     if (this.releaseLease) return;
@@ -217,6 +220,7 @@ export class VaultService {
     await engine.conn.query("BEGIN");
     try {
       await engine.conn.query(REBUILD_SQL);
+      await engine.conn.query("UPDATE vault_meta SET pricing_revision=pricing_revision+1 WHERE id=1");
       const d = await findDifferences(engine);
       await engine.conn.query(await recordSql(d.found, new Date().toISOString()));
       await engine.conn.query("COMMIT");
@@ -302,6 +306,53 @@ export class VaultService {
     const d = await findDifferences(engine);
     return { status: await this.status(), recon: await reconSummary(engine, d, new Date().toISOString()) };
   }
+
+  private async pricingWrite(action: string, work: (e: Engine) => Promise<void>) {
+    const e=await this.writable(); await e.conn.query('BEGIN');
+    try {await work(e);await appendAudit(e,action,{actor:this.identity.userId});await e.conn.query('COMMIT');}
+    catch(error){await e.conn.query('ROLLBACK').catch(()=>undefined);throw error;}
+    this.dirty=true;this.dataVersion++;this.leakCache=null;await this.save();this.touch();
+  }
+  async pricingState(){return pricing.pricingState(this.requireEngine());}
+  async pricingOwner(name:string, userId:string, backupDays=7){
+    name=pricing.label(name);userId=pricing.label(userId);
+    if(!Number.isInteger(backupDays)||backupDays<1||backupDays>90)throw new VaultError('PRICING','Choose a backup reminder from 1 to 90 days.');
+    await this.pricingWrite('pricing.owner_set',async e=>{if((await pricing.pricingState(e)).owner)await pricing.owner(e,this.identity.userId);else if(userId!==this.identity.userId)throw new VaultError('PRICING','First name yourself as Pricing Owner.');await e.conn.query(`DELETE FROM pricing_settings WHERE id=1;INSERT INTO pricing_settings VALUES(1,${sqlText(userId)},${sqlText(name)},${backupDays});UPDATE vault_meta SET pricing_revision=pricing_revision+1 WHERE id=1`);});
+    return this.pricingState();
+  }
+  async guardSet(input: pricing.GuardInput){await this.pricingWrite('pricing.guardrail',async e=>{await e.conn.query(pricing.guardSql(input));});return this.pricingState();}
+  async ruleSave(input: pricing.RuleInput){let id='';await this.pricingWrite('pricing.rule_version',async e=>{const r=await pricing.ruleSql(e,input);id=r.id;await e.conn.query(r.sql);});return {id,state:await this.pricingState()};}
+  async ruleSimulate(id:string){let result:{id:string;count:number;ms:number}|undefined;
+    await this.pricingWrite('pricing.simulated',async e=>{const r=await pricing.simulate(e,id);await e.conn.query(r.sql);result=r;});
+    return {...await pricing.preview(this.requireEngine(),result!.id),ms:result!.ms};
+  }
+  async rulePreview(id:string,offset=0){return pricing.preview(this.requireEngine(),id,offset);}
+  async ruleApprove(id:string){await this.pricingWrite('pricing.approved',async e=>{await e.conn.query(await pricing.approveSql(e,id,this.identity.userId));});await this.derived(this.requireEngine());await this.save();const config=await backupConfig(this.storage.scope);if(config.directory)await this.backupNow().catch(()=>undefined);return {preview:await this.rulePreview(id),backup:await this.backupStatus()};}
+  async priceExport(id:string,profile:ErpProfile,format:'csv'|'xlsx'){
+    const file=await pricing.exportPrices(this.requireEngine(),id,profile,format);
+    await this.pricingWrite('pricing.exported',async e=>{await e.conn.query(`UPDATE rule_runs SET status='exported' WHERE id=${sqlText(id)}`);});return file;
+  }
+  async backupStatus(){const c=await backupConfig(this.storage.scope);const settings=this.engine?(await this.pricingState()).owner:null;return {configured:!!c.directory,hours:c.hours,last:c.last,error:c.error,reminder:!c.last||Date.now()-Date.parse(c.last)>(settings?.backupDays??7)*86400000};}
+  async backupConfigure(directory:FileSystemDirectoryHandle|null,hours:number){this.requireEngine();if(!Number.isInteger(hours)||hours<1||hours>168)throw new VaultError('BACKUP','Choose a backup interval from 1 to 168 hours.');const old=await backupConfig(this.storage.scope);await storeBackupConfig(this.storage.scope,{...old,directory,hours});return this.backupStatus();}
+  async backupNow(){
+    const c=await backupConfig(this.storage.scope);if(!c.directory)throw new VaultError('BACKUP','Choose a backup folder first, or download an encrypted export.');
+    try {await this.pricingWrite('backup.folder_export',async()=>{});const h=await this.storage.readHead();await writeBackup(await this.storage.file(h!.current),c.directory);await storeBackupConfig(this.storage.scope,{...c,last:new Date().toISOString(),error:false});}
+    catch(error){await storeBackupConfig(this.storage.scope,{...c,error:true});throw error;}
+    return this.backupStatus();
+  }
+  async backupDue(){if(!this.engine||this.dirty)return;const c=await backupConfig(this.storage.scope);if(c.directory&&(!c.last||Date.now()-Date.parse(c.last)>=c.hours*3600000))await this.backupNow();}
+  async backupExport(){await this.pricingWrite('backup.file_export',async()=>{});const h=await this.storage.readHead();return {name:'margindesk-vault.enc',blob:await this.storage.file(h!.current)};}
+  async backupRestore(file:Blob,passphrase:string){
+    if(this.engine||await this.storage.exists())throw new VaultError('BACKUP','Restore into an empty local vault in the same signed-in workspace. Existing data is never replaced.');
+    if(file.size>600*1024*1024)throw new VaultError('BACKUP','This backup exceeds the restore size limit.');
+    await this.lease();let bytes:Uint8Array|undefined;
+    try {const value=await decrypt(file,passphrase,this.storage.scope);passphrase='';bytes=value.bytes;this.engine=await openMemory(bytes);this.key=value.key;
+      const meta=(await this.engine.conn.query('SELECT scope,tier FROM vault_meta WHERE id=1')).toArray()[0];if(meta.scope!==this.storage.scope||!['starter','professional','scale'].includes(meta.tier))throw new Error('metadata');
+      if(!(await verifyAudit(this.engine)).valid)throw new Error('audit');this.tier=meta.tier as Tier;await this.migrate();await makeWritable(this.engine);
+      await this.engine.conn.query('BEGIN');await appendAudit(this.engine,'backup.restored',{});await this.engine.conn.query('COMMIT');this.dirty=true;this.generation=value.sequence;await this.save();this.touch();return this.status();
+    }catch(error){await this.dispose();throw error instanceof VaultError?error:new VaultError('BACKUP','Wrong passphrase, workspace or damaged backup. Nothing was restored.');}
+  }
+
   async verify() { return verifyAudit(this.requireEngine()); }
   async lock() {
     if (this.engine && this.dirty) await this.save();

@@ -1,3 +1,5 @@
+import type { VaultService } from './service';
+import type { RuleInput, GuardInput } from '../pricing/rules';
 import type { Role, Settings } from "../studio/formats";
 import type { ErpProfile, FieldSource } from "../studio/mapper";
 import type { FixGroup, FixRow } from "../studio/fixlater";
@@ -21,6 +23,19 @@ export type VaultStatus = {
 export type StorageStatus = { persistent: boolean; usage: string; quota: string; namedOpfsBytes: string; files: string };
 export type ImportEstimate = { bytes: string; estimatedMemoryBytes: string; maxLines: string; maxProducts: string; warning: string };
 export type Commands = {
+  pricingState: Record<string, never>;
+  pricingOwner: { name:string; userId:string; backupDays:number };
+  guardSet: { input:GuardInput };
+  ruleSave: { input:RuleInput };
+  ruleSimulate: { id:string };
+  rulePreview: { id:string; offset?:number };
+  ruleApprove: { id:string };
+  priceExport: { id:string; profile:ErpProfile; format:'csv'|'xlsx' };
+  backupStatus: Record<string, never>;
+  backupConfigure: { directory:FileSystemDirectoryHandle|null; hours:number };
+  backupNow: Record<string, never>;
+  backupExport: Record<string, never>;
+  backupRestore: { file:Blob; passphrase:string };
   init: { scope: Scope };
   create: { passphrase: string; tier: Tier };
   unlock: { passphrase: string };
@@ -68,6 +83,19 @@ export type Commands = {
 export type LeaksView = { result: LeakResult; roi: RoiSummary; sample: boolean; recorded: number };
 export type CommitResult = { loaded: string; rejected: string; files: string; cleanup: boolean };
 export type Results = {
+  pricingState: Awaited<ReturnType<VaultService['pricingState']>>;
+  pricingOwner: Awaited<ReturnType<VaultService['pricingOwner']>>;
+  guardSet: Awaited<ReturnType<VaultService['guardSet']>>;
+  ruleSave: Awaited<ReturnType<VaultService['ruleSave']>>;
+  ruleSimulate: Awaited<ReturnType<VaultService['ruleSimulate']>>;
+  rulePreview: Awaited<ReturnType<VaultService['rulePreview']>>;
+  ruleApprove: Awaited<ReturnType<VaultService['ruleApprove']>>;
+  priceExport: Awaited<ReturnType<VaultService['priceExport']>>;
+  backupStatus: Awaited<ReturnType<VaultService['backupStatus']>>;
+  backupConfigure: Awaited<ReturnType<VaultService['backupConfigure']>>;
+  backupNow: Awaited<ReturnType<VaultService['backupNow']>>;
+  backupExport: Awaited<ReturnType<VaultService['backupExport']>>;
+  backupRestore: Awaited<ReturnType<VaultService['backupRestore']>>;
   init: VaultStatus; create: VaultStatus; unlock: VaultStatus; lock: VaultStatus; status: VaultStatus;
   touch: { ok: boolean }; cancel: { ok: boolean }; save: VaultStatus;
   verify: { valid: boolean; entries: string }; storage: StorageStatus;

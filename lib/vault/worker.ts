@@ -16,6 +16,19 @@ async function handle(request: Request) {
   abort = new AbortController(); // each request gets its own cancellation scope
   let result: unknown;
   switch (request.action) {
+    case 'pricingState': result=await service.pricingState();break;
+    case 'pricingOwner': result=await service.pricingOwner(request.data.name,request.data.userId,request.data.backupDays);break;
+    case 'guardSet': result=await service.guardSet(request.data.input);break;
+    case 'ruleSave': result=await service.ruleSave(request.data.input);break;
+    case 'ruleSimulate': result=await service.ruleSimulate(request.data.id);break;
+    case 'rulePreview': result=await service.rulePreview(request.data.id,request.data.offset);break;
+    case 'ruleApprove': result=await service.ruleApprove(request.data.id);break;
+    case 'priceExport': result=await service.priceExport(request.data.id,request.data.profile,request.data.format);break;
+    case 'backupStatus': result=await service.backupStatus();break;
+    case 'backupConfigure': result=await service.backupConfigure(request.data.directory,request.data.hours);break;
+    case 'backupNow': result=await service.backupNow();break;
+    case 'backupExport': result=await service.backupExport();break;
+    case 'backupRestore': result=await service.backupRestore(request.data.file,request.data.passphrase);break;
     case "init": result = await service.init(request.data.scope); break;
     case "create": result = await service.create(request.data.passphrase, request.data.tier); break;
     case "unlock": {
@@ -78,3 +91,6 @@ scope.onmessage = event => {
     post({ id: request.id, error: { code: error instanceof VaultError ? error.code : cancelled ? "CANCELLED" : own ? "STUDIO" : "LOCAL", message: own ? error.message : cancelled ? "Import cancelled. No rows were committed." : "The local operation failed. No source values were logged. Keep this tab open if a save is pending." } });
   });
 };
+
+// Scheduled work is serialized with every mutation and runs only while unlocked.
+setInterval(()=>{queue=queue.then(()=>service.backupDue()).catch(()=>undefined);},60_000);
