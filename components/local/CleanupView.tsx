@@ -8,13 +8,22 @@ const KIND: Record<FixKind, string> = { merge_duplicates: "Merge duplicates", no
 /** Item master cleanup assistant: every one-click fix is audited and can be undone. */
 export function CleanupView({ client, version, busy, operation, onStatus, setMessage }: { client: VaultClient; version: string; busy: boolean; operation: (f: () => Promise<void>) => Promise<void>; onStatus: (s: VaultStatus) => void; setMessage: (m: string) => void }) {
   const [scan, setScan] = useState<Scan | null>(null), [history, setHistory] = useState<FixView[]>([]), [note, setNote] = useState("");
-  const [pick, setPick] = useState<Record<string, string>>({}), [cat, setCat] = useState<Record<string, string>>({});
+  const [pick, setPick] = useState<Record<string, string>>({}), [cat, setCat] = useState<Record<string, string>>({}), [batch, setBatch] = useState<string[]>([]);
   const load = async () => { setScan(await client.call("cleanupScan", {})); setHistory(await client.call("cleanupHistory", {})); };
   useEffect(() => { let on = true; void Promise.all([client.call("cleanupScan", {}), client.call("cleanupHistory", {})]).then(([s, h]) => { if (on) { setScan(s); setHistory(h); } }).catch(() => { if (on) setNote("Could not scan the item master. Reopen Data Hub to retry."); }); return () => { on = false; }; }, [client, version]);
   const apply = (kind: FixKind, key: string, target?: string | null) => void operation(async () => {
     const out = await client.call("cleanupApply", { kind, key, target: target ?? null });
     setScan(out.scan); setHistory(out.history); onStatus(out.status);
     setMessage(`${out.fix}.${out.finished ? "" : " The duplicate rows could not be removed yet; apply the merge again to finish."} You can undo it below.`); setNote(`Applied: ${out.fix}`);
+  });
+  const mergeAll = () => void operation(async () => {
+    const out = await client.call("cleanupMergeAll", {}); setScan(out.scan); setHistory(out.history); onStatus(out.status); setBatch(out.ids);
+    const text = `Merged ${out.merged} duplicate group${out.merged === "1" ? "" : "s"}${out.skipped !== "0" ? `; ${out.skipped} left for a manual merge` : ""}${out.unfinished !== "0" ? `; ${out.unfinished} need the merge applied again to finish` : ""}. You can undo the whole batch.`;
+    setMessage(text); setNote(text);
+  });
+  const undoBatch = () => void operation(async () => {
+    const out = await client.call("cleanupUndoMany", { ids: batch }); setScan(out.scan); setHistory(out.history); onStatus(out.status); setBatch([]);
+    const text = `Undid ${out.summary}. Restored ${out.restored}${out.skipped !== "0" ? `; left ${out.skipped} unchanged because they were edited since` : ""}.`; setMessage(text); setNote(text);
   });
   const undo = (id: string) => void operation(async () => {
     const out = await client.call("cleanupUndo", { id }); setScan(out.scan); setHistory(out.history); onStatus(out.status);
@@ -28,6 +37,8 @@ export function CleanupView({ client, version, busy, operation, onStatus, setMes
     <p role="status">{note}</p>
     {none && <p data-testid="cleanup-clean"><strong>✓ Nothing to clean.</strong> No duplicate SKUs, odd unit spellings or uncategorised products were found.</p>}
     {scan.duplicates.length > 0 && <><h3>Duplicate SKUs ({scan.totals.duplicateProducts} extra)</h3>
+      {scan.duplicates.some(g => g.confidence === "certain") && <p><button className={styles.primary} disabled={busy} onClick={mergeAll}>Merge all certain duplicates</button> <span className={styles.small}>Only IDs that differ by case or spaces. Each group stays its own undoable fix; totals are rebuilt and saved once.</span></p>}
+      {batch.length > 0 && <p><button disabled={busy} onClick={undoBatch}>Undo the last batch ({batch.length} groups)</button></p>}
       <div className={styles.tableWrap}><table className={styles.table} aria-label="Duplicate SKUs"><thead><tr><th>Product IDs</th><th>Invoice lines</th><th>Keep</th><th>Confidence</th><th>Fix</th></tr></thead>
         <tbody>{scan.duplicates.map(g => <tr key={g.key}><td className={styles.wrap}>{g.members.map(m => m.product).join(" · ")}</td><td>{g.lines}</td><td>{g.canonical}</td>
           <td>{g.confidence === "certain" ? "✓ Same ID apart from case or spaces" : "⚠ Differ by punctuation: check"}</td>

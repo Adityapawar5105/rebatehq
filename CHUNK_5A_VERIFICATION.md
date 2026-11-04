@@ -37,7 +37,7 @@ restore result, and the authenticated privacy gate (`--auth`) runs only in CI.
 | `node --test tests/*.test.js` | 72 passed, 0 failed (includes the brand-name guard) |
 | `tsx --test tests/*.test.ts` | 119 passed, 0 failed (JS 72 + TS 119 = 191 unit tests) |
 | `node node_modules/next/dist/bin/next build` | passed |
-| `node scripts/test-vault-browser.mjs --browser=chrome` (production build, Chrome 156) | **passed, 28 checks**, including `phase5a`, `roleViewsUi` and the network/console privacy sensors |
+| `node scripts/test-vault-browser.mjs --browser=chrome` (production build, Chrome 156; re-run after the batch merge was added) | **passed, 28 checks**, including `phase5a`, `roleViewsUi` and the network/console privacy sensors |
 
 New unit tests: `tests/cleanup.test.ts` (7), `tests/cost-basis.test.ts` (2), `tests/roles.test.ts` (7),
 `tests/setup-checklist.test.ts` (3). `tests/vault.test.ts` now asserts the v7 inventory.
@@ -104,4 +104,4 @@ The only real export available is the public UCI Online Retail file (`test-resul
 - **Cost basis**: all lines are "unknown" under every basis (no cost in the file); nothing was costed at zero.
 - **Roles**: in a Sales Rep preview status cost and margin were null and the margin waterfall was refused.
 - **Checklist**: import and fix done; the others correctly not done.
-- **Timing (393k lines)**: scan 60 ms, cost basis 84 ms. One merge (including aggregate rebuild and encrypted save) took about 2.1 s and its undo about 2.1 s, so 100 merges took 206 s. Merges are one click per group; a "merge all certain" action is not built and would help on real catalogs.
+- **Timing (393k lines)**: scan 60 ms, cost basis 84 ms. One merge (including aggregate rebuild and encrypted save) took about 2.1 s and its undo about 2.1 s, so 100 single merges took 206 s. That led to **Merge all certain duplicates** (same day): each group is still its own undoable fix, but totals are rebuilt and saved once. On the same file it merged all 112 groups in 5.9 s (product count 3,941 to 3,829), invoice totals identical, and "Undo the last batch" restored 2,016 cells in 7.8 s (3,941 products again, nothing skipped, audit chain valid).

@@ -23,6 +23,8 @@ export async function dispatch(service: VaultService, request: Request, hooks: H
     case "cleanupHistory": return service.cleanupHistory();
     case "cleanupApply": return service.cleanupApply(request.data.kind, request.data.key, request.data.target ?? null);
     case "cleanupUndo": return service.cleanupUndo(request.data.id);
+    case "cleanupMergeAll": return service.cleanupMergeAll(progress);
+    case "cleanupUndoMany": return service.cleanupUndoMany(request.data.ids);
     case "costBasis": return service.costBasis();
     case "costBasisSet": return service.costBasisSet(request.data.group, request.data.basis);
     case "pricingState": return service.pricingState();

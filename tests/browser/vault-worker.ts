@@ -711,11 +711,21 @@ INSERT INTO sales_lines(source_id,line_id,product_id,customer_id,sale_date,quant
   const mergeFix=merged.history[0];await call(service,'cleanupUndo',{id:mergeFix.id});
   assert((await e.conn.query("SELECT count(*)::VARCHAR AS n FROM products WHERE upper(product_id)='ZED-1'")).toArray()[0].n==='2','Undo did not restore the duplicate product');
   assert((await call(service,'marginWaterfall')).margin===before.margin,'Undo changed the waterfall');
+  // Batch: two certain groups and one punctuation-only group; one rebuild, totals unchanged, one undo for the batch.
+  await e.conn.query(`BEGIN;INSERT INTO products(product_id,category) VALUES('YAK-1','Yaks'),('yak-1','Yaks'),('YAK2','Yaks'),('YAK-2','Yaks');INSERT INTO sales_lines(source_id,line_id,product_id,customer_id,sale_date,quantity,list_cents,discount_cents,freight_cents,rebate_cents,cost_cents,source_row) VALUES('${src}',9000003,'yak-1','${customer}',DATE '2025-02-03',1,100,0,0,0,50,99997),('${src}',9000004,'YAK-2','${customer}',DATE '2025-02-04',1,100,0,0,0,50,99996);COMMIT`);
+  await(service as unknown as {derived(value:typeof e):Promise<void>}).derived(e);await service.save();
+  const wfBatch=await call(service,'marginWaterfall'),mergedAll=await call(service,'cleanupMergeAll');
+  assert(mergedAll.merged==='2'&&mergedAll.ids.length===2&&mergedAll.skipped==='0'&&mergedAll.unfinished==='0','Batch merge did not merge exactly the two certain groups (ZED1 and YAK1)');
+  assert(mergedAll.scan.duplicates.some((g:{key:string;confidence:string})=>g.key==='YAK2'&&g.confidence==='possible')&&!mergedAll.scan.duplicates.some((g:{key:string})=>g.key==='YAK1'),'A punctuation-only group must stay for manual review');
+  const afterBatch=await call(service,'marginWaterfall');assert(afterBatch.netPocket===wfBatch.netPocket&&afterBatch.lines===wfBatch.lines&&afterBatch.margin===wfBatch.margin,'Batch merge changed invoice totals');
+  const undoneBatch=await call(service,'cleanupUndoMany',{ids:mergedAll.ids});
+  assert(undoneBatch.skipped==='0'&&(await e.conn.query("SELECT count(*)::VARCHAR AS n FROM products WHERE upper(product_id)='YAK-1'")).toArray()[0].n==='2'&&(await call(service,'marginWaterfall')).netPocket===wfBatch.netPocket,'Batch undo did not restore the duplicates');
+  assert((await call(service,'cleanupScan')).duplicates.some((g:{key:string})=>g.key==='YAK1'),'Duplicates did not return after the batch undo');
   const unit=await call(service,'cleanupApply',{kind:'normalize_uom',key:'Each'});assert((await e.conn.query("SELECT uom FROM products WHERE product_id='ZED-1'")).toArray()[0].uom==='EA','Unit was not respelled');
   await call(service,'cleanupUndo',{id:unit.history[0].id});assert((await e.conn.query("SELECT uom FROM products WHERE product_id='ZED-1'")).toArray()[0].uom==='Each','Unit undo failed');
   let twice=false;try{await call(service,'cleanupUndo',{id:unit.history[0].id});}catch(err){twice=(err as Error).message.includes('already undone');}assert(twice,'A fix was undone twice');
   assert((await service.verify()).valid,'Audit chain broke after cleanup');
-  const actions=(await e.conn.query("SELECT action FROM audit_log WHERE action LIKE 'cleanup.%'")).toArray().map(r=>String(r.action));assert(actions.filter(a=>a==='cleanup.applied').length===2&&actions.filter(a=>a==='cleanup.undone').length===2,'Cleanup fixes were not audited');
+  const actions=(await e.conn.query("SELECT action FROM audit_log WHERE action LIKE 'cleanup.%'")).toArray().map(r=>String(r.action));assert(actions.filter(a=>a==='cleanup.applied').length===4&&actions.filter(a=>a==='cleanup.undone').length===4,'Cleanup fixes were not audited');
   // Cost basis: the invoice column reconciles to the waterfall; a choice is stored and survives a lock.
   const basis=await call(service,'costBasis'),wf=await call(service,'marginWaterfall');
   assert(basis.groups.length>0&&BigInt(basis.total.invoice.margin)===BigInt(wf.margin),'Invoice-cost margin by group does not add up to the waterfall');
@@ -752,7 +762,7 @@ INSERT INTO sales_lines(source_id,line_id,product_id,customer_id,sale_date,quant
   list=await call(service,'checklist');assert(list.steps.find((s:{step:string})=>s.step==='rule').done&&list.steps.find((s:{step:string})=>s.step==='team').done,'Checklist progress was not stored in the vault');
   assert((await call(service,'costBasis')).groups.find((g:{group:string})=>g.group==='Zeds').selected==='replacement','The cost basis choice was not stored');
   assert((await call(service,'roleList')).people.some((p:{userId:string})=>p.userId==='colleague-1'),'Roles were not stored');
-  assert((await call(service,'cleanupHistory')).length===2&&(await service.verify()).valid,'Cleanup history or audit chain lost');
+  assert((await call(service,'cleanupHistory')).length===4&&(await service.verify()).valid,'Cleanup history or audit chain lost');
   return {ownerRequiredAtSetup:true,schemaV7:true,sampleDataNeverCompletesSteps:true,mergeAndUndo:true,unitFixAndUndo:true,invoiceTotalsUnchangedByCleanup:true,costBasisReconcilesToWaterfall:true,roiAndHomeSampleSeparated:true,checklistStored:true,repCostNeverCrossesWorker:true,ownerSwitchGivesRepsCostOnly:true};
  }finally{await service.lock().catch(()=>undefined);await reset(scope);}
 }

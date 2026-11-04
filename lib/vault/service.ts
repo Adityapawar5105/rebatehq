@@ -24,7 +24,7 @@ import { basisSql, costBasis, type BasisId } from "../cost/basis";
 import * as setup from "../setup/checklist";
 import * as roles from "../roles/store";
 import { isRole, type Cap, type RoleId } from "../roles/access";
-import type { Access, CleanupApplied, CleanupUndone, HomeData, RoleList } from "./protocol";
+import type { Access, CleanupApplied, CleanupMergedAll, CleanupUndone, HomeData, RoleList } from "./protocol";
 export class VaultService {
   engine: Engine | null = null;
   private identity!: Scope;
@@ -408,27 +408,62 @@ export class VaultService {
   }
   async cleanupScan() { return cleanup.scan(this.requireEngine()); }
   async cleanupHistory() { return cleanup.history(this.requireEngine()); }
-  async cleanupApply(kind: cleanup.FixKind, key: string, target: string | null = null): Promise<CleanupApplied> {
-    const e = await this.writable(), p = await cleanup.plan(e, kind, key, target, this.identity.userId, new Date().toISOString());
+  /** One fix inside its own transaction (the caller rebuilds the margin totals and saves). Returns whether a merge's second step finished. */
+  private async applyFix(e: Engine, kind: cleanup.FixKind, key: string, target: string | null) {
+    const p = await cleanup.plan(e, kind, key, target, this.identity.userId, new Date().toISOString());
     await e.conn.query("BEGIN");
     try { await e.conn.query(p.sql); await appendAudit(e, "cleanup.applied", { fix_id: p.fixId, kind, cells: String(p.cells) }); await e.conn.query("COMMIT"); }
     catch (error) { await e.conn.query("ROLLBACK").catch(() => undefined); throw error; }
     let finished = true;
     if (p.finishSql) { try { await e.conn.query(`BEGIN; ${p.finishSql} COMMIT`); } catch { await e.conn.query("ROLLBACK").catch(() => undefined); finished = false; } }
-    this.dirty = true; if (kind === "merge_duplicates") await this.derived(e); else { this.dataVersion++; this.leakCache = null; }
-    await this.save(); this.touch();
-    return { fix: p.summary, finished, status: await this.status(), scan: await cleanup.scan(e), history: await cleanup.history(e) };
+    return { id: p.fixId, summary: p.summary, finished };
   }
-  async cleanupUndo(id: string): Promise<CleanupUndone> {
-    const e = await this.writable(), p = await cleanup.undoPlan(e, id, this.identity.userId, new Date().toISOString());
+  private async undoFix(e: Engine, id: string) {
+    const p = await cleanup.undoPlan(e, id, this.identity.userId, new Date().toISOString());
     await e.conn.query("BEGIN");
     try { await e.conn.query(p.sql); await appendAudit(e, "cleanup.undone", { fix_id: id, kind: p.kind, restored: String(p.restored), skipped: String(p.skipped) }); await e.conn.query("COMMIT"); }
     catch (error) { await e.conn.query("ROLLBACK").catch(() => undefined); throw error; }
-    this.dirty = true; if (p.kind === "merge_duplicates") await this.derived(e); else { this.dataVersion++; this.leakCache = null; }
+    return p;
+  }
+  /** After fixes: merges changed product IDs on lines, so rebuild the margin totals once; then save. */
+  private async afterFixes(e: Engine, merged: boolean) {
+    this.dirty = true; if (merged) await this.derived(e); else { this.dataVersion++; this.leakCache = null; }
     await this.save(); this.touch();
+  }
+  async cleanupApply(kind: cleanup.FixKind, key: string, target: string | null = null): Promise<CleanupApplied> {
+    const e = await this.writable(), fix = await this.applyFix(e, kind, key, target);
+    await this.afterFixes(e, kind === "merge_duplicates");
+    return { fix: fix.summary, finished: fix.finished, status: await this.status(), scan: await cleanup.scan(e), history: await cleanup.history(e) };
+  }
+  async cleanupUndo(id: string): Promise<CleanupUndone> {
+    const e = await this.writable(), p = await this.undoFix(e, id);
+    await this.afterFixes(e, p.kind === "merge_duplicates");
     return { summary: p.summary, restored: String(p.restored), skipped: String(p.skipped), status: await this.status(), scan: await cleanup.scan(e), history: await cleanup.history(e) };
   }
-  /** Guardrails and price floors are visible to every role; rules, simulations and their costs only to roles that edit pricing. */
+  /** Merge every "certain" duplicate group (case or spacing only) as one batch: each group is its own undoable fix, but the margin totals are rebuilt and saved once. */
+  async cleanupMergeAll(progress?: Progress): Promise<CleanupMergedAll> {
+    const e = await this.writable(progress), ids: string[] = [], tried = new Set<string>(); let unfinished = 0, skipped = 0, merged = false;
+    try {
+      for (let pass = 0; pass < 200; pass++) {
+        const groups = (await cleanup.scan(e)).duplicates.filter(g => g.confidence === "certain" && !tried.has(g.key));
+        if (!groups.length) break;
+        for (const g of groups) {
+          tried.add(g.key); progress?.("Merging duplicate SKUs", String(ids.length + skipped), String(ids.length + skipped + groups.length));
+          try { const fix = await this.applyFix(e, "merge_duplicates", g.key, null); ids.push(fix.id); merged = true; if (!fix.finished) unfinished++; }
+          catch (error) { if (error instanceof VaultError) skipped++; else throw error; } // for example a group over the line limit: leave it for a manual merge
+        }
+      }
+    } finally { if (merged) await this.afterFixes(e, true); }
+    return { merged: String(ids.length), skipped: String(skipped), unfinished: String(unfinished), ids, status: await this.status(), scan: await cleanup.scan(e), history: await cleanup.history(e) };
+  }
+  /** Undo several fixes (newest first) with one rebuild and one save. */
+  async cleanupUndoMany(ids: string[]): Promise<CleanupUndone> {
+    if (!Array.isArray(ids) || ids.length > 5000 || ids.some(i => typeof i !== "string" || i.length > 64)) throw new VaultError("CLEANUP", "Choose the fixes to undo from the history.");
+    const e = await this.writable(); let restored = 0, skipped = 0, merged = false, count = 0;
+    try { for (const id of [...ids].reverse()) { const p = await this.undoFix(e, id); restored += p.restored; skipped += p.skipped; count++; merged ||= p.kind === "merge_duplicates"; } }
+    finally { if (count) await this.afterFixes(e, merged); }
+    return { summary: `${count} fix${count === 1 ? "" : "es"}`, restored: String(restored), skipped: String(skipped), status: await this.status(), scan: await cleanup.scan(e), history: await cleanup.history(e) };
+  }  /** Guardrails and price floors are visible to every role; rules, simulations and their costs only to roles that edit pricing. */
   async pricingState(){const state=await pricing.pricingState(this.requireEngine());if((await this.access()).caps.includes('pricing'))return state;return {...state,rules:[],runs:[]};}
   /** Pricing changes need a named Pricing Owner (required at setup). */
   private async requireOwnerNamed(){if(!(await pricing.pricingState(this.requireEngine())).owner)throw new VaultError('OWNER','Name a Pricing Owner on Home before changing prices. Every price change is approved by that person.');}

@@ -60,7 +60,7 @@ export const ACTION_CAP: Record<Action, Cap | null> = {
   recipeSave: "data", recipeApply: "data", sources: "data", sourceRemove: "data",
   fixGroups: "data", fixRows: "data", fixSet: "data", fixDismiss: "data", fixRecheck: "data", health: "data",
   playgroundLoad: "data", playgroundRemove: "data", creditsLoad: "data",
-  cleanupScan: "data", cleanupApply: "data", cleanupUndo: "data", cleanupHistory: "data", costBasis: "cost", costBasisSet: "data",
+  cleanupScan: "data", cleanupApply: "data", cleanupUndo: "data", cleanupMergeAll: "data", cleanupUndoMany: "data", cleanupHistory: "data", costBasis: "cost", costBasisSet: "data",
   marginWaterfall: "cost", marginDrill: "cost", marginWhale: "cost", marginMath: "cost", leaks: "cost", leakRows: "cost", leakReport: "cost", roi: "cost",
   reconcile: "reconcile", reconAccept: "reconcile", reconRebuild: "reconcile",
 };

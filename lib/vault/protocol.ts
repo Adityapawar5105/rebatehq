@@ -36,6 +36,7 @@ export type HomeData = {
   openFixLater?: string; openRecon?: string; previews?: string; rules?: string; cleanup?: { duplicates: string; units: string; categories: string };
 };
 export type CleanupApplied = { fix: string; finished: boolean; status: VaultStatus; scan: Scan; history: FixView[] };
+export type CleanupMergedAll = { merged: string; skipped: string; unfinished: string; ids: string[]; status: VaultStatus; scan: Scan; history: FixView[] };
 export type CleanupUndone = { summary: string; restored: string; skipped: string; status: VaultStatus; scan: Scan; history: FixView[] };
 export type StorageStatus = { persistent: boolean; usage: string; quota: string; namedOpfsBytes: string; files: string };
 export type ImportEstimate = { bytes: string; estimatedMemoryBytes: string; maxLines: string; maxProducts: string; warning: string };
@@ -52,6 +53,8 @@ export type Commands = {
   cleanupHistory: Record<string, never>;
   cleanupApply: { kind: FixKind; key: string; target?: string | null };
   cleanupUndo: { id: string };
+  cleanupMergeAll: Record<string, never>;
+  cleanupUndoMany: { ids: string[] };
   costBasis: Record<string, never>;
   costBasisSet: { group: string; basis: BasisId | null };
   pricingState: Record<string, never>;
@@ -116,7 +119,7 @@ export type LeaksView = { result: LeakResult; roi: RoiSummary; sample: boolean; 
 export type CommitResult = { loaded: string; rejected: string; files: string; cleanup: boolean };
 export type Results = {
   home: HomeData; checklist: Checklist; checklistMark: Checklist; roleList: RoleList; roleSet: RoleList; roleRemove: RoleList; accessSet: RoleList; rolePreview: RoleList;
-  cleanupScan: Scan; cleanupHistory: FixView[]; cleanupApply: CleanupApplied; cleanupUndo: CleanupUndone;
+  cleanupScan: Scan; cleanupHistory: FixView[]; cleanupApply: CleanupApplied; cleanupUndo: CleanupUndone; cleanupMergeAll: CleanupMergedAll; cleanupUndoMany: CleanupUndone;
   costBasis: CostBasisView; costBasisSet: CostBasisView;
   pricingState: Awaited<ReturnType<VaultService['pricingState']>>;
   pricingOwner: Awaited<ReturnType<VaultService['pricingOwner']>>;
