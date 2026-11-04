@@ -24,7 +24,7 @@
 - **Important:** those phases were built before this blueprint. They store customer pricing data **in Supabase**, which section 4 does not allow. Auth, workspaces and roles carry forward as the control plane; the business-data paths must be ported to the browser and then retired (see `ARCHITECTURE_TRANSITION.md`).
 - **Not built yet:** every Phase 1 core deliverable in its local-first form (DuckDB-Wasm vault, Import Studio, waterfall on invoice lines, leaks, guardrails, rules, export, backup). COEP header not yet set.
 - **Next:** repo Phase 4 = Blueprint Phase 1 core, starting with the section 19 prototype spike. The "pocket-margin engine with reconciliation and show-me-the-math" is built **in the browser** as part of it (chunk 4D).
-- **Gap:** no real distributor ERP file tested yet, and no customer conversations. Mapper, parser and item-master cleanup all depend on real files, so get at least one (even anonymised) before finalising the Data Hub.
+- **Gap:** no prospect's ERP export tested yet, and no customer conversations. One real public export has been tested (UCI "Online Retail", a UK wholesaler, 541,909 lines; see `REAL_FILE_RESULTS.md`), which reshaped the mapper and Fix Later. The five ERP profiles remain unverified until a real export from each ERP is tested.
 
 ### Locked decisions
 
@@ -230,7 +230,8 @@ Goals, not promises. Benchmark on an 8 GB office laptop. "100M rows in a tab" cl
 - Everything runs locally in a Web Worker
 - Spreadsheets (XLSX/XLSM/XLS/XLSB/ODS), JSON and XML are read whole in the browser, so they are capped at 300,000 rows (64 MiB); larger exports go in as CSV/TSV/TXT, which stream up to 256 MiB per file
 - Rebate agreement files are tagged, previewed and converted in Phase 1; loading them into the vault arrives with the customer rebate engine in Phase 2
-- In chunk 4C-1 columns align by canonical name (ignoring case, spaces and punctuation, any order); the ERP mapper for other header names follows in 4C-2
+- Columns are mapped by canonical name, common synonyms and ERP profiles, each with a confidence score; anything inferred (synonyms, unit price × quantity, "not in file", generated line IDs) must be confirmed by the user before import (4C-2)
+- A sales line's cost may be unknown; it is never assumed to be zero. Returns and credits (negative quantities or amounts) are held in Fix Later until the margin engine defines how credits enter the waterfall
 
 **Scope guardrail:** business data files only (spreadsheets, text exports, tables). Not a general image, video or document converter.
 
@@ -541,3 +542,4 @@ Corrections after reviewing the repository and build history against v2.1. Produ
 8. **Open questions:** Q3 answered by `ARCHITECTURE_TRANSITION.md`; Q7 (encryption approach) added.
 9. **3 Nov 2026, chunk 4A — encryption fallback clarified (sections 5, 13 and 20).** The pinned offline Wasm build cannot write a natively encrypted OPFS database in the local probe. The chosen fallback is chunk-authenticated AES-256-GCM snapshots, PBKDF2-SHA256 (600k), and memory-only unlocked working/staging data. A plaintext OPFS database can survive a crash even if backups are encrypted, so "delete on lock/close" is insufficient. The spike's plaintext OPFS persistence experiment is restricted to generated synthetic data. This is a local feasibility decision, not CI evidence or a production-vault claim.
 10. **3 Nov 2026, chunk 4C-1 — Import Studio limits clarified (section 6A).** Spreadsheets, JSON and XML are parsed whole in the browser, so they are capped at 300,000 rows per sheet (64 MiB); CSV/TSV/TXT stream up to 256 MiB per file. Rebate agreement files are converted but not loaded until the Phase 2 rebate engine, because the Phase 1 data model has no rebate tables. Column alignment is by canonical name until the 4C-2 ERP mapper. Scope, tiers and prices are unchanged.
+11. **4 Nov 2026, chunk 4C-2 — lessons from the first real export (sections 2 and 6A).** Testing the real UCI "Online Retail" export (541,909 lines) showed that sales exports often lack line IDs, line totals and cost, use unit prices, and mix in returns. Section 6A now states that: inferred mappings need explicit confirmation; cost may be unknown (never zero); and returns/credits wait in Fix Later until 4D decides how credits enter the waterfall. Section 2's gap now records the real file tested and that the ERP profiles stay unverified. The export also exceeds the 300,000-row spreadsheet cap, so a streaming XLSX reader is recorded as a pilot-hardening (6A) item. Scope, tiers and prices are unchanged.

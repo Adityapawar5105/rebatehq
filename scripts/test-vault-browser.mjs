@@ -167,6 +167,8 @@ try {
   await page.getByRole("table", { name: /Column mapping for retail-like.csv/ }).waitFor();
   assert.equal(await page.getByLabel("Source for list_amount").inputValue(), "unit:5", "UnitPrice x quantity should be suggested");
   await page.getByLabel("I checked this mapping").check();
+  // Wait until the worker has saved the confirmation, not just the optimistic tick.
+  await page.getByText("Check the column mapping below and confirm it.").waitFor({ state: "detached", timeout: 30000 });
   await page.getByRole("button", { name: "Review import" }).click(); await page.getByRole("heading", { name: "Batch report" }).waitFor();
   await page.getByText(/sale_date: expanded two-digit years/).waitFor();
   await page.getByRole("checkbox", { name: /Load the 20 valid rows/ }).check();

@@ -310,3 +310,14 @@ Open items carried to Phase 3 (recorded only; not implemented here):
 - Rebate agreement files are converted but not loaded; the Phase 1 data model has no rebate tables (blueprint v2.2, section 22 entry 10).
 - Background warm-up starts after unlock on a second DuckDB connection. Imports, recipe saves and removals wait for it. If it fails, the first change copies synchronously as in 4B.
 - `verifyAudit` previously ordered by a VARCHAR alias and failed once a vault had ten or more entries; it now orders by the BIGINT column. Vaults saved by 4B with fewer than ten entries were unaffected.
+
+# Chunk 4C-2 assumptions — 2026-11-04
+
+- Mapping suggestions come from canonical names (score 1.0), ERP-profile names (0.95), common synonyms (0.9), unit price/cost x quantity (0.85-0.9) and partial header matches (0.6). The ERP profiles are built from public documentation and are unverified. Any non-exact source needs the user's explicit "I checked this mapping"; a saved recipe stores the confirmed mapping and applies it as confirmed.
+- Generated line IDs are a deterministic 53-bit hash of invoice number plus line number (or order within the invoice), so re-importing the same file is detected. Exact duplicate rows in files with generated IDs are compared on every other field.
+- Line amount from unit price x quantity is exact (BigInt), rounded half away from zero to the cent. Values are cleaned to canonical form (dot decimals, ISO dates) before the same exact SQL validation; anything ambiguous is left as typed and rejected with a location.
+- Blank discount, freight and rebate load as 0. A blank or unmapped cost loads as unknown (NULL) and lowers the health score; it is never guessed as zero. Negative quantities and amounts (returns, credits, adjustments) are rejected to Fix Later until the 4D margin engine defines credits.
+- Fix Later keeps each rejected row's cleaned values. A correction applies to one group (file + issue) or listed rows. Re-check validates only that group; duplicates load only through an explicit "Load anyway". Rows rejected for broken layout can only be dismissed. Every correction, dismissal and load is audited and saved.
+- The health score is the equal-weight mean of the components that apply: cost coverage, unique product IDs (case and space insensitive), price consistency (unit price within 5x of the product median, products with 5+ lines), import completeness and customer tiers. Unit-price statistics use DOUBLE for statistics only; stored money stays in whole cents.
+- The Playground loads through the normal import path only into a vault with no other files, uses names starting "Playground - ", and can be removed. Its manifest's dollar values are exact sums over the generated rows.
+- Real-export test files (UCI Online Retail, CC BY 4.0) stay in git-ignored `test-results/real/`; CI uses a synthetic look-alike.

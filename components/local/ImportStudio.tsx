@@ -151,6 +151,9 @@ function parseSource(v: string): FieldSource {
 }
 /** Column mapping: one source per canonical field, with confidence and the reason it was suggested. */
 function MappingEditor({ file, busy, patch }: { file: FileView; busy: boolean; patch: (data: Patch) => Promise<void> }) {
+  // Show the tick at once; the worker's reply (file.confirmed) wins once it arrives, e.g. after a failed save.
+  const [confirmed, setConfirmed] = useState(file.confirmed);
+  useEffect(() => { setConfirmed(file.confirmed); }, [file.confirmed, file.id]);
   const erp = file.erpOptions.find(o => o.id === file.erp);
   const columns = file.headers.map((h, i) => ({ i, label: `${file.columnLabels[i] && !file.fixedLayout ? file.columnLabels[i] + " · " : ""}${h}` }));
   return <div>
@@ -174,7 +177,7 @@ function MappingEditor({ file, busy, patch }: { file: FileView; busy: boolean; p
         <td className={styles.wrap}>{m.reason}</td>
       </tr>)}</tbody>
     </table></div>
-    {file.needsConfirmation && <label className={styles.row}><input type="checkbox" style={{ width: "auto" }} checked={file.confirmed} disabled={busy || file.missing.length > 0} onChange={e => void patch({ confirmed: e.target.checked })}/> I checked this mapping{file.missing.length ? ` (map ${file.missing.join(", ")} first)` : ""}</label>}
+    {file.needsConfirmation && <label className={styles.row}><input type="checkbox" style={{ width: "auto" }} checked={confirmed} disabled={busy || file.missing.length > 0} onChange={e => { setConfirmed(e.target.checked); void patch({ confirmed: e.target.checked }); }}/> I checked this mapping{file.missing.length ? ` (map ${file.missing.join(", ")} first)` : ""}</label>}
   </div>;
 }
 function FilePanel({ file, busy, studio, recipeName, setRecipeName, update, patch, apply, saveRecipe }: { file: FileView; busy: boolean; studio: StudioState; recipeName: string; setRecipeName: (v: string) => void; update: (id: string, settings: Partial<Settings>, role?: Role | null) => Promise<void>; patch: (data: Patch) => Promise<void>; apply: (recipeId: string) => Promise<void>; saveRecipe: () => Promise<void> }) {
