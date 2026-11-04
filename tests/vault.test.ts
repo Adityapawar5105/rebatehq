@@ -9,7 +9,7 @@ import { verifyEntries, auditPayload, GENESIS, type AuditEntry } from "../lib/va
 import { digest } from "../lib/vault/crypto";
 import { CAPS } from "../lib/vault/protocol";
 import { estimateImport } from "../lib/vault/ingest";
-import { upgradeSql, schemaSql, tablesFor, TABLES, V1_SQL } from "../lib/vault/schema";
+import { upgradeSql, schemaSql, tablesFor, TABLES, V1_SQL, SALES_LINES_V5, SALES_LINES_V8 } from "../lib/vault/schema";
 import { closeMemory } from "../lib/vault/engine";
 class FakeDirectory {
   files = new Map<string, Uint8Array>(); failName = "";
@@ -107,10 +107,12 @@ test("schema inventory, forward-only migration, capacity and memory warning are 
   assert.deepEqual([...tablesFor(4)].filter(t => !tablesFor(3).includes(t)), ["rejected_rows"]);
   assert.ok(upgradeSql(1).includes("ALTER TABLE import_batches") && upgradeSql(1).includes("ADD COLUMN source_id") && upgradeSql(1).includes("CREATE TABLE rejected_rows"));
   assert.ok(upgradeSql(2).startsWith("ALTER TABLE products ADD COLUMN source_id"));
-  assert.ok(upgradeSql(3).includes("ALTER COLUMN cost_cents DROP NOT NULL") && upgradeSql(3).startsWith("DROP INDEX")); assert.ok(upgradeSql(4).startsWith("CREATE TEMP TABLE md_v4_sales") && upgradeSql(4).includes("line_kind")); assert.ok(upgradeSql(5).includes("CREATE TABLE rule_changes")); assert.ok(upgradeSql(6).startsWith("CREATE TABLE role_assignments") && upgradeSql(6).includes("CREATE TABLE cleanup_changes") && upgradeSql(6).includes("CREATE TABLE setup_progress")); assert.equal(upgradeSql(7), ""); assert.throws(() => upgradeSql(8));
+  assert.ok(upgradeSql(3).includes("ALTER COLUMN cost_cents DROP NOT NULL") && upgradeSql(3).startsWith("DROP INDEX")); assert.ok(upgradeSql(4).startsWith("CREATE TEMP TABLE md_v4_sales") && upgradeSql(4).includes("line_kind")); assert.ok(upgradeSql(5).includes("CREATE TABLE rule_changes")); assert.ok(upgradeSql(6).startsWith("CREATE TABLE role_assignments") && upgradeSql(6).includes("CREATE TABLE cleanup_changes") && upgradeSql(6).includes("CREATE TABLE setup_progress")); assert.ok(upgradeSql(7).startsWith("CREATE TEMP TABLE md_v7_sales") && upgradeSql(7).includes("CHECK(source_row>=1)")); assert.equal(upgradeSql(8), ""); assert.throws(() => upgradeSql(9));
+  assert.ok(SALES_LINES_V8.includes("CHECK(source_row>=1)") && !SALES_LINES_V8.includes("source_row>=2") && SALES_LINES_V8.replace("source_row>=1", "source_row>=2") === SALES_LINES_V5, "v8 only relaxes the source-row check");
+  assert.deepEqual([...tablesFor(8)], [...tablesFor(7)], "v8 adds no table");
   assert.deepEqual([...tablesFor(7)].filter(t => !tablesFor(6).includes(t)), ["role_assignments", "access_settings", "cleanup_fixes", "cleanup_changes", "setup_progress"]);
   assert.deepEqual([...tablesFor(5)].filter(t => !tablesFor(4).includes(t)), ["agg_cpm", "agg_cm", "agg_p", "recon_issues"]);
-  assert.equal(schemaSql(7), [V1_SQL, upgradeSql(1)].join("\n"));
+  assert.equal(schemaSql(8), [V1_SQL, upgradeSql(1)].join("\n"));
   assert.equal(CAPS.scale.lines, 1000000); assert.equal(CAPS.starter.products, 20000);
   assert.equal(estimateImport({ name: "sales.csv", size: 1000 }, "professional").estimatedMemoryBytes, "6000");
   assert.throws(() => estimateImport({ name: "sales.xlsx", size: 1000 }, "starter"));

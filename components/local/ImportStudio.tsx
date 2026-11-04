@@ -143,11 +143,11 @@ export function ImportStudio({ client, status, busy, operation, onStatus, setMes
     </section>
   </>;
 }
-type Patch = { erp?: ErpProfile; field?: { name: string; source: FieldSource }; confirmed?: boolean };
-const sourceValue = (s: FieldSource) => s.kind === "column" || s.kind === "unit" ? `${s.kind}:${s.index}` : s.kind === "generate" ? `generate:${s.lineNo ?? ""}` : s.kind;
+type Patch = { erp?: ErpProfile; field?: { name: string; source: FieldSource }; confirmed?: boolean; range?: { from: string | null; to: string | null } };
+const sourceValue = (s: FieldSource) => s.kind === "column" || s.kind === "unit" || s.kind === "percent" || s.kind === "fraction" ? `${s.kind}:${s.index}` : s.kind === "generate" ? `generate:${s.lineNo ?? ""}` : s.kind;
 function parseSource(v: string): FieldSource {
   const [kind, rest] = v.split(":");
-  if (kind === "column" || kind === "unit") return { kind, index: Number(rest) };
+  if (kind === "column" || kind === "unit" || kind === "percent" || kind === "fraction") return { kind, index: Number(rest) };
   if (kind === "generate") return { kind, lineNo: rest === "" ? null : Number(rest) };
   return { kind: kind as "zero" | "none" };
 }
@@ -174,6 +174,8 @@ function MappingEditor({ file, busy, patch }: { file: FileView; busy: boolean; p
           {m.options.includes("generate") && <option value={m.source.kind === "generate" ? sourceValue(m.source) : "generate:"}>Generate from invoice number{m.source.kind === "generate" && m.source.lineNo !== null ? " and line number" : ""}</option>}
           {columns.map(c => <option key={`c${c.i}`} value={`column:${c.i}`}>{c.label}</option>)}
           {m.options.includes("unit") && columns.map(c => <option key={`u${c.i}`} value={`unit:${c.i}`}>{c.label} × quantity</option>)}
+          {m.options.includes("percent") && columns.map(c => <option key={`p${c.i}`} value={`percent:${c.i}`}>{c.label} as % of list (30 = 30%)</option>)}
+          {m.options.includes("fraction") && columns.map(c => <option key={`f${c.i}`} value={`fraction:${c.i}`}>{c.label} as share of list (0.3 = 30%)</option>)}
         </select></td>
         <td><span className={`${styles.pill} ${m.confidence >= 0.9 ? styles.ok : styles.bad}`}>{m.source.kind === "none" && m.required ? "Missing" : `${Math.round(m.confidence * 100)}%`}</span></td>
         <td className={styles.wrap}>{m.reason}</td>
@@ -192,13 +194,18 @@ function FilePanel({ file, busy, studio, recipeName, setRecipeName, update, patc
     {file.notices.map(n => <p key={n} className={styles.notice}>{n}</p>)}
     <div className={styles.grid}>
       {file.sheets.length > 1 && <label>Sheet<select value={s.sheet ?? ""} disabled={busy} onChange={e => set({ sheet: e.target.value })}>{file.sheets.map(n => <option key={n}>{n}</option>)}</select></label>}
-      {!file.fixedLayout && <label>Header row<select value={s.headerRow} disabled={busy} onChange={e => set({ headerRow: Number(e.target.value) })}>{file.headerRowOptions.map(o => <option key={o.index} value={o.index}>Row {o.row}</option>)}</select></label>}
+      {!file.fixedLayout && <label>Header row<select value={s.headerRow} disabled={busy} onChange={e => set({ headerRow: Number(e.target.value) })}><option value={-1}>No header row</option>{file.headerRowOptions.map(o => <option key={o.index} value={o.index}>Row {o.row}</option>)}</select></label>}
       {!file.fixedLayout && <label>Header rows<select value={s.headerDepth} disabled={busy} onChange={e => set({ headerDepth: Number(e.target.value) as 1 | 2 | 3 })}><option value={1}>1 row</option><option value={2}>2 rows</option><option value={3}>3 rows</option></select></label>}
       {file.textFormat && <label>Delimiter<select value={s.delimiter} disabled={busy} onChange={e => set({ delimiter: e.target.value as Settings["delimiter"] })}>{Object.entries(DELIMITER_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>}
       {file.textFormat && <label>Encoding<select value={s.encoding} disabled={busy} onChange={e => set({ encoding: e.target.value as Settings["encoding"] })}><option value="utf-8">UTF-8</option><option value="windows-1252">Windows-1252 (Western)</option><option value="utf-16le">UTF-16 LE</option><option value="utf-16be">UTF-16 BE</option></select></label>}
       <label>Decimal symbol<select value={s.decimal} disabled={busy} onChange={e => set({ decimal: e.target.value as Settings["decimal"] })}><option value="dot">Dot (12.50)</option><option value="comma">Comma (12,50)</option></select></label>
       <label>Date format<select value={s.dateFormat} disabled={busy} onChange={e => set({ dateFormat: e.target.value as Settings["dateFormat"] })}>{DATE_FORMATS.map(d => <option key={d}>{d}</option>)}</select></label>
     </div>
+    {file.role === "sales_history" && <div className={styles.grid}>
+      <label>Import dates from<input type="date" value={file.range.from ?? ""} disabled={busy} onChange={e => void patch({ range: { from: e.target.value || null, to: file.range.to } })}/></label>
+      <label>to<input type="date" value={file.range.to ?? ""} disabled={busy} onChange={e => void patch({ range: { from: file.range.from, to: e.target.value || null } })}/></label>
+    </div>}
+    {file.role === "sales_history" && <p className={styles.small}>Leave the dates empty to import the whole file. A shorter range keeps a large export within your plan&apos;s line limit.</p>}
     {file.fields.length > 0 && <MappingEditor file={file} busy={busy} patch={patch}/>}
     {file.ignored.length > 0 && <p className={styles.small}><strong>Columns not used:</strong> {file.ignored.join(", ")}</p>}
     <div className={styles.tableWrap}><table className={styles.table} aria-label={`First rows of ${file.name}`}>

@@ -85,7 +85,7 @@ export type Commands = {
   verify: Record<string, never>;
   storage: Record<string, never>;
   studioAdd: { files: File[]; replaces?: string | null };
-  studioUpdate: { id: string; settings?: Partial<Settings>; role?: Role | null; erp?: ErpProfile; field?: { name: string; source: FieldSource }; confirmed?: boolean };
+  studioUpdate: { id: string; settings?: Partial<Settings>; role?: Role | null; erp?: ErpProfile; field?: { name: string; source: FieldSource }; confirmed?: boolean; range?: { from: string | null; to: string | null } };
   studioDrop: { id: string };
   studioClear: Record<string, never>;
   studioState: Record<string, never>;

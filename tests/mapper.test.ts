@@ -16,7 +16,7 @@ test("the real Online Retail export maps as sales history (it was misread as a c
   const fields = suggestMapping("sales_history", RETAIL_HEADER);
   assert.deepEqual(show(fields, RETAIL_HEADER), {
     line_id: "generate", invoice_id: "column:InvoiceNo", product_id: "column:StockCode", customer_id: "column:CustomerID", sale_date: "column:InvoiceDate",
-    quantity: "column:Quantity", list_amount: "unit:UnitPrice", discount_amount: "zero", freight_amount: "zero", rebate_amount: "zero", cost_amount: "none",
+    quantity: "column:Quantity", list_amount: "unit:UnitPrice", discount_amount: "zero", freight_amount: "zero", rebate_amount: "zero", cost_amount: "none", line_type: "none",
   });
   assert.equal(mappingProblems("sales_history", toMapping(fields)).length, 0);
   assert.ok(needsConfirmation(fields), "Inferred mappings must be confirmed by the user");

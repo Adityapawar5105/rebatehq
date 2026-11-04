@@ -1,3 +1,7 @@
 # Parking lot
 
 - CI warns Node.js 20 is deprecated for actions/checkout@v4, actions/setup-node@v4 and pnpm/action-setup@v4; bump them in a separate small chunk.
+- **Header/line exports (found in 6A, Northwind):** some exports put customer, date and freight in an order-header file and the items in a lines file. Import Studio needs one flat invoice-line file, so the lines file cannot load alone. A "join a header file by invoice number" converter step (with freight spread over the lines) would fix it. Every target ERP can export a flat invoice-line report, so this waits for a pilot that needs it.
+- **Item-master cost on sales lines (found in 6A, QuickBooks):** when the sales export has no cost but the item list does, margin shows in the 5A cost-basis comparison (replacement cost) but the leak finder only uses invoice-line cost, so it finds no margin leaks. Decide whether the chosen cost basis should feed the leak finder.
+- **Spreadsheets over 300,000 rows per sheet (6A, UCI Online Retail II):** refused with "save it as CSV" as the blueprint states. A streaming XLSX reader would remove the extra step; not needed while CSV export is available.
+- **German (and other non-English) header names (6A, SAP Business One):** parsing is right (`;`, comma decimals, DD.MM.YYYY, Windows-1252) but the role and columns must be mapped by hand once; a saved recipe then repeats it. Add localized synonyms only if pilots outside English-speaking markets need them.

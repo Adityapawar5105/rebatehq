@@ -2,8 +2,9 @@
 // validation. Anything that cannot be cleaned unambiguously is returned unchanged,
 // so the import rejects it with a location instead of guessing. Pure functions.
 import { isoDate, type DateFormat } from "./formats";
-export type CleanNote = "symbols" | "grouping" | "placeholder" | "negative" | "time" | "short_year" | "month_name" | "id_decimal" | "apostrophe" | "spaces";
+export type CleanNote = "symbols" | "grouping" | "placeholder" | "negative" | "time" | "short_year" | "month_name" | "id_decimal" | "apostrophe" | "spaces" | "rounded";
 export const NOTE_TEXT: Record<CleanNote, string> = {
+  rounded: "rounded amounts with more than two decimals to the cent (half away from zero)",
   symbols: "removed currency symbols or codes", grouping: "removed thousands separators", placeholder: "treated placeholders (TBD, CALL, N/A, -) as empty",
   negative: "read parentheses or a trailing minus as negative", time: "dropped the time of day", short_year: "expanded two-digit years",
   month_name: "read month names", id_decimal: "removed a spreadsheet .0 from IDs", apostrophe: "removed a leading text apostrophe", spaces: "collapsed repeated spaces",
@@ -24,6 +25,8 @@ export function cleanNumber(raw: string, decimal: "dot" | "comma"): Out {
   if (stripped !== v) { notes.push("symbols"); v = stripped; }
   if (v.startsWith("-")) { negative = !negative; v = v.slice(1).trim(); }
   else if (v.startsWith("+")) v = v.slice(1).trim();
+  // SQL Server and some ERPs write ".9999" without the leading zero (6A, AdventureWorks).
+  if (/^[.,]\d+$/.test(v) && (v[0] === "." ? decimal === "dot" : decimal === "comma")) v = "0" + v;
   const group = decimal === "dot" ? /^\d{1,3}([, '’]\d{3})+(\.\d+)?$/ : /^\d{1,3}([. '’]\d{3})+(,\d+)?$/;
   if (group.test(v)) { v = v.replace(decimal === "dot" ? /[, '’]/g : /[. '’]/g, ""); notes.push("grouping"); }
   if (decimal === "comma") v = v.replace(",", ".");
@@ -67,6 +70,33 @@ export function cleanId(raw: string): Out {
   if (/^\d+\.0+$/.test(v)) { v = v.replace(/\.0+$/, ""); notes.push("id_decimal"); }
   if (/\s{2,}/.test(v)) { v = v.replace(/\s{2,}/g, " "); notes.push("spaces"); }
   return { value: v, notes };
+}
+/**
+ * A canonical amount with more than two decimals ("2024.9940") rounded to the cent, half
+ * away from zero ("2024.99"). Returns the value unchanged when it has two decimals or fewer,
+ * and null when it is not a canonical number (the import then reports it).
+ */
+export function toCents(value: string) {
+  const m = /^(-?)(\d+)(?:\.(\d+))?$/.exec(value);
+  if (!m) return null;
+  const frac = m[3] ?? "";
+  if (frac.length <= 2) return value;
+  // Half away from zero, decided by the third decimal (0.1250 -> 0.13, 0.1249 -> 0.12).
+  const whole = BigInt(m[2] + frac.slice(0, 2)) + (Number(frac[2]) >= 5 ? BigInt(1) : BigInt(0));
+  const neg = m[1] === "-" && whole !== BigInt(0);
+  return (neg ? "-" : "") + (whole / BigInt(100)).toString() + "." + (whole % BigInt(100)).toString().padStart(2, "0");
+}
+/**
+ * Exact share of a list amount in cents, rounded half away from zero: rate is a percent
+ * (scale 100, "30.00" = 30%) or a fraction (scale 1, "0.05" = 5%). null when either is not
+ * a canonical number. A negative list (a credit line) gives a negative discount.
+ */
+export function shareOf(list: string, rate: string, scale: 1 | 100) {
+  const parse = (s: string) => { const m = /^(-?)(\d+)(?:\.(\d{1,6}))?$/.exec(s); if (!m) return null; return { neg: m[1] === "-", n: BigInt(m[2] + (m[3] ?? "").padEnd(6, "0")) }; };
+  const l = parse(list), r = parse(rate);
+  if (!l || !r) return null;
+  const divisor = BigInt(10) ** BigInt(10) * BigInt(scale), cents = (l.n * r.n + divisor / BigInt(2)) / divisor, neg = l.neg !== r.neg && cents !== BigInt(0);
+  return (neg ? "-" : "") + (cents / BigInt(100)).toString() + "." + (cents % BigInt(100)).toString().padStart(2, "0");
 }
 /** Exact unit x quantity in cents, rounded half away from zero. null when either is not a canonical number. */
 export function lineTotal(unit: string, qty: string) {

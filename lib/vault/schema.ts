@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 8;
 const V1_TABLES = ["vault_meta", "products", "customers", "price_matrix", "price_guardrails", "source_files", "import_batches", "sales_lines", "vendor_costs", "cost_basis_settings", "rules", "rule_runs", "price_versions", "roi_ledger", "audit_log", "import_issues", "converter_recipes"] as const;
 const V4_TABLES = [...V1_TABLES, "rejected_rows"] as const;
 const V5_TABLES = [...V4_TABLES, "agg_cpm", "agg_cm", "agg_p", "recon_issues"] as const;
@@ -100,7 +100,18 @@ CREATE TABLE access_settings(id INTEGER PRIMARY KEY CHECK(id=1), rep_sees_cost B
 CREATE TABLE cleanup_fixes(id VARCHAR PRIMARY KEY, kind VARCHAR NOT NULL CHECK(kind IN ('merge_duplicates','normalize_uom','set_category')), summary VARCHAR NOT NULL, cells BIGINT NOT NULL CHECK(cells>=0), applied_at VARCHAR NOT NULL, applied_by VARCHAR NOT NULL, undone_at VARCHAR, undone_by VARCHAR);
 CREATE TABLE cleanup_changes(fix_id VARCHAR NOT NULL, seq BIGINT NOT NULL CHECK(seq>0), tbl VARCHAR NOT NULL, key1 VARCHAR NOT NULL, key2 VARCHAR, col VARCHAR NOT NULL, before_value VARCHAR, after_value VARCHAR, PRIMARY KEY(fix_id,seq));
 CREATE TABLE setup_progress(step VARCHAR PRIMARY KEY CHECK(step IN (${list(SETUP_STEPS)})), done_at VARCHAR NOT NULL, how VARCHAR NOT NULL CHECK(how IN ('auto','manual')));`;
-const STEPS = [V1_SQL, V2_SQL, V3_SQL, V4_SQL, V5_SQL, V6_SQL, V7_SQL];
+// V8 (6A). A file with no header row has data on its first line, so a sales line's
+// source row may be 1. DuckDB cannot drop a CHECK constraint, so sales_lines is rebuilt
+// as in V5 with only that check relaxed; every row, column and index is kept.
+export const SALES_LINES_V8 = SALES_LINES_V5.replace("CHECK(source_row>=2)", "CHECK(source_row>=1)");
+export const V8_SQL = `CREATE TEMP TABLE md_v7_sales AS SELECT * FROM sales_lines;
+DROP TABLE sales_lines;
+${SALES_LINES_V8}
+INSERT INTO sales_lines SELECT * FROM md_v7_sales ORDER BY customer_id, sale_date, line_id;
+DROP TABLE md_v7_sales;
+CREATE INDEX sales_lines_customer_date ON sales_lines(customer_id,sale_date);
+CREATE INDEX sales_lines_product_date ON sales_lines(product_id,sale_date);`;
+const STEPS = [V1_SQL, V2_SQL, V3_SQL, V4_SQL, V5_SQL, V6_SQL, V7_SQL, V8_SQL];
 function checkVersion(version: number) {
   if (!Number.isInteger(version) || version < 1 || version > SCHEMA_VERSION) throw new Error("Unsupported vault schema version; update the app before opening this vault.");
 }

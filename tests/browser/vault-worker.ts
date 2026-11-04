@@ -60,7 +60,7 @@ async function testFixture(bytes: Uint8Array) {
   await closeMemory(probe);
   const service = new VaultService(() => undefined); await service.init(fixtureScope);
   const result = await service.unlock(secret);
-  assert(result.schemaVersion === "7" && result.lines === "1", "V1 snapshot did not upgrade with its row intact");
+  assert(result.schemaVersion === "8" && result.lines === "1", "V1 snapshot did not upgrade with its row intact");
   const agg = (await service.engine!.conn.query("SELECT count(*)::VARCHAR AS n, sum(list_cents)::VARCHAR AS l, max(line_kind) AS k FROM agg_cpm")).toArray()[0];
   assert(agg.n === "1" && agg.l === "1250" && agg.k === "sale", "V1 upgrade must build the margin pre-aggregate from existing lines");
   assert((await service.marginWaterfall()).margin === "375", "Upgraded v1 line waterfall wrong");
@@ -403,7 +403,7 @@ async function margin() {
   const service = new VaultService(() => undefined); await service.init(scope); await service.create(secret, "professional");
   const result: Record<string, unknown> = {};
   const out = await service.playgroundLoad(noop), manifest = out.manifest;
-  assert((await service.status()).schemaVersion === "7", "New vaults must be schema v7");
+  assert((await service.status()).schemaVersion === "8", "New vaults must be schema v8");
   // 1. The waterfall equals the imported lines recomputed one by one with the JS engine.
   const raw = await rowsOf(service, "SELECT invoice_id, customer_id, strftime(sale_date, '%Y-%m') AS m, list_cents::VARCHAR AS l, discount_cents::VARCHAR AS d, rebate_cents::VARCHAR AS r, freight_cents::VARCHAR AS f, cost_cents::VARCHAR AS c, line_kind AS k FROM sales_lines");
   let list = Z, discount = Z, rebate = Z, freight = Z, pocket = Z, costedPocket = Z, cost = Z, marginJs = Z;
@@ -702,7 +702,7 @@ async function phase5a() {
   let refusedNoOwner=false;try{await call(service,'create',{passphrase:secret,tier:'professional',ownerName:'  '});}catch(e){refusedNoOwner=(e as Error).message.includes('Pricing Owner');}
   assert(refusedNoOwner&&!(await service.status()).exists,'A vault was created without a named Pricing Owner');
   const created=await call(service,'create',{passphrase:secret,tier:'professional',ownerName:'Synthetic Pricing Owner'});
-  assert(created.schemaVersion==='7'&&created.access.role==='owner'&&created.access.ownerNamed&&created.access.caps.includes('approve'),'The creator is not the Owner and named Pricing Owner');
+  assert(created.schemaVersion==='8'&&created.access.role==='owner'&&created.access.ownerNamed&&created.access.caps.includes('approve'),'The creator is not the Owner and named Pricing Owner');
   assert((await call(service,'pricingState')).owner.name==='Synthetic Pricing Owner','Pricing Owner was not stored at setup');
   // Sample data never completes setup steps; it still feeds every view.
   await service.playgroundLoad(()=>undefined);
@@ -773,7 +773,7 @@ INSERT INTO sales_lines(source_id,line_id,product_id,customer_id,sale_date,quant
   assert((await call(service,'costBasis')).groups.find((g:{group:string})=>g.group==='Zeds').selected==='replacement','The cost basis choice was not stored');
   assert((await call(service,'roleList')).people.some((p:{userId:string})=>p.userId==='colleague-1'),'Roles were not stored');
   assert((await call(service,'cleanupHistory')).length===4&&(await service.verify()).valid,'Cleanup history or audit chain lost');
-  return {ownerRequiredAtSetup:true,schemaV7:true,sampleDataNeverCompletesSteps:true,mergeAndUndo:true,unitFixAndUndo:true,invoiceTotalsUnchangedByCleanup:true,costBasisReconcilesToWaterfall:true,roiAndHomeSampleSeparated:true,checklistStored:true,repCostNeverCrossesWorker:true,ownerSwitchGivesRepsCostOnly:true};
+  return {ownerRequiredAtSetup:true,schemaCurrent:true,sampleDataNeverCompletesSteps:true,mergeAndUndo:true,unitFixAndUndo:true,invoiceTotalsUnchangedByCleanup:true,costBasisReconcilesToWaterfall:true,roiAndHomeSampleSeparated:true,checklistStored:true,repCostNeverCrossesWorker:true,ownerSwitchGivesRepsCostOnly:true};
  }finally{await service.lock().catch(()=>undefined);await reset(scope);}
 }
 // 5A timings on a synthetic 1M-line vault (100,000 products, 1,000 look-alike duplicates, 500 odd unit spellings, 2,000 uncategorised).

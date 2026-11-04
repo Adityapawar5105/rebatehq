@@ -24,7 +24,7 @@
 - **Important:** those phases were built before this blueprint. They store customer pricing data **in Supabase**, which section 4 does not allow. Auth, workspaces and roles carry forward as the control plane; the business-data paths must be ported to the browser and then retired (see `ARCHITECTURE_TRANSITION.md`).
 - **Not built yet:** every Phase 1 core deliverable in its local-first form (DuckDB-Wasm vault, Import Studio, waterfall on invoice lines, leaks, guardrails, rules, export, backup). COEP header not yet set.
 - **Next:** repo Phase 4 = Blueprint Phase 1 core, starting with the section 19 prototype spike. The "pocket-margin engine with reconciliation and show-me-the-math" is built **in the browser** as part of it (chunk 4D).
-- **Gap:** no prospect's ERP export tested yet, and no customer conversations. One real public export has been tested (UCI "Online Retail", a UK wholesaler, 541,909 lines; see `REAL_FILE_RESULTS.md`), which reshaped the mapper and Fix Later. The five ERP profiles remain unverified until a real export from each ERP is tested.
+- **Gap:** no prospect's ERP export tested yet, and no customer conversations. Real public exports tested so far: UCI "Online Retail" and "Online Retail II" (a UK wholesaler), Microsoft AdventureWorks reseller sales and Northwind (see `REAL_FILE_RESULTS.md` and `PILOT_FILES.md`). Synthetic files in the published export layouts of Business Central, NetSuite, QuickBooks and SAP Business One were also tested against planted leaks. The five ERP profiles remain unverified until a real export from each ERP is tested.
 
 ### Locked decisions
 
@@ -231,6 +231,7 @@ Goals, not promises. Benchmark on an 8 GB office laptop. "100M rows in a tab" cl
 - Spreadsheets (XLSX/XLSM/XLS/XLSB/ODS), JSON and XML are read whole in the browser, so they are capped at 300,000 rows (64 MiB); larger exports go in as CSV/TSV/TXT, which stream up to 256 MiB per file
 - Rebate agreement files are tagged, previewed and converted in Phase 1; loading them into the vault arrives with the customer rebate engine in Phase 2
 - Columns are mapped by canonical name, common synonyms and ERP profiles, each with a confidence score; anything inferred (synonyms, unit price × quantity, "not in file", generated line IDs) must be confirmed by the user before import (4C-2)
+- Pilot hardening (6A) added the export shapes found in real files: files with no header row; report section headings (such as a QuickBooks item) copied into the rows below; a line-type column that skips G/L-account, charge and comment lines; discounts given as a percent or a 0–1 share of list; and a per-file date range for sales files (engine rule 9). Amount columns with more than two decimals (for example SQL Server money) are rounded to the cent, half away from zero, with a note; unit prices keep full precision for unit × quantity
 - A sales line's cost may be unknown; it is never assumed to be zero, and its pocket is left out of margin. Returns and credits (negative quantities) wait in Fix Later at import; the user loads them as signed credit lines, which net against sales in a separate "Returns and credits" waterfall step and are never leaks (4D). Credit memos with a positive quantity and a negative amount are not loaded
 
 **Scope guardrail:** business data files only (spreadsheets, text exports, tables). Not a general image, video or document converter.
@@ -554,3 +555,9 @@ Corrections after reviewing the repository and build history against v2.1. Produ
     - **8R** (after 7A, 7B, 7D and 8B): 12 quote, approval, rebate, supplier-credit, alert and FX tables, which have no local equivalent yet.
     - Pure logic (margin engine, rebate tier maths, rep-safe quote projection) is kept for porting. Before each wave, a check confirms that no hosted database holds business rows; on 5 Nov 2026 the user's Supabase account had no projects.
     - Scope, tiers and prices are unchanged; 6R adds roughly 2-4 working days before 6B.
+16. **5 Nov 2026, chunk 6A — real and ERP-shaped files (sections 2 and 6A).**
+    - Section 2's gap now lists the public exports and the synthetic ERP-shaped files tested in 6A. The ERP profiles stay unverified.
+    - Section 6A now lists the export shapes 6A handles, and one money rule: amount columns with more than two decimals are rounded to the cent (half away from zero) with a visible note, while unit prices keep full precision.
+    - Engine rule 9's "import by date range" is now implemented as a per-file date range for sales files. A batch with more sales rows than the plan's line cap stops with the cap message before staging, instead of exhausting the 512 MB engine budget.
+    - The local vault schema moved to v8 (a headerless file's data starts on row 1).
+    - Scope, tiers and prices are unchanged. Header/line joins, item-master cost in the leak finder, streaming reads of spreadsheets over 300,000 rows, and localized header names are parked in `PARKING_LOT.md`.

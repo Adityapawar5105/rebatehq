@@ -57,7 +57,7 @@ export async function dispatch(service: VaultService, request: Request, hooks: H
     case "verify": return service.verify();
     case "storage": return storageStatus();
     case "studioAdd": return service.studioAdd(request.data.files, request.data.replaces ?? null);
-    case "studioUpdate": return service.studioUpdate(request.data.id, request.data.settings, request.data.role, { erp: request.data.erp, field: request.data.field, confirmed: request.data.confirmed });
+    case "studioUpdate": return service.studioUpdate(request.data.id, request.data.settings, request.data.role, { erp: request.data.erp, field: request.data.field, confirmed: request.data.confirmed, range: request.data.range });
     case "studioDrop": return service.studioDrop(request.data.id);
     case "studioClear": return service.studioClear();
     case "studioState": return service.studioState();

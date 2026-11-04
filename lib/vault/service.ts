@@ -163,7 +163,7 @@ export class VaultService {
   private async recipes() { return loadRecipes(this.requireEngine()); }
   async studioState() { return this.studio.state(await this.recipes()); }
   async studioAdd(files: File[], replaces: string | null = null) { this.requireEngine(); await this.studio.add(files, await this.recipes(), replaces); return this.studioState(); }
-  async studioUpdate(id: string, settings: Partial<Settings> = {}, role?: Role | null, extra: { erp?: ErpProfile; field?: { name: string; source: FieldSource }; confirmed?: boolean } = {}) {
+  async studioUpdate(id: string, settings: Partial<Settings> = {}, role?: Role | null, extra: { erp?: ErpProfile; field?: { name: string; source: FieldSource }; confirmed?: boolean; range?: { from: string | null; to: string | null } } = {}) {
     this.requireEngine(); await this.studio.update(id, { ...settings, ...(role !== undefined ? { role } : {}), ...extra }); return this.studioState();
   }
   async studioDrop(id: string) { this.requireEngine(); this.studio.drop(id); return this.studioState(); }

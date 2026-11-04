@@ -40,14 +40,15 @@ export async function* decodeChunks(file: Blob, encoding: Encoding, signal?: Abo
     throw error;
   }
 }
-export type RowSink = (cells: string[], record: number, oversized: boolean) => void;
+/** cut: indexes of cells truncated at MAX_CELL; oversized is also true when the row had too many columns. */
+export type RowSink = (cells: string[], record: number, oversized: boolean, cut: number[]) => void;
 /**
  * Streaming CSV tokenizer. `record` is the 1-based record number; blank lines count
  * as records so numbers match an editor's line numbers when no field spans lines.
  */
 export class CsvTokenizer {
   private row: string[] = []; private field = ""; private inQuotes = false; private quoteSeen = false;
-  private pendingCR = false; private oversized = false; private record = 1; private started = false;
+  private pendingCR = false; private oversized = false; private wide = false; private cut: number[] = []; private record = 1; private started = false;
   constructor(private delimiter: Delimiter, private sink: RowSink) {}
   push(text: string) {
     const d = this.delimiter.charCodeAt(0), n = text.length;
@@ -79,15 +80,19 @@ export class CsvTokenizer {
     }
   }
   end() { this.quoteSeen = false; if (this.started || this.row.length) { this.endField(); this.endRow(); } }
-  private append(s: string) { if (this.field.length + s.length > MAX_CELL) { this.oversized = true; this.field += s.slice(0, Math.max(0, MAX_CELL - this.field.length)); } else this.field += s; }
+  private append(s: string) {
+    if (this.field.length + s.length > MAX_CELL) { this.oversized = true; if (this.cut.at(-1) !== this.row.length) this.cut.push(this.row.length); this.field += s.slice(0, Math.max(0, MAX_CELL - this.field.length)); }
+    else this.field += s;
+  }
   private endField() {
-    if (this.row.length >= MAX_COLUMNS) this.oversized = true; else this.row.push(this.field);
+    if (this.row.length >= MAX_COLUMNS) { this.oversized = true; this.wide = true; } else this.row.push(this.field);
     this.field = ""; this.started = false;
   }
   private endRow() {
     const blank = this.row.length === 1 && this.row[0] === "";
-    this.sink(blank ? [] : this.row, this.record, this.oversized);
-    this.row = []; this.oversized = false; this.record++;
+    // A row with too many columns reports no cut list: it is always rejected.
+    this.sink(blank ? [] : this.row, this.record, this.oversized, this.wide ? [] : this.cut);
+    this.row = []; this.oversized = false; this.wide = false; this.cut = []; this.record++;
   }
 }
 /** Tokenize a small decoded sample completely (bounded by `maxRows`). */

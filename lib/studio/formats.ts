@@ -26,7 +26,8 @@ const f = (name: string, type: FieldType, required = false, max?: number): Field
  */
 export const ROLE_FIELDS: Record<Role, Field[]> = {
   // Blank discount/freight/rebate load as 0; a blank cost stays unknown (NULL), never 0.
-  sales_history: [f("line_id", "line_id", true), f("invoice_id", "text", false, 64), f("product_id", "id", true), f("customer_id", "id", true), f("sale_date", "date", true), f("quantity", "quantity", true), f("list_amount", "amount", true), f("discount_amount", "amount"), f("freight_amount", "amount"), f("rebate_amount", "amount"), f("cost_amount", "amount")],
+  // line_type (6A) only filters rows during conversion: non-item lines (G/L accounts, charges, comments) are skipped.
+  sales_history: [f("line_id", "line_id", true), f("invoice_id", "text", false, 64), f("product_id", "id", true), f("customer_id", "id", true), f("sale_date", "date", true), f("quantity", "quantity", true), f("list_amount", "amount", true), f("discount_amount", "amount"), f("freight_amount", "amount"), f("rebate_amount", "amount"), f("cost_amount", "amount"), f("line_type", "text", false, 40)],
   item_master: [f("product_id", "id", true), f("description", "text", false, 500), f("category", "text", false, 200), f("uom", "code", false, 16), f("current_cost", "amount"), f("list_price", "amount")],
   customer_list: [f("customer_id", "id", true), f("name", "text", false, 300), f("tier", "text", false, 100), f("branch", "text", false, 100), f("region", "text", false, 100), f("payment_terms", "text", false, 100)],
   vendor_cost: [f("vendor", "text", true, 200), f("product_id", "id", true), f("cost", "amount", true), f("effective_date", "date", true)],
@@ -75,17 +76,24 @@ export function detectHeader(rows: string[][], merged = false): { headerRow: num
     if (filled < 2) continue;
     const text = row.filter(textish).length;
     if (text / filled < 0.6) continue;
+    // Header names are rarely plain numbers; a row with many is data (6A: headerless exports).
+    if (row.filter(v => NUMERIC.test(v)).length / filled > 0.25) continue;
     const next = rows[r + 1];
     const matches = row.filter(v => canonical.has(normalizeHeader(v))).length;
     const score = matches * 3 + text + (next && nonEmpty(next) >= 2 ? 1 : 0);
     if (score > bestScore) { best = r; bestScore = score; }
   }
+  // No row looks like headers in a multi-column file: it has no header row (columns become A, B, C...).
+  if (bestScore < 0 && rows.slice(0, 5).some(row => nonEmpty(row) >= 2)) return { headerRow: NO_HEADER, headerDepth: 1 };
   const above = best > 0 ? rows[best - 1] : null;
   const depth = above && merged && nonEmpty(above) >= 1 && nonEmpty(above) < nonEmpty(rows[best]) && above.filter(v => v !== "").every(textish) ? 2 : 1;
   return { headerRow: best, headerDepth: depth };
 }
+/** headerRow value meaning "this file has no header row": every row is data, columns are named by letter. */
+export const NO_HEADER = -1;
 /** Combine 1-3 header rows into one name per column; parents fill right across blanks. */
 export function headerNames(rows: string[][], headerRow: number, depth: number) {
+  if (headerRow < 0) return Array.from({ length: Math.max(0, ...rows.slice(0, 200).map(r => r.length)) }, (_, c) => `Column ${columnLetter(c)}`);
   const top = Math.max(0, headerRow - depth + 1), width = Math.max(0, ...rows.slice(top, headerRow + 1).map(r => r.length));
   const parts: string[][] = Array.from({ length: width }, () => []);
   for (let r = top; r <= headerRow; r++) {
@@ -100,8 +108,8 @@ export function headerNames(rows: string[][], headerRow: number, depth: number) 
   const names = parts.map((p, c) => p.join(" ") || `Column ${columnLetter(c)}`), seen = new Map<string, number>();
   return names.map(name => { const key = normalizeHeader(name), n = (seen.get(key) || 0) + 1; seen.set(key, n); return n > 1 ? `${name} (${n})` : name; });
 }
-const TOTAL = /^(sub[ -]?total|grand total|total)\b/i;
-const FOOTER = /\b(page \d+|printed|generated|report|confidential|end of|continued)\b|^\*+$/i;
+export const TOTAL = /^(sub[ -]?total|grand total|total)\b/i;
+export const FOOTER =/\b(page \d+|printed|generated|report|confidential|end of|continued)\b|^\*+$/i;
 export type RowVerdict = "data" | "blank" | "total" | "footer";
 /** Classify a data-area row. Totals, page/footer labels and blanks are skipped, never loaded. */
 export function classifyRow(cells: string[], headerCount: number): RowVerdict {

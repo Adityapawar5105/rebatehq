@@ -9,13 +9,18 @@ export type ErpProfile = "generic" | "netsuite" | "p21" | "infor" | "bc" | "quic
  *  none: not in file, leave unknown; generate: line ID from invoice number (+ line number). */
 export type FieldSource =
   | { kind: "column"; index: number } | { kind: "unit"; index: number } | { kind: "zero" } | { kind: "none" }
-  | { kind: "generate"; lineNo: number | null };
+  | { kind: "generate"; lineNo: number | null }
+  /** 6A: a discount given as a percent (0-100) or a share (0-1) of the line's list amount. */
+  | { kind: "percent"; index: number } | { kind: "fraction"; index: number };
+/** Sources that read one column of the file. */
+export const COLUMN_KINDS = ["column", "unit", "percent", "fraction"] as const;
+export const columnOf = (s: FieldSource) => s.kind === "column" || s.kind === "unit" || s.kind === "percent" || s.kind === "fraction" ? s.index : null;
 export type Mapping = Record<string, FieldSource>;
 export type MappedField = { field: string; source: FieldSource; confidence: number; reason: string };
 
 /** Alternatives each field may use when no column holds it. */
 export const ALTERNATIVES: Partial<Record<Role, Record<string, FieldSource["kind"][]>>> = {
-  sales_history: { line_id: ["generate"], list_amount: ["unit"], discount_amount: ["zero"], freight_amount: ["zero"], rebate_amount: ["zero"], cost_amount: ["unit", "none"] },
+  sales_history: { line_id: ["generate"], list_amount: ["unit"], discount_amount: ["zero", "percent", "fraction"], freight_amount: ["zero"], rebate_amount: ["zero"], cost_amount: ["unit", "none"] },
 };
 const n = (...names: string[]) => names.map(normalizeHeader);
 /** Generic synonyms seen in distributor exports, per canonical field (normalized). */
@@ -37,7 +42,8 @@ const SYNONYMS: Record<string, { column: string[]; unit?: string[] }> = {
   current_cost: { column: n("current cost", "unit cost", "cost", "standard cost", "replacement cost", "avg cost", "average cost", "last cost") },
   list_price: { column: n("list price", "price", "unit price", "sell price", "base price", "msrp") },
   name: { column: n("name", "customer name", "company", "company name", "account name") },
-  tier: { column: n("tier", "price tier", "customer tier", "price level", "price class", "pricing tier") },
+  tier: { column: n("tier", "price tier", "customer tier", "price level", "price class", "pricing tier", "customer price group", "price group", "customer discount group", "discount group") },
+  line_type: { column: n("line type", "item type", "type of line") },
   branch: { column: n("branch", "location", "warehouse", "store") },
   region: { column: n("region", "territory", "country", "state") },
   payment_terms: { column: n("payment terms", "terms") },
@@ -50,19 +56,26 @@ const SYNONYMS: Record<string, { column: string[]; unit?: string[] }> = {
   qty_break: { column: n("qty break", "quantity break", "min qty", "minimum quantity", "break qty") },
 };
 const LINE_NO = n("line no", "line number", "line", "line num", "lineno", "seq", "sequence");
+/** A master list's own key column often has a bare name ("No." in Business Central). */
+const LIST_KEY = n("no", "nr", "number", "id", "code", "key");
+const LIST_KEY_FIELD: Partial<Record<Role, string>> = { customer_list: "customer_id", item_master: "product_id" };
+/** When no customer ID column exists, the customer's name is the key (NetSuite and QuickBooks use "Name"). */
+const CUSTOMER_NAME = n("name", "customer name", "company", "company name", "account name", "customer full name");
+/** A discount column holding a percent rather than an amount ("Line Discount %", "Rabatt %"). */
+export const isPercentHeader = (header: string) => /%|\bpct\b|percent|prozent/i.test(header);
 type ProfileField = { column?: string[]; unit?: string[] };
-/** ERP-specific header names (normalized). Source: public documentation; unverified. */
-export const PROFILES: Record<ErpProfile, { label: string; note: string; fields: Record<string, ProfileField>; lineNo: string[] }> = {
+/** ERP-specific header names (normalized). Source: public documentation; unverified. markers: extra names that identify the ERP's export. */
+export const PROFILES: Record<ErpProfile, { label: string; note: string; fields: Record<string, ProfileField>; lineNo: string[]; markers?: string[] }> = {
   generic: { label: "Generic export", note: "Common distributor header names.", fields: {}, lineNo: [] },
-  netsuite: { label: "Oracle NetSuite (saved search)", note: "Unverified: from NetSuite saved-search column labels in public documentation.", lineNo: n("line", "line id"),
+  netsuite: { label: "Oracle NetSuite (saved search)", note: "Unverified: from NetSuite saved-search column labels in public documentation.", lineNo: n("line", "line id"), markers: n("internal id", "est gross profit"),
     fields: { invoice_id: { column: n("document number") }, sale_date: { column: n("date") }, customer_id: { column: n("customer", "name") }, product_id: { column: n("item") }, quantity: { column: n("quantity") }, list_amount: { column: n("amount"), unit: n("item rate", "rate") }, cost_amount: { column: n("est extended cost"), unit: n("est unit cost") } } },
   p21: { label: "Epicor Prophet 21", note: "Unverified: from P21 invoice report field names in public documentation.", lineNo: n("line no", "line number"),
     fields: { invoice_id: { column: n("invoice no") }, line_id: { column: n("invoice line uid") }, product_id: { column: n("item id") }, customer_id: { column: n("customer id") }, quantity: { column: n("qty shipped") }, list_amount: { column: n("extended price"), unit: n("unit price") }, cost_amount: { column: n("extended cost"), unit: n("cost", "unit cost") }, sale_date: { column: n("invoice date") } } },
   infor: { label: "Infor CloudSuite Distribution (SX.e/CSD)", note: "Unverified: from SX.e order-entry field names in public documentation.", lineNo: n("lineno", "line no"),
     fields: { invoice_id: { column: n("orderno", "invoice no", "invno") }, product_id: { column: n("shipprod", "prod") }, customer_id: { column: n("custno") }, quantity: { column: n("qtyship") }, list_amount: { column: n("netamt"), unit: n("price") }, cost_amount: { unit: n("prodcost") }, sale_date: { column: n("invoicedt") } } },
   bc: { label: "Microsoft Dynamics 365 Business Central", note: "Unverified: from Business Central sales-line field captions in public documentation.", lineNo: n("line no"),
-    fields: { invoice_id: { column: n("document no") }, product_id: { column: n("no", "item no") }, customer_id: { column: n("sell to customer no", "bill to customer no") }, quantity: { column: n("quantity") }, list_amount: { unit: n("unit price", "unit price excl vat") }, discount_amount: { column: n("line discount amount") }, cost_amount: { unit: n("unit cost lcy", "unit cost") }, sale_date: { column: n("posting date") } } },
-  quickbooks: { label: "QuickBooks Enterprise (Sales by Item Detail)", note: "Unverified: from the Sales by Item Detail report columns in public documentation.", lineNo: [],
+    fields: { invoice_id: { column: n("document no") }, product_id: { column: n("no", "item no") }, customer_id: { column: n("sell to customer no", "bill to customer no") }, quantity: { column: n("quantity") }, list_amount: { unit: n("unit price", "unit price excl vat") }, discount_amount: { column: n("line discount amount") }, cost_amount: { unit: n("unit cost lcy", "unit cost") }, sale_date: { column: n("posting date") }, line_type: { column: n("type") } } },
+  quickbooks: { label: "QuickBooks Enterprise (Sales by Item Detail)", note: "Unverified: from the Sales by Item Detail report columns in public documentation. The item may come from the report's section headings.", lineNo: [], markers: n("balance", "memo"),
     fields: { invoice_id: { column: n("num") }, sale_date: { column: n("date") }, customer_id: { column: n("name") }, product_id: { column: n("item") }, quantity: { column: n("qty") }, list_amount: { column: n("amount"), unit: n("sales price") } } },
 };
 export const PROFILE_IDS = Object.keys(PROFILES) as ErpProfile[];
@@ -75,12 +88,12 @@ export function detectProfile(headers: string[]): ErpProfile {
   for (const id of PROFILE_IDS) {
     if (id === "generic") continue;
     const p = PROFILES[id], names = Object.values(p.fields).flatMap(f => [...(f.column ?? []), ...(f.unit ?? [])]).filter(x => !generic.has(x));
-    const score = names.filter(x => keys.has(x)).length + (p.lineNo.some(x => keys.has(x)) ? 0.5 : 0);
+    const score = names.filter(x => keys.has(x)).length + (p.lineNo.some(x => keys.has(x)) ? 0.5 : 0) + (p.markers ?? []).filter(x => keys.has(x)).length;
     if (score > bestScore) { best = id; bestScore = score; }
   }
   return best;
 }
-type Candidate = { field: string; index: number; kind: "column" | "unit"; score: number; reason: string };
+type Candidate = { field: string; index: number; kind: "column" | "unit" | "percent"; score: number; reason: string };
 function candidates(role: Role, headers: string[], profile: ErpProfile) {
   const keys = headers.map(normalizeHeader), out: Candidate[] = [], fields = ROLE_FIELDS[role].map(f => f.name);
   const alt = ALTERNATIVES[role] ?? {};
@@ -88,6 +101,12 @@ function candidates(role: Role, headers: string[], profile: ErpProfile) {
     const p = PROFILES[profile].fields[field], g = SYNONYMS[field];
     keys.forEach((key, index) => {
       if (!key) return;
+      // "Discount %" normalizes like "Discount": read it as a percent of list, never as an amount.
+      if (field === "discount_amount" && isPercentHeader(headers[index])) {
+        if (alt[field]?.includes("percent") && (g?.column.some(s => key.includes(s)) || key.includes("discount") || key.includes("rabatt"))) out.push({ field, index, kind: "percent", score: 0.85, reason: "Discount % of list; check it" });
+        return;
+      }
+      if (LIST_KEY_FIELD[role] === field && LIST_KEY.includes(key)) { out.push({ field, index, kind: "column", score: 0.75, reason: "The list's key column; check it" }); return; }
       if (key === normalizeHeader(field)) { out.push({ field, index, kind: "column", score: 1, reason: "Exact column name" }); return; }
       if (p?.column?.includes(key)) out.push({ field, index, kind: "column", score: 0.95, reason: `${PROFILES[profile].label} column name` });
       if (p?.unit?.includes(key) && alt[field]?.includes("unit")) out.push({ field, index, kind: "unit", score: 0.9, reason: `${PROFILES[profile].label} unit value x quantity` });
@@ -109,6 +128,11 @@ export function suggestMapping(role: Role, headers: string[], profile: ErpProfil
     result.set(c.field, { field: c.field, source: { kind: c.kind, index: c.index }, confidence: c.score, reason: c.reason }); used.add(c.index);
   }
   const keys = headers.map(normalizeHeader);
+  // No customer ID column: the customer name is the key (it may also be the list's name column).
+  if ((role === "sales_history" || role === "customer_list") && !result.has("customer_id")) {
+    const at = keys.findIndex(k => CUSTOMER_NAME.includes(k));
+    if (at >= 0) result.set("customer_id", { field: "customer_id", source: { kind: "column", index: at }, confidence: 0.7, reason: "The customer name is used as the customer ID; check it" });
+  }
   const lineNo = keys.findIndex((k, i) => !used.has(i) && ([...LINE_NO, ...PROFILES[profile].lineNo]).includes(k));
   for (const f of fields) {
     if (result.has(f.name)) continue;
@@ -132,18 +156,20 @@ export function mappingProblems(role: Role, mapping: Mapping) {
   }
   if (role === "sales_history" && (mapping.line_id?.kind === "generate") && mapping.invoice_id?.kind !== "column") problems.push("invoice_id (needed to generate line IDs)");
   if ((mapping.list_amount?.kind === "unit" || mapping.cost_amount?.kind === "unit") && mapping.quantity?.kind !== "column") problems.push("quantity (needed for unit x quantity)");
+  const share = mapping.discount_amount?.kind;
+  if ((share === "percent" || share === "fraction") && mapping.list_amount?.kind !== "column" && mapping.list_amount?.kind !== "unit") problems.push("list_amount (needed for a discount % of list)");
   if (role === "price_list" && mapping.product_id?.kind !== "column" && mapping.category?.kind !== "column") problems.push("product_id or category");
   return problems;
 }
 /** A mapping needs an explicit check when anything was inferred rather than matched exactly. */
 export function needsConfirmation(fields: MappedField[]) {
-  return fields.some(f => (f.source.kind === "column" && f.confidence < 1) || f.source.kind === "unit" || f.source.kind === "zero" || f.source.kind === "generate" || (f.source.kind === "none" && f.confidence === 0));
+  return fields.some(f => (f.source.kind === "column" && f.confidence < 1) || f.source.kind === "unit" || f.source.kind === "zero" || f.source.kind === "generate" || f.source.kind === "percent" || f.source.kind === "fraction" || (f.source.kind === "none" && f.confidence === 0));
 }
 /** Role score: required-field coverage (alternatives count half) and how much of the file the role explains. */
 export function roleScore(role: Role, headers: string[]) {
   const fields = suggestMapping(role, headers), required = ROLE_FIELDS[role].filter(f => f.required);
   const cover = required.reduce((s, f) => { const m = fields.find(x => x.field === f.name)!; return s + (m.source.kind === "column" ? m.confidence : m.source.kind === "unit" ? 0.75 : m.source.kind === "generate" ? 0.5 : 0); }, 0) / Math.max(1, required.length);
-  const explained = new Set(fields.flatMap(f => f.source.kind === "column" || f.source.kind === "unit" ? [f.source.index] : [])).size / Math.max(1, headers.filter(h => normalizeHeader(h)).length);
+  const explained = new Set(fields.flatMap(f => { const i = columnOf(f.source); return i === null ? [] : [i]; })).size / Math.max(1, headers.filter(h => normalizeHeader(h)).length);
   return Math.round((cover * 0.5 + explained * 0.5) * 100) / 100;
 }
 /**

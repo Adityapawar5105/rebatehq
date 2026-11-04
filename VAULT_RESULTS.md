@@ -205,3 +205,15 @@ The warm-up is longer because the snapshot now carries the pre-aggregates. The 1
 Two engineering findings:
 - DuckDB-Wasm scans HUGEINT columns far slower than BIGINT. Eight sums over 200k pre-aggregate rows took 232 ms as HUGEINT and 6 ms as BIGINT, so the aggregates are BIGINT.
 - The 512 MB DuckDB memory guardrail held only after three changes: the leak finder keeps its line views unmaterialised, it stores compact hits, and reconciliation drops COUNT(DISTINCT) per invoice.
+
+## Chunk 6A — real-file timings (5 Nov 2026, local only)
+
+Same machine, production build, headless Chrome 156 (Edge within 7% on these files). Full record in [PILOT_FILES.md](./PILOT_FILES.md).
+
+| File | Convert + check | Commit + save | Leak finder | Leak Report PDF |
+|---|---:|---:|---:|---:|
+| UCI Online Retail CSV, 541,909 rows | 6,628 ms | 6,271 ms | 309 ms | 1,518 ms |
+| UCI Online Retail II, 2 CSVs, 1,067,371 rows read, 12-month range | 9,196 ms | 5,980 ms | 290 ms | 1,340 ms |
+| AdventureWorks, 3 headerless files, 62,162 rows | 1,189 ms | 834 ms | 531 ms | 347 ms |
+
+**Capacity finding.** The real two-sheet Online Retail II batch (1,067,371 rows of wide text) exhausted the 512 MB DuckDB budget while staging. A batch now stops at the tier's line cap before staging, with the cap message. Scale stays at its provisional 1M lines. The manual 8 GB checklist in `SPIKE_RESULTS.md` is still pending.
