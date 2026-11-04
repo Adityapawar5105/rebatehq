@@ -41,6 +41,7 @@ export async function dispatch(service: VaultService, request: Request, hooks: H
     case "backupNow": return service.backupNow();
     case "backupExport": return service.backupExport();
     case "backupRestore": return service.backupRestore(request.data.file, request.data.passphrase);
+    case "capacityUpgrade": return service.capacityUpgrade();
     case "licenceSet": return service.licenceSet(request.data.envelope,request.data.device,request.data.offline);
     case "init": return service.init(request.data.scope);
     case "create": {

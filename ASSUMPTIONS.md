@@ -391,3 +391,5 @@ Only 5A; no 5B. Supabase migrations and `migrations.lock` are untouched. New loc
 - Fresh and populated local SQL runs use Supabase auth stubs and pgTAP assertion stubs in PGlite. They are local only, not evidence of deployed Supabase/Auth behavior. The authenticated CI privacy gate, new migration and restore procedure remain unverified until their green runs. No real Supabase credentials, Docker or psql are available locally. A new manual Restore Drill is required after CI; the agent must ask the user to trigger it, not dispatch it.
 
 - Offline grace covers an already loaded shell and the worker/cache protocol. Offline cold navigation to the authenticated server-rendered /home page is not provided; the later offline-PWA chunk remains deferred. No claim of offline cold-start support is made.
+
+After an operator upgrades the workspace licence, an Owner/Admin can choose **Use licensed capacity** in local Settings. It updates only the encrypted vault’s capacity metadata, with a local audit entry; it neither sends rows to the server nor recreates the vault. Lower profiles stay available at setup.

@@ -13,6 +13,10 @@ test('operator issuer and key installer SQL execute idempotently in PGlite witho
   const n=(await db.query('SELECT count(*)::int AS n FROM audit_log')).rows[0].n;await installActorKey(db,key);
   assert.equal((await db.query('SELECT count(*)::int AS n FROM audit_log')).rows[0].n,n);
   assert.ok(!(await db.query('SELECT to_jsonb(a)::text AS a FROM audit_log a')).rows.some((r:any)=>r.a.includes(key)));
+  await db.exec("SELECT setval('rebatehq_private.login_budget',floor(extract(epoch FROM clock_timestamp())/600)::bigint*10000+1000,true);BEGIN;SET LOCAL ROLE rebatehq_app;");
+  await assert.rejects(db.query("SELECT public.record_failed_login('distinct@example.test','192.0.2.200','direct caller')"),(e:any)=>e.code==='54000');
+  await db.exec('ROLLBACK;BEGIN;SET LOCAL ROLE rebatehq_app;');
+  await assert.rejects(db.query("SELECT setval('rebatehq_private.login_budget',1,true)"),(e:any)=>e.code==='42501');await db.exec('ROLLBACK');
   const t=randomUUID(),u=randomUUID();await db.query("INSERT INTO tenant(tenant_id,name) VALUES($1,'Operator pilot')",[t]);await db.query('INSERT INTO auth.users(id,email) VALUES($1,$2)',[u,u+'@example.test']);await db.query("INSERT INTO membership(tenant_id,user_id,email,role) VALUES($1,$2,$3,'owner')",[t,u,u+'@example.test']);
   const source=ts.transpileModule(readFileSync('scripts/issue-licence.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText.replace(/^import .*;\r?\n/gm,'');
   const code=source.slice(0,source.lastIndexOf('main().catch'))+'\nreturn main;';

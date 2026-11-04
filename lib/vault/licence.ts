@@ -18,3 +18,5 @@ export class VaultLicence {
   guard(action:Action) { if(!READ_ONLY_ACTIONS.has(action))this.assert(); }
   view() { return {writable:this.writable,tier:this.tier,offline:this.offline,until:this.claims ? String((this.offline?this.claims.offlineUntil:this.claims.expires)*1000) : null,reason:this.writable?'':this.claims?.reason||'Reconnect to verify your licence. Your vault is read-only.'}; }
 }
+
+export function capacitySql(tier:Tier){if(!["starter","professional","scale"].includes(tier))throw new VaultError("LICENCE","Unsupported licensed tier.");return "UPDATE vault_meta SET tier='"+tier+"' WHERE id=1";}

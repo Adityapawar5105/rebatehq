@@ -73,6 +73,7 @@ export type Commands = {
   backupRestore: { file:Blob; passphrase:string };
   init: { scope: Scope };
   /** ownerName is required: a vault always starts with a named Pricing Owner. */
+  capacityUpgrade: Record<string, never>;
   licenceSet: { envelope: import("../licence-policy").LicenceEnvelope | null; device:string; offline:boolean };
   create: { passphrase: string; tier: Tier; ownerName: string };
   unlock: { passphrase: string };
@@ -120,6 +121,7 @@ export type Commands = {
 export type LeaksView = { result: LeakResult; roi: RoiSummary; sample: boolean; recorded: number };
 export type CommitResult = { loaded: string; rejected: string; files: string; cleanup: boolean };
 export type Results = {
+  capacityUpgrade: VaultStatus;
   licenceSet: VaultStatus;
   home: HomeData; checklist: Checklist; checklistMark: Checklist; roleList: RoleList; roleSet: RoleList; roleRemove: RoleList; accessSet: RoleList; rolePreview: RoleList;
   cleanupScan: Scan; cleanupHistory: FixView[]; cleanupApply: CleanupApplied; cleanupUndo: CleanupUndone; cleanupMergeAll: CleanupMergedAll; cleanupUndoMany: CleanupUndone;

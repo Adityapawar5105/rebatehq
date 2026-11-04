@@ -1,4 +1,4 @@
-import { VaultLicence } from "./licence";
+import { VaultLicence, capacitySql } from "./licence";
 import type { Action } from "./protocol";
 import * as pricing from '../pricing/rules';
 import { backupConfig, storeBackupConfig, writeBackup } from './backup';
@@ -29,6 +29,11 @@ import { isRole, type Cap, type RoleId } from "../roles/access";
 import type { Access, CleanupApplied, CleanupMergedAll, CleanupUndone, HomeData, RoleList } from "./protocol";
 export class VaultService {
   engine: Engine | null = null;
+  async capacityUpgrade(){
+    this.licence.assert();const tier=this.licence.tier;
+    await this.write('licence.capacity_applied',{tier},async e=>{await e.conn.query(capacitySql(tier));});
+    this.tier=tier;return this.status();
+  }
   readonly licence = new VaultLicence(process.env.NEXT_PUBLIC_LICENCE_VERIFY_KEY || "");
   licenceGuard(action:Action) { this.licence.guard(action); }
   async licenceSet(envelope:import("../licence-policy").LicenceEnvelope|null,device:string,offline:boolean){try{await this.licence.set(envelope,this.identity,device,offline);}catch{/* Invalid assertions clear authority but never prevent read-only unlock/recovery. */}this.tier=this.licence.effective(this.tier);return this.status();}

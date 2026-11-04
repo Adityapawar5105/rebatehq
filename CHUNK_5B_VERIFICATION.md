@@ -6,7 +6,8 @@
 
 - `b4c3ec8` — Record 5A CI verification; pushed. CI #59/#60/#61 evidence is linked in CHUNK_5A_VERIFICATION.md. The documentation close-out itself also passed [CI #62](https://github.com/Adityapawar5105/rebatehq/actions/runs/41862659637).
 - `826e36c` — Default-off retirement gate and retirement proposal.
-- 5B implementation commit: recorded in Git history after this file is committed.
+- `8867b96` — signed licences, audit verification and control-plane security; pushed. [CI #63](https://github.com/Adityapawar5105/rebatehq/actions/runs/41874224017) running at this record update.
+- Follow-up: local capacity upgrade action and its tests; new migration/hash unchanged.
 
 The only new migration is `20261104160022_chunk5b_control_plane.sql`, **pending** in migrations.lock. All eight locked SQL files and their hashes are unchanged. The suite keeps the original 162 checks and adds 26: **188 fresh / 191 restore-mode**, with **42 public tenant tables**. The owner-only private issuer key table and private sequence are covered separately, not disguised as tenant business tables.
 
@@ -48,7 +49,7 @@ PowerShell on AMD Ryzen 5 5600H, Windows 11 build 26200, about 7.35 GiB usable R
 | `pnpm check:schema` | Passed: 42 public tenant tables |
 | `node scripts/check-service-role.mjs` | Passed, nonzero scan; expected warnings for absent optional src/pages directories |
 | `node scripts/restore-dump-scope.mjs` | Passed: public,rebatehq_private only; managed schemas excluded |
-| `node scripts/test-control-vault.mjs` | Builds with disposable signing keys, starts local lab without synthetic Supabase values, runs Chrome then Edge; both passed 30 named checks |
+| `node scripts/test-control-vault.mjs` | Builds with disposable signing keys, starts local lab without synthetic Supabase values, runs Chrome then Edge; both passed 31 named checks after the capacity upgrade follow-up |
 | `git diff --check` | Passed |
 
 The local runner executes `node scripts/build-spike.mjs`, `node node_modules/next/dist/bin/next build`, `next start --hostname 127.0.0.1 --port 3100`, and `node scripts/test-vault-browser.mjs --browser=chrome` / `--browser=msedge`. It shuts down its server afterwards. Test-only worker assertions use a different keypair from the app issuer. The harness scans served assets to ensure the real issuer/HMAC secret was not bundled.
@@ -59,8 +60,8 @@ Intermediate browser failures were fixed: missing public-key substitution in the
 
 | Browser | Named checks | 100k CSV import | Observed main-thread long task |
 |---|---:|---:|---:|
-| Chrome 156.0.8078.80 | 30 passed | 2,859 ms | 0 ms |
-| Edge 156.0.4314.58 | 30 passed | 2,991 ms | 0 ms |
+| Chrome 156.0.8078.80 | 31 passed | 4,097 ms (repeat; initial 2,859 ms) | 0 ms |
+| Edge 156.0.4314.58 | 31 passed | 2,866 ms (repeat; initial 2,991 ms) | 0 ms |
 
 Measured on this machine with the synthetic lab. Not a serverless, production, or general hardware guarantee. The authenticated CI gate adds actual sign-in, every retired HTTP handler, authoritative licence enrolment and revoked-device read-only backup recovery. It must not be skipped or run zero tests.
 
@@ -156,3 +157,5 @@ Measured on this machine with the synthetic lab. Not a serverless, production, o
 - `tests/rls-test-structure.test.js`
 - `tests/roles.test.ts`
 - `tests/vault-auth-setup.test.ts`
+
+Follow-up validation: the “Use licensed capacity” action updates only vault_meta.tier via an audited worker command, so a paid upgrade works on an existing lower-profile vault. Its SQL executed in PGlite, role/protocol tests passed (11 checks), and both browser harnesses passed 31 named checks including the real UI action. A direct app-role caller also fails when the global login budget is exhausted and cannot reset the sequence; that isolated PGlite test passed. The full suite initially passed 199 tests; three subsequently added tests passed targeted runs (expected 202 total in the next full run).

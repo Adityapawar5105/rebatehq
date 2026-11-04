@@ -287,6 +287,7 @@ try {
   for(const d of outputs){const bytes=await readFile(await d.path());assert.ok(bytes.includes(Buffer.from('104.50')),'Export omitted approved cents');}
   page.off('download',capture);
   await page.getByRole('link',{name:'Settings',exact:true}).click();const encrypted=page.waitForEvent('download');await page.getByRole('button',{name:'Download encrypted backup',exact:true}).click();const enc=await encrypted;assert.ok((await readFile(await enc.path())).subarray(0,8).toString()==='MDVAULT1','Backup export is not encrypted');
+  if(!auth){await page.getByRole('button',{name:'Use licensed capacity',exact:true}).click();await page.getByRole('status').filter({hasText:'Licensed capacity applied'}).waitFor();results.checks.licensedCapacityUpgrade=true;}
   results.checks.pricingUi={owner:true,guardrails:true,rule:true,simulation:true,preview:true,approval:true,erpExportAndLog:true,folderHandleSeam:true,encryptedBackup:true};
 
   await page.getByRole("button", { name: "Lock vault", exact: true }).click(); await ready();
