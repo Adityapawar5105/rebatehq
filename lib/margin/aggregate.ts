@@ -10,7 +10,13 @@ import { POCKET } from "./sql";
 export const REBUILD_SQL = `DELETE FROM agg_cpm;
 INSERT INTO agg_cpm SELECT customer_id, product_id, date_trunc('month', sale_date)::DATE AS month, line_kind, count(*), sum(quantity), sum(list_cents), sum(discount_cents), sum(rebate_cents), sum(freight_cents),
  count(cost_cents), coalesce(sum(${POCKET}) FILTER (WHERE cost_cents IS NOT NULL), 0), coalesce(sum(cost_cents), 0)
-FROM sales_lines GROUP BY customer_id, product_id, month, line_kind ORDER BY customer_id, month, product_id;`;
+FROM sales_lines GROUP BY customer_id, product_id, month, line_kind;
+DELETE FROM agg_cm;
+INSERT INTO agg_cm SELECT customer_id, month, line_kind, sum(lines), sum(list_cents), sum(discount_cents), sum(rebate_cents), sum(freight_cents), sum(costed_lines), sum(costed_pocket_cents), sum(cost_cents) FROM agg_cpm GROUP BY customer_id, month, line_kind;
+DELETE FROM agg_p;
+INSERT INTO agg_p SELECT product_id, line_kind, sum(lines), sum(list_cents), sum(discount_cents), sum(rebate_cents), sum(freight_cents), sum(costed_lines), sum(costed_pocket_cents), sum(cost_cents) FROM agg_cpm GROUP BY product_id, line_kind;`;
+/** Rollups the views read when a question needs only customer or only product attributes. */
+export const ROLLUPS = ["agg_cm", "agg_p"] as const;
 export async function rebuildAggregates(engine: Engine) {
   await engine.conn.query("BEGIN");
   try { await engine.conn.query(REBUILD_SQL); await engine.conn.query("COMMIT"); }
@@ -43,11 +49,19 @@ WHERE ${COMPONENTS.map(k => `l.${k} IS DISTINCT FROM a.${k}`).join(" OR ")} ORDE
     sourceId: (r.sid as string) ?? null, sourceRow: (r.srow as string) ?? null, message: `Customer ${r.c}, ${String(r.m).slice(0, 7)}: the waterfall's ${LABEL[k]} differs from the imported lines.` });
   const total = (await q(`SELECT ${COMPONENTS.map(k => `coalesce(l.${k},0)::VARCHAR AS l_${k}, coalesce(a.${k},0)::VARCHAR AS a_${k}`).join(", ")} FROM (SELECT ${lineSide} FROM sales_lines) l, (SELECT ${aggSide} FROM agg_cpm) a`))[0];
   for (const k of COMPONENTS) if ((total[`l_${k}`] ?? "0") !== (total[`a_${k}`] ?? "0")) found.push({ level: "total", scopeKey: "all", component: k, imported: total[`l_${k}`] as string | null, waterfall: total[`a_${k}`] as string | null, sourceId: null, sourceRow: null, message: `The waterfall's total ${LABEL[k]} differs from the imported lines.` });
-  const split = await q(`SELECT invoice_id, count(DISTINCT customer_id)::VARCHAR AS customers, count(DISTINCT date_trunc('month', sale_date))::VARCHAR AS months, min(source_id) AS sid, min(source_row)::VARCHAR AS srow, sum(list_cents)::VARCHAR AS list
-FROM sales_lines WHERE invoice_id IS NOT NULL GROUP BY invoice_id HAVING count(DISTINCT customer_id) > 1 OR count(DISTINCT date_trunc('month', sale_date)) > 1 ORDER BY invoice_id LIMIT ${limit}`);
+  // The rollups must equal the imported lines too (they serve customer-only and product-only views).
+  for (const r of ROLLUPS) {
+    const t = (await q(`SELECT ${COMPONENTS.map(k => `coalesce(a.${k},0)::VARCHAR AS a_${k}`).join(", ")} FROM (SELECT ${aggSide} FROM ${r}) a`))[0];
+    for (const k of COMPONENTS) if ((total[`l_${k}`] ?? "0") !== (t[`a_${k}`] ?? "0")) found.push({ level: "total", scopeKey: r, component: k, imported: total[`l_${k}`] as string | null, waterfall: t[`a_${k}`] as string | null, sourceId: null, sourceRow: null,
+      message: `The ${r === "agg_cm" ? "customer x month" : "product"} totals' ${LABEL[k]} differ from the imported lines.` });
+  }
+  // min/max per invoice (not count DISTINCT) keeps this inside the memory guardrail at 2M lines; counts are taken only for the split invoices.
+  const split = await q(`WITH s AS (SELECT invoice_id FROM sales_lines WHERE invoice_id IS NOT NULL GROUP BY invoice_id HAVING min(customer_id) <> max(customer_id) OR min(sale_date) < max(sale_date) AND date_trunc('month', min(sale_date)) <> date_trunc('month', max(sale_date)) ORDER BY invoice_id LIMIT ${limit})
+SELECT l.invoice_id, count(DISTINCT l.customer_id)::VARCHAR AS customers, count(DISTINCT date_trunc('month', l.sale_date))::VARCHAR AS months, min(l.source_id) AS sid, min(l.source_row)::VARCHAR AS srow, sum(l.list_cents)::VARCHAR AS list
+FROM sales_lines l JOIN s USING (invoice_id) GROUP BY l.invoice_id ORDER BY l.invoice_id`);
   for (const r of split) found.push({ level: "invoice", scopeKey: String(r.invoice_id), component: r.customers !== "1" ? "customer" : "month", imported: r.list as string, waterfall: null, sourceId: r.sid as string, sourceRow: r.srow as string,
     message: r.customers !== "1" ? `Invoice ${r.invoice_id} has lines for ${r.customers} customers, so its total cannot reconcile to one customer.` : `Invoice ${r.invoice_id} has lines in ${r.months} months, so its total cannot reconcile to one month.` });
-  const counts = (await q(`SELECT (SELECT count(DISTINCT invoice_id) FROM sales_lines)::VARCHAR AS invoices, (SELECT count(*) FROM (SELECT DISTINCT customer_id, date_trunc('month', sale_date) FROM sales_lines))::VARCHAR AS cms, (SELECT count(*) FROM sales_lines)::VARCHAR AS lines`))[0];
+  const counts = (await q(`SELECT (SELECT count(*) FROM (SELECT invoice_id FROM sales_lines WHERE invoice_id IS NOT NULL GROUP BY invoice_id))::VARCHAR AS invoices, (SELECT count(*) FROM (SELECT DISTINCT customer_id, date_trunc('month', sale_date) FROM sales_lines))::VARCHAR AS cms, (SELECT count(*) FROM sales_lines)::VARCHAR AS lines`))[0];
   return { found, invoices: String(counts.invoices), customerMonths: String(counts.cms), lines: String(counts.lines) };
 }
 /** SQL that replaces the open issues with the differences just found; accepted issues keep their status. Run in a transaction. */

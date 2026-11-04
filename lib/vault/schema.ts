@@ -1,7 +1,7 @@
 export const SCHEMA_VERSION = 5;
 const V1_TABLES = ["vault_meta", "products", "customers", "price_matrix", "price_guardrails", "source_files", "import_batches", "sales_lines", "vendor_costs", "cost_basis_settings", "rules", "rule_runs", "price_versions", "roi_ledger", "audit_log", "import_issues", "converter_recipes"] as const;
 const V4_TABLES = [...V1_TABLES, "rejected_rows"] as const;
-export const TABLES = [...V4_TABLES, "agg_cpm", "recon_issues"] as const;
+export const TABLES = [...V4_TABLES, "agg_cpm", "agg_cm", "agg_p", "recon_issues"] as const;
 /** Tables that exist at a schema version (in creation order, so copy-on-write inserts parents first). */
 export function tablesFor(version: number): readonly string[] { return version >= 5 ? TABLES : version >= 4 ? V4_TABLES : V1_TABLES; }
 // These are local DuckDB migrations, not Supabase migrations. V1 stays frozen
@@ -68,7 +68,10 @@ INSERT INTO sales_lines SELECT *, 'sale' FROM md_v4_sales ORDER BY customer_id, 
 DROP TABLE md_v4_sales;
 CREATE INDEX sales_lines_customer_date ON sales_lines(customer_id,sale_date);
 CREATE INDEX sales_lines_product_date ON sales_lines(product_id,sale_date);
-CREATE TABLE agg_cpm(customer_id VARCHAR NOT NULL, product_id VARCHAR NOT NULL, month DATE NOT NULL, line_kind VARCHAR NOT NULL, lines BIGINT NOT NULL, quantity DECIMAL(38,4) NOT NULL, list_cents HUGEINT NOT NULL, discount_cents HUGEINT NOT NULL, rebate_cents HUGEINT NOT NULL, freight_cents HUGEINT NOT NULL, costed_lines BIGINT NOT NULL, costed_pocket_cents HUGEINT NOT NULL, cost_cents HUGEINT NOT NULL);
+-- BIGINT, not HUGEINT: DuckDB-Wasm scans HUGEINT columns ~50x slower. A sum beyond BIGINT fails the rebuild loudly (never wraps).
+CREATE TABLE agg_cpm(customer_id VARCHAR NOT NULL, product_id VARCHAR NOT NULL, month DATE NOT NULL, line_kind VARCHAR NOT NULL, lines BIGINT NOT NULL, quantity DECIMAL(18,4) NOT NULL, list_cents BIGINT NOT NULL, discount_cents BIGINT NOT NULL, rebate_cents BIGINT NOT NULL, freight_cents BIGINT NOT NULL, costed_lines BIGINT NOT NULL, costed_pocket_cents BIGINT NOT NULL, cost_cents BIGINT NOT NULL);
+CREATE TABLE agg_cm(customer_id VARCHAR NOT NULL, month DATE NOT NULL, line_kind VARCHAR NOT NULL, lines BIGINT NOT NULL, list_cents BIGINT NOT NULL, discount_cents BIGINT NOT NULL, rebate_cents BIGINT NOT NULL, freight_cents BIGINT NOT NULL, costed_lines BIGINT NOT NULL, costed_pocket_cents BIGINT NOT NULL, cost_cents BIGINT NOT NULL);
+CREATE TABLE agg_p(product_id VARCHAR NOT NULL, line_kind VARCHAR NOT NULL, lines BIGINT NOT NULL, list_cents BIGINT NOT NULL, discount_cents BIGINT NOT NULL, rebate_cents BIGINT NOT NULL, freight_cents BIGINT NOT NULL, costed_lines BIGINT NOT NULL, costed_pocket_cents BIGINT NOT NULL, cost_cents BIGINT NOT NULL);
 CREATE TABLE recon_issues(id VARCHAR PRIMARY KEY, level VARCHAR NOT NULL CHECK(level IN ('invoice','customer_month','total')), scope_key VARCHAR NOT NULL, component VARCHAR NOT NULL, imported_cents HUGEINT, waterfall_cents HUGEINT, source_id VARCHAR, source_row BIGINT, message VARCHAR NOT NULL, status VARCHAR NOT NULL CHECK(status IN ('open','accepted')), found_at VARCHAR NOT NULL);
 ALTER TABLE roi_ledger ADD COLUMN finding VARCHAR;
 ALTER TABLE roi_ledger ADD COLUMN sample BOOLEAN;

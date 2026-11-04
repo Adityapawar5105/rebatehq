@@ -13,7 +13,7 @@ import JSZip from "jszip";
 import * as fx from "../helpers/studio-fixtures";
 import { lineFromCents } from "../../lib/margin/engine";
 import { rha } from "../../lib/margin/decimal";
-import { findLeaks, hitRows } from "../../lib/margin/leaks";
+import { findLeaks, hitKinds, hitRows } from "../../lib/margin/leaks";
 import { REBUILD_SQL, findDifferences } from "../../lib/margin/aggregate";
 import { moneyText } from "../../lib/spike/exact";
 const labScope = { userId: "synthetic-lab-user", tenantId: "synthetic-lab-workspace" };
@@ -462,7 +462,8 @@ async function margin() {
   result.pdf = { bytes: rep.bytes, ms: pdfMs, name: rep.name };
   // 6. Whale curve on Professional.
   const whaleView = await service.marginWhale();
-  assert(whaleView.available && whaleView.customers === "400" && n(whaleView.totalMargin) === marginJs && whaleView.points[whaleView.points.length - 1].x === 100, "Whale curve wrong");
+  const buyers = (await rowsOf(service, "SELECT count(DISTINCT customer_id)::VARCHAR AS n FROM sales_lines"))[0].n;
+  assert(whaleView.available && whaleView.customers === buyers && n(whaleView.totalMargin) === marginJs && whaleView.points[whaleView.points.length - 1].x === 100, `Whale curve wrong: ${whaleView.customers} vs ${buyers} customers, ${whaleView.totalMargin} vs ${marginJs}`);
   result.whale = { customers: whaleView.customers, losers: whaleView.losers, peakPct: whaleView.peakPct };
   // 7. Reconciliation differences become issues; nothing is adjusted silently.
   const e = service.engine!, before = (await rowsOf(service, "SELECT sum(list_cents)::VARCHAR AS l FROM sales_lines"))[0].l;
@@ -517,7 +518,7 @@ async function credits() {
   const m = await service.marginMath("credits");
   assert(m.rows.length === 1 && m.rows[0].kind === "credit" && m.rows[0].sourceRow === "5" && m.check.agrees && m.rowsAgree, "Credits math wrong");
   const leaks = await service.leaks();
-  assert(!(await rowsOf(service, "SELECT count(*)::VARCHAR AS n FROM lf_hits h JOIN sales_lines s USING (source_id, line_id) WHERE s.line_kind = 'credit'")).some(r => r.n !== "0"), "Credits must never be leaks");
+  assert(!(await hitKinds(service.engine!)).some(r => r.line_kind === "credit"), "Credits must never be leaks");
   assert(leaks.result.checked.creditLines === "1" && leaks.result.checked.uncostedLines === "1", "Leak finder should count credit and unknown-cost lines it skipped");
   assert((await service.reconcile()).reconciled, "Credits vault should reconcile");
   assert(!(await service.marginWhale()).available, "Whale curve must be gated on Starter");
@@ -529,10 +530,11 @@ async function credits() {
 }
 /** 2M-line timing for the waterfall, drill-downs, whale curve, leak finder and reconciliation (blueprint section 5 target: under 300 ms). */
 async function marginBenchmark(rows: number) {
-  assert(rows === 2_000_000, "benchmark scope");
+  assert(rows === 2_000_000 || rows === 200_000, "benchmark scope");
+  const stages: Record<string, number> = {}; let stage = "seed"; const mark = (k: string, t: number) => { stages[k] = Math.round(performance.now() - t); stage = "after " + k; };
   const scope = { userId: "bench-" + crypto.randomUUID(), tenantId: "bench-" + crypto.randomUUID() };
   const service = new VaultService(() => undefined); await service.init(scope); await service.create(secret, "scale");
-  const engine = service.engine!, source = crypto.randomUUID();
+  const engine = service.engine!, source = crypto.randomUUID(), tS = performance.now();
   try {
     await engine.conn.query(`BEGIN;
 INSERT INTO products(product_id, category) SELECT 'P' || (i+1), 'Cat ' || (i % 40) FROM range(100000)t(i);
@@ -540,24 +542,38 @@ INSERT INTO customers(customer_id, tier, branch) SELECT 'C' || (i+1), 'T' || lpa
 INSERT INTO source_files VALUES('${source}','synthetic-benchmark.csv','sales_history',0,'2026-11-04');
 INSERT INTO import_batches(id,source_id,rows_loaded,rows_rejected,imported_at) VALUES('${crypto.randomUUID()}','${source}',${rows},0,'2026-11-04')`);
     for (let at = 0; at < rows; at += 100_000) await engine.conn.query(`INSERT INTO sales_lines(source_id,line_id,product_id,customer_id,sale_date,quantity,list_cents,discount_cents,freight_cents,rebate_cents,cost_cents,source_row,invoice_id,line_kind)
-SELECT '${source}', i+1, 'P' || ((i % 100000)+1), 'C' || ((i*13 % 2000)+1), (DATE '2024-01-01' + INTERVAL (least(23,(i*24)//${rows})) MONTH)::DATE, (i%5)+1, 10000+(i%997)*29, ((10000+(i%997)*29) * (3000 - ((i*13 % 2000) % 50) * 50)) // 10000, 100+i%599, CASE WHEN i%7=0 THEN 200 ELSE 0 END, 6000+(i%991)*23, i+2, 'INV-' || (i // 4), 'sale'
+SELECT '${source}', i+1, 'P' || ((i % 100000)+1), 'C' || ((i*13 % 2000)+1), (DATE '2024-01-01' + INTERVAL (least(23,(i*24)//${rows})) MONTH)::DATE, (i%5)+1, 10000+(i%997)*29, ((10000+(i%997)*29) * (3000 - ((i*13 % 2000) % 50) * 50)) // 10000, 100+i%599, CASE WHEN i%7=0 THEN 200 ELSE 0 END, 6000+(i%991)*23, i+2, 'INV-' || (i+1), 'sale'
 FROM range(${at},${Math.min(rows, at + 100_000)})t(i) ORDER BY 4,5,2`);
-    await engine.conn.query("COMMIT");
-    const t0 = performance.now(); await (service as unknown as { derived(e: typeof engine): Promise<void> }).derived(engine); const rebuildAndReconcileMs = Math.round(performance.now() - t0);
-    await service.save(); await service.lock(); await service.unlock(secret);
+    await engine.conn.query("COMMIT"); mark("seed", tS);
+    stage = "rebuild"; const t0 = performance.now(); await (service as unknown as { derived(e: typeof engine): Promise<void> }).derived(engine); const rebuildAndReconcileMs = Math.round(performance.now() - t0); stage = "save";
+    let tx = performance.now(); await service.save(); mark("save", tx); tx = performance.now(); await service.lock(); await service.unlock(secret); mark("unlock", tx);
+    const cold = await timed(1, () => service.marginWaterfall()); tx = performance.now(); await service.warmup(); mark("warmupAfterUnlock", tx);
     const aggRows = String((await service.engine!.conn.query("SELECT count(*)::VARCHAR AS n FROM agg_cpm")).toArray()[0].n);
-    const wf = await timed(7, () => service.marginWaterfall()), wfBranch = await timed(7, () => service.marginWaterfall({ by: [{ dim: "branch", value: "North" }] }));
+    const probe = async (label: string, sql: string) => { stages[label] = (await timed(3, () => service.engine!.conn.query(sql))).medianMs; };
+    await probe("select1", "SELECT 1"); await probe("countAgg", "SELECT count(*) FROM agg_cpm"); await probe("sumAggList", "SELECT sum(list_cents)::VARCHAR FROM agg_cpm");
+    await probe("sumLinesList", "SELECT sum(list_cents)::VARCHAR FROM sales_lines"); await probe("sumAgg8", `SELECT line_kind, ${["lines", "list_cents", "discount_cents", "rebate_cents", "freight_cents", "costed_lines", "costed_pocket_cents", "cost_cents"].map(c => `sum(${c})::VARCHAR`).join(",")} FROM agg_cpm GROUP BY line_kind`);
+    await probe("sumLines8", `SELECT line_kind, count(*), ${["list_cents", "discount_cents", "rebate_cents", "freight_cents", "cost_cents"].map(c => `sum(${c})::VARCHAR`).join(",")} FROM sales_lines GROUP BY line_kind`);
+    await probe("settings", "SELECT current_setting('threads') AS t, current_setting('memory_limit') AS m");
+    const mem = async () => Object.fromEntries((await service.engine!.conn.query("SELECT tag, (memory_usage_bytes // 1048576)::VARCHAR AS mb FROM duckdb_memory() WHERE memory_usage_bytes > 1048576")).toArray().map(r => [String(r.tag), Number(r.mb)]));
+    (stages as Record<string, unknown>).memoryBeforeLeaks = await mem();
+    await service.engine!.conn.query("CHECKPOINT").catch(() => undefined);
+    (stages as Record<string, unknown>).memoryAfterCheckpoint = await mem();
+    stage = "views"; const wf = await timed(7, () => service.marginWaterfall()), wfBranch = await timed(7, () => service.marginWaterfall({ by: [{ dim: "branch", value: "North" }] }));
     const product = await timed(7, () => service.marginDrill("product")), customer = await timed(7, () => service.marginDrill("customer")), branch = await timed(7, () => service.marginDrill("branch"));
     const category = await timed(7, () => service.marginDrill("category", { by: [{ dim: "branch", value: "South" }] })), whaleT = await timed(3, () => service.marginWhale());
     const mathT = await timed(3, () => service.marginMath("margin", { by: [{ dim: "branch", value: "West" }] }));
-    const t1 = performance.now(); const leaks = await findLeaks(service.engine!); const leakMs = Math.round(performance.now() - t1);
-    const t2 = performance.now(); const diff = await findDifferences(service.engine!); const reconcileMs = Math.round(performance.now() - t2);
-    assert(wf.last.lines === String(rows) && diff.found.length === 0, "2M benchmark waterfall/reconciliation wrong");
+    stage = "leak finder"; const real = service.engine!, trace: string[] = [];
+    const traced = { ...real, conn: { query: async (sql: string) => { const t = performance.now(); try { return await real.conn.query(sql); } finally { const m = (await real.conn.query("SELECT tag, (memory_usage_bytes // 1048576)::VARCHAR AS mb FROM duckdb_memory() WHERE memory_usage_bytes > 8388608")).toArray().map(r => `${r.tag}=${r.mb}`).join(","); trace.push(`${Math.round(performance.now() - t)}ms ${sql.replace(/\s+/g, " ").slice(0, 60)} [${m}]`); } } } } as unknown as typeof real;
+    const t1 = performance.now(); const leaks = await findLeaks(traced).catch(e => { throw new Error(`${(e as Error).message.split("\n")[0]} TRACE ${trace.slice(-6).join(" | ")}`); });
+    (stages as Record<string, unknown>).leakTrace = trace.filter(t => !t.startsWith("0ms") && !t.startsWith("1ms")); const leakMs = Math.round(performance.now() - t1);
+    stage = "reconcile"; const t2 = performance.now(); const diff = await findDifferences(service.engine!); const reconcileMs = Math.round(performance.now() - t2);
+    assert(wf.last.lines === String(rows) && diff.found.length === 0, `Benchmark waterfall/reconciliation wrong: ${wf.last.lines} lines, ${diff.found.length} differences ${JSON.stringify(diff.found.slice(0, 2))}`);
     const under = (x: { medianMs: number }) => x.medianMs < 300;
     return { rows: String(rows), aggRows, rebuildAndReconcileMs, waterfallMs: wf.medianMs, waterfallMaxMs: wf.maxMs, waterfallBranchMs: wfBranch.medianMs, drillProductMs: product.medianMs, drillCustomerMs: customer.medianMs, drillBranchMs: branch.medianMs,
       drillCategoryInBranchMs: category.medianMs, whaleMs: whaleT.medianMs, mathMs: mathT.medianMs, leakFinderMs: leakMs, findings: String(leaks.findings.length), reconcileMs,
-      waterfallAndDrillUnder300ms: [wf, wfBranch, product, customer, branch, category].every(under) };
-  } finally { await service.lock(); await reset(scope); }
+      waterfallAndDrillUnder300ms: [wf, wfBranch, product, customer, branch, category].every(under), waterfallDuringWarmupMs: cold.medianMs, stages };
+  } catch (error) { throw new Error(`${stage}: ${(error as Error).message.split("\n")[0]} ${JSON.stringify(stages)}`); }
+  finally { await service.lock().catch(() => undefined); await reset(scope); }
 }
 async function cipherOnly() {
   let files = 0;

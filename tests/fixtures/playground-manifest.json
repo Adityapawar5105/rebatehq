@@ -17,10 +17,10 @@
     {
       "id": "L2",
       "type": "discount_outlier",
-      "description": "C-0042 is discounted 25% on everything, far above its tier's peers.",
+      "description": "C-0042 is discounted 32% on everything: far above its tier's peers and deeper than any tier's schedule.",
       "lines": 598,
-      "cents": "87351873",
-      "dollars": "873518.73"
+      "cents": "123320176",
+      "dollars": "1233201.76"
     },
     {
       "id": "L3",
@@ -35,8 +35,8 @@
       "type": "negative_margin",
       "description": "Twenty thin-margin Valves SKUs keep their price after a 12% supplier cost rise on 2025-11-01.",
       "lines": 159,
-      "cents": "10722336",
-      "dollars": "107223.36"
+      "cents": "10824379",
+      "dollars": "108243.79"
     },
     {
       "id": "L5",

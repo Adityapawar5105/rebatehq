@@ -31,43 +31,62 @@ const q = async (engine: Engine, sql: string) => (await engine.conn.query(sql)).
 const S = (v: unknown) => v === null || v === undefined ? "" : String(v);
 export async function findLeaks(engine: Engine): Promise<LeakResult> {
   const t0 = performance.now(), R = RULES;
-  await engine.conn.query(`DROP TABLE IF EXISTS temp.lf_lines; DROP TABLE IF EXISTS temp.lf_tiers; DROP TABLE IF EXISTS temp.lf_excess; DROP TABLE IF EXISTS temp.lf_hits; DROP TABLE IF EXISTS temp.lf_shift;
-CREATE TEMP TABLE lf_lines AS SELECT s.source_id, s.line_id, s.product_id, s.customer_id, s.sale_date, c.tier, p.category, s.list_cents, s.discount_cents, s.rebate_cents, s.freight_cents, s.cost_cents,
+  // Statement by statement, so an engine failure names the step (SQL text only, never values).
+  const run = async (sql: string) => { for (const stmt of sql.split(/;\s*\n/)) if (stmt.trim()) { try { await engine.conn.query(stmt); } catch (e) { throw new Error(`Leak finder step "${stmt.trim().slice(0, 48)}" failed: ${(e as Error).message.split("\n")[0]}`); } } };
+  // Memory: lf_lines and lf_excess are views (never materialised) and a hit is five numbers
+  // (finding hash, source number, line, leak, basis), so a 2M-line vault fits the 512 MB guardrail.
+  await run(`DROP VIEW IF EXISTS temp.lf_excess; DROP VIEW IF EXISTS temp.lf_lines; DROP TABLE IF EXISTS temp.lf_tiers; DROP TABLE IF EXISTS temp.lf_hits; DROP TABLE IF EXISTS temp.lf_keys; DROP TABLE IF EXISTS temp.lf_shift; DROP TABLE IF EXISTS temp.lf_shift0; DROP TABLE IF EXISTS temp.lf_floor; DROP TABLE IF EXISTS temp.lf_scatter; DROP TABLE IF EXISTS temp.lf_src;
+CREATE TEMP TABLE lf_src AS SELECT id AS source_id, (row_number() OVER (ORDER BY id))::INTEGER AS sid FROM source_files;
+CREATE TEMP VIEW lf_lines AS SELECT x.sid, s.source_id, s.line_id, s.source_row, s.invoice_id, s.product_id, s.customer_id, s.sale_date, c.tier, p.category, s.list_cents, s.discount_cents, s.rebate_cents, s.freight_cents, s.cost_cents,
  ${POCKET} AS pocket, ${MARGIN} AS margin, ${discountBpSql()} AS rate_bp
-FROM sales_lines s JOIN customers c USING (customer_id) JOIN products p USING (product_id) WHERE s.line_kind = 'sale' AND s.list_cents > 0;
+FROM sales_lines s JOIN lf_src x USING (source_id) JOIN customers c USING (customer_id) JOIN products p USING (product_id) WHERE s.line_kind = 'sale' AND s.list_cents > 0;
 CREATE TEMP TABLE lf_tiers AS WITH t AS (SELECT tier, count(*) AS n, count(DISTINCT customer_id) AS nc FROM lf_lines WHERE tier <> '' GROUP BY tier),
  m AS (SELECT tier, rate_bp, count(*) AS k FROM lf_lines WHERE tier <> '' AND list_cents >= ${R.modeMinListCents} GROUP BY tier, rate_bp),
  r AS (SELECT tier, rate_bp, k, row_number() OVER (PARTITION BY tier ORDER BY k DESC, rate_bp) AS rk, sum(k) OVER (PARTITION BY tier) AS mk FROM m)
-SELECT t.tier, r.rate_bp AS tier_bp FROM t JOIN r ON r.tier = t.tier AND r.rk = 1 WHERE t.nc >= ${R.minTierCustomers} AND t.n >= ${R.minTierLines} AND r.k * 100 >= r.mk * ${Math.round(R.modeShare * 100)};
-CREATE TEMP TABLE lf_excess AS SELECT l.*, t.tier_bp, l.discount_cents - ${atRateSql("l.list_cents", "t.tier_bp")} AS excess,
+SELECT t.tier, CAST(r.rate_bp AS INTEGER) AS tier_bp FROM t JOIN r ON r.tier = t.tier AND r.rk = 1 WHERE t.nc >= ${R.minTierCustomers} AND t.n >= ${R.minTierLines} AND r.k * 100 >= r.mk * ${Math.round(R.modeShare * 100)};
+CREATE TEMP VIEW lf_excess AS SELECT l.*, t.tier_bp, CAST(l.discount_cents - ${atRateSql("l.list_cents", "t.tier_bp")} AS BIGINT) AS excess,
  (l.discount_cents - ${atRateSql("l.list_cents", "t.tier_bp")} > 0 AND l.rate_bp - t.tier_bp >= ${R.excessBp}) AS flag FROM lf_lines l JOIN lf_tiers t USING (tier);
-CREATE TEMP TABLE lf_hits(finding VARCHAR, type VARCHAR, source_id VARCHAR, line_id BIGINT, leak HUGEINT, basis_bp HUGEINT);
-CREATE TEMP TABLE lf_shift AS WITH c AS (SELECT customer_id, any_value(tier) AS tier, any_value(tier_bp) AS tier_bp, count(*) AS n, count(*) FILTER (WHERE flag) AS nf FROM lf_excess GROUP BY customer_id),
+CREATE TEMP TABLE lf_keys(h UBIGINT, finding VARCHAR, type VARCHAR);
+CREATE TEMP TABLE lf_hits(h UBIGINT, sid INTEGER, line_id BIGINT, leak BIGINT, basis_bp INTEGER);
+CREATE TEMP TABLE lf_shift0 AS WITH c AS (SELECT customer_id, any_value(tier) AS tier, any_value(tier_bp) AS tier_bp, count(*) AS n, count(*) FILTER (WHERE flag) AS nf FROM lf_excess GROUP BY customer_id),
  md AS (SELECT customer_id, rate_bp, row_number() OVER (PARTITION BY customer_id ORDER BY count(*) DESC, rate_bp) AS rk FROM lf_excess WHERE list_cents >= ${R.modeMinListCents} GROUP BY customer_id, rate_bp)
-SELECT c.customer_id, c.tier, c.tier_bp, md.rate_bp AS modal_bp, (SELECT min(t.tier) FROM lf_tiers t WHERE t.tier_bp = md.rate_bp AND t.tier_bp > c.tier_bp AND t.tier <> c.tier) AS matched
-FROM c LEFT JOIN md ON md.customer_id = c.customer_id AND md.rk = 1 WHERE c.n >= ${R.minCustomerLines} AND c.nf * 100 >= c.n * ${Math.round(R.patternShare * 100)};`);
-  // 1. Whole-customer discount shifts: billed at a better tier's schedule, or a discount outlier.
-  await engine.conn.query(`INSERT INTO lf_hits SELECT CASE WHEN s.matched IS NOT NULL THEN 'below_lower_tier|' || e.customer_id || '|' || s.matched ELSE 'discount_outlier|' || e.customer_id END,
- CASE WHEN s.matched IS NOT NULL THEN 'below_lower_tier' ELSE 'discount_outlier' END, e.source_id, e.line_id, e.excess, e.tier_bp FROM lf_excess e JOIN lf_shift s USING (customer_id) WHERE e.flag;
-INSERT INTO lf_hits SELECT 'below_floor|' || e.customer_id || '|' || e.category, 'below_floor', e.source_id, e.line_id, e.excess, e.tier_bp FROM lf_excess e
- JOIN (SELECT customer_id, category FROM lf_excess WHERE customer_id NOT IN (SELECT customer_id FROM lf_shift) GROUP BY customer_id, category HAVING count(*) >= ${R.minPatternLines} AND count(*) FILTER (WHERE flag) * 100 >= count(*) * ${Math.round(R.patternShare * 100)}) g USING (customer_id, category) WHERE e.flag;
-INSERT INTO lf_hits SELECT 'discount_outlier|' || e.customer_id || '|lines', 'discount_outlier', e.source_id, e.line_id, e.excess, e.tier_bp FROM lf_excess e
- WHERE e.flag AND e.rate_bp - e.tier_bp >= ${R.scatteredBp} AND NOT EXISTS (SELECT 1 FROM lf_hits h WHERE h.source_id = e.source_id AND h.line_id = e.line_id);
-INSERT INTO lf_hits SELECT 'unrecovered_freight|small_lines', 'unrecovered_freight', source_id, line_id, freight_cents, NULL FROM lf_lines WHERE CAST(freight_cents AS HUGEINT) * 10000 > CAST(list_cents AS HUGEINT) * ${R.freightShareBp};
+SELECT c.customer_id, c.tier, c.tier_bp, md.rate_bp AS modal_bp, (SELECT min(t.tier) FROM lf_tiers t WHERE t.tier_bp = md.rate_bp AND t.tier_bp > c.tier_bp AND t.tier <> c.tier) AS matched,
+ CASE WHEN (SELECT min(t.tier) FROM lf_tiers t WHERE t.tier_bp = md.rate_bp AND t.tier_bp > c.tier_bp AND t.tier <> c.tier) IS NOT NULL THEN 'below_lower_tier' ELSE 'discount_outlier' END AS type
+FROM c LEFT JOIN md ON md.customer_id = c.customer_id AND md.rk = 1 WHERE c.n >= ${R.minCustomerLines} AND c.nf * 100 >= c.n * ${Math.round(R.patternShare * 100)};
+CREATE TEMP TABLE lf_shift AS SELECT *, CASE WHEN type = 'below_lower_tier' THEN 'below_lower_tier|' || customer_id || '|' || matched ELSE 'discount_outlier|' || customer_id END AS finding FROM lf_shift0; DROP TABLE lf_shift0;
+CREATE TEMP TABLE lf_floor AS SELECT customer_id, category, 'below_floor|' || customer_id || '|' || category AS finding FROM lf_excess WHERE customer_id NOT IN (SELECT customer_id FROM lf_shift)
+ GROUP BY customer_id, category HAVING count(*) >= ${R.minPatternLines} AND count(*) FILTER (WHERE flag) * 100 >= count(*) * ${Math.round(R.patternShare * 100)};`);
+  // 1. Whole-customer discount shifts (billed at a better tier's schedule, or an outlier), then category patterns below the tier floor.
+  await run(`INSERT INTO lf_keys SELECT hash(finding), finding, type FROM lf_shift;
+INSERT INTO lf_hits SELECT hash(s.finding), e.sid, e.line_id, e.excess, e.tier_bp FROM lf_excess e JOIN lf_shift s USING (customer_id) WHERE e.flag;
+INSERT INTO lf_keys SELECT hash(finding), finding, 'below_floor' FROM lf_floor;
+INSERT INTO lf_hits SELECT hash(g.finding), e.sid, e.line_id, e.excess, e.tier_bp FROM lf_excess e JOIN lf_floor g USING (customer_id, category) WHERE e.flag;
+CREATE TEMP TABLE lf_scatter AS SELECT 'discount_outlier|' || e.customer_id || '|lines' AS finding, e.sid, e.line_id, e.excess, e.tier_bp FROM lf_excess e
+ WHERE e.flag AND e.rate_bp - e.tier_bp >= ${R.scatteredBp} AND NOT EXISTS (SELECT 1 FROM lf_hits h WHERE h.sid = e.sid AND h.line_id = e.line_id);
+INSERT INTO lf_keys SELECT DISTINCT hash(finding), finding, 'discount_outlier' FROM lf_scatter;
+INSERT INTO lf_hits SELECT hash(finding), sid, line_id, excess, tier_bp FROM lf_scatter; DROP TABLE lf_scatter; DROP TABLE lf_floor;
+INSERT INTO lf_keys VALUES (hash('unrecovered_freight|small_lines'), 'unrecovered_freight|small_lines', 'unrecovered_freight'), (hash('negative_margin|cost_rise'), 'negative_margin|cost_rise', 'negative_margin'),
+ (hash('below_cost|all'), 'below_cost|all', 'below_cost'), (hash('negative_margin|other'), 'negative_margin|other', 'negative_margin');
+INSERT INTO lf_hits SELECT hash('unrecovered_freight|small_lines'), sid, line_id, freight_cents, NULL FROM lf_lines WHERE CAST(freight_cents AS HUGEINT) * 10000 > CAST(list_cents AS HUGEINT) * ${R.freightShareBp};
 CREATE OR REPLACE TEMP TABLE lf_rise AS WITH v AS (SELECT product_id, vendor, effective_date, cost, lag(cost) OVER (PARTITION BY product_id, vendor ORDER BY effective_date, id) AS prev FROM vendor_costs)
  SELECT product_id, min(effective_date) AS since FROM v WHERE prev IS NOT NULL AND cost > prev GROUP BY product_id;
-INSERT INTO lf_hits SELECT 'negative_margin|cost_rise', 'negative_margin', l.source_id, l.line_id, -l.margin, NULL FROM lf_lines l JOIN lf_rise r USING (product_id) WHERE l.margin < 0 AND l.sale_date >= r.since;
-CREATE OR REPLACE TEMP TABLE lf_loss AS SELECT source_id, line_id FROM lf_hits WHERE finding = 'negative_margin|cost_rise';
-INSERT INTO lf_hits SELECT 'below_cost|all', 'below_cost', l.source_id, l.line_id, -l.margin, NULL FROM lf_lines l WHERE l.margin < 0 AND l.list_cents - l.discount_cents < l.cost_cents AND NOT EXISTS (SELECT 1 FROM lf_loss x WHERE x.source_id = l.source_id AND x.line_id = l.line_id);
-INSERT INTO lf_hits SELECT 'negative_margin|other', 'negative_margin', l.source_id, l.line_id, -l.margin, NULL FROM lf_lines l WHERE l.margin < 0 AND l.list_cents - l.discount_cents >= l.cost_cents AND NOT EXISTS (SELECT 1 FROM lf_loss x WHERE x.source_id = l.source_id AND x.line_id = l.line_id);`);
-  const groups = await q(engine, `SELECT h.finding, h.type, count(*)::VARCHAR AS n, sum(h.leak)::VARCHAR AS cents, count(DISTINCT l.product_id)::VARCHAR AS products, count(DISTINCT l.customer_id)::VARCHAR AS customers, any_value(h.basis_bp)::VARCHAR AS basis,
- min(l.sale_date)::VARCHAR AS first, max(l.sale_date)::VARCHAR AS last FROM lf_hits h JOIN lf_lines l USING (source_id, line_id) GROUP BY h.finding, h.type ORDER BY sum(h.leak) DESC, h.finding`);
+INSERT INTO lf_hits SELECT hash('negative_margin|cost_rise'), l.sid, l.line_id, -l.margin, NULL FROM lf_lines l JOIN lf_rise r USING (product_id) WHERE l.margin < 0 AND l.sale_date >= r.since;
+CREATE OR REPLACE TEMP TABLE lf_loss AS SELECT sid, line_id FROM lf_hits WHERE h = hash('negative_margin|cost_rise');
+INSERT INTO lf_hits SELECT CASE WHEN l.list_cents - l.discount_cents < l.cost_cents THEN hash('below_cost|all') ELSE hash('negative_margin|other') END, l.sid, l.line_id, -l.margin, NULL
+ FROM lf_lines l WHERE l.margin < 0 AND NOT EXISTS (SELECT 1 FROM lf_loss x WHERE x.sid = l.sid AND x.line_id = l.line_id);
+DELETE FROM lf_keys WHERE h NOT IN (SELECT DISTINCT h FROM lf_hits);`);
+  const keys = (await q(engine, "SELECT count(*) AS n, count(DISTINCT h) AS d FROM lf_keys"))[0];
+  if (String(keys.n) !== String(keys.d)) throw new Error("Leak finding keys collided; no findings were recorded.");
+  // Narrow join on sales_lines (product and customer only), so the hash table is built on the hits.
+  const groups = await q(engine, `WITH g AS (SELECT h, count(*)::VARCHAR AS n, sum(leak)::VARCHAR AS cents, sum(leak) AS c, any_value(basis_bp)::VARCHAR AS basis FROM lf_hits GROUP BY h),
+ pc AS (SELECT h.h, count(DISTINCT s.product_id)::VARCHAR AS products, count(DISTINCT s.customer_id)::VARCHAR AS customers FROM lf_hits h JOIN lf_src x ON x.sid = h.sid JOIN sales_lines s ON s.source_id = x.source_id AND s.line_id = h.line_id GROUP BY h.h)
+SELECT k.finding, k.type, g.n, g.cents, g.basis, pc.products, pc.customers FROM lf_keys k JOIN g ON g.h = k.h JOIN pc ON pc.h = k.h ORDER BY g.c DESC, k.finding`);
   const shift = new Map((await q(engine, "SELECT customer_id, tier, tier_bp::VARCHAR AS tier_bp, modal_bp::VARCHAR AS modal_bp, matched FROM lf_shift")).map(r => [S(r.customer_id), r]));
   const tiers = new Map((await q(engine, "SELECT tier, tier_bp::VARCHAR AS bp FROM lf_tiers")).map(r => [S(r.tier), S(r.bp)]));
   const rise = await q(engine, "SELECT min(since)::VARCHAR AS a, max(since)::VARCHAR AS b, count(*)::VARCHAR AS n FROM lf_rise");
   const findings = groups.map(g => describe(S(g.finding), g, shift, tiers, rise[0]));
   const tot = (await q(engine, `SELECT coalesce(sum(leak),0)::VARCHAR AS total FROM lf_hits`))[0];
-  const ov = (await q(engine, `SELECT coalesce(sum(t - mx),0)::VARCHAR AS c, count(*)::VARCHAR AS n FROM (SELECT sum(leak) AS t, max(leak) AS mx FROM lf_hits GROUP BY source_id, line_id HAVING count(*) > 1)`))[0];
+  const ov = (await q(engine, `SELECT coalesce(sum(t - mx),0)::VARCHAR AS c, count(*)::VARCHAR AS n FROM (SELECT sum(leak) AS t, max(leak) AS mx FROM lf_hits GROUP BY sid, line_id HAVING count(*) > 1)`))[0];
   const checked = (await q(engine, `SELECT (SELECT count(*) FROM sales_lines WHERE line_kind='sale')::VARCHAR AS sale, (SELECT count(*) FROM sales_lines WHERE line_kind='credit')::VARCHAR AS credit,
  (SELECT count(*) FROM lf_lines WHERE cost_cents IS NULL)::VARCHAR AS uncosted, (SELECT count(*) FROM lf_lines WHERE tier NOT IN (SELECT tier FROM lf_tiers))::VARCHAR AS untiered, (SELECT count(*) FROM lf_tiers)::VARCHAR AS tiers`))[0];
   const total = BigInt(S(tot.total)), overlap = BigInt(S(ov.c));
@@ -103,14 +122,16 @@ function describe(id: string, g: Record<string, unknown>, shift: Map<string, Rec
 export type LeakRow = { sourceFile: string; sourceRow: string; lineId: string; invoice: string; date: string; product: string; category: string; customer: string; tier: string;
   list: string; discount: string; rebate: string; freight: string; cost: string | null; pocket: string; margin: string | null; rate: string; basis: string; leak: string; engineLeak: string };
 /** Evidence rows for one finding (largest first), with the leak recomputed by the JS engine for each row. */
+/** Evidence rows for one finding (largest first), with the leak recomputed by the JS engine for each row. */
 export async function leakRows(engine: Engine, id: string, offset = 0, limit = 25): Promise<{ rows: LeakRow[]; count: string; sum: string; engineAgrees: boolean }> {
-  const where = `WHERE h.finding = ${sqlText(id)}`;
+  const where = `WHERE h.h = hash(${sqlText(id)})`;
   const agg = (await q(engine, `SELECT count(*)::VARCHAR AS n, coalesce(sum(leak),0)::VARCHAR AS c FROM lf_hits h ${where}`))[0];
-  const rows = await q(engine, `SELECT f.name AS file, s.source_row::VARCHAR AS source_row, s.line_id::VARCHAR AS line_id, coalesce(s.invoice_id,'') AS invoice, s.sale_date::VARCHAR AS d, l.product_id, l.category, l.customer_id, l.tier,
+  const page = `(SELECT * FROM lf_hits h ${where} ORDER BY h.leak DESC, h.sid, h.line_id LIMIT ${Math.max(1, Math.min(200, limit))} OFFSET ${Math.max(0, Math.floor(offset))})`;
+  const rows = await q(engine, `SELECT f.name AS file, l.source_row::VARCHAR AS source_row, l.line_id::VARCHAR AS line_id, coalesce(l.invoice_id,'') AS invoice, l.sale_date::VARCHAR AS d, l.product_id, l.category, l.customer_id, l.tier,
  l.list_cents::VARCHAR AS list, l.discount_cents::VARCHAR AS discount, l.rebate_cents::VARCHAR AS rebate, l.freight_cents::VARCHAR AS freight, l.cost_cents::VARCHAR AS cost, l.pocket::VARCHAR AS pocket, l.margin::VARCHAR AS margin,
- l.rate_bp::VARCHAR AS rate, h.basis_bp::VARCHAR AS basis, h.leak::VARCHAR AS leak, h.type
-FROM lf_hits h JOIN lf_lines l USING (source_id, line_id) JOIN sales_lines s ON s.source_id = h.source_id AND s.line_id = h.line_id JOIN source_files f ON f.id = h.source_id ${where}
-ORDER BY h.leak DESC, h.source_id, s.source_row LIMIT ${Math.max(1, Math.min(200, limit))} OFFSET ${Math.max(0, Math.floor(offset))}`);
+ l.rate_bp::VARCHAR AS rate, p.basis_bp::VARCHAR AS basis, p.leak::VARCHAR AS leak, k.type
+FROM ${page} p JOIN lf_keys k ON k.h = p.h JOIN lf_lines l ON l.sid = p.sid AND l.line_id = p.line_id JOIN source_files f ON f.id = l.source_id
+ORDER BY p.leak DESC, p.sid, p.line_id`);
   let agrees = true;
   const out = rows.map(r => {
     const n = (k: string) => BigInt(S(r[k])), type = S(r.type) as LeakType;
@@ -123,8 +144,12 @@ ORDER BY h.leak DESC, h.source_id, s.source_row LIMIT ${Math.max(1, Math.min(200
   });
   return { rows: out, count: S(agg.n), sum: S(agg.c), engineAgrees: agrees };
 }
-/** All hits of one finding, for tests: (source_id, line_id, leak). */
+/** All hits of one finding, for tests: source, line, leak and the line's amounts. */
 export async function hitRows(engine: Engine, id: string) {
-  return (await q(engine, `SELECT h.source_id, h.line_id::VARCHAR AS line_id, h.leak::VARCHAR AS leak, h.basis_bp::VARCHAR AS basis, h.type, l.list_cents::VARCHAR AS list, l.discount_cents::VARCHAR AS discount, l.rebate_cents::VARCHAR AS rebate, l.freight_cents::VARCHAR AS freight, l.cost_cents::VARCHAR AS cost
-FROM lf_hits h JOIN lf_lines l USING (source_id, line_id) WHERE h.finding = ${sqlText(id)}`));
+  return (await q(engine, `SELECT l.source_id, h.line_id::VARCHAR AS line_id, h.leak::VARCHAR AS leak, h.basis_bp::VARCHAR AS basis, k.type, l.list_cents::VARCHAR AS list, l.discount_cents::VARCHAR AS discount, l.rebate_cents::VARCHAR AS rebate, l.freight_cents::VARCHAR AS freight, l.cost_cents::VARCHAR AS cost
+FROM lf_hits h JOIN lf_keys k ON k.h = h.h JOIN lf_lines l ON l.sid = h.sid AND l.line_id = h.line_id WHERE h.h = hash(${sqlText(id)})`));
+}
+/** Every hit with its line kind, for tests (credits must never appear). */
+export async function hitKinds(engine: Engine) {
+  return (await q(engine, `SELECT s.line_kind, count(*)::VARCHAR AS n FROM lf_hits h JOIN lf_src x ON x.sid = h.sid JOIN sales_lines s ON s.source_id = x.source_id AND s.line_id = h.line_id GROUP BY s.line_kind`));
 }

@@ -59,13 +59,13 @@ async function diagnose() {
   try { diagnostics.locks = await page.evaluate(async () => { const q = await navigator.locks.query(); return { held: q.held.map(l => l.mode), pending: q.pending.map(l => l.mode) }; }); } catch { diagnostics.locks = "unavailable"; }
   return diagnostics;
 }
-async function worker(action, data = {}) {
-  return page.evaluate(({ action, data }) => new Promise((resolve, reject) => {
+async function worker(action, data = {}, deadline = 180000) {
+  return page.evaluate(({ action, data, deadline }) => new Promise((resolve, reject) => {
     const w = new Worker("/spike/vault-tests.js", { type: "module" });
-    const timeout = setTimeout(() => { w.terminate(); reject(new Error("Test worker deadline exceeded")); }, 180000);
+    const timeout = setTimeout(() => { w.terminate(); reject(new Error("Test worker deadline exceeded")); }, deadline);
     w.onmessage = e => { clearTimeout(timeout); w.terminate(); e.data.error ? reject(new Error(e.data.error)) : resolve(e.data.result); };
     w.onerror = e => { clearTimeout(timeout); w.terminate(); reject(new Error("Test worker failed: " + e.message)); }; w.postMessage({ action, ...data });
-  }), { action, data });
+  }), { action, data, deadline });
 }
 async function ready() { await page.getByRole("button", { name: /Create encrypted vault|Unlock vault/ }).waitFor(); }
 async function unlock() { await page.getByLabel("Vault passphrase").fill(secret); await page.getByRole("button", { name: "Unlock vault", exact: true }).click(); await page.getByRole("button", { name: "Lock vault", exact: true }).waitFor({ timeout: 45000 }); }
@@ -98,6 +98,7 @@ try {
     await mkdir("tests/fixtures/vault", { recursive: true }); await writeFile("tests/fixtures/vault/v1.enc", Buffer.from(Object.values(raw)));
     console.log("Created committed synthetic encrypted v1 fixture.");
   }
+  if (process.argv.includes("--margin-bench")) { const m = await worker("marginBenchmark", { rows: Number(process.env.MARGIN_BENCH_ROWS || 2000000) }, 900000); console.log(JSON.stringify(m, null, 2)); await writeFile(`test-results/vault-margin-bench-${channel}.json`, JSON.stringify({ date: new Date().toISOString(), browser: results.browser, machine: results.machine, margin2M: m }, null, 2)); process.exit(0); }
   const fixture = await readFile("tests/fixtures/vault/v1.enc");
   results.checks.v1 = await worker("v1", { bytes: new Uint8Array(fixture) });
   results.checks.integrity = await worker("integrity");
@@ -117,7 +118,7 @@ try {
   results.measurements.import100kMs = Math.round(performance.now() - start);
   const tasks = await page.evaluate(() => window.__vaultLongTasks); results.measurements.maxImportLongTaskMs = Math.max(0, ...tasks); assert.ok(results.measurements.maxImportLongTaskMs <= 200, "Import blocked main thread for over 200 ms");
   await page.getByRole("link", { name: "Reports", exact: true }).click(); await page.getByRole("button", { name: "Verify audit chain" }).click(); await page.getByRole("status").filter({ hasText: /Audit chain verified/ }).waitFor();
-  await page.getByRole("link", { name: "Margin", exact: true }).click(); await page.getByRole("heading", { name: "Imported line totals" }).waitFor(); await page.locator("dt").filter({ hasText: /^margin$/i }).waitFor();
+  await page.getByRole("link", { name: "Margin", exact: true }).click(); await page.getByRole("heading", { name: "Margin waterfall" }).waitFor(); await page.getByTestId("wf-margin").waitFor();
   await page.getByRole("link", { name: "Data Hub", exact: true }).click();
   const capPath = path.resolve("test-results", "synthetic-over-cap.csv"); await writeFile(capPath, csv(100001, 200001));
   await review([capPath]);
@@ -182,11 +183,38 @@ try {
   await page.getByTestId("line-count").filter({ hasText: /^100039$/ }).waitFor({ timeout: 60000 });
   await page.getByRole("heading", { name: /^Data health: \d+%$/ }).waitFor();
   results.checks.mappingAndFixLater = { confirmedMapping: true, loaded: 20, fixedThenLoaded: 2 };
+  // 4D: the cancellation row loads from Fix Later as a credit line, then the Margin UI is driven end to end.
+  await page.getByRole("button", { name: "Load negative-quantity rows of retail-like.csv as returns and credits" }).click();
+  await page.getByTestId("line-count").filter({ hasText: /^100040$/ }).waitFor({ timeout: 60000 });
+  // The retail-like fixture's invoices span several customers: reconciliation must flag them, never adjust them.
+  const diffs = page.getByRole("table", { name: "Reconciliation differences" }); await diffs.waitFor({ timeout: 60000 });
+  const levels = await diffs.locator("tbody tr td:first-child").allInnerTexts();
+  assert.ok(levels.length > 0 && levels.every(l => l === "invoice"), `Unexpected reconciliation differences: ${levels.join(",")}`);
+  await page.getByRole("button", { name: "Accept all differences" }).click();
+  await page.getByTestId("recon-ok").waitFor({ timeout: 60000 });
+  results.checks.reconciliation = { invoiceSplitsFlagged: levels.length, accepted: true };
+  await page.getByRole("link", { name: "Margin", exact: true }).click();
+  await page.getByTestId("wf-credits").filter({ hasText: /^-\$27\.50$/ }).waitFor({ timeout: 60000 });
+  await page.getByRole("button", { name: "Show the math for Discounts", exact: true }).click();
+  await page.getByRole("heading", { name: "Show the math: Discounts" }).waitFor();
+  await page.getByText(/Recomputed by the margin engine from these inputs: same to the cent/).waitFor();
+  await page.getByText(/source lines add up to it/).waitFor();
+  await page.getByRole("table", { name: "Source rows" }).waitFor();
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  await page.getByTestId("leak-total").waitFor({ timeout: 60000 });
+  const [pdf] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Download Leak Report (PDF)" }).click()]);
+  const pdfBytes = await readFile(await pdf.path());
+  assert.ok(/^margindesk-leak-report-\d{4}-\d{2}-\d{2}\.pdf$/.test(pdf.suggestedFilename()) && pdfBytes.subarray(0, 8).toString("latin1") === "%PDF-1.4" && pdfBytes.toString("latin1").includes("Margin Leak Report"), "Leak Report PDF download malformed");
+  await page.getByRole("status").filter({ hasText: /nothing was uploaded/ }).waitFor();
+  await page.getByRole("link", { name: "Home", exact: true }).click(); await page.getByTestId("roi-total").waitFor();
+  results.checks.marginUi = { creditLoaded: true, mathPanel: true, leakReportBytes: pdfBytes.length, roiTracker: true };
   await page.getByRole("button", { name: "Lock vault", exact: true }).click(); await ready();
   if (full) {
     assert.ok(!auth, "Synthetic benchmark must not reset an authenticated vault");
     results.measurements.studio1M = await worker("studioBenchmark", { rows: 1000000 });
     console.log(`Studio 1M CSV: convert+stage+validate ${results.measurements.studio1M.convertStageValidateMs} ms, commit+encrypted save ${results.measurements.studio1M.commitAndEncryptedSaveMs} ms.`);
+    results.measurements.margin2M = await worker("marginBenchmark", { rows: 2000000 }, 900000);
+    console.log(`Margin on 2M lines: waterfall ${results.measurements.margin2M.waterfallMs} ms, product drill ${results.measurements.margin2M.drillProductMs} ms, customer drill ${results.measurements.margin2M.drillCustomerMs} ms, leak finder ${results.measurements.margin2M.leakFinderMs} ms.`);
     for (const rows of [1000000, 2000000]) {
       results.measurements[`seed${rows}`] = await worker("seed", { rows });
       await context.close(); context = await chromium.launchPersistentContext(profile, browserOptions); await configureContext();

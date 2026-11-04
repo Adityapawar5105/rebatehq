@@ -37,7 +37,9 @@ export function generatePlayground() {
     const list = p.list * qty, tierBp = tierDiscountBp(c.tier);
     let discount = pct(list, tierBp);
     if (c.id === "C-0007" && p.category === "Valves") { const extra = pct(list, 1800); discount += extra; leak.below_floor[0]++; leak.below_floor[1] += extra; }
-    if (c.id === "C-0042") { const want = pct(list, 2500); if (want > discount) { leak.discount_outlier[0]++; leak.discount_outlier[1] += want - discount; discount = want; } }
+    // L2 (revised in 4D): 32% sits off the tier schedule (T01 = 30% is the deepest), so it is an outlier,
+    // not a better tier's rate. At 25% it equalled T11's rate exactly and could not be told apart from L5.
+    if (c.id === "C-0042") { const want = pct(list, 3200); if (want > discount) { leak.discount_outlier[0]++; leak.discount_outlier[1] += want - discount; discount = want; } }
     if (c.id === "C-0123") { const billed = pct(list, tierDiscountBp(5)); leak.below_lower_tier[0]++; leak.below_lower_tier[1] += billed - discount; discount = billed; }
     let freight = pct(list, 200);
     if (list < 10000) { freight = 1500; leak.unrecovered_freight[0]++; leak.unrecovered_freight[1] += freight; }
@@ -52,7 +54,7 @@ export function generatePlayground() {
   const prices = ["product_id,customer_id,tier,price,valid_from,valid_to", ...products.slice(0, 200).map((p, k) => `${p.id},${cust(k + 1)},,${money(p.list - pct(p.list, tierDiscountBp(byId.get(cust(k + 1))!.tier) + 200))},2025-01-01,2026-12-31`)];
   const describe: Record<PlantedLeak["type"], string> = {
     below_floor: "C-0007 gets an extra 18 points of discount on every Valves line, below its tier floor.",
-    discount_outlier: "C-0042 is discounted 25% on everything, far above its tier's peers.",
+    discount_outlier: "C-0042 is discounted 32% on everything: far above its tier's peers and deeper than any tier's schedule.",
     unrecovered_freight: "Lines under $100 list carry a flat $15.00 freight that is never billed back.",
     negative_margin: "Twenty thin-margin Valves SKUs keep their price after a 12% supplier cost rise on 2025-11-01.",
     below_lower_tier: "C-0123 is assigned tier T40 but billed at the T05 discount.",

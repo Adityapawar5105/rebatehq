@@ -21,7 +21,6 @@ function col(dim: Dim, lines = false) {
     case "month": return lines ? "strftime(date_trunc('month', s.sale_date), '%Y-%m')" : "strftime(a.month, '%Y-%m')";
   }
 }
-const labelCol = (dim: Dim) => dim === "product" ? "max(p.description)" : dim === "customer" ? "max(c.name)" : "''";
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 export function checkFilters(f: Filters | undefined): Filters {
   const by = Array.isArray(f?.by) ? f!.by : [];
@@ -38,9 +37,16 @@ function where(f: Filters, lines = false) {
   return parts.length ? `WHERE ${parts.join(" AND ")}` : "";
 }
 const needsJoin = (f: Filters, extra: Dim[] = []) => ({ c: [...f.by.map(x => x.dim), ...extra].some(d => ["customer", "branch", "tier", "region"].includes(d)), p: [...f.by.map(x => x.dim), ...extra].some(d => ["product", "category"].includes(d)) });
+/** The smallest pre-aggregate that can answer: customer x month, product (all months), or customer x product x month. */
+export function aggTable(f: Filters, extra: Dim[] = []) {
+  const dims = [...f.by.map(x => x.dim), ...extra];
+  if (dims.every(d => ["customer", "branch", "tier", "region", "month"].includes(d))) return "agg_cm";
+  if (dims.every(d => ["product", "category"].includes(d)) && !f.from && !f.to) return "agg_p";
+  return "agg_cpm";
+}
 function fromAgg(f: Filters, extra: Dim[] = []) {
   const j = needsJoin(f, extra);
-  return `agg_cpm a${j.c ? " JOIN customers c ON c.customer_id = a.customer_id" : ""}${j.p ? " JOIN products p ON p.product_id = a.product_id" : ""}`;
+  return `${aggTable(f, extra)} a${j.c ? " JOIN customers c ON c.customer_id = a.customer_id" : ""}${j.p ? " JOIN products p ON p.product_id = a.product_id" : ""}`;
 }
 export type Comp = { lines: string; list: string; discount: string; rebate: string; freight: string; pocket: string };
 export type Step = { key: Metric; label: string; cents: string; kind: "start" | "minus" | "plus" | "subtotal" | "excluded" | "end" };
@@ -81,11 +87,15 @@ export async function drill(engine: Engine, dim: Dim, filters?: Filters, sort: "
   const f = checkFilters(filters), t0 = performance.now(), k = col(dim);
   const pocket = `(sum(a.list_cents) - sum(a.discount_cents) - sum(a.rebate_cents) - sum(a.freight_cents))`, margin = "(sum(a.costed_pocket_cents) - sum(a.cost_cents))";
   const order = sort === "margin" ? `${margin} ASC` : sort === "rate" ? `${rateBpSql(margin, "sum(a.costed_pocket_cents)")} ASC NULLS LAST` : `${pocket} DESC`;
-  const sql = `SELECT ${k} AS key, ${labelCol(dim)} AS label, sum(a.lines)::VARCHAR AS lines, sum(a.list_cents) FILTER (WHERE a.line_kind='sale')::VARCHAR AS list, sum(a.discount_cents) FILTER (WHERE a.line_kind='sale')::VARCHAR AS discount,
+  // Group on the id first; product/customer labels are joined only for the rows returned.
+  const attr = !["product", "customer", "month"].includes(dim), j = needsJoin(f, attr ? [dim] : []), table = aggTable(f, [dim]);
+  const from = `${table} a${j.c ? " JOIN customers c ON c.customer_id = a.customer_id" : ""}${j.p ? " JOIN products p ON p.product_id = a.product_id" : ""}`;
+  const label = dim === "product" ? "(SELECT description FROM products x WHERE x.product_id = g.key)" : dim === "customer" ? "(SELECT name FROM customers x WHERE x.customer_id = g.key)" : "''";
+  const sql = `SELECT g.*, ${label} AS label FROM (SELECT ${k} AS key, sum(a.lines)::VARCHAR AS lines, sum(a.list_cents) FILTER (WHERE a.line_kind='sale')::VARCHAR AS list, sum(a.discount_cents) FILTER (WHERE a.line_kind='sale')::VARCHAR AS discount,
  sum(a.rebate_cents) FILTER (WHERE a.line_kind='sale')::VARCHAR AS rebate, sum(a.freight_cents) FILTER (WHERE a.line_kind='sale')::VARCHAR AS freight,
  (sum(a.list_cents - a.discount_cents - a.rebate_cents - a.freight_cents) FILTER (WHERE a.line_kind='credit'))::VARCHAR AS credits, ${pocket}::VARCHAR AS pocket,
- sum(a.costed_lines)::VARCHAR AS costed_lines, sum(a.cost_cents)::VARCHAR AS cost, ${margin}::VARCHAR AS margin, ${rateBpSql(margin, "sum(a.costed_pocket_cents)")}::VARCHAR AS rate_bp, (sum(a.lines) - sum(a.costed_lines))::VARCHAR AS uncosted, count(*) OVER ()::VARCHAR AS total
-FROM ${fromAgg(f, [dim])} ${where(f)} GROUP BY ${k} ORDER BY ${order}, 1 LIMIT ${Math.max(1, Math.min(500, limit))}`;
+ sum(a.costed_lines)::VARCHAR AS costed_lines, sum(a.cost_cents)::VARCHAR AS cost, ${margin}::VARCHAR AS margin, ${rateBpSql(margin, "sum(a.costed_pocket_cents)")}::VARCHAR AS rate_bp, (sum(a.lines) - sum(a.costed_lines))::VARCHAR AS uncosted, count(*) OVER ()::VARCHAR AS total, row_number() OVER (ORDER BY ${order}, 1) AS rn
+FROM ${from} ${where(f)} GROUP BY ${k} ORDER BY ${order}, 1 LIMIT ${Math.max(1, Math.min(500, limit))}) g ORDER BY g.rn`;
   const rows = (await engine.conn.query(sql)).toArray();
   return { dim, filters: f, total: rows.length ? String(rows[0].total) : "0", ms: Math.round((performance.now() - t0) * 10) / 10,
     rows: rows.map(r => ({ key: String(r.key), label: String(r.label ?? ""), lines: String(r.lines), list: String(r.list ?? "0"), discount: String(r.discount ?? "0"), rebate: String(r.rebate ?? "0"), freight: String(r.freight ?? "0"),
