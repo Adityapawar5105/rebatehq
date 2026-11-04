@@ -1,8 +1,8 @@
 # RebateHQ operations (Phase 1)
 
-## Chunk 5B — pending CI and user-run Restore Drill (4 November 2026)
+## Chunk 5B — CI-verified and Restore Drill passed (4 November 2026)
 
-Implemented locally; **unverified in GitHub Actions**. New migration `20261104160022_chunk5b_control_plane.sql` stays pending. Eight applied migrations and their hashes are unchanged. Current suite plan: **188 fresh / 191 restore-mode checks**, **42 public tenant tables**, plus an owner-only private issuer table and a nontransactional login-budget sequence. See [CHUNK_5B_VERIFICATION.md](./CHUNK_5B_VERIFICATION.md). No 6A work or table retirement is authorized.
+**5B CI-verified** in [RebateHQ CI #65](https://github.com/Adityapawar5105/rebatehq/actions/runs/41883249192) on `38911ee` (CI #63/#64 also passed) and [Restore Drill #16](https://github.com/Adityapawar5105/rebatehq/actions/runs/41886437905), local target. Migration `20261104160022_chunk5b_control_plane.sql` is now locked with its hash unchanged; the eight earlier locked migrations are unchanged. Suite: **188 fresh / 191 restore-mode checks**, **42 public tenant tables**, plus an owner-only private issuer table and a nontransactional login-budget sequence. See [CHUNK_5B_VERIFICATION.md](./CHUNK_5B_VERIFICATION.md). No 6A work or table retirement is authorized.
 
 ## Chunk 4B local vault — CI-verified
 
@@ -282,4 +282,4 @@ The explicit dump allowlist is public,rebatehq_private; Supabase-managed schemas
 
 Restore owned roles, then schema with the dump's grants, then run the idempotent restore-only platform ACL cleanup (now covers the private schema as well). Restore synthetic auth references and application data with ON_ERROR_STOP and existing strict trigger handling. Never replay historical migrations on the restored schema. Compare all public table/function ACLs and counts, both schema ACLs, and the private table/sequence owner, RLS, ACL, key fingerprint and counter state. Do not widen target grants. Then create the restricted login, run the signed-context runtime/no-user check and the full 188-fresh / 191-restore suite twice, with identical tenant row counts. The sequence may advance during tests by design; tenant rows may not change.
 
-After 5B CI is green, the user must manually run RebateHQ Restore Drill. The new migration stays pending until both CI and that run pass. Do not label 5B verified based on PGlite or browser-only tests. The table-retirement proposal is separate and requires user approval; no DROP or purge is authorized.
+5B CI (#65, `38911ee`) and the user-run RebateHQ Restore Drill #16 (local target) both passed on 4 November 2026, and the 5B migration is now locked. Drill #15 had failed only on a verifier bug (a NULL sequence ACL expanded with the foreign-server default `acldefault('S')` instead of `'s'`), fixed in `38911ee`. Future migrations follow the same rule: pending until CI and a user-run drill pass; PGlite or browser-only tests never count. The table-retirement proposal is separate and requires user approval; no DROP or purge is authorized.

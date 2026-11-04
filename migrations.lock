@@ -8,8 +8,8 @@
   "hashUpdateReason": "Windows CRLF versus CI LF caused different raw-byte hashes; normalized hash matches the CI content hash.",
   "sqlContentUnchangedSinceBaselineRun": true,
   "lockUpdateDate": "2026-11-04",
-  "lockUpdateReason": "RebateHQ rename migration promoted from pending to locked after RebateHQ CI #58 and Restore Drill #14 passed on 251efef (CI #57 on 14caa1b also applied it); normalized hash and SQL content unchanged. Prior locked migrations unchanged.",
-  "appliedThrough": "20261104120000_rename_app_role_to_rebatehq.sql",
+  "lockUpdateReason": "Chunk 5B control-plane migration promoted from pending to locked after RebateHQ CI #65 and Restore Drill #16 (local) passed on 38911ee (CI #63 on 8867b96 and CI #64 on 1dd9451 also applied it; Drill #15 failed only on a verifier ACL-default bug fixed in 38911ee, not on the migration); normalized hash and SQL content unchanged since 8867b96. Prior locked migrations unchanged.",
+  "appliedThrough": "20261104160022_chunk5b_control_plane.sql",
   "appliedMigrations": {
     "202610240001_phase1_foundation.sql": "8faa57997119f29b3921b0e15b4b9e964edbc7fa2ecd8b52fbe32392be38c3bb",
     "202610250001_revoke_platform_public_privileges.sql": "d4b48072fac75e3d5a6683fe4b13e00042c9feb5a6a65a9e5576e44ecb9214a2",
@@ -18,7 +18,8 @@
     "20261028162156_chunk2b_pricing_rebate_tiers.sql": "4f5e2795ffa22974e69cb3d2c3fc745a78653ff81bfa4385494884aa8f0b413a",
     "20261028173257_chunk2c_foundation_tables.sql": "03fccfa0a75954c206e2b091c474409162304d770e5803c3a7e2527bfcaa6dc3",
     "20261029175710_chunk3c_invoice_actual_cost.sql": "c5d8c6da2caf5018ace042ed8ff79e988781c096af51a9b3776ef68c1930a353",
-    "20261104120000_rename_app_role_to_rebatehq.sql": "5bb6e52a4b94e0b6710c79e952e4e8f7b23004800a47d6f503432551f3a57008"
+    "20261104120000_rename_app_role_to_rebatehq.sql": "5bb6e52a4b94e0b6710c79e952e4e8f7b23004800a47d6f503432551f3a57008",
+    "20261104160022_chunk5b_control_plane.sql": "5eb84212424e1c3d92e0ef3768cabf5bb6335c6e53343073d7f4babad165c34d"
   },
   "appliedOrder": [
     "202610240001_phase1_foundation.sql",
@@ -28,14 +29,11 @@
     "20261028162156_chunk2b_pricing_rebate_tiers.sql",
     "20261028173257_chunk2c_foundation_tables.sql",
     "20261029175710_chunk3c_invoice_actual_cost.sql",
-    "20261104120000_rename_app_role_to_rebatehq.sql"
-  ],
-  "pendingOrder": [
+    "20261104120000_rename_app_role_to_rebatehq.sql",
     "20261104160022_chunk5b_control_plane.sql"
   ],
-  "pendingMigrations": {
-    "20261104160022_chunk5b_control_plane.sql": "5eb84212424e1c3d92e0ef3768cabf5bb6335c6e53343073d7f4babad165c34d"
-  },
+  "pendingOrder": [],
+  "pendingMigrations": {},
   "appliedMigrationEvidence": {
     "202610250001_revoke_platform_public_privileges.sql": {
       "date": "2026-10-26",
@@ -78,6 +76,12 @@
       "commit": "251efef",
       "ciRun": "https://github.com/Adityapawar5105/rebatehq/actions/runs/41830575440",
       "restoreRun": "https://github.com/Adityapawar5105/rebatehq/actions/runs/41844375007"
+    },
+    "20261104160022_chunk5b_control_plane.sql": {
+      "date": "2026-11-04",
+      "commit": "38911ee",
+      "ciRun": "https://github.com/Adityapawar5105/rebatehq/actions/runs/41883249192",
+      "restoreRun": "https://github.com/Adityapawar5105/rebatehq/actions/runs/41886437905"
     }
   }
 }
