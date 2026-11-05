@@ -1,6 +1,6 @@
 # Chunk 7U verification — UX foundations (themes, languages, command palette, glossary, accessibility)
 
-5 November 2026. **Local evidence only; CI not yet run.** 7U is defined in blueprint v2.3 (decision 14, section 6 "Experience layer") and the execution plan. No migration, no local vault schema change, no blueprint change.
+5 November 2026. **7U is CI-verified** in [CI #86](https://github.com/Adityapawar5105/rebatehq/actions/runs/42061581577) on `b2d273a`. 7U is defined in blueprint v2.3 (decision 14, section 6 "Experience layer") and the execution plan. No migration, no local vault schema change, no blueprint change.
 
 ## What was built
 
@@ -113,8 +113,16 @@
 | `scripts/test-vault-browser.mjs --browser=chrome` (production build, lab route, local licence keys) | **Passed**, including `i18nUi` (pseudo sweep of six screens, fr/es/fr-CA/en, French PDF, four themes, palette) and the existing privacy checks |
 | `scripts/test-relay-browser.mjs --browser=chrome` | Passed 11 checks (local PGlite transport; auth unverified) |
 
+## CI evidence
+
+[CI #86](https://github.com/Adityapawar5105/rebatehq/actions/runs/42061581577) on `b2d273a` passed:
+- 78 JS and 144 TS tests;
+- pgTAP `1..152` twice;
+- the authenticated local-vault privacy gate (`"auth": true`, real local Supabase Auth), including the new `i18nUi` check (pseudo-locale sweep, French/Spanish/Canadian French, French Leak Report PDF, four themes, command palette);
+- the relay gate: "11 checks passed (chromium, real authenticated local Supabase)".
+
 ## Not verified yet
-- **CI** has not run on this change. The authenticated privacy gate (`--auth`) and the real-Supabase relay gate run only in CI.
+- **Edge:** CI runs Chromium only, and Edge was not run locally this time.
 - **Native-speaker review** of Spanish, French and Canadian French: the translations are machine-assisted. Blueprint section 13 requires review before a language ships to a pilot.
 - **Screen-reader testing** was not done (NVDA, JAWS, VoiceOver). Contrast was computed from tokens, not measured on screen.
 - **Edge** was not run locally for the browser gate this time.
