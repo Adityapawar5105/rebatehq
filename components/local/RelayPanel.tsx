@@ -28,8 +28,8 @@ export function RelayPanel({client,userId,onChange}:{client:VaultClient;userId:s
  const check=(values:string[],value:string,on:boolean)=>on?[...values,value]:values.filter(v=>v!==value);
  return <section className={styles.card}>
   <h2>Workspace sharing</h2><p>Share an encrypted reference, request approval and discuss it in your workspace inbox.</p>
-  <button onClick={()=>{setTab('inbox');setSelected('');setOpen(true);}}>Open shared inbox</button>
-  <dialog ref={dialog} className={styles.relayDialog} aria-labelledby="relay-title" onCancel={()=>setOpen(false)}>
+  <button onClick={()=>{setTab('inbox');setSelected('');setView(null);setError('');setBusy(true);setOpen(true);}}>Open shared inbox</button>
+  <dialog ref={dialog} className={styles.relayDialog} aria-labelledby="relay-title" aria-busy={open&&(busy||(!view&&!error))} onCancel={()=>setOpen(false)}>
    <div className={styles.row}><h2 id="relay-title">Shared inbox</h2><button onClick={()=>setOpen(false)}>Close shared inbox</button></div>
    <p className={styles.muted}>Shared with every approved relay member in this workspace. Mentions notify people; they are not private messages. Sync to retrieve changes.</p>
    {error&&<p className={styles.error} role="alert"><span aria-hidden="true">⚠ </span>{error}</p>}

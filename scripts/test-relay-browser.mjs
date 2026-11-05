@@ -14,7 +14,7 @@ const markers=[marker,marker+'-reference',marker+'-comment',amount,'987654321098
 const checks={},failures=[],inspections=[],contexts=[],pages=[],actors=[];let active=false,local=null,db=null;
 const browser=await chromium.launch({...(channel==='chromium'?{}:{channel}),headless:true});
 const result={date:new Date().toISOString(),auth,channel,browser:browser.version(),checks};
-async function settled(page){await page.getByRole('status').filter({hasText:'Working in the encrypted vault…'}).waitFor({state:'hidden',timeout:60000});const alerts=await page.getByRole('alert').filter({hasText:/\S/}).allInnerTexts();assert.equal(alerts.length,0,'Relay UI reported an error (content suppressed)');}
+async function settled(page){await page.locator('dialog[aria-labelledby="relay-title"][aria-busy="false"]').waitFor({state:'attached',timeout:60000});await page.getByRole('status').filter({hasText:'Working in the encrypted vault…'}).waitFor({state:'hidden',timeout:60000});const alerts=await page.getByRole('alert').filter({hasText:/\S/}).allInnerTexts();assert.equal(alerts.length,0,'Relay UI reported an error (content suppressed)');}
 async function click(page,name){await page.getByRole('button',{name,exact:true}).click();await settled(page);}
 async function open(page){await page.getByRole('button',{name:'Open shared inbox',exact:true}).click();await page.getByRole('dialog',{name:'Shared inbox',exact:true}).waitFor();await settled(page);}
 async function close(page){await page.getByRole('button',{name:'Close shared inbox',exact:true}).click();}
@@ -68,6 +68,6 @@ try{
  console.log('Relay browser/privacy gate: '+Object.keys(checks).length+' checks passed ('+channel+', '+(auth?'real authenticated local Supabase':'local PGlite transport; auth unverified')+').');
  await writeFile('test-results/vault-relay-'+channel+(auth?'-auth':'')+'.json',JSON.stringify(result,null,2)+'\n');
 }catch(e){
- for(let i=0;i<pages.length;i++)try{await pages[i].screenshot({path:'test-results/vault-relay-'+channel+'-'+i+'-failure.png',fullPage:true});const alerts=await pages[i].getByRole('alert').filter({hasText:/\S/}).allInnerTexts();console.error('Relay page '+i+' alerts: '+markers.reduce((v,m)=>v.replaceAll(m,'[private]'),JSON.stringify(alerts)));}catch{}
+ for(let i=0;i<pages.length;i++)try{await pages[i].screenshot({path:'test-results/vault-relay-'+channel+'-'+i+'-failure.png',fullPage:true});const alerts=await pages[i].getByRole('alert').filter({hasText:/\S/}).allInnerTexts();console.error('Relay page '+i+' alerts: '+markers.reduce((v,m)=>v.replaceAll(m,'[private]'),JSON.stringify(alerts)));const panel=await pages[i].evaluate(()=>{const d=document.querySelector('dialog[aria-labelledby="relay-title"]');return d?{open:d.open,busy:d.getAttribute('aria-busy'),fingerprints:d.querySelectorAll('fieldset input[type=checkbox]').length,objects:d.querySelectorAll('[data-testid="relay-object"]').length,buttons:[...d.querySelectorAll('button')].map(b=>b.textContent?.trim()).slice(0,20)}:{open:false};});console.error('Relay page '+i+' panel: '+markers.reduce((v,m)=>v.replaceAll(m,'[private]'),JSON.stringify(panel)));}catch{}
  throw e;
 }finally{for(const c of contexts)await c.close();await browser.close();if(local)await local.close();else await db?.end();}
