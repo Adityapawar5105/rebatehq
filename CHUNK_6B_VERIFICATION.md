@@ -1,6 +1,6 @@
 # Chunk 6B verification — security review and whitepaper
 
-5 November 2026. Baseline `adb6265`; **6B CI-verified** in [CI #75](https://github.com/Adityapawar5105/rebatehq/actions/runs/41989796464) on `ade310e`, 5 November 2026.
+5 November 2026. Baseline `adb6265`; **6B CI-verified** in [CI #75](https://github.com/Adityapawar5105/rebatehq/actions/runs/41989796464) on `ade310e`, 5 November 2026. The final probe-strengthening commit `0aae4aa` (valid but modified engine assets must be rejected) is verified in [CI #77](https://github.com/Adityapawar5105/rebatehq/actions/runs/41992372460): 76 JS + 118 TS tests and the authenticated privacy gate with 36 named checks all passed.
 The GitHub run API says completed/success. Its job log confirms the required
 authenticated privacy step ran and passed: `auth:true`, `status:passed`,
 **36 named checks**, including both tampered-asset probes. Unit suite: **76 JS +
@@ -102,4 +102,4 @@ A final probe-strengthening follow-up appends an executable-neutral JS comment o
 a valid WASM custom section to the original engine asset. Node parses the JS and
 WebAssembly.validate confirms the modified WASM is valid, so a parser error cannot
 make the negative probe pass. CI #75 used malformed tamper bytes; runtime integrity
-code is unchanged. The final follow-up reruns the full browser/privacy gate.
+code is unchanged. The final follow-up reran the full browser/privacy gate in [CI #77](https://github.com/Adityapawar5105/rebatehq/actions/runs/41992372460) on `0aae4aa`, which passed.
