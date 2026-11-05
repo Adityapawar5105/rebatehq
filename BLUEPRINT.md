@@ -454,7 +454,7 @@ Roughly **$0-50/month** early on; cost barely grows with customers.
 | Transition + spike | 4.0, 4A | ~1 | Transition map, section 19 spike, encryption and COEP decisions |
 | 1 core | 4B-4E | 3-4 (realistic 4-5) | Local DB, Import Studio, mapper, parser, waterfall + pocket-margin engine, guardrails, rules, export, backup, playground, Leak Report |
 | 1b + control plane | 5A, 5B | 2-3 | Item cleanup, cost basis selector, 7-day checklist, ROI v1, roles; licences/tier limits; retire server business-data paths; carried security fixes |
-| Pilot hardening | 6A, 6R | 2-3 | Test on 3-5 real ERP files, backup/restore, edge cases, 8 GB laptop benchmarks; retire the first 21 legacy business tables (6R) |
+| Pilot hardening | 6A, 6R | 2-3 | Test on 3-5 real ERP files, backup/restore, edge cases, 8 GB laptop benchmarks; retire the first 22 legacy business tables (6R: the 21 planned plus `plan_feature`) |
 | Security + whitepaper | 6B | 1-2 | Review before charging |
 | **Sellable v1** | | **~10-13 from 2 Nov 2026** | First paid pilot (target window 11 Jan - 1 Feb 2027) |
 | 2 | 7A-7F | +6-8 (realistic 8-10) | Relay, Quote Desk, bridge, rebates (customer and supplier), vendor review, simulator, comments, approvals, versioning, mobile PWA |
@@ -569,3 +569,7 @@ Corrections after reviewing the repository and build history against v2.1. Produ
     - **Item-list cost.** "Quantity × the item list's current cost" is a cost source the user confirms. It is a stated choice of cost basis per file, so the leak finder can use it; it is not an invoice cost. The QuickBooks-shaped file now finds its 116 planted below-cost lines.
     - **Localized headers.** German, French, Spanish and Dutch header names are recognised. The SAP Business One file maps fully without a recipe.
     - The local vault schema is unchanged (v8). Scope, tiers and prices are unchanged.
+18. **5 Nov 2026, chunk 6R — wave 1 of the table retirement (section 17 roadmap; item 15).** The 6R migration drops 22 server tables: the 21 planned and `plan_feature`. Nothing read `plan_feature` after 5B's licence tables, and the plan allowed it to go. Two consequences of the approved plan are recorded here:
+    - Wave-2 quote rows keep customer and product IDs that no longer reference a server table until 8R. The foreign keys from `quote` and `quote_line` to customer, product and unit tables are dropped.
+    - The legacy quote API routes are retired with wave 1 (fixed 410 responses), because they priced quotes from the dropped product, price-list and cost tables. Quote Desk comes back locally in 7B. The quote tables themselves stay fully tested until 8R.
+    - Scope, tiers and prices are unchanged.

@@ -32,8 +32,12 @@
     "20261104120000_rename_app_role_to_rebatehq.sql",
     "20261104160022_chunk5b_control_plane.sql"
   ],
-  "pendingOrder": [],
-  "pendingMigrations": {},
+  "pendingOrder": [
+    "20261105120000_chunk6r_retire_wave1.sql"
+  ],
+  "pendingMigrations": {
+    "20261105120000_chunk6r_retire_wave1.sql": "855101531f9846b1f50dc088b370b3c21e4834a0deb72a7b25863ac9f662a668"
+  },
   "appliedMigrationEvidence": {
     "202610250001_revoke_platform_public_privileges.sql": {
       "date": "2026-10-26",

@@ -156,6 +156,11 @@ export function lintMigrationSet(migrations, { frozenMigrationNames = [] } = {})
   }
   const tables = readTableDefinitions(allSql);
   if (!tables.length) errors.push("No public tables found in migrations.");
+  // 6R: tables retired by a later migration keep their historical checks but are not live.
+  const dropped = new Set();
+  for (const m of allSql.matchAll(/DROP\s+TABLE\s+(?!IF\s+EXISTS\s+temp\.)([^;]+);/gi)) for (const name of m[1].split(",")) { const t = name.trim().replace(/^public\./i, "").toLowerCase(); if (/^[a-z_][a-z0-9_]*$/.test(t)) dropped.add(t); }
+  for (const name of dropped) if (!tables.some(t => t.name === name)) errors.push(`DROP TABLE of unknown table ${name}`);
+  const liveTables = tables.filter(t => !dropped.has(t.name));
 
   const tableCounts = new Map();
   for (const table of tables) tableCounts.set(table.name, (tableCounts.get(table.name) ?? 0) + 1);
@@ -274,7 +279,7 @@ export function lintMigrationSet(migrations, { frozenMigrationNames = [] } = {})
     errors.push("audit_log must have a statement-level BEFORE TRUNCATE trigger; row-level triggers do not protect TRUNCATE");
   }
   if (!/CREATE\s+POLICY[\s\S]*FOR\s+INSERT/i.test(allSql) || !/CREATE\s+POLICY[\s\S]*FOR\s+UPDATE/i.test(allSql) || !/CREATE\s+POLICY[\s\S]*FOR\s+DELETE/i.test(allSql)) errors.push("INSERT/UPDATE/DELETE policies must be defined");
-  return { tables, errors };
+  return { tables, liveTables, dropped: [...dropped], errors };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -289,5 +294,5 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     console.error(result.errors.join("\n"));
     process.exit(1);
   }
-  console.log(`Schema check passed: ${result.tables.length} tenant-scoped tables; no duplicate migration objects; forced RLS and owner/manager-only audit SELECT are present.`);
+  console.log(`Schema check passed: ${result.liveTables.length} live tenant-scoped tables (${result.dropped.length} retired by later migrations); no duplicate migration objects; forced RLS and owner/manager-only audit SELECT are present.`);
 }

@@ -12,10 +12,10 @@ async function main() {
     await client.connect();
     const result = await client.query(`
       SELECT EXISTS (
-        SELECT 1 FROM public.product
+        SELECT 1 FROM public.rebate_agreement
         WHERE tenant_id='61000000-0000-4000-8000-000000000001'
           AND id='62000000-0000-4000-8000-000000000001'
-          AND sku='RESTORE-SENTINEL'
+          AND name='RESTORE-SENTINEL'
       ) AS restored
     `);
     assert.equal(result.rows[0]?.restored, true, "Seed sentinel must exist in restored database.");

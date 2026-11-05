@@ -13,8 +13,8 @@ type RestoreBaseline = {
   sentinel?: { tenant_id: string; id: string; content_hash: string };
 };
 
-const expectedFixturePlan = 188;
-const restoreFixturePlan = 191;
+const expectedFixturePlan = 113;
+const restoreFixturePlan = 116;
 
 function quoteIdentifier(identifier: string): string {
   return `"${identifier.replace(/"/g, '""')}"`;
@@ -120,7 +120,7 @@ async function prepareRestoreBaseline(client: Client): Promise<boolean> {
   if (!baselinePath) throw new Error("RESTORE_TEST_MODE=true requires RESTORE_BASELINE_PATH from the source equivalence snapshot.");
   const baseline = JSON.parse(await readFile(baselinePath, "utf8")) as RestoreBaseline;
   if (!baseline.sentinel?.tenant_id || !baseline.sentinel.id || !baseline.sentinel.content_hash) {
-    throw new Error("Restore baseline lacks the source sentinel tenant, product ID, or content hash.");
+    throw new Error("Restore baseline lacks the source sentinel tenant, record ID, or content hash.");
   }
   const countRows = Object.entries(baseline.tenantRowCounts ?? {}).flatMap(([tableName, rows]) =>
     rows.map(row => ({ tableName, tenantId: row.tenant_id, count: row.row_count })),
@@ -142,7 +142,7 @@ async function prepareRestoreBaseline(client: Client): Promise<boolean> {
   await client.query(`SELECT
     set_config('app.restore_test_mode','true',true),
     set_config('app.restore_sentinel_tenant_id',$1,true),
-    set_config('app.restore_sentinel_product_id',$2,true),
+    set_config('app.restore_sentinel_record_id',$2,true),
     set_config('app.restore_sentinel_content_hash',$3,true)
   `, [baseline.sentinel.tenant_id, baseline.sentinel.id, baseline.sentinel.content_hash]);
   process.stdout.write(`Restore-only pgTAP controls loaded: ${countRows.length} source tenant/table row-count entries and sentinel ${baseline.sentinel.tenant_id}/${baseline.sentinel.id}.\n`);

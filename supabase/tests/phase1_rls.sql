@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT extensions.plan(188 + CASE WHEN current_setting('app.restore_test_mode',true)='true' THEN 3 ELSE 0 END);
+SELECT extensions.plan(113 + CASE WHEN current_setting('app.restore_test_mode',true)='true' THEN 3 ELSE 0 END);
 SELECT set_config('app.phase1_migration_owner',current_user,true);
 -- INCLUDE FUNCTION ACL ALLOWLIST
 
@@ -41,25 +41,25 @@ ORDER BY c.oid;
 DO $$ DECLARE t text; n integer; v_sentinel jsonb; v_expected_hash text; v_actual_hash text;
   v_count_match boolean:=true; v_sentinel_present boolean:=false; v_detail text:=''; BEGIN
   SELECT count(*) INTO n FROM pg_temp.phase1_rls_tables;
-  IF n<42 THEN RAISE EXCEPTION 'Expected at least 42 application tenant tables; found %',n; END IF;
+  IF n<20 THEN RAISE EXCEPTION 'Expected at least 20 application tenant tables after 6R; found %',n; END IF;
   IF current_setting('app.restore_test_mode',true)='true' THEN
     v_expected_hash:=current_setting('app.restore_sentinel_content_hash');
-    SELECT jsonb_build_object('tenant_id',p.tenant_id::text,'id',p.id::text,
+    -- 6R: the sentinel is a rebate agreement (same hash as scripts/verify-restore-equivalence.mjs).
+    SELECT jsonb_build_object('tenant_id',a.tenant_id::text,'id',a.id::text,
       'content_hash',md5(jsonb_build_object(
-        'tenant_id',p.tenant_id,'id',p.id,'sku',p.sku,'name',p.name,'category',p.category,
-        'supplier',p.supplier,'uom',p.uom,'unit_cost',p.unit_cost,'freight_cost',p.freight_cost,
-        'payment_terms_cost',p.payment_terms_cost,'list_price',p.list_price,
-        'tier_prices',p.tier_prices,'active',p.active,
-        'created_at_utc',to_char(p.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
+        'tenant_id',a.tenant_id,'id',a.id,'party_type',a.party_type,'party_id',a.party_id,'name',a.name,
+        'rate_pct',a.rate_pct,'threshold_amount',a.threshold_amount,'period_start',a.period_start,'period_end',a.period_end,
+        'currency',a.currency,'calculation_mode',a.calculation_mode,
+        'created_at_utc',to_char(a.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
       )::text)) INTO v_sentinel
-    FROM public.product p
-    WHERE p.tenant_id=current_setting('app.restore_sentinel_tenant_id')::uuid
-      AND p.id=current_setting('app.restore_sentinel_product_id')::uuid
-      AND p.sku='RESTORE-SENTINEL';
+    FROM public.rebate_agreement a
+    WHERE a.tenant_id=current_setting('app.restore_sentinel_tenant_id')::uuid
+      AND a.id=current_setting('app.restore_sentinel_record_id')::uuid
+      AND a.name='RESTORE-SENTINEL';
     v_actual_hash:=v_sentinel->>'content_hash';
     v_sentinel_present:=v_sentinel IS NOT NULL
       AND v_sentinel->>'tenant_id'=current_setting('app.restore_sentinel_tenant_id')
-      AND v_sentinel->>'id'=current_setting('app.restore_sentinel_product_id')
+      AND v_sentinel->>'id'=current_setting('app.restore_sentinel_record_id')
       AND v_actual_hash=v_expected_hash
       AND EXISTS (SELECT 1 FROM public.tenant
         WHERE tenant_id=current_setting('app.restore_sentinel_tenant_id')::uuid);
@@ -90,7 +90,7 @@ DO $$ DECLARE t text; n integer; v_sentinel jsonb; v_expected_hash text; v_actua
   )::text,true);
 END $$;
 
--- The retained foundation fixtures have 38 tables. Four operation-specific licence
+-- 6R: 16 foundation tables keep fixtures here (wave-1 tables were dropped). Four operation-specific licence
 -- tables are tested in chunk5b_control.sql, including exact ACLs and cross writes.
 DELETE FROM pg_temp.phase1_rls_tables WHERE table_name IN ('workspace_licence','licence_seat','licence_location','licence_device');
 -- Suite-owned auth users and tenants are inserted before dependent rows.
@@ -107,120 +107,49 @@ INSERT INTO public.membership(tenant_id,user_id,email,role) VALUES
  ('__PHASE1_TENANT_B_ID__','__PHASE1_USER_B_ID__','phase1-b-__PHASE1_USER_B_ID__@example.invalid','owner'),
  ('__PHASE1_TENANT_B_ID__','__PHASE1_USER_REP_ID__','phase1-rep-__PHASE1_USER_REP_ID__@example.invalid','rep');
 
-INSERT INTO public.uom(id,tenant_id,code,display_name) VALUES
- ('__PHASE1_UOM_A_ID__','__PHASE1_TENANT_A_ID__','EA','Each'),
- ('__PHASE1_UOM_B_ID__','__PHASE1_TENANT_B_ID__','EA','Each');
-INSERT INTO public.uom(id,tenant_id,code,display_name) VALUES
- ('__PHASE1_UOM_BOX_A_ID__','__PHASE1_TENANT_A_ID__','BOX','Box'),
- ('__PHASE1_UOM_CASE_A_ID__','__PHASE1_TENANT_A_ID__','CASE','Case'),
- ('__PHASE1_UOM_BOX_B_ID__','__PHASE1_TENANT_B_ID__','BOX','Box'),
- ('__PHASE1_UOM_CASE_B_ID__','__PHASE1_TENANT_B_ID__','CASE','Case');
-
-INSERT INTO public.customer(tenant_id,id,account_no,name,assigned_rep_id) VALUES
- ('__PHASE1_TENANT_A_ID__','__PHASE1_CUSTOMER_A_ID__','A-001','Tenant A customer','__PHASE1_USER_A_ID__'),
- ('__PHASE1_TENANT_B_ID__','__PHASE1_CUSTOMER_B_ID__','B-001','Tenant B customer','__PHASE1_USER_REP_ID__');
-INSERT INTO public.product(tenant_id,id,sku,name,category,list_price,unit_cost,uom) VALUES
- ('__PHASE1_TENANT_A_ID__','__PHASE1_PRODUCT_A_ID__','A-SKU','Tenant A product','Test',100,60,'EA'),
- ('__PHASE1_TENANT_B_ID__','__PHASE1_PRODUCT_B_ID__','B-SKU','Tenant B product','Test',100,60,'EA');
-UPDATE public.product SET unit_cost=75 WHERE tenant_id='__PHASE1_TENANT_A_ID__' AND id='__PHASE1_PRODUCT_A_ID__';
-INSERT INTO public.cost_history(tenant_id,product_id,cost,basis,effective_from,effective_to,source,currency) VALUES
- ('__PHASE1_TENANT_A_ID__','__PHASE1_PRODUCT_A_ID__',55,'standard',current_date-30,current_date,'pgTAP prior cost','USD');
-INSERT INTO public.cost_history(tenant_id,id,product_id,cost,basis,effective_from,effective_to,source,currency) VALUES
- ('__PHASE1_TENANT_A_ID__','__PHASE1_COST_HISTORY_A_ID__','__PHASE1_PRODUCT_A_ID__',55,'average',current_date-30,NULL,'pgTAP fixture','USD'),
- ('__PHASE1_TENANT_B_ID__','__PHASE1_COST_HISTORY_B_ID__','__PHASE1_PRODUCT_B_ID__',55,'average',current_date-30,NULL,'pgTAP fixture','USD');
-INSERT INTO public.uom_conversion(tenant_id,id,product_id,from_uom_id,to_uom_id,factor,direction) VALUES
- ('__PHASE1_TENANT_A_ID__','__PHASE1_UOM_CONVERSION_A_ID__','__PHASE1_PRODUCT_A_ID__','__PHASE1_UOM_A_ID__','__PHASE1_UOM_BOX_A_ID__',2.5,'multiply'),
- ('__PHASE1_TENANT_B_ID__','__PHASE1_UOM_CONVERSION_B_ID__','__PHASE1_PRODUCT_B_ID__','__PHASE1_UOM_B_ID__','__PHASE1_UOM_BOX_B_ID__',2.5,'multiply');
-INSERT INTO public.uom_conversion(tenant_id,id,product_id,from_uom_id,to_uom_id,factor,direction) VALUES
- ('__PHASE1_TENANT_A_ID__','__PHASE1_UOM_CONVERSION_TENANT_A_ID__',NULL,'__PHASE1_UOM_A_ID__','__PHASE1_UOM_BOX_A_ID__',12,'multiply'),
- ('__PHASE1_TENANT_B_ID__','__PHASE1_UOM_CONVERSION_TENANT_B_ID__',NULL,'__PHASE1_UOM_B_ID__','__PHASE1_UOM_BOX_B_ID__',12,'multiply');
 INSERT INTO public.fx_rate(tenant_id,id,rate_date,from_currency,to_currency,rate,source) VALUES
  ('__PHASE1_TENANT_A_ID__','__PHASE1_FX_RATE_A_ID__',current_date-1,'USD','EUR',0.9,'pgTAP fixture'),
  ('__PHASE1_TENANT_B_ID__','__PHASE1_FX_RATE_B_ID__',current_date-1,'USD','EUR',0.9,'pgTAP fixture');
-INSERT INTO public.data_quality_issue(tenant_id,id,issue_code,entity_type,entity_id,occurred_on,details) VALUES
- ('__PHASE1_TENANT_A_ID__','__PHASE1_DQI_A_ID__','cost_history_gap','product','fixture-a',current_date-1,'{"source":"fixture"}'),
- ('__PHASE1_TENANT_B_ID__','__PHASE1_DQI_B_ID__','cost_history_gap','product','fixture-b',current_date-1,'{"source":"fixture"}');
 INSERT INTO public.invite(id,tenant_id,email,role,token_hash,invited_by,expires_at) VALUES
  ('__PHASE1_INVITE_A_ID__','__PHASE1_TENANT_A_ID__','new-a@example.invalid','rep',replace('__PHASE1_INVITE_A_ID__','-',''),'__PHASE1_USER_A_ID__',now()+interval '7 days'),
  ('__PHASE1_INVITE_B_ID__','__PHASE1_TENANT_B_ID__','new-b@example.invalid','rep',replace('__PHASE1_INVITE_B_ID__','-',''),'__PHASE1_USER_B_ID__',now()+interval '7 days');
-INSERT INTO public.price_list(tenant_id,id,name) VALUES
- ('__PHASE1_TENANT_A_ID__','__PHASE1_PRICE_LIST_A_ID__','A price list'),
- ('__PHASE1_TENANT_B_ID__','__PHASE1_PRICE_LIST_B_ID__','B price list');
-INSERT INTO public.price_list_version(tenant_id,id,price_list_id,version_no,status,created_by) VALUES
- ('__PHASE1_TENANT_A_ID__','__PHASE1_PRICE_LIST_VERSION_A_ID__','__PHASE1_PRICE_LIST_A_ID__',1,'draft','__PHASE1_USER_A_ID__'),
- ('__PHASE1_TENANT_B_ID__','__PHASE1_PRICE_LIST_VERSION_B_ID__','__PHASE1_PRICE_LIST_B_ID__',1,'draft','__PHASE1_USER_B_ID__');
-INSERT INTO public.price_list_item(tenant_id,id,price_list_id,product_id,unit_price,version_id,effective_from,currency) VALUES
- ('__PHASE1_TENANT_A_ID__','__PHASE1_PRICE_LIST_ITEM_A_ID__','__PHASE1_PRICE_LIST_A_ID__','__PHASE1_PRODUCT_A_ID__',100,'__PHASE1_PRICE_LIST_VERSION_A_ID__',current_date-1,'USD'),
- ('__PHASE1_TENANT_B_ID__','__PHASE1_PRICE_LIST_ITEM_B_ID__','__PHASE1_PRICE_LIST_B_ID__','__PHASE1_PRODUCT_B_ID__',100,'__PHASE1_PRICE_LIST_VERSION_B_ID__',current_date-1,'USD');
-INSERT INTO public.margin_policy(tenant_id,id,scope_type,scope_key,target_margin_pct,floor_margin_pct,walkaway_margin_pct,updated_by) VALUES
- ('__PHASE1_TENANT_A_ID__','__PHASE1_MARGIN_POLICY_A_ID__','global','',30,22,18,'__PHASE1_USER_A_ID__'),
- ('__PHASE1_TENANT_B_ID__','__PHASE1_MARGIN_POLICY_B_ID__','global','',30,22,18,'__PHASE1_USER_B_ID__');
 
 INSERT INTO public.quote(tenant_id,id,customer_id,created_by,status,pocket_price,cogs_total,pocket_margin,margin_pct,margin_zone,headroom) VALUES
  ('__PHASE1_TENANT_A_ID__','__PHASE1_QUOTE_A_ID__','__PHASE1_CUSTOMER_A_ID__','__PHASE1_USER_A_ID__','pending_approval',100,60,40,40,'green',22),
  ('__PHASE1_TENANT_B_ID__','__PHASE1_QUOTE_B_ID__','__PHASE1_CUSTOMER_B_ID__','__PHASE1_USER_B_ID__','pending_approval',100,60,40,40,'green',22);
+INSERT INTO public.quote(tenant_id,id,customer_id,created_by,status,pocket_price,cogs_total,pocket_margin,margin_pct,margin_zone,headroom) VALUES
+ ('__PHASE1_TENANT_B_ID__','__PHASE1_QUOTE_REP_B_ID__','__PHASE1_CUSTOMER_B_ID__','__PHASE1_USER_REP_ID__','draft',100,60,40,40,'green',22);
 INSERT INTO public.quote_line(tenant_id,id,quote_id,product_id,quantity,list_price,pocket_price,cogs_total,pocket_margin,margin_pct,currency,uom_code) VALUES
  ('__PHASE1_TENANT_A_ID__','__PHASE1_QUOTE_LINE_A_ID__','__PHASE1_QUOTE_A_ID__','__PHASE1_PRODUCT_A_ID__',1,100,100,60,40,40,'USD','EA'),
  ('__PHASE1_TENANT_B_ID__','__PHASE1_QUOTE_LINE_B_ID__','__PHASE1_QUOTE_B_ID__','__PHASE1_PRODUCT_B_ID__',1,100,100,60,40,40,'USD','EA');
 INSERT INTO public.approval(tenant_id,id,quote_id,requested_by,status,margin_pct_at_decision,policy_version) VALUES
  ('__PHASE1_TENANT_A_ID__','__PHASE1_APPROVAL_A_ID__','__PHASE1_QUOTE_A_ID__','__PHASE1_USER_A_ID__','pending',40,1),
  ('__PHASE1_TENANT_B_ID__','__PHASE1_APPROVAL_B_ID__','__PHASE1_QUOTE_B_ID__','__PHASE1_USER_B_ID__','pending',40,1);
-INSERT INTO public.sales_order(tenant_id,id,source_id,customer_id,product_id,quantity,month_key,transaction_date,currency,uom_code) VALUES
- ('__PHASE1_TENANT_A_ID__','__PHASE1_SALES_ORDER_A_ID__','A-SO-1','__PHASE1_CUSTOMER_A_ID__','__PHASE1_PRODUCT_A_ID__',1,'2026-10','2026-10-01','USD','EA'),
- ('__PHASE1_TENANT_B_ID__','__PHASE1_SALES_ORDER_B_ID__','B-SO-1','__PHASE1_CUSTOMER_B_ID__','__PHASE1_PRODUCT_B_ID__',1,'2026-10','2026-10-01','USD','EA');
 INSERT INTO public.rebate_agreement(tenant_id,id,party_type,party_id,name,rate_pct,threshold_amount,period_start,period_end,currency) VALUES
  ('__PHASE1_TENANT_A_ID__','__PHASE1_REBATE_AGREEMENT_A_ID__','vendor','A-VENDOR','A rebate',2,1000,'2026-01-01','2026-12-31','USD'),
  ('__PHASE1_TENANT_B_ID__','__PHASE1_REBATE_AGREEMENT_B_ID__','vendor','B-VENDOR','B rebate',2,1000,'2026-01-01','2026-12-31','USD');
 INSERT INTO public.rebate_progress(tenant_id,id,agreement_id,period_start,period_end,eligible_spend,modeled_amount,recorded_credits,currency) VALUES
  ('__PHASE1_TENANT_A_ID__','__PHASE1_REBATE_PROGRESS_A_ID__','__PHASE1_REBATE_AGREEMENT_A_ID__','2026-01-01','2026-12-31',1000,20,10,'USD'),
  ('__PHASE1_TENANT_B_ID__','__PHASE1_REBATE_PROGRESS_B_ID__','__PHASE1_REBATE_AGREEMENT_B_ID__','2026-01-01','2026-12-31',1000,20,10,'USD');
-INSERT INTO public.invoice(tenant_id,id,customer_id,invoice_date,source_ref) VALUES
- ('__PHASE1_TENANT_A_ID__','__PHASE1_INVOICE_A_ID__','__PHASE1_CUSTOMER_A_ID__','2026-10-01','A-INV-1'),
- ('__PHASE1_TENANT_B_ID__','__PHASE1_INVOICE_B_ID__','__PHASE1_CUSTOMER_B_ID__','2026-10-01','B-INV-1');
-INSERT INTO public.invoice_line(tenant_id,id,invoice_id,product_id,quantity,net_sales,currency,uom_code) VALUES
- ('__PHASE1_TENANT_A_ID__','__PHASE1_INVOICE_LINE_A_ID__','__PHASE1_INVOICE_A_ID__','__PHASE1_PRODUCT_A_ID__',1,100,'USD','EA'),
- ('__PHASE1_TENANT_B_ID__','__PHASE1_INVOICE_LINE_B_ID__','__PHASE1_INVOICE_B_ID__','__PHASE1_PRODUCT_B_ID__',1,100,'USD','EA');
-INSERT INTO public.cost_component(tenant_id,id,invoice_line_id,component_type,amount,currency) VALUES
- ('__PHASE1_TENANT_A_ID__','__PHASE1_COST_COMPONENT_A_ID__','__PHASE1_INVOICE_LINE_A_ID__','freight',5,'USD'),
- ('__PHASE1_TENANT_B_ID__','__PHASE1_COST_COMPONENT_B_ID__','__PHASE1_INVOICE_LINE_B_ID__','freight',5,'USD');
 INSERT INTO public.supplier_credit(tenant_id,id,vendor_name,credit_date,amount,reference,currency) VALUES
  ('__PHASE1_TENANT_A_ID__','__PHASE1_SUPPLIER_CREDIT_A_ID__','A vendor','2026-10-02',5,'A-CREDIT','USD'),
  ('__PHASE1_TENANT_B_ID__','__PHASE1_SUPPLIER_CREDIT_B_ID__','B vendor','2026-10-02',5,'B-CREDIT','USD');
 INSERT INTO public.alert(tenant_id,id,severity,message) VALUES
  ('__PHASE1_TENANT_A_ID__','__PHASE1_ALERT_A_ID__','review','Tenant A fixture alert'),
  ('__PHASE1_TENANT_B_ID__','__PHASE1_ALERT_B_ID__','review','Tenant B fixture alert');
-INSERT INTO public.margin_snapshot(tenant_id,id,entity_type,entity_id,period_month,order_count,pocket_revenue,pocket_margin,margin_pct,currency) VALUES
- ('__PHASE1_TENANT_A_ID__','__PHASE1_MARGIN_SNAPSHOT_A_ID__','company','__PHASE1_TENANT_A_ID__','2026-10-01',1,100,40,40,'USD'),
- ('__PHASE1_TENANT_B_ID__','__PHASE1_MARGIN_SNAPSHOT_B_ID__','company','__PHASE1_TENANT_B_ID__','2026-10-01',1,100,40,40,'USD');
-INSERT INTO public.connector_secret(tenant_id,id,provider,ciphertext,nonce,auth_tag,created_by) VALUES
- ('__PHASE1_TENANT_A_ID__','__PHASE1_CONNECTOR_SECRET_A_ID__','netsuite','ciphertext','nonce','tag','__PHASE1_USER_A_ID__'),
- ('__PHASE1_TENANT_B_ID__','__PHASE1_CONNECTOR_SECRET_B_ID__','netsuite','ciphertext','nonce','tag','__PHASE1_USER_B_ID__');
-INSERT INTO public.import_job(tenant_id,id,import_type,status,created_by) VALUES
- ('__PHASE1_TENANT_A_ID__','__PHASE1_IMPORT_JOB_A_ID__','prototype','dry_run','__PHASE1_USER_A_ID__'),
- ('__PHASE1_TENANT_B_ID__','__PHASE1_IMPORT_JOB_B_ID__','prototype','dry_run','__PHASE1_USER_B_ID__');
 INSERT INTO public.audit_log(id,tenant_id,actor_id,action,entity_type,entity_id) VALUES
  ('__PHASE1_AUDIT_A_ID__','__PHASE1_TENANT_A_ID__','__PHASE1_USER_A_ID__','test.fixture','tenant','__PHASE1_TENANT_A_ID__'),
  ('__PHASE1_AUDIT_B_ID__','__PHASE1_TENANT_B_ID__','__PHASE1_USER_B_ID__','test.fixture','tenant','__PHASE1_TENANT_B_ID__');
 
-INSERT INTO public.customer_group(id,tenant_id,name) VALUES('__PHASE1_GROUP_A_ID__','__PHASE1_TENANT_A_ID__','Group A');
-INSERT INTO public.customer_price(id,tenant_id,group_id,product_id,rule_kind,price,currency,effective_from,source) VALUES('__PHASE1_PRICE_A_ID__','__PHASE1_TENANT_A_ID__','__PHASE1_GROUP_A_ID__','__PHASE1_PRODUCT_A_ID__','group',90,'USD',current_date,'fixture');
 INSERT INTO public.rebate_tier(id,tenant_id,agreement_id,from_amount,rate) VALUES('__PHASE1_TIER_A_ID__','__PHASE1_TENANT_A_ID__','__PHASE1_REBATE_AGREEMENT_A_ID__',1000,2);
 INSERT INTO public.rebate_entry(id,tenant_id,agreement_id,entry_type,amount,currency,occurred_on,source_ref) VALUES('__PHASE1_ENTRY_A_ID__','__PHASE1_TENANT_A_ID__','__PHASE1_REBATE_AGREEMENT_A_ID__','sale',1000,'USD',current_date,'fixture');
-INSERT INTO public.customer_group(id,tenant_id,name) VALUES('__PHASE1_GROUP_B_ID__','__PHASE1_TENANT_B_ID__','Group B');
-INSERT INTO public.customer_price(id,tenant_id,group_id,product_id,rule_kind,price,currency,effective_from,source) VALUES('__PHASE1_PRICE_B_ID__','__PHASE1_TENANT_B_ID__','__PHASE1_GROUP_B_ID__','__PHASE1_PRODUCT_B_ID__','group',90,'USD',current_date,'fixture');
 INSERT INTO public.rebate_tier(id,tenant_id,agreement_id,from_amount,rate) VALUES('__PHASE1_TIER_B_ID__','__PHASE1_TENANT_B_ID__','__PHASE1_REBATE_AGREEMENT_B_ID__',1000,2);
 INSERT INTO public.rebate_entry(id,tenant_id,agreement_id,entry_type,amount,currency,occurred_on,source_ref) VALUES('__PHASE1_ENTRY_B_ID__','__PHASE1_TENANT_B_ID__','__PHASE1_REBATE_AGREEMENT_B_ID__','sale',1000,'USD',current_date,'fixture');
 
-INSERT INTO public.column_mapping_template(id,tenant_id,name,import_type,column_mapping) VALUES('__PHASE1_MAPPING_A_ID__','__PHASE1_TENANT_A_ID__','Fixture mapping','invoice','{"SKU":"sku"}');
-INSERT INTO public.connector_sync_run(id,tenant_id,provider,direction,status) VALUES('__PHASE1_SYNC_A_ID__','__PHASE1_TENANT_A_ID__','fixture','inbound','queued');
 INSERT INTO public.quote_share_link(id,tenant_id,quote_id,token_hash,expires_at) VALUES('__PHASE1_SHARE_A_ID__','__PHASE1_TENANT_A_ID__','__PHASE1_QUOTE_A_ID__',md5('__PHASE1_SHARE_A_ID__')||md5('share-__PHASE1_SHARE_A_ID__'),now()+interval '1 day');
 INSERT INTO public.approval_rule(id,tenant_id,name,minimum_margin_pct,approver_role) VALUES('__PHASE1_RULE_A_ID__','__PHASE1_TENANT_A_ID__','Fixture approval',20,'manager');
-INSERT INTO public.plan_feature(id,tenant_id,feature_key,enabled,usage_limit) VALUES('__PHASE1_FEATURE_A_ID__','__PHASE1_TENANT_A_ID__','fixture_feature',false,100);
-INSERT INTO public.column_mapping_template(id,tenant_id,name,import_type,column_mapping) VALUES('__PHASE1_MAPPING_B_ID__','__PHASE1_TENANT_B_ID__','Fixture mapping','invoice','{"SKU":"sku"}');
-INSERT INTO public.connector_sync_run(id,tenant_id,provider,direction,status) VALUES('__PHASE1_SYNC_B_ID__','__PHASE1_TENANT_B_ID__','fixture','inbound','queued');
 INSERT INTO public.quote_share_link(id,tenant_id,quote_id,token_hash,expires_at) VALUES('__PHASE1_SHARE_B_ID__','__PHASE1_TENANT_B_ID__','__PHASE1_QUOTE_B_ID__',md5('__PHASE1_SHARE_B_ID__')||md5('share-__PHASE1_SHARE_B_ID__'),now()+interval '1 day');
 INSERT INTO public.approval_rule(id,tenant_id,name,minimum_margin_pct,approver_role) VALUES('__PHASE1_RULE_B_ID__','__PHASE1_TENANT_B_ID__','Fixture approval',20,'manager');
-INSERT INTO public.plan_feature(id,tenant_id,feature_key,enabled,usage_limit) VALUES('__PHASE1_FEATURE_B_ID__','__PHASE1_TENANT_B_ID__','fixture_feature',false,100);
 
 -- Capture only the explicitly seeded fixture rows by their known primary keys.
 -- No restored row is eligible, and no arbitrary LIMIT or cross-tenant row cloning is used.
@@ -236,45 +165,23 @@ CREATE TEMP TABLE phase1_rls_fixture_keys(
 INSERT INTO pg_temp.phase1_rls_fixture_keys(sort_order,table_name,key_column,tenant_a_key,tenant_b_key) VALUES
  (1,'tenant','tenant_id','__PHASE1_TENANT_A_ID__','__PHASE1_TENANT_B_ID__'),
  (2,'membership','user_id','__PHASE1_USER_A_ID__','__PHASE1_USER_B_ID__'),
- (3,'customer','id','__PHASE1_CUSTOMER_A_ID__','__PHASE1_CUSTOMER_B_ID__'),
- (4,'product','id','__PHASE1_PRODUCT_A_ID__','__PHASE1_PRODUCT_B_ID__'),
- (5,'invite','id','__PHASE1_INVITE_A_ID__','__PHASE1_INVITE_B_ID__'),
- (6,'price_list','id','__PHASE1_PRICE_LIST_A_ID__','__PHASE1_PRICE_LIST_B_ID__'),
- (7,'price_list_version','id','__PHASE1_PRICE_LIST_VERSION_A_ID__','__PHASE1_PRICE_LIST_VERSION_B_ID__'),
- (8,'price_list_item','id','__PHASE1_PRICE_LIST_ITEM_A_ID__','__PHASE1_PRICE_LIST_ITEM_B_ID__'),
- (9,'margin_policy','id','__PHASE1_MARGIN_POLICY_A_ID__','__PHASE1_MARGIN_POLICY_B_ID__'),
- (10,'quote','id','__PHASE1_QUOTE_A_ID__','__PHASE1_QUOTE_B_ID__'),
- (11,'quote_line','id','__PHASE1_QUOTE_LINE_A_ID__','__PHASE1_QUOTE_LINE_B_ID__'),
- (12,'approval','id','__PHASE1_APPROVAL_A_ID__','__PHASE1_APPROVAL_B_ID__'),
- (13,'sales_order','id','__PHASE1_SALES_ORDER_A_ID__','__PHASE1_SALES_ORDER_B_ID__'),
- (14,'rebate_agreement','id','__PHASE1_REBATE_AGREEMENT_A_ID__','__PHASE1_REBATE_AGREEMENT_B_ID__'),
- (15,'rebate_progress','id','__PHASE1_REBATE_PROGRESS_A_ID__','__PHASE1_REBATE_PROGRESS_B_ID__'),
- (16,'invoice','id','__PHASE1_INVOICE_A_ID__','__PHASE1_INVOICE_B_ID__'),
- (17,'invoice_line','id','__PHASE1_INVOICE_LINE_A_ID__','__PHASE1_INVOICE_LINE_B_ID__'),
- (18,'cost_component','id','__PHASE1_COST_COMPONENT_A_ID__','__PHASE1_COST_COMPONENT_B_ID__'),
- (19,'supplier_credit','id','__PHASE1_SUPPLIER_CREDIT_A_ID__','__PHASE1_SUPPLIER_CREDIT_B_ID__'),
- (20,'alert','id','__PHASE1_ALERT_A_ID__','__PHASE1_ALERT_B_ID__'),
- (21,'margin_snapshot','id','__PHASE1_MARGIN_SNAPSHOT_A_ID__','__PHASE1_MARGIN_SNAPSHOT_B_ID__'),
- (22,'connector_secret','id','__PHASE1_CONNECTOR_SECRET_A_ID__','__PHASE1_CONNECTOR_SECRET_B_ID__'),
- (23,'import_job','id','__PHASE1_IMPORT_JOB_A_ID__','__PHASE1_IMPORT_JOB_B_ID__'),
- (24,'audit_log','id','__PHASE1_AUDIT_A_ID__','__PHASE1_AUDIT_B_ID__'),
- (25,'uom','id','__PHASE1_UOM_A_ID__','__PHASE1_UOM_B_ID__'),
- (26,'cost_history','id','__PHASE1_COST_HISTORY_A_ID__','__PHASE1_COST_HISTORY_B_ID__'),
- (27,'uom_conversion','id','__PHASE1_UOM_CONVERSION_A_ID__','__PHASE1_UOM_CONVERSION_B_ID__'),
- (28,'fx_rate','id','__PHASE1_FX_RATE_A_ID__','__PHASE1_FX_RATE_B_ID__'),
- (29,'data_quality_issue','id','__PHASE1_DQI_A_ID__','__PHASE1_DQI_B_ID__'),
- (30,'customer_group','id','__PHASE1_GROUP_A_ID__','__PHASE1_GROUP_B_ID__'),
- (31,'customer_price','id','__PHASE1_PRICE_A_ID__','__PHASE1_PRICE_B_ID__'),
- (32,'rebate_tier','id','__PHASE1_TIER_A_ID__','__PHASE1_TIER_B_ID__'),
- (33,'rebate_entry','id','__PHASE1_ENTRY_A_ID__','__PHASE1_ENTRY_B_ID__'),
- (34,'column_mapping_template','id','__PHASE1_MAPPING_A_ID__','__PHASE1_MAPPING_B_ID__'),
- (35,'connector_sync_run','id','__PHASE1_SYNC_A_ID__','__PHASE1_SYNC_B_ID__'),
- (36,'quote_share_link','id','__PHASE1_SHARE_A_ID__','__PHASE1_SHARE_B_ID__'),
- (37,'approval_rule','id','__PHASE1_RULE_A_ID__','__PHASE1_RULE_B_ID__'),
- (38,'plan_feature','id','__PHASE1_FEATURE_A_ID__','__PHASE1_FEATURE_B_ID__');
+ (3,'invite','id','__PHASE1_INVITE_A_ID__','__PHASE1_INVITE_B_ID__'),
+ (4,'quote','id','__PHASE1_QUOTE_A_ID__','__PHASE1_QUOTE_B_ID__'),
+ (5,'quote_line','id','__PHASE1_QUOTE_LINE_A_ID__','__PHASE1_QUOTE_LINE_B_ID__'),
+ (6,'approval','id','__PHASE1_APPROVAL_A_ID__','__PHASE1_APPROVAL_B_ID__'),
+ (7,'rebate_agreement','id','__PHASE1_REBATE_AGREEMENT_A_ID__','__PHASE1_REBATE_AGREEMENT_B_ID__'),
+ (8,'rebate_progress','id','__PHASE1_REBATE_PROGRESS_A_ID__','__PHASE1_REBATE_PROGRESS_B_ID__'),
+ (9,'supplier_credit','id','__PHASE1_SUPPLIER_CREDIT_A_ID__','__PHASE1_SUPPLIER_CREDIT_B_ID__'),
+ (10,'alert','id','__PHASE1_ALERT_A_ID__','__PHASE1_ALERT_B_ID__'),
+ (11,'audit_log','id','__PHASE1_AUDIT_A_ID__','__PHASE1_AUDIT_B_ID__'),
+ (12,'fx_rate','id','__PHASE1_FX_RATE_A_ID__','__PHASE1_FX_RATE_B_ID__'),
+ (13,'rebate_tier','id','__PHASE1_TIER_A_ID__','__PHASE1_TIER_B_ID__'),
+ (14,'rebate_entry','id','__PHASE1_ENTRY_A_ID__','__PHASE1_ENTRY_B_ID__'),
+ (15,'quote_share_link','id','__PHASE1_SHARE_A_ID__','__PHASE1_SHARE_B_ID__'),
+ (16,'approval_rule','id','__PHASE1_RULE_A_ID__','__PHASE1_RULE_B_ID__');
 DO $$ DECLARE v_fixture phase1_rls_fixture_keys%ROWTYPE; n integer; expected_count integer; BEGIN
   SELECT count(*) INTO expected_count FROM pg_temp.phase1_rls_tables;
-  IF expected_count<38 THEN RAISE EXCEPTION 'Explicit fixture graph needs at least 38 tenant tables; found %',expected_count; END IF;
+  IF expected_count<16 THEN RAISE EXCEPTION 'Explicit fixture graph needs at least 16 tenant tables; found %',expected_count; END IF;
   SELECT count(*) INTO n FROM pg_temp.phase1_rls_fixture_keys;
   IF n<>expected_count THEN RAISE EXCEPTION 'Explicit fixture key list covers % tables; public tenant table inventory has %',n,expected_count; END IF;
   FOR v_fixture IN SELECT * FROM pg_temp.phase1_rls_fixture_keys ORDER BY sort_order LOOP
@@ -330,7 +237,7 @@ SELECT extensions.ok(NOT EXISTS (
  WHERE NOT c.relrowsecurity OR NOT c.relforcerowsecurity
 ), 'RLS is enabled and forced on every application table');
 SELECT extensions.ok(EXISTS (SELECT 1 FROM pg_roles WHERE rolname='rebatehq_app' AND NOT rolsuper AND NOT rolbypassrls AND NOT rolcanlogin), 'rebatehq_app is NOLOGIN, NOSUPERUSER, and NOBYPASSRLS');
-SELECT extensions.ok(NOT has_table_privilege('authenticated','public.product','SELECT'), 'Browser role has no direct product table grant');
+SELECT extensions.ok(NOT has_table_privilege('authenticated','public.alert','SELECT'), 'Browser role has no direct alert table grant');
 SELECT extensions.ok(has_schema_privilege('rebatehq_app','public','USAGE'),'App role has public schema USAGE');
 SELECT extensions.ok(NOT has_schema_privilege('rebatehq_app','auth','USAGE'),'App role has NO auth schema USAGE');
 SELECT extensions.ok(NOT EXISTS (
@@ -366,7 +273,7 @@ WITH required AS (
   FROM pg_temp.phase1_rls_tables t
   CROSS JOIN (VALUES ('SELECT'),('INSERT'),('UPDATE'),('DELETE')) op(privilege)
   WHERE op.privilege='SELECT'
-     OR (op.privilege='INSERT' AND t.table_name NOT IN ('tenant','membership','data_quality_issue'))
+     OR (op.privilege='INSERT' AND t.table_name NOT IN ('tenant','membership'))
      OR (op.privilege='UPDATE' AND t.table_name<>'audit_log')
      OR (op.privilege='DELETE' AND t.table_name NOT IN ('tenant','audit_log'))
 ), missing AS (
@@ -511,9 +418,9 @@ BEGIN
       ELSIF v_operation='INSERT' THEN
         EXECUTE 'INSERT INTO public.tenant(name) VALUES (''__anon_privilege_probe__'')';
       ELSIF v_operation='UPDATE' THEN
-        EXECUTE 'UPDATE public.product SET name=name WHERE false';
+        EXECUTE 'UPDATE public.alert SET message=message WHERE false';
       ELSE
-        EXECUTE 'DELETE FROM public.product WHERE false';
+        EXECUTE 'DELETE FROM public.alert WHERE false';
       END IF;
     EXCEPTION WHEN OTHERS THEN
       GET STACKED DIAGNOSTICS v_state=RETURNED_SQLSTATE,v_message=MESSAGE_TEXT;
@@ -534,9 +441,9 @@ SELECT extensions.ok(
   AND (current_setting('app.phase1_anon_privilege_result')::jsonb->'INSERT'->>'sqlstate')='42501'
   AND (current_setting('app.phase1_anon_privilege_result')::jsonb->'INSERT'->>'message') ILIKE '%permission denied for table tenant%'
   AND (current_setting('app.phase1_anon_privilege_result')::jsonb->'UPDATE'->>'sqlstate')='42501'
-  AND (current_setting('app.phase1_anon_privilege_result')::jsonb->'UPDATE'->>'message') ILIKE '%permission denied for table product%'
+  AND (current_setting('app.phase1_anon_privilege_result')::jsonb->'UPDATE'->>'message') ILIKE '%permission denied for table alert%'
   AND (current_setting('app.phase1_anon_privilege_result')::jsonb->'DELETE'->>'sqlstate')='42501'
-  AND (current_setting('app.phase1_anon_privilege_result')::jsonb->'DELETE'->>'message') ILIKE '%permission denied for table product%',
+  AND (current_setting('app.phase1_anon_privilege_result')::jsonb->'DELETE'->>'message') ILIKE '%permission denied for table alert%',
   'anon has no effective CRUD table privileges across the application schema; representative statements fail at ACL checks: '||current_setting('app.phase1_anon_privilege_result')
 );
 
@@ -562,9 +469,9 @@ DO $$ DECLARE n integer; v_state text; v_msg text; BEGIN
   PERFORM pg_temp.use_identity('__PHASE1_USER_REP_ID__');
   PERFORM set_config('request.jwt.claims','{"sub":"__PHASE1_USER_REP_ID__","role":"authenticated"}',true);
   BEGIN
-    SELECT count(*) INTO n FROM public.customer
+    SELECT count(*) INTO n FROM public.quote
       WHERE tenant_id='__PHASE1_TENANT_B_ID__'
-        AND id='__PHASE1_CUSTOMER_B_ID__';
+        AND id='__PHASE1_QUOTE_REP_B_ID__';
     PERFORM set_config('app.phase1_auth_policy_result',jsonb_build_object('passed',n=1,'visible_rows',n,'state',NULL,'message',NULL)::text,true);
   EXCEPTION WHEN OTHERS THEN
     GET STACKED DIAGNOSTICS v_state=RETURNED_SQLSTATE,v_msg=MESSAGE_TEXT;
@@ -606,7 +513,7 @@ END $$;
 
 DO $$ DECLARE t text; n integer; v_missing text:=''; v_state text; v_msg text; BEGIN
   SELECT count(*) INTO n FROM jsonb_object_keys(current_setting('app.phase1_tenant_a_fixtures')::jsonb);
-  IF n<38 THEN RAISE EXCEPTION 'Tenant A positive SELECT loop expected at least 38 tables; found %',n; END IF;
+  IF n<16 THEN RAISE EXCEPTION 'Tenant A positive SELECT loop expected at least 16 tables; found %',n; END IF;
   FOR t IN SELECT jsonb_object_keys(current_setting('app.phase1_tenant_a_fixtures')::jsonb) LOOP
     BEGIN
       EXECUTE format('SELECT count(*) FROM public.%I WHERE tenant_id=$1',t) INTO n USING '__PHASE1_TENANT_A_ID__'::uuid;
@@ -621,45 +528,21 @@ END $$;
 
 DO $$ DECLARE t text; v_row jsonb; v_insert jsonb; v_state text; v_msg text; n integer; v_failed text:='';
   v_currency_from text; v_currency_to text; BEGIN
-  SELECT count(*) INTO n FROM jsonb_each(current_setting('app.phase1_tenant_a_fixtures')::jsonb) WHERE key NOT IN ('tenant','membership','data_quality_issue');
-  IF n<35 THEN RAISE EXCEPTION 'Tenant A positive INSERT loop expected at least 35 policy-allowed tables; found %',n; END IF;
+  SELECT count(*) INTO n FROM jsonb_each(current_setting('app.phase1_tenant_a_fixtures')::jsonb) WHERE key NOT IN ('tenant','membership');
+  IF n<14 THEN RAISE EXCEPTION 'Tenant A positive INSERT loop expected at least 14 policy-allowed tables; found %',n; END IF;
   FOR t,v_row IN SELECT key,value FROM jsonb_each(current_setting('app.phase1_tenant_a_fixtures')::jsonb)
-    WHERE key NOT IN ('tenant','membership','data_quality_issue') LOOP
+    WHERE key NOT IN ('tenant','membership') LOOP
     v_insert:=jsonb_set(v_row,'{id}',to_jsonb(gen_random_uuid()),true);
-    IF t='customer' THEN v_insert:=jsonb_set(v_insert,'{account_no}',to_jsonb('A-positive-control'::text),true);
-    ELSIF t='customer_group' THEN v_insert:=jsonb_set(v_insert,'{name}',to_jsonb(v_insert->>'id'),true);
-    ELSIF t='rebate_entry' THEN v_insert:=jsonb_set(v_insert,'{source_ref}',to_jsonb(v_insert->>'id'),true);
+    IF t='rebate_entry' THEN v_insert:=jsonb_set(v_insert,'{source_ref}',to_jsonb(v_insert->>'id'),true);
     ELSIF t='rebate_tier' THEN
       v_insert:=jsonb_set(v_insert,'{from_amount}','0'::jsonb,true);
       v_insert:=jsonb_set(v_insert,'{to_amount}','1'::jsonb,true);
-    ELSIF t='customer_price' THEN
-      v_insert:=jsonb_set(v_insert,'{effective_from}',to_jsonb((current_date-100000)::text),true);
-      v_insert:=jsonb_set(v_insert,'{effective_to}',to_jsonb((current_date-99999)::text),true);
-    ELSIF t IN ('column_mapping_template','approval_rule') THEN v_insert:=jsonb_set(v_insert,'{name}',to_jsonb(v_insert->>'id'),true);
-    ELSIF t='plan_feature' THEN v_insert:=jsonb_set(v_insert,'{feature_key}',to_jsonb('p'||replace(v_insert->>'id','-','')),true);
+    ELSIF t='approval_rule' THEN v_insert:=jsonb_set(v_insert,'{name}',to_jsonb(v_insert->>'id'),true);
     ELSIF t='quote_share_link' THEN v_insert:=jsonb_set(v_insert,'{token_hash}',to_jsonb(md5(v_insert->>'id')||md5('share-'||(v_insert->>'id'))),true);
-    ELSIF t='product' THEN v_insert:=jsonb_set(v_insert,'{sku}',to_jsonb('A-POSITIVE-CONTROL'::text),true);
+    ELSIF t='alert' THEN v_insert:=jsonb_set(v_insert,'{message}',to_jsonb('A-positive-control'::text),true);
     ELSIF t='invite' THEN
       v_insert:=jsonb_set(v_insert,'{token_hash}',to_jsonb(replace(v_insert->>'id','-','')),true);
       v_insert:=jsonb_set(v_insert,'{email}',to_jsonb('phase1-positive-'||(v_insert->>'id')||'@example.invalid'),true);
-    ELSIF t='price_list_version' THEN v_insert:=jsonb_set(v_insert,'{version_no}',to_jsonb((v_row->>'version_no')::integer+1),true);
-    ELSIF t='price_list_item' THEN
-      v_insert:=jsonb_set(v_insert,'{effective_from}',to_jsonb((current_date-100000)::text),true);
-      v_insert:=jsonb_set(v_insert,'{effective_to}',to_jsonb((current_date-99999)::text),true);
-    ELSIF t='margin_policy' THEN v_insert:=jsonb_set(v_insert,'{scope_key}',to_jsonb('positive-control'::text),true);
-    ELSIF t='sales_order' THEN v_insert:=jsonb_set(v_insert,'{source_id}',to_jsonb('A-POSITIVE-CONTROL'::text),true);
-    ELSIF t='margin_snapshot' THEN v_insert:=jsonb_set(v_insert,'{entity_id}',to_jsonb('positive-control'::text),true);
-    ELSIF t='connector_secret' THEN v_insert:=jsonb_set(v_insert,'{provider}',to_jsonb('positive-control'::text),true);
-    ELSIF t='cost_history' THEN
-      v_insert:=jsonb_set(v_insert,'{basis}',to_jsonb('landed'::text),true);
-      v_insert:=jsonb_set(v_insert,'{effective_from}',to_jsonb((current_date+100000)::text),true);
-      v_insert:=jsonb_set(v_insert,'{effective_to}','null'::jsonb,true);
-    ELSIF t='uom' THEN
-      v_insert:=jsonb_set(v_insert,'{code}',to_jsonb(upper('POS'||left(replace(v_insert->>'id','-',''),13))),true);
-      v_insert:=jsonb_set(v_insert,'{display_name}',to_jsonb('Positive unit'::text),true);
-    ELSIF t='uom_conversion' THEN
-      v_insert:=jsonb_set(v_insert,'{product_id}','null'::jsonb,true);
-      v_insert:=jsonb_set(v_insert,'{to_uom_id}',to_jsonb((SELECT id::text FROM public.uom WHERE tenant_id='__PHASE1_TENANT_A_ID__' AND code='CASE')),true);
     ELSIF t='fx_rate' THEN
       v_insert:=jsonb_set(v_insert,'{rate_date}',to_jsonb((current_date+100000)::text),true);
       LOOP
@@ -691,9 +574,9 @@ END $$;
 
 DO $$ DECLARE n integer; v_state text; v_msg text; BEGIN
   BEGIN
-    UPDATE public.customer SET name='Tenant A customer updated by positive control'
+    UPDATE public.alert SET message='Tenant A alert updated by positive control'
       WHERE tenant_id='__PHASE1_TENANT_A_ID__'
-        AND id='__PHASE1_CUSTOMER_A_ID__';
+        AND id='__PHASE1_ALERT_A_ID__';
     GET DIAGNOSTICS n=ROW_COUNT;
     PERFORM set_config('app.phase1_positive_update_result',jsonb_build_object('passed',n=1,'rows',n,'state',NULL,'message',NULL)::text,true);
   EXCEPTION WHEN OTHERS THEN
@@ -704,8 +587,8 @@ END $$;
 
 DO $$ DECLARE n integer; v_state text; v_msg text; BEGIN
   BEGIN
-    DELETE FROM public.customer WHERE tenant_id='__PHASE1_TENANT_A_ID__'
-      AND account_no='A-positive-control';
+    DELETE FROM public.alert WHERE tenant_id='__PHASE1_TENANT_A_ID__'
+      AND message='A-positive-control';
     GET DIAGNOSTICS n=ROW_COUNT;
     PERFORM set_config('app.phase1_positive_delete_result',jsonb_build_object('passed',n=1,'rows',n,'state',NULL,'message',NULL)::text,true);
   EXCEPTION WHEN OTHERS THEN
@@ -719,15 +602,15 @@ DO $$ DECLARE v_before integer; v_deleted integer; v_after integer; v_state text
   PERFORM set_config('request.jwt.claim.role','authenticated',true);
   PERFORM set_config('request.jwt.claims','{"sub":"__PHASE1_USER_REP_ID__","role":"authenticated"}',true);
   BEGIN
-    SELECT count(*) INTO v_before FROM public.product
+    SELECT count(*) INTO v_before FROM public.alert
       WHERE tenant_id='__PHASE1_TENANT_B_ID__'
-        AND id='__PHASE1_PRODUCT_B_ID__';
-    DELETE FROM public.product WHERE tenant_id='__PHASE1_TENANT_B_ID__'
-      AND id='__PHASE1_PRODUCT_B_ID__';
+        AND id='__PHASE1_ALERT_B_ID__';
+    DELETE FROM public.alert WHERE tenant_id='__PHASE1_TENANT_B_ID__'
+      AND id='__PHASE1_ALERT_B_ID__';
     GET DIAGNOSTICS v_deleted=ROW_COUNT;
-    SELECT count(*) INTO v_after FROM public.product
+    SELECT count(*) INTO v_after FROM public.alert
       WHERE tenant_id='__PHASE1_TENANT_B_ID__'
-        AND id='__PHASE1_PRODUCT_B_ID__';
+        AND id='__PHASE1_ALERT_B_ID__';
     PERFORM set_config('app.phase1_rep_delete_result',jsonb_build_object(
       'passed',v_before=1 AND v_deleted=0 AND v_after=1,'visible_before',v_before,
       'deleted',v_deleted,'visible_after',v_after,'state',NULL,'message',NULL
@@ -745,7 +628,7 @@ END $$;
 
 DO $$ DECLARE t text; n integer; v_missing text:=''; v_state text; v_msg text; BEGIN
   SELECT count(*) INTO n FROM jsonb_object_keys(current_setting('app.phase1_tenant_b_fixtures')::jsonb);
-  IF n<38 THEN RAISE EXCEPTION 'Tenant B cross-SELECT loop expected at least 38 tables; found %',n; END IF;
+  IF n<16 THEN RAISE EXCEPTION 'Tenant B cross-SELECT loop expected at least 16 tables; found %',n; END IF;
   FOR t IN SELECT jsonb_object_keys(current_setting('app.phase1_tenant_b_fixtures')::jsonb) LOOP
     BEGIN
       EXECUTE format('SELECT count(*) FROM public.%I WHERE tenant_id=$1',t) INTO n USING '__PHASE1_TENANT_B_ID__'::uuid;
@@ -765,7 +648,7 @@ DO $$ DECLARE t text; n integer; expected_count integer; v_bad text:='';
   v_state text; v_msg text; BEGIN
   IF current_setting('app.restore_test_mode',true)='true' THEN
     SELECT count(*) INTO expected_count FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='r';
-    IF expected_count<42 THEN RAISE EXCEPTION 'Restore isolation check expected at least 42 tenant tables; found %',expected_count; END IF;
+    IF expected_count<20 THEN RAISE EXCEPTION 'Restore isolation check expected at least 20 tenant tables; found %',expected_count; END IF;
     FOR t IN SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='r' LOOP
       BEGIN
         EXECUTE format('SELECT count(*) FROM public.%I WHERE tenant_id=$1',t)
@@ -787,8 +670,8 @@ END $$;
 -- UPDATE policy forbids a requester from modifying their own approval.
 DO $$ DECLARE t text; v_state text; v_msg text; v_bad text:=''; n integer; BEGIN
   SELECT count(*) INTO n FROM jsonb_each(current_setting('app.phase1_tenant_a_fixtures')::jsonb) WHERE key NOT IN ('audit_log','approval');
-  IF n<36 THEN
-    RAISE EXCEPTION 'Cross-tenant UPDATE loop expected at least 36 eligible tables';
+  IF n<14 THEN
+    RAISE EXCEPTION 'Cross-tenant UPDATE loop expected at least 14 eligible tables';
   END IF;
   FOR t IN SELECT key FROM jsonb_each(current_setting('app.phase1_tenant_a_fixtures')::jsonb)
     WHERE key NOT IN ('audit_log','approval') LOOP
@@ -812,8 +695,8 @@ END $$;
 -- each tested operation, so permission denial cannot masquerade as RLS.
 DO $$ DECLARE t text; n integer; v_bad text:=''; v_state text; v_msg text; BEGIN
   SELECT count(*) INTO n FROM jsonb_each(current_setting('app.phase1_tenant_b_fixtures')::jsonb) WHERE key NOT IN ('tenant','audit_log');
-  IF n<36 THEN
-    RAISE EXCEPTION 'Cross-tenant DELETE loop expected at least 36 eligible tables';
+  IF n<14 THEN
+    RAISE EXCEPTION 'Cross-tenant DELETE loop expected at least 14 eligible tables';
   END IF;
   FOR t IN SELECT key FROM jsonb_each(current_setting('app.phase1_tenant_b_fixtures')::jsonb)
     WHERE key NOT IN ('tenant','audit_log') LOOP
@@ -830,12 +713,12 @@ DO $$ DECLARE t text; n integer; v_bad text:=''; v_state text; v_msg text; BEGIN
 END $$;
 
 DO $$ DECLARE t text; v_row jsonb; v_state text; v_msg text; v_bad text:=''; n integer; BEGIN
-  SELECT count(*) INTO n FROM jsonb_each(current_setting('app.phase1_tenant_b_fixtures')::jsonb) WHERE key NOT IN ('tenant','membership','data_quality_issue');
-  IF n<35 THEN
-    RAISE EXCEPTION 'Cross-tenant INSERT loop expected at least 35 eligible tables';
+  SELECT count(*) INTO n FROM jsonb_each(current_setting('app.phase1_tenant_b_fixtures')::jsonb) WHERE key NOT IN ('tenant','membership');
+  IF n<14 THEN
+    RAISE EXCEPTION 'Cross-tenant INSERT loop expected at least 14 eligible tables';
   END IF;
   FOR t,v_row IN SELECT key,value FROM jsonb_each(current_setting('app.phase1_tenant_b_fixtures')::jsonb)
-    WHERE key NOT IN ('tenant','membership','data_quality_issue') LOOP
+    WHERE key NOT IN ('tenant','membership') LOOP
     v_state:='00000'; v_msg:='';
     BEGIN
       EXECUTE format('INSERT INTO public.%I SELECT (jsonb_populate_record(NULL::public.%I,$1)).*',t,t) USING v_row;
@@ -879,7 +762,7 @@ SET LOCAL request.jwt.claim.role = 'authenticated';
 SET LOCAL request.jwt.claims = '{}';
 SELECT set_config(
   'app.phase1_missing_auth_rows',
-  (SELECT count(*)::text FROM public.product WHERE tenant_id='__PHASE1_TENANT_B_ID__'),
+  (SELECT count(*)::text FROM public.alert WHERE tenant_id='__PHASE1_TENANT_B_ID__'),
   true
 );
 
@@ -902,54 +785,15 @@ DO $$ DECLARE v_update_state text:='00000'; v_delete_state text:='00000'; v_trun
   )::text,true);
 END $$;
 
--- Exercise effective history and conversions through the same app role used
--- by the server. Results survive RESET ROLE for pgTAP assertions below.
-DO $$ DECLARE v_box numeric; v_each numeric; v_rounded numeric; v_missing numeric; v_issue_count integer; BEGIN
+
+-- fx_rate is the only Chunk 2A table left after 6R; it keeps its positive UPDATE and DELETE controls.
+DO $$ DECLARE v_rows integer; v_ok boolean:=true; v_detail text:=''; BEGIN
   PERFORM pg_temp.use_identity('__PHASE1_USER_A_ID__');
   PERFORM set_config('request.jwt.claims','{"sub":"__PHASE1_USER_A_ID__","role":"authenticated"}',true);
-  SELECT public.convert_quantity('__PHASE1_TENANT_A_ID__','__PHASE1_PRODUCT_A_ID__',10,'EA','BOX',current_date) INTO v_box;
-  SELECT public.convert_quantity('__PHASE1_TENANT_A_ID__','__PHASE1_PRODUCT_A_ID__',10,'BOX','EA',current_date) INTO v_each;
-  SELECT public.convert_quantity('__PHASE1_TENANT_A_ID__','__PHASE1_PRODUCT_A_ID__',1.23456,'EA','EA',current_date) INTO v_rounded;
-  SELECT public.convert_quantity('__PHASE1_TENANT_A_ID__','__PHASE1_PRODUCT_A_ID__',1,'BOX','CASE',current_date) INTO v_missing;
-  SELECT count(*) INTO v_issue_count FROM public.data_quality_issue
-   WHERE tenant_id='__PHASE1_TENANT_A_ID__' AND issue_code='uom_conversion_missing'
-     AND entity_type='product' AND entity_id='__PHASE1_PRODUCT_A_ID__' AND occurred_on=current_date
-     AND details->>'from'='BOX' AND details->>'to'='CASE';
-  PERFORM set_config('app.phase2a_uom_result',jsonb_build_object(
-    'ea_to_box',v_box,'box_to_ea',v_each,'same_unit_rounded',v_rounded,
-    'missing_is_null',v_missing IS NULL,'missing_issue_count',v_issue_count
-  )::text,true);
-END $$;
-
--- All five new tables have positive UPDATE and DELETE controls. The data
--- quality issue insert path is the SECURITY DEFINER helper above; direct
--- table INSERT remains intentionally absent from rebatehq_app.
-DO $$ DECLARE v_rows integer; v_ok boolean:=true; v_detail text:=''; BEGIN
-  UPDATE public.cost_history SET cost=cost+1 WHERE id='__PHASE1_COST_HISTORY_A_ID__'; GET DIAGNOSTICS v_rows=ROW_COUNT;
-  v_ok:=v_ok AND v_rows=1; v_detail:=concat_ws(', ',v_detail,'cost_history update='||v_rows);
-  DELETE FROM public.cost_history WHERE id='__PHASE1_COST_HISTORY_A_ID__'; GET DIAGNOSTICS v_rows=ROW_COUNT;
-  v_ok:=v_ok AND v_rows=1; v_detail:=concat_ws(', ',v_detail,'cost_history delete='||v_rows);
-
-  UPDATE public.uom SET display_name='Positive update' WHERE tenant_id='__PHASE1_TENANT_A_ID__' AND code LIKE 'POS%'; GET DIAGNOSTICS v_rows=ROW_COUNT;
-  v_ok:=v_ok AND v_rows=1; v_detail:=concat_ws(', ',v_detail,'uom update='||v_rows);
-  DELETE FROM public.uom WHERE tenant_id='__PHASE1_TENANT_A_ID__' AND code LIKE 'POS%'; GET DIAGNOSTICS v_rows=ROW_COUNT;
-  v_ok:=v_ok AND v_rows=1; v_detail:=concat_ws(', ',v_detail,'uom delete='||v_rows);
-
-  UPDATE public.uom_conversion SET factor=factor+1 WHERE id='__PHASE1_UOM_CONVERSION_A_ID__'; GET DIAGNOSTICS v_rows=ROW_COUNT;
-  v_ok:=v_ok AND v_rows=1; v_detail:=concat_ws(', ',v_detail,'uom_conversion update='||v_rows);
-  DELETE FROM public.uom_conversion WHERE id='__PHASE1_UOM_CONVERSION_A_ID__'; GET DIAGNOSTICS v_rows=ROW_COUNT;
-  v_ok:=v_ok AND v_rows=1; v_detail:=concat_ws(', ',v_detail,'uom_conversion delete='||v_rows);
-
   UPDATE public.fx_rate SET rate=rate+0.01 WHERE tenant_id='__PHASE1_TENANT_A_ID__' AND rate_date=current_date+100000; GET DIAGNOSTICS v_rows=ROW_COUNT;
   v_ok:=v_ok AND v_rows=1; v_detail:=concat_ws(', ',v_detail,'fx_rate update='||v_rows);
   DELETE FROM public.fx_rate WHERE tenant_id='__PHASE1_TENANT_A_ID__' AND rate_date=current_date+100000; GET DIAGNOSTICS v_rows=ROW_COUNT;
   v_ok:=v_ok AND v_rows=1; v_detail:=concat_ws(', ',v_detail,'fx_rate delete='||v_rows);
-
-  UPDATE public.data_quality_issue SET details=jsonb_set(details,'{positive_update}','true'::jsonb)
-    WHERE id='__PHASE1_DQI_A_ID__'; GET DIAGNOSTICS v_rows=ROW_COUNT;
-  v_ok:=v_ok AND v_rows=1; v_detail:=concat_ws(', ',v_detail,'data_quality_issue update='||v_rows);
-  DELETE FROM public.data_quality_issue WHERE id='__PHASE1_DQI_A_ID__'; GET DIAGNOSTICS v_rows=ROW_COUNT;
-  v_ok:=v_ok AND v_rows=1; v_detail:=concat_ws(', ',v_detail,'data_quality_issue delete='||v_rows);
   PERFORM set_config('app.phase2a_new_table_write_result',jsonb_build_object('passed',v_ok,'detail',v_detail)::text,true);
 END $$;
 RESET ROLE;
@@ -961,7 +805,7 @@ SELECT extensions.ok(
   'SET ROLE used NOSUPERUSER and NOBYPASSRLS rebatehq_app'
 );
 SELECT extensions.ok(current_setting('app.phase1_auth_policy_result')::jsonb->>'passed'='true',
-  'A customer policy evaluates auth.uid() for its assigned rep without auth schema USAGE');
+  'A quote policy evaluates auth.uid() for the rep who created it without auth schema USAGE');
 SELECT extensions.ok(
   current_setting('app.phase1_positive_select_result')::jsonb->>'passed'='true',
   'Tenant A can SELECT its own seeded row in every tenant table: '||(current_setting('app.phase1_positive_select_result')::jsonb->>'detail')
@@ -971,11 +815,11 @@ SELECT extensions.ok(
   'Tenant A INSERT succeeds per allowed table; failed table(s): '||(current_setting('app.phase1_positive_insert_result')::jsonb->>'detail')
 );
 SELECT extensions.ok(current_setting('app.phase1_positive_update_result')::jsonb->>'passed'='true',
-  'Tenant A can UPDATE its own customer row under an allowed policy');
+  'Tenant A can UPDATE its own alert row under an allowed policy');
 SELECT extensions.ok(current_setting('app.phase1_positive_delete_result')::jsonb->>'passed'='true',
-  'Tenant A can DELETE its own inserted customer row under an allowed policy');
+  'Tenant A can DELETE its own inserted alert row under an allowed policy');
 SELECT extensions.ok(current_setting('app.phase1_rep_delete_result')::jsonb->>'passed'='true',
-  'A tenant rep can see a product but cannot DELETE where policy forbids it');
+  'A tenant rep can see an alert but cannot DELETE where policy forbids it');
 SELECT extensions.ok(
   current_setting('app.phase1_cross_select_result')::jsonb->>'passed'='true',
   'Tenant A SELECT of Tenant B rows returns zero rows: '||(current_setting('app.phase1_cross_select_result')::jsonb->>'detail')
@@ -1056,9 +900,9 @@ SELECT pg_temp.use_identity('__PHASE1_USER_REP_ID__');
 SET LOCAL request.jwt.claims = '{"sub":"__PHASE1_USER_REP_ID__","role":"authenticated"}';
 DO $$ DECLARE n integer; v_state text; v_msg text; BEGIN
   BEGIN
-    SELECT count(*) INTO n FROM public.customer
+    SELECT count(*) INTO n FROM public.quote
       WHERE tenant_id='__PHASE1_TENANT_B_ID__'
-        AND id='__PHASE1_CUSTOMER_B_ID__';
+        AND id='__PHASE1_QUOTE_REP_B_ID__';
     PERFORM set_config('app.phase1_auth_uid_authenticated_result',jsonb_build_object('passed',n=1,'state','00000','message',NULL,'visible_rows',n)::text,true);
   EXCEPTION WHEN OTHERS THEN
     GET STACKED DIAGNOSTICS v_state=RETURNED_SQLSTATE,v_msg=MESSAGE_TEXT;
@@ -1068,7 +912,7 @@ END $$;
 RESET ROLE;
 SELECT extensions.ok(
   current_setting('app.phase1_auth_uid_authenticated_result')::jsonb->>'passed'='true',
-  'Authenticated customer policy query returns its assigned row as rebatehq_app'
+  'Authenticated quote policy query returns the rep''s own quote as rebatehq_app'
 );
 
 SET LOCAL ROLE rebatehq_app;
@@ -1076,9 +920,9 @@ SELECT pg_temp.use_identity('');
 SET LOCAL request.jwt.claims = '{}';
 DO $$ DECLARE n integer; v_state text; v_msg text; BEGIN
   BEGIN
-    SELECT count(*) INTO n FROM public.customer
+    SELECT count(*) INTO n FROM public.quote
       WHERE tenant_id='__PHASE1_TENANT_B_ID__'
-        AND id='__PHASE1_CUSTOMER_B_ID__';
+        AND id='__PHASE1_QUOTE_REP_B_ID__';
     PERFORM set_config('app.phase1_auth_uid_no_context_result',jsonb_build_object('passed',n=0,'state','00000','message',NULL,'visible_rows',n)::text,true);
   EXCEPTION WHEN OTHERS THEN
     GET STACKED DIAGNOSTICS v_state=RETURNED_SQLSTATE,v_msg=MESSAGE_TEXT;
@@ -1179,11 +1023,11 @@ SELECT jsonb_build_object(
 
 SELECT extensions.ok(
   current_setting('app.phase1_auth_uid_no_context_result')::jsonb->>'passed'='true',
-  'The same customer policy query returns zero rows as rebatehq_app without authenticated context'
+  'The same quote policy query returns zero rows as rebatehq_app without authenticated context'
 );
 
 -- This strengthened existing check covers every public function and exact ACL
--- through one versioned manifest; plans are 156 fresh / 159 restore mode.
+-- through one versioned manifest (plan counts: see the plan() call at the top).
 SELECT jsonb_build_object('function_acl_manifest_errors',COALESCE(
   (SELECT jsonb_agg(to_jsonb(e) ORDER BY signature) FROM pg_temp.phase1_function_acl_errors e),'[]'::jsonb
 ))::text AS phase1_ci_diagnostic;
@@ -1302,7 +1146,7 @@ SELECT extensions.ok(
 
 SELECT extensions.ok(
   current_setting('app.phase1_restore_baseline_result')::jsonb->>'sentinel_matches'='true',
-  'Restore-only: sentinel tenant and product are present with the source content hash: '||
+  'Restore-only: sentinel tenant and rebate agreement are present with the source content hash: '||
     (current_setting('app.phase1_restore_baseline_result')::jsonb->>'detail')
 ) WHERE current_setting('app.restore_test_mode',true)='true';
 SELECT extensions.ok(
@@ -1312,55 +1156,13 @@ SELECT extensions.ok(
 ) WHERE current_setting('app.restore_test_mode',true)='true';
 SELECT extensions.ok(
   current_setting('app.phase1_restore_real_isolation_result')::jsonb->>'passed'='true'
-    AND (current_setting('app.phase1_restore_real_isolation_result')::jsonb->>'checked_tables')::integer>=42,
+    AND (current_setting('app.phase1_restore_real_isolation_result')::jsonb->>'checked_tables')::integer>=20,
   'Restore-only: synthetic Tenant A sees zero rows from the real restored sentinel tenant in every application table: '||
     (current_setting('app.phase1_restore_real_isolation_result')::jsonb->>'detail')
 ) WHERE current_setting('app.restore_test_mode',true)='true';
 
 -- New-table grants are exact allowlists. The owner retains ownership; the
 -- only direct non-owner grantee is rebatehq_app with the listed operations.
-WITH target AS (SELECT 'cost_history'::text AS table_name), expected(privilege) AS (VALUES
- ('DELETE'),('INSERT'),('SELECT'),('UPDATE')
-), actual AS (
- SELECT c.relowner,acl.grantee,acl.privilege_type
- FROM target t JOIN pg_class c ON c.oid=format('public.%I',t.table_name)::regclass
- CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) acl
-)
-SELECT extensions.ok(
- NOT EXISTS(SELECT 1 FROM actual WHERE grantee NOT IN(relowner,'rebatehq_app'::regrole))
- AND NOT EXISTS(SELECT privilege_type FROM actual WHERE grantee='rebatehq_app'::regrole EXCEPT SELECT privilege FROM expected)
- AND NOT EXISTS(SELECT privilege FROM expected EXCEPT SELECT privilege_type FROM actual WHERE grantee='rebatehq_app'::regrole)
- AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.cost_history'::regclass AND attnum>0 AND NOT attisdropped AND attacl IS NOT NULL),
- 'cost_history ACL is owner plus rebatehq_app CRUD only, with no column grants'
-);
-WITH target AS (SELECT 'uom'::text AS table_name), expected(privilege) AS (VALUES
- ('DELETE'),('INSERT'),('SELECT'),('UPDATE')
-), actual AS (
- SELECT c.relowner,acl.grantee,acl.privilege_type
- FROM target t JOIN pg_class c ON c.oid=format('public.%I',t.table_name)::regclass
- CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) acl
-)
-SELECT extensions.ok(
- NOT EXISTS(SELECT 1 FROM actual WHERE grantee NOT IN(relowner,'rebatehq_app'::regrole))
- AND NOT EXISTS(SELECT privilege_type FROM actual WHERE grantee='rebatehq_app'::regrole EXCEPT SELECT privilege FROM expected)
- AND NOT EXISTS(SELECT privilege FROM expected EXCEPT SELECT privilege_type FROM actual WHERE grantee='rebatehq_app'::regrole)
- AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.uom'::regclass AND attnum>0 AND NOT attisdropped AND attacl IS NOT NULL),
- 'uom ACL is owner plus rebatehq_app CRUD only, with no column grants'
-);
-WITH target AS (SELECT 'uom_conversion'::text AS table_name), expected(privilege) AS (VALUES
- ('DELETE'),('INSERT'),('SELECT'),('UPDATE')
-), actual AS (
- SELECT c.relowner,acl.grantee,acl.privilege_type
- FROM target t JOIN pg_class c ON c.oid=format('public.%I',t.table_name)::regclass
- CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) acl
-)
-SELECT extensions.ok(
- NOT EXISTS(SELECT 1 FROM actual WHERE grantee NOT IN(relowner,'rebatehq_app'::regrole))
- AND NOT EXISTS(SELECT privilege_type FROM actual WHERE grantee='rebatehq_app'::regrole EXCEPT SELECT privilege FROM expected)
- AND NOT EXISTS(SELECT privilege FROM expected EXCEPT SELECT privilege_type FROM actual WHERE grantee='rebatehq_app'::regrole)
- AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.uom_conversion'::regclass AND attnum>0 AND NOT attisdropped AND attacl IS NOT NULL),
- 'uom_conversion ACL is owner plus rebatehq_app CRUD only, with no column grants'
-);
 WITH target AS (SELECT 'fx_rate'::text AS table_name), expected(privilege) AS (VALUES
  ('DELETE'),('INSERT'),('SELECT'),('UPDATE')
 ), actual AS (
@@ -1375,170 +1177,15 @@ SELECT extensions.ok(
  AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.fx_rate'::regclass AND attnum>0 AND NOT attisdropped AND attacl IS NOT NULL),
  'fx_rate ACL is owner plus rebatehq_app CRUD only, with no column grants'
 );
-WITH target AS (SELECT 'data_quality_issue'::text AS table_name), expected(privilege) AS (VALUES
- ('DELETE'),('SELECT'),('UPDATE')
-), actual AS (
- SELECT c.relowner,acl.grantee,acl.privilege_type
- FROM target t JOIN pg_class c ON c.oid=format('public.%I',t.table_name)::regclass
- CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) acl
-)
-SELECT extensions.ok(
- NOT EXISTS(SELECT 1 FROM actual WHERE grantee NOT IN(relowner,'rebatehq_app'::regrole))
- AND NOT EXISTS(SELECT privilege_type FROM actual WHERE grantee='rebatehq_app'::regrole EXCEPT SELECT privilege FROM expected)
- AND NOT EXISTS(SELECT privilege FROM expected EXCEPT SELECT privilege_type FROM actual WHERE grantee='rebatehq_app'::regrole)
- AND NOT has_table_privilege('rebatehq_app','public.data_quality_issue','INSERT')
- AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.data_quality_issue'::regclass AND attnum>0 AND NOT attisdropped AND attacl IS NOT NULL),
- 'data_quality_issue grants manager CRUD except INSERT; issue creation is function-only'
-);
 
-SELECT extensions.ok(
- (SELECT pg_get_userbyid(p.proowner)=current_setting('app.phase1_migration_owner')
-   AND has_function_privilege('rebatehq_app',p.oid,'EXECUTE')
-   AND p.prosecdef
-   AND EXISTS(SELECT 1 FROM unnest(COALESCE(p.proconfig,ARRAY[]::text[])) cfg(setting) WHERE cfg.setting='search_path=public, pg_temp')
-   AND NOT EXISTS(SELECT 1 FROM pg_temp.phase1_function_acl_errors e WHERE e.oid=p.oid)
-  FROM pg_proc p WHERE p.oid='public.record_data_quality_issue(uuid,text,text,text,date,jsonb)'::regprocedure),
- 'record_data_quality_issue is migration-owned, pinned, SECURITY DEFINER, and executable only by owner/app'
-);
-SELECT extensions.ok(
- (SELECT pg_get_userbyid(p.proowner)=current_setting('app.phase1_migration_owner')
-   AND has_function_privilege('rebatehq_app',p.oid,'EXECUTE')
-   AND p.prosecdef
-   AND EXISTS(SELECT 1 FROM unnest(COALESCE(p.proconfig,ARRAY[]::text[])) cfg(setting) WHERE cfg.setting='search_path=public, pg_temp')
-   AND NOT EXISTS(SELECT 1 FROM pg_temp.phase1_function_acl_errors e WHERE e.oid=p.oid)
-  FROM pg_proc p WHERE p.oid='public.convert_quantity(uuid,uuid,numeric,text,text,date)'::regprocedure),
- 'convert_quantity is migration-owned, pinned, SECURITY DEFINER, and executable only by owner/app'
-);
-SELECT extensions.ok(
- (SELECT pg_get_userbyid(p.proowner)=current_setting('app.phase1_migration_owner')
-   AND p.prosecdef
-   AND EXISTS(SELECT 1 FROM unnest(COALESCE(p.proconfig,ARRAY[]::text[])) cfg(setting) WHERE cfg.setting='search_path=public, pg_temp')
-   AND NOT has_function_privilege('rebatehq_app',p.oid,'EXECUTE')
-   AND NOT EXISTS(SELECT 1 FROM pg_temp.phase1_function_acl_errors e WHERE e.oid=p.oid)
-  FROM pg_proc p WHERE p.oid='public.sync_product_standard_cost_history()'::regprocedure),
- 'sync_product_standard_cost_history is migration-owned and executable only by its owner'
-);
-
-SELECT extensions.ok(
- (SELECT h.cost=55 FROM public.cost_history h WHERE h.tenant_id='__PHASE1_TENANT_A_ID__'
-   AND h.product_id='__PHASE1_PRODUCT_A_ID__' AND h.basis='standard'
-   AND h.effective_from<=current_date-1 AND (h.effective_to IS NULL OR current_date-1<h.effective_to))
- AND (SELECT h.cost=75 FROM public.cost_history h WHERE h.tenant_id='__PHASE1_TENANT_A_ID__'
-   AND h.product_id='__PHASE1_PRODUCT_A_ID__' AND h.basis='standard'
-   AND h.effective_from<=current_date AND (h.effective_to IS NULL OR current_date<h.effective_to)),
- 'The same product resolves to its prior and current standard costs on the matching transaction dates'
-);
-SELECT extensions.throws_ok($test$INSERT INTO public.cost_history(tenant_id,product_id,cost,basis,effective_from,source,currency)
- VALUES('__PHASE1_TENANT_A_ID__','__PHASE1_PRODUCT_A_ID__',88,'standard',current_date,'overlap probe','USD')$test$,
- '23P01',NULL,'Overlapping cost-history ranges are rejected by the exclusion constraint');
-SELECT extensions.throws_ok($test$INSERT INTO public.price_list_item(tenant_id,id,price_list_id,product_id,unit_price,effective_from,currency)
- VALUES('__PHASE1_TENANT_A_ID__','__PHASE1_PRICE_LIST_ITEM_OVERLAP_ID__','__PHASE1_PRICE_LIST_A_ID__','__PHASE1_PRODUCT_A_ID__',200,current_date-1,'USD')$test$,
- '23P01',NULL,'Overlapping price-list item ranges are rejected by the exclusion constraint');
 SELECT extensions.ok(EXISTS (
  SELECT 1 FROM public.fx_rate WHERE tenant_id='__PHASE1_TENANT_A_ID__'
   AND id='__PHASE1_FX_RATE_A_ID__' AND rate_date=current_date-1
   AND from_currency='USD' AND to_currency='EUR' AND rate=0.9 AND source='pgTAP fixture'
 ), 'Tenant-scoped FX fixture stores a numeric dated source rate');
-SELECT extensions.ok((current_setting('app.phase2a_uom_result')::jsonb->>'ea_to_box')::numeric=25,
- 'Product-specific EA-to-BOX conversion overrides the tenant-wide factor');
-SELECT extensions.ok((current_setting('app.phase2a_uom_result')::jsonb->>'box_to_ea')::numeric=4,
- 'The same product-specific BOX-to-EA conversion uses the inverse factor');
-SELECT extensions.ok((current_setting('app.phase2a_uom_result')::jsonb->>'same_unit_rounded')::numeric=1.2346,
- 'Same-unit quantity conversion rounds to four decimal places');
-SELECT extensions.ok(
- current_setting('app.phase2a_uom_result')::jsonb->>'missing_is_null'='true'
- AND current_setting('app.phase2a_uom_result')::jsonb->>'missing_issue_count'='1',
- 'Missing BOX-to-CASE conversion returns NULL and records exactly one data_quality_issue'
-);
 SELECT extensions.ok(current_setting('app.phase2a_new_table_write_result')::jsonb->>'passed'='true',
- 'Tenant A has positive UPDATE and DELETE controls for every new table: '||(current_setting('app.phase2a_new_table_write_result')::jsonb->>'detail'));
+ 'Tenant A has positive UPDATE and DELETE controls for fx_rate: '||(current_setting('app.phase2a_new_table_write_result')::jsonb->>'detail'));
 
-SELECT extensions.ok(NOT EXISTS (
- SELECT 1 FROM pg_class c CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) a
- WHERE c.oid='public.customer_group'::regclass AND (a.grantee NOT IN(c.relowner,'rebatehq_app'::regrole)
- OR (a.grantee='rebatehq_app'::regrole AND (a.privilege_type NOT IN('SELECT','INSERT','UPDATE','DELETE') OR a.is_grantable))))
- AND (SELECT count(*) FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.customer_group'::regclass AND a.grantee='rebatehq_app'::regrole)=4
- AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.customer_group'::regclass AND attacl IS NOT NULL),'customer_group: exact owner/app CRUD ACL');
-SET LOCAL ROLE rebatehq_app;
-SELECT pg_temp.use_identity('__PHASE1_USER_A_ID__');
-DO $$ DECLARE v_id uuid; n integer; BEGIN
- INSERT INTO public.customer_group SELECT (jsonb_populate_record(NULL::public.customer_group,current_setting('app.phase1_tenant_a_fixtures')::jsonb->'customer_group' || jsonb_build_object('id',gen_random_uuid(),'name',gen_random_uuid()::text))).* RETURNING id INTO v_id;
- UPDATE public.customer_group SET id=id WHERE id=v_id; GET DIAGNOSTICS n=ROW_COUNT;
- IF n<>1 THEN RAISE EXCEPTION 'customer_group own UPDATE failed'; END IF;
- DELETE FROM public.customer_group WHERE id=v_id; GET DIAGNOSTICS n=ROW_COUNT;
- IF n<>1 THEN RAISE EXCEPTION 'customer_group own DELETE failed'; END IF;
- IF (SELECT count(*) FROM public.audit_log WHERE tenant_id='__PHASE1_TENANT_A_ID__' AND entity_type='customer_group' AND entity_id=v_id::text AND action IN ('customer_group.insert','customer_group.update','customer_group.delete'))<>3 THEN RAISE EXCEPTION 'customer_group write audit coverage failed'; END IF;
- PERFORM set_config('app.chunk2b_write_ok','true',true);
-END $$;
-RESET ROLE;
-SELECT extensions.ok(current_setting('app.chunk2b_write_ok')='true','customer_group: own insert/update/delete positive control');
-SET LOCAL ROLE anon;
-DO $$ DECLARE op text; message text; BEGIN
- FOREACH op IN ARRAY ARRAY['SELECT * FROM public.customer_group','INSERT INTO public.customer_group(tenant_id) VALUES(gen_random_uuid())','UPDATE public.customer_group SET id=id','DELETE FROM public.customer_group'] LOOP
-  BEGIN EXECUTE op; RAISE EXCEPTION 'Statement unexpectedly allowed';
-  EXCEPTION WHEN insufficient_privilege THEN GET STACKED DIAGNOSTICS message=MESSAGE_TEXT;
-   IF message NOT LIKE '%permission denied for table%' THEN RAISE EXCEPTION 'Wrong denial: %',message; END IF;
-  END;
- END LOOP;
- PERFORM set_config('app.chunk2b_acl_denied','true',true);
-END $$;
-RESET ROLE;
-SELECT extensions.ok(current_setting('app.chunk2b_acl_denied')='true','customer_group: anon CRUD is permission denied independent of RLS');
-SET LOCAL ROLE authenticated;
-DO $$ DECLARE op text; message text; BEGIN
- FOREACH op IN ARRAY ARRAY['SELECT * FROM public.customer_group','INSERT INTO public.customer_group(tenant_id) VALUES(gen_random_uuid())','UPDATE public.customer_group SET id=id','DELETE FROM public.customer_group'] LOOP
-  BEGIN EXECUTE op; RAISE EXCEPTION 'Statement unexpectedly allowed';
-  EXCEPTION WHEN insufficient_privilege THEN GET STACKED DIAGNOSTICS message=MESSAGE_TEXT;
-   IF message NOT LIKE '%permission denied for table%' THEN RAISE EXCEPTION 'Wrong denial: %',message; END IF;
-  END;
- END LOOP;
- PERFORM set_config('app.chunk2b_acl_denied','true',true);
-END $$;
-RESET ROLE;
-SELECT extensions.ok(current_setting('app.chunk2b_acl_denied')='true','customer_group: authenticated CRUD is permission denied independent of RLS');
-SELECT extensions.ok(NOT EXISTS (
- SELECT 1 FROM pg_class c CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) a
- WHERE c.oid='public.customer_price'::regclass AND (a.grantee NOT IN(c.relowner,'rebatehq_app'::regrole)
- OR (a.grantee='rebatehq_app'::regrole AND (a.privilege_type NOT IN('SELECT','INSERT','UPDATE','DELETE') OR a.is_grantable))))
- AND (SELECT count(*) FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.customer_price'::regclass AND a.grantee='rebatehq_app'::regrole)=4
- AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.customer_price'::regclass AND attacl IS NOT NULL),'customer_price: exact owner/app CRUD ACL');
-SET LOCAL ROLE rebatehq_app;
-SELECT pg_temp.use_identity('__PHASE1_USER_A_ID__');
-DO $$ DECLARE v_id uuid; n integer; BEGIN
- INSERT INTO public.customer_price SELECT (jsonb_populate_record(NULL::public.customer_price,current_setting('app.phase1_tenant_a_fixtures')::jsonb->'customer_price' || jsonb_build_object('id',gen_random_uuid(),'effective_from','1900-01-01','effective_to','1900-01-02'))).* RETURNING id INTO v_id;
- UPDATE public.customer_price SET id=id WHERE id=v_id; GET DIAGNOSTICS n=ROW_COUNT;
- IF n<>1 THEN RAISE EXCEPTION 'customer_price own UPDATE failed'; END IF;
- DELETE FROM public.customer_price WHERE id=v_id; GET DIAGNOSTICS n=ROW_COUNT;
- IF n<>1 THEN RAISE EXCEPTION 'customer_price own DELETE failed'; END IF;
- IF (SELECT count(*) FROM public.audit_log WHERE tenant_id='__PHASE1_TENANT_A_ID__' AND entity_type='customer_price' AND entity_id=v_id::text AND action IN ('customer_price.insert','customer_price.update','customer_price.delete'))<>3 THEN RAISE EXCEPTION 'customer_price write audit coverage failed'; END IF;
- PERFORM set_config('app.chunk2b_write_ok','true',true);
-END $$;
-RESET ROLE;
-SELECT extensions.ok(current_setting('app.chunk2b_write_ok')='true','customer_price: own insert/update/delete positive control');
-SET LOCAL ROLE anon;
-DO $$ DECLARE op text; message text; BEGIN
- FOREACH op IN ARRAY ARRAY['SELECT * FROM public.customer_price','INSERT INTO public.customer_price(tenant_id) VALUES(gen_random_uuid())','UPDATE public.customer_price SET id=id','DELETE FROM public.customer_price'] LOOP
-  BEGIN EXECUTE op; RAISE EXCEPTION 'Statement unexpectedly allowed';
-  EXCEPTION WHEN insufficient_privilege THEN GET STACKED DIAGNOSTICS message=MESSAGE_TEXT;
-   IF message NOT LIKE '%permission denied for table%' THEN RAISE EXCEPTION 'Wrong denial: %',message; END IF;
-  END;
- END LOOP;
- PERFORM set_config('app.chunk2b_acl_denied','true',true);
-END $$;
-RESET ROLE;
-SELECT extensions.ok(current_setting('app.chunk2b_acl_denied')='true','customer_price: anon CRUD is permission denied independent of RLS');
-SET LOCAL ROLE authenticated;
-DO $$ DECLARE op text; message text; BEGIN
- FOREACH op IN ARRAY ARRAY['SELECT * FROM public.customer_price','INSERT INTO public.customer_price(tenant_id) VALUES(gen_random_uuid())','UPDATE public.customer_price SET id=id','DELETE FROM public.customer_price'] LOOP
-  BEGIN EXECUTE op; RAISE EXCEPTION 'Statement unexpectedly allowed';
-  EXCEPTION WHEN insufficient_privilege THEN GET STACKED DIAGNOSTICS message=MESSAGE_TEXT;
-   IF message NOT LIKE '%permission denied for table%' THEN RAISE EXCEPTION 'Wrong denial: %',message; END IF;
-  END;
- END LOOP;
- PERFORM set_config('app.chunk2b_acl_denied','true',true);
-END $$;
-RESET ROLE;
-SELECT extensions.ok(current_setting('app.chunk2b_acl_denied')='true','customer_price: authenticated CRUD is permission denied independent of RLS');
 SELECT extensions.ok(NOT EXISTS (
  SELECT 1 FROM pg_class c CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) a
  WHERE c.oid='public.rebate_tier'::regclass AND (a.grantee NOT IN(c.relowner,'rebatehq_app'::regrole)
@@ -1625,310 +1272,11 @@ DO $$ DECLARE op text; message text; BEGIN
 END $$;
 RESET ROLE;
 SELECT extensions.ok(current_setting('app.chunk2b_acl_denied')='true','rebate_entry: authenticated CRUD is permission denied independent of RLS');
-SELECT extensions.throws_ok($x$INSERT INTO public.customer_price(tenant_id,group_id,product_id,rule_kind,price,currency,effective_from,source)
- VALUES('__PHASE1_TENANT_A_ID__','__PHASE1_GROUP_A_ID__','__PHASE1_PRODUCT_A_ID__','group',50,'USD',current_date,'overlap')$x$,'23P01',NULL,'Overlapping customer price date and quantity bands rejected');
 SELECT extensions.throws_ok($x$INSERT INTO public.rebate_tier(tenant_id,agreement_id,from_amount,rate)
  VALUES('__PHASE1_TENANT_A_ID__','__PHASE1_REBATE_AGREEMENT_A_ID__',2000,5)$x$,'23P01',NULL,'Overlapping rebate tiers rejected');
 
 
 -- Chunk 2C: per-table controls evaluated under the real app role, assertions after RESET ROLE.
-
-SELECT extensions.ok(EXISTS(
- SELECT 1 FROM pg_class c JOIN pg_attribute a ON a.attrelid=c.oid AND a.attname='tenant_id'
- WHERE c.oid='public.import_job'::regclass AND c.relrowsecurity AND c.relforcerowsecurity AND a.attnotnull
- AND EXISTS(SELECT 1 FROM pg_index i WHERE i.indrelid=c.oid AND i.indisvalid AND i.indkey[0]=a.attnum)
- AND EXISTS(SELECT 1 FROM pg_trigger g WHERE g.tgrelid=c.oid AND g.tgfoid='public.audit_row_change()'::regprocedure AND g.tgenabled='O' AND NOT g.tgisinternal)
-),'import_job: non-null indexed tenant, forced RLS and audit trigger');
-SELECT extensions.ok(NOT EXISTS(
- SELECT 1 FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.import_job'::regclass
- AND (a.grantee NOT IN(c.relowner,'rebatehq_app'::regrole)
- OR (a.grantee='rebatehq_app'::regrole AND (a.privilege_type NOT IN('SELECT','INSERT','UPDATE','DELETE') OR a.is_grantable))))
- AND (SELECT count(*) FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.import_job'::regclass AND a.grantee='rebatehq_app'::regrole)=4
- AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.import_job'::regclass AND attacl IS NOT NULL),
- 'import_job: exact owner/app CRUD ACL, no platform/column grants');
-SET LOCAL ROLE rebatehq_app;
-SELECT pg_temp.use_identity('__PHASE1_USER_A_ID__'),
- set_config('request.jwt.claims','{"sub":"__PHASE1_USER_A_ID__","role":"authenticated"}',true),
- set_config('app.real_actor_id','__PHASE1_USER_A_ID__',true);
-DO $$ DECLARE v_id uuid; n integer; BEGIN
- IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe policy test role'; END IF;
- INSERT INTO public.import_job SELECT (jsonb_populate_record(NULL::public.import_job,current_setting('app.phase1_tenant_a_fixtures')::jsonb->'import_job' || jsonb_build_object('id',gen_random_uuid()))).* RETURNING id INTO v_id;
- SELECT count(*) INTO n FROM public.import_job WHERE id=v_id;
- IF n<>1 THEN RAISE EXCEPTION 'import_job: own SELECT returned % rows',n; END IF;
- UPDATE public.import_job SET id=id WHERE id=v_id; GET DIAGNOSTICS n=ROW_COUNT;
- IF n<>1 THEN RAISE EXCEPTION 'import_job: own UPDATE affected % rows',n; END IF;
- DELETE FROM public.import_job WHERE id=v_id; GET DIAGNOSTICS n=ROW_COUNT;
- IF n<>1 THEN RAISE EXCEPTION 'import_job: own DELETE affected % rows',n; END IF;
- IF (SELECT count(*) FROM public.audit_log WHERE tenant_id='__PHASE1_TENANT_A_ID__' AND entity_type='import_job' AND entity_id=v_id::text AND action IN ('import_job.insert','import_job.update','import_job.delete'))<>3 THEN RAISE EXCEPTION 'import_job: missing write audit event'; END IF;
- PERFORM set_config('app.chunk2c_import_job_own','true',true);
-END $$;
-DO $$ DECLARE n integer; message text; BEGIN
- SELECT count(*) INTO n FROM public.import_job WHERE tenant_id='__PHASE1_TENANT_B_ID__';
- IF n<>0 THEN RAISE EXCEPTION 'import_job: cross SELECT exposed % rows',n; END IF;
- UPDATE public.import_job SET id=id WHERE tenant_id='__PHASE1_TENANT_B_ID__'; GET DIAGNOSTICS n=ROW_COUNT;
- IF n<>0 THEN RAISE EXCEPTION 'import_job: cross UPDATE affected % rows',n; END IF;
- DELETE FROM public.import_job WHERE tenant_id='__PHASE1_TENANT_B_ID__'; GET DIAGNOSTICS n=ROW_COUNT;
- IF n<>0 THEN RAISE EXCEPTION 'import_job: cross DELETE affected % rows',n; END IF;
- BEGIN
-  INSERT INTO public.import_job SELECT (jsonb_populate_record(NULL::public.import_job,current_setting('app.phase1_tenant_b_fixtures')::jsonb->'import_job' || jsonb_build_object('id',gen_random_uuid()))).*;
-  RAISE EXCEPTION 'import_job: cross INSERT unexpectedly succeeded';
- EXCEPTION WHEN insufficient_privilege THEN GET STACKED DIAGNOSTICS message=MESSAGE_TEXT;
-  IF position('row-level security' in lower(message))=0 THEN RAISE EXCEPTION 'import_job: expected RLS 42501, got %',message; END IF;
- END;
- BEGIN
-  UPDATE public.import_job SET tenant_id='__PHASE1_TENANT_B_ID__' WHERE tenant_id='__PHASE1_TENANT_A_ID__';
-  RAISE EXCEPTION 'import_job: tenant reassignment unexpectedly succeeded';
- EXCEPTION WHEN insufficient_privilege THEN GET STACKED DIAGNOSTICS message=MESSAGE_TEXT;
-  IF position('row-level security' in lower(message))=0 THEN RAISE EXCEPTION 'import_job: expected RLS 42501, got %',message; END IF;
- END;
- PERFORM set_config('app.chunk2c_import_job_cross','true',true);
-END $$;
-RESET ROLE;
-SELECT extensions.ok(current_setting('app.chunk2c_import_job_own')='true','import_job: own SELECT/INSERT/UPDATE/DELETE and three audit events');
-SELECT extensions.ok(current_setting('app.chunk2c_import_job_cross')='true','import_job: cross rows hidden, foreign INSERT and tenant reassignment fail with RLS 42501');
-SET LOCAL ROLE anon;
-DO $$ DECLARE op text; message text; BEGIN
- FOREACH op IN ARRAY ARRAY['SELECT * FROM public.import_job','INSERT INTO public.import_job(tenant_id) VALUES(gen_random_uuid())','UPDATE public.import_job SET id=id','DELETE FROM public.import_job'] LOOP
-  BEGIN EXECUTE op; RAISE EXCEPTION 'import_job: anon CRUD unexpectedly allowed';
-  EXCEPTION WHEN insufficient_privilege THEN GET STACKED DIAGNOSTICS message=MESSAGE_TEXT;
-   IF position('permission denied for table import_job' in lower(message))=0 THEN RAISE EXCEPTION 'import_job: wrong ACL failure %',message; END IF;
-  END;
- END LOOP;
- PERFORM set_config('app.chunk2c_import_job_anon','true',true);
-END $$;
-RESET ROLE;
-SELECT extensions.ok(current_setting('app.chunk2c_import_job_anon')='true','import_job: anon CRUD permission denied independent of RLS');
-SET LOCAL ROLE authenticated;
-DO $$ DECLARE op text; message text; BEGIN
- FOREACH op IN ARRAY ARRAY['SELECT * FROM public.import_job','INSERT INTO public.import_job(tenant_id) VALUES(gen_random_uuid())','UPDATE public.import_job SET id=id','DELETE FROM public.import_job'] LOOP
-  BEGIN EXECUTE op; RAISE EXCEPTION 'import_job: authenticated CRUD unexpectedly allowed';
-  EXCEPTION WHEN insufficient_privilege THEN GET STACKED DIAGNOSTICS message=MESSAGE_TEXT;
-   IF position('permission denied for table import_job' in lower(message))=0 THEN RAISE EXCEPTION 'import_job: wrong ACL failure %',message; END IF;
-  END;
- END LOOP;
- PERFORM set_config('app.chunk2c_import_job_authenticated','true',true);
-END $$;
-RESET ROLE;
-SELECT extensions.ok(current_setting('app.chunk2c_import_job_authenticated')='true','import_job: authenticated CRUD permission denied independent of RLS');
-SET LOCAL ROLE rebatehq_app;
-SELECT pg_temp.use_identity('__PHASE1_USER_REP_ID__'),
- set_config('request.jwt.claims','{"sub":"__PHASE1_USER_REP_ID__","role":"authenticated"}',true);
-DO $$ DECLARE n integer; message text; BEGIN
- IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe rep policy test role'; END IF;
- SELECT count(*) INTO n FROM public.import_job WHERE tenant_id='__PHASE1_TENANT_B_ID__';
- IF n<>0 THEN RAISE EXCEPTION 'import_job: rep sees restricted rows'; END IF;
- UPDATE public.import_job SET id=id WHERE tenant_id='__PHASE1_TENANT_B_ID__'; GET DIAGNOSTICS n=ROW_COUNT;
- IF n<>0 THEN RAISE EXCEPTION 'import_job: rep UPDATE allowed'; END IF;
- DELETE FROM public.import_job WHERE tenant_id='__PHASE1_TENANT_B_ID__'; GET DIAGNOSTICS n=ROW_COUNT;
- IF n<>0 THEN RAISE EXCEPTION 'import_job: rep DELETE allowed'; END IF;
- BEGIN
-  INSERT INTO public.import_job SELECT (jsonb_populate_record(NULL::public.import_job,current_setting('app.phase1_tenant_b_fixtures')::jsonb->'import_job' || jsonb_build_object('id',gen_random_uuid()))).*;
-  RAISE EXCEPTION 'import_job: rep INSERT allowed';
- EXCEPTION WHEN insufficient_privilege THEN GET STACKED DIAGNOSTICS message=MESSAGE_TEXT;
-  IF position('row-level security' in lower(message))=0 THEN RAISE EXCEPTION 'import_job: wrong rep denial %',message; END IF;
- END;
- PERFORM set_config('app.chunk2c_import_job_rep','true',true);
-END $$;
-RESET ROLE;
-SELECT extensions.ok(current_setting('app.chunk2c_import_job_rep')='true','import_job: rep cannot read or mutate its own tenant restricted data');
-
-SELECT extensions.ok(EXISTS(
- SELECT 1 FROM pg_class c JOIN pg_attribute a ON a.attrelid=c.oid AND a.attname='tenant_id'
- WHERE c.oid='public.column_mapping_template'::regclass AND c.relrowsecurity AND c.relforcerowsecurity AND a.attnotnull
- AND EXISTS(SELECT 1 FROM pg_index i WHERE i.indrelid=c.oid AND i.indisvalid AND i.indkey[0]=a.attnum)
- AND EXISTS(SELECT 1 FROM pg_trigger g WHERE g.tgrelid=c.oid AND g.tgfoid='public.audit_row_change()'::regprocedure AND g.tgenabled='O' AND NOT g.tgisinternal)
-),'column_mapping_template: non-null indexed tenant, forced RLS and audit trigger');
-SELECT extensions.ok(NOT EXISTS(
- SELECT 1 FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.column_mapping_template'::regclass
- AND (a.grantee NOT IN(c.relowner,'rebatehq_app'::regrole)
- OR (a.grantee='rebatehq_app'::regrole AND (a.privilege_type NOT IN('SELECT','INSERT','UPDATE','DELETE') OR a.is_grantable))))
- AND (SELECT count(*) FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.column_mapping_template'::regclass AND a.grantee='rebatehq_app'::regrole)=4
- AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.column_mapping_template'::regclass AND attacl IS NOT NULL),
- 'column_mapping_template: exact owner/app CRUD ACL, no platform/column grants');
-SET LOCAL ROLE rebatehq_app;
-SELECT pg_temp.use_identity('__PHASE1_USER_A_ID__'),
- set_config('request.jwt.claims','{"sub":"__PHASE1_USER_A_ID__","role":"authenticated"}',true),
- set_config('app.real_actor_id','__PHASE1_USER_A_ID__',true);
-DO $$ DECLARE v_id uuid; n integer; BEGIN
- IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe policy test role'; END IF;
- INSERT INTO public.column_mapping_template SELECT (jsonb_populate_record(NULL::public.column_mapping_template,current_setting('app.phase1_tenant_a_fixtures')::jsonb->'column_mapping_template' || jsonb_build_object('id',gen_random_uuid(),'name',gen_random_uuid()::text))).* RETURNING id INTO v_id;
- SELECT count(*) INTO n FROM public.column_mapping_template WHERE id=v_id;
- IF n<>1 THEN RAISE EXCEPTION 'column_mapping_template: own SELECT returned % rows',n; END IF;
- UPDATE public.column_mapping_template SET id=id WHERE id=v_id; GET DIAGNOSTICS n=ROW_COUNT;
- IF n<>1 THEN RAISE EXCEPTION 'column_mapping_template: own UPDATE affected % rows',n; END IF;
- DELETE FROM public.column_mapping_template WHERE id=v_id; GET DIAGNOSTICS n=ROW_COUNT;
- IF n<>1 THEN RAISE EXCEPTION 'column_mapping_template: own DELETE affected % rows',n; END IF;
- IF (SELECT count(*) FROM public.audit_log WHERE tenant_id='__PHASE1_TENANT_A_ID__' AND entity_type='column_mapping_template' AND entity_id=v_id::text AND action IN ('column_mapping_template.insert','column_mapping_template.update','column_mapping_template.delete'))<>3 THEN RAISE EXCEPTION 'column_mapping_template: missing write audit event'; END IF;
- PERFORM set_config('app.chunk2c_column_mapping_template_own','true',true);
-END $$;
-DO $$ DECLARE n integer; message text; BEGIN
- SELECT count(*) INTO n FROM public.column_mapping_template WHERE tenant_id='__PHASE1_TENANT_B_ID__';
- IF n<>0 THEN RAISE EXCEPTION 'column_mapping_template: cross SELECT exposed % rows',n; END IF;
- UPDATE public.column_mapping_template SET id=id WHERE tenant_id='__PHASE1_TENANT_B_ID__'; GET DIAGNOSTICS n=ROW_COUNT;
- IF n<>0 THEN RAISE EXCEPTION 'column_mapping_template: cross UPDATE affected % rows',n; END IF;
- DELETE FROM public.column_mapping_template WHERE tenant_id='__PHASE1_TENANT_B_ID__'; GET DIAGNOSTICS n=ROW_COUNT;
- IF n<>0 THEN RAISE EXCEPTION 'column_mapping_template: cross DELETE affected % rows',n; END IF;
- BEGIN
-  INSERT INTO public.column_mapping_template SELECT (jsonb_populate_record(NULL::public.column_mapping_template,current_setting('app.phase1_tenant_b_fixtures')::jsonb->'column_mapping_template' || jsonb_build_object('id',gen_random_uuid(),'name',gen_random_uuid()::text))).*;
-  RAISE EXCEPTION 'column_mapping_template: cross INSERT unexpectedly succeeded';
- EXCEPTION WHEN insufficient_privilege THEN GET STACKED DIAGNOSTICS message=MESSAGE_TEXT;
-  IF position('row-level security' in lower(message))=0 THEN RAISE EXCEPTION 'column_mapping_template: expected RLS 42501, got %',message; END IF;
- END;
- BEGIN
-  UPDATE public.column_mapping_template SET tenant_id='__PHASE1_TENANT_B_ID__' WHERE tenant_id='__PHASE1_TENANT_A_ID__';
-  RAISE EXCEPTION 'column_mapping_template: tenant reassignment unexpectedly succeeded';
- EXCEPTION WHEN insufficient_privilege THEN GET STACKED DIAGNOSTICS message=MESSAGE_TEXT;
-  IF position('row-level security' in lower(message))=0 THEN RAISE EXCEPTION 'column_mapping_template: expected RLS 42501, got %',message; END IF;
- END;
- PERFORM set_config('app.chunk2c_column_mapping_template_cross','true',true);
-END $$;
-RESET ROLE;
-SELECT extensions.ok(current_setting('app.chunk2c_column_mapping_template_own')='true','column_mapping_template: own SELECT/INSERT/UPDATE/DELETE and three audit events');
-SELECT extensions.ok(current_setting('app.chunk2c_column_mapping_template_cross')='true','column_mapping_template: cross rows hidden, foreign INSERT and tenant reassignment fail with RLS 42501');
-SET LOCAL ROLE anon;
-DO $$ DECLARE op text; message text; BEGIN
- FOREACH op IN ARRAY ARRAY['SELECT * FROM public.column_mapping_template','INSERT INTO public.column_mapping_template(tenant_id) VALUES(gen_random_uuid())','UPDATE public.column_mapping_template SET id=id','DELETE FROM public.column_mapping_template'] LOOP
-  BEGIN EXECUTE op; RAISE EXCEPTION 'column_mapping_template: anon CRUD unexpectedly allowed';
-  EXCEPTION WHEN insufficient_privilege THEN GET STACKED DIAGNOSTICS message=MESSAGE_TEXT;
-   IF position('permission denied for table column_mapping_template' in lower(message))=0 THEN RAISE EXCEPTION 'column_mapping_template: wrong ACL failure %',message; END IF;
-  END;
- END LOOP;
- PERFORM set_config('app.chunk2c_column_mapping_template_anon','true',true);
-END $$;
-RESET ROLE;
-SELECT extensions.ok(current_setting('app.chunk2c_column_mapping_template_anon')='true','column_mapping_template: anon CRUD permission denied independent of RLS');
-SET LOCAL ROLE authenticated;
-DO $$ DECLARE op text; message text; BEGIN
- FOREACH op IN ARRAY ARRAY['SELECT * FROM public.column_mapping_template','INSERT INTO public.column_mapping_template(tenant_id) VALUES(gen_random_uuid())','UPDATE public.column_mapping_template SET id=id','DELETE FROM public.column_mapping_template'] LOOP
-  BEGIN EXECUTE op; RAISE EXCEPTION 'column_mapping_template: authenticated CRUD unexpectedly allowed';
-  EXCEPTION WHEN insufficient_privilege THEN GET STACKED DIAGNOSTICS message=MESSAGE_TEXT;
-   IF position('permission denied for table column_mapping_template' in lower(message))=0 THEN RAISE EXCEPTION 'column_mapping_template: wrong ACL failure %',message; END IF;
-  END;
- END LOOP;
- PERFORM set_config('app.chunk2c_column_mapping_template_authenticated','true',true);
-END $$;
-RESET ROLE;
-SELECT extensions.ok(current_setting('app.chunk2c_column_mapping_template_authenticated')='true','column_mapping_template: authenticated CRUD permission denied independent of RLS');
-SET LOCAL ROLE rebatehq_app;
-SELECT pg_temp.use_identity('__PHASE1_USER_REP_ID__'),
- set_config('request.jwt.claims','{"sub":"__PHASE1_USER_REP_ID__","role":"authenticated"}',true);
-DO $$ DECLARE n integer; message text; BEGIN
- IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe rep policy test role'; END IF;
- SELECT count(*) INTO n FROM public.column_mapping_template WHERE tenant_id='__PHASE1_TENANT_B_ID__';
- IF n<>0 THEN RAISE EXCEPTION 'column_mapping_template: rep sees restricted rows'; END IF;
- UPDATE public.column_mapping_template SET id=id WHERE tenant_id='__PHASE1_TENANT_B_ID__'; GET DIAGNOSTICS n=ROW_COUNT;
- IF n<>0 THEN RAISE EXCEPTION 'column_mapping_template: rep UPDATE allowed'; END IF;
- DELETE FROM public.column_mapping_template WHERE tenant_id='__PHASE1_TENANT_B_ID__'; GET DIAGNOSTICS n=ROW_COUNT;
- IF n<>0 THEN RAISE EXCEPTION 'column_mapping_template: rep DELETE allowed'; END IF;
- BEGIN
-  INSERT INTO public.column_mapping_template SELECT (jsonb_populate_record(NULL::public.column_mapping_template,current_setting('app.phase1_tenant_b_fixtures')::jsonb->'column_mapping_template' || jsonb_build_object('id',gen_random_uuid(),'name',gen_random_uuid()::text))).*;
-  RAISE EXCEPTION 'column_mapping_template: rep INSERT allowed';
- EXCEPTION WHEN insufficient_privilege THEN GET STACKED DIAGNOSTICS message=MESSAGE_TEXT;
-  IF position('row-level security' in lower(message))=0 THEN RAISE EXCEPTION 'column_mapping_template: wrong rep denial %',message; END IF;
- END;
- PERFORM set_config('app.chunk2c_column_mapping_template_rep','true',true);
-END $$;
-RESET ROLE;
-SELECT extensions.ok(current_setting('app.chunk2c_column_mapping_template_rep')='true','column_mapping_template: rep cannot read or mutate its own tenant restricted data');
-
-SELECT extensions.ok(EXISTS(
- SELECT 1 FROM pg_class c JOIN pg_attribute a ON a.attrelid=c.oid AND a.attname='tenant_id'
- WHERE c.oid='public.connector_sync_run'::regclass AND c.relrowsecurity AND c.relforcerowsecurity AND a.attnotnull
- AND EXISTS(SELECT 1 FROM pg_index i WHERE i.indrelid=c.oid AND i.indisvalid AND i.indkey[0]=a.attnum)
- AND EXISTS(SELECT 1 FROM pg_trigger g WHERE g.tgrelid=c.oid AND g.tgfoid='public.audit_row_change()'::regprocedure AND g.tgenabled='O' AND NOT g.tgisinternal)
-),'connector_sync_run: non-null indexed tenant, forced RLS and audit trigger');
-SELECT extensions.ok(NOT EXISTS(
- SELECT 1 FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.connector_sync_run'::regclass
- AND (a.grantee NOT IN(c.relowner,'rebatehq_app'::regrole)
- OR (a.grantee='rebatehq_app'::regrole AND (a.privilege_type NOT IN('SELECT','INSERT','UPDATE','DELETE') OR a.is_grantable))))
- AND (SELECT count(*) FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.connector_sync_run'::regclass AND a.grantee='rebatehq_app'::regrole)=4
- AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.connector_sync_run'::regclass AND attacl IS NOT NULL),
- 'connector_sync_run: exact owner/app CRUD ACL, no platform/column grants');
-SET LOCAL ROLE rebatehq_app;
-SELECT pg_temp.use_identity('__PHASE1_USER_A_ID__'),
- set_config('request.jwt.claims','{"sub":"__PHASE1_USER_A_ID__","role":"authenticated"}',true),
- set_config('app.real_actor_id','__PHASE1_USER_A_ID__',true);
-DO $$ DECLARE v_id uuid; n integer; BEGIN
- IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe policy test role'; END IF;
- INSERT INTO public.connector_sync_run SELECT (jsonb_populate_record(NULL::public.connector_sync_run,current_setting('app.phase1_tenant_a_fixtures')::jsonb->'connector_sync_run' || jsonb_build_object('id',gen_random_uuid()))).* RETURNING id INTO v_id;
- SELECT count(*) INTO n FROM public.connector_sync_run WHERE id=v_id;
- IF n<>1 THEN RAISE EXCEPTION 'connector_sync_run: own SELECT returned % rows',n; END IF;
- UPDATE public.connector_sync_run SET id=id WHERE id=v_id; GET DIAGNOSTICS n=ROW_COUNT;
- IF n<>1 THEN RAISE EXCEPTION 'connector_sync_run: own UPDATE affected % rows',n; END IF;
- DELETE FROM public.connector_sync_run WHERE id=v_id; GET DIAGNOSTICS n=ROW_COUNT;
- IF n<>1 THEN RAISE EXCEPTION 'connector_sync_run: own DELETE affected % rows',n; END IF;
- IF (SELECT count(*) FROM public.audit_log WHERE tenant_id='__PHASE1_TENANT_A_ID__' AND entity_type='connector_sync_run' AND entity_id=v_id::text AND action IN ('connector_sync_run.insert','connector_sync_run.update','connector_sync_run.delete'))<>3 THEN RAISE EXCEPTION 'connector_sync_run: missing write audit event'; END IF;
- PERFORM set_config('app.chunk2c_connector_sync_run_own','true',true);
-END $$;
-DO $$ DECLARE n integer; message text; BEGIN
- SELECT count(*) INTO n FROM public.connector_sync_run WHERE tenant_id='__PHASE1_TENANT_B_ID__';
- IF n<>0 THEN RAISE EXCEPTION 'connector_sync_run: cross SELECT exposed % rows',n; END IF;
- UPDATE public.connector_sync_run SET id=id WHERE tenant_id='__PHASE1_TENANT_B_ID__'; GET DIAGNOSTICS n=ROW_COUNT;
- IF n<>0 THEN RAISE EXCEPTION 'connector_sync_run: cross UPDATE affected % rows',n; END IF;
- DELETE FROM public.connector_sync_run WHERE tenant_id='__PHASE1_TENANT_B_ID__'; GET DIAGNOSTICS n=ROW_COUNT;
- IF n<>0 THEN RAISE EXCEPTION 'connector_sync_run: cross DELETE affected % rows',n; END IF;
- BEGIN
-  INSERT INTO public.connector_sync_run SELECT (jsonb_populate_record(NULL::public.connector_sync_run,current_setting('app.phase1_tenant_b_fixtures')::jsonb->'connector_sync_run' || jsonb_build_object('id',gen_random_uuid()))).*;
-  RAISE EXCEPTION 'connector_sync_run: cross INSERT unexpectedly succeeded';
- EXCEPTION WHEN insufficient_privilege THEN GET STACKED DIAGNOSTICS message=MESSAGE_TEXT;
-  IF position('row-level security' in lower(message))=0 THEN RAISE EXCEPTION 'connector_sync_run: expected RLS 42501, got %',message; END IF;
- END;
- BEGIN
-  UPDATE public.connector_sync_run SET tenant_id='__PHASE1_TENANT_B_ID__' WHERE tenant_id='__PHASE1_TENANT_A_ID__';
-  RAISE EXCEPTION 'connector_sync_run: tenant reassignment unexpectedly succeeded';
- EXCEPTION WHEN insufficient_privilege THEN GET STACKED DIAGNOSTICS message=MESSAGE_TEXT;
-  IF position('row-level security' in lower(message))=0 THEN RAISE EXCEPTION 'connector_sync_run: expected RLS 42501, got %',message; END IF;
- END;
- PERFORM set_config('app.chunk2c_connector_sync_run_cross','true',true);
-END $$;
-RESET ROLE;
-SELECT extensions.ok(current_setting('app.chunk2c_connector_sync_run_own')='true','connector_sync_run: own SELECT/INSERT/UPDATE/DELETE and three audit events');
-SELECT extensions.ok(current_setting('app.chunk2c_connector_sync_run_cross')='true','connector_sync_run: cross rows hidden, foreign INSERT and tenant reassignment fail with RLS 42501');
-SET LOCAL ROLE anon;
-DO $$ DECLARE op text; message text; BEGIN
- FOREACH op IN ARRAY ARRAY['SELECT * FROM public.connector_sync_run','INSERT INTO public.connector_sync_run(tenant_id) VALUES(gen_random_uuid())','UPDATE public.connector_sync_run SET id=id','DELETE FROM public.connector_sync_run'] LOOP
-  BEGIN EXECUTE op; RAISE EXCEPTION 'connector_sync_run: anon CRUD unexpectedly allowed';
-  EXCEPTION WHEN insufficient_privilege THEN GET STACKED DIAGNOSTICS message=MESSAGE_TEXT;
-   IF position('permission denied for table connector_sync_run' in lower(message))=0 THEN RAISE EXCEPTION 'connector_sync_run: wrong ACL failure %',message; END IF;
-  END;
- END LOOP;
- PERFORM set_config('app.chunk2c_connector_sync_run_anon','true',true);
-END $$;
-RESET ROLE;
-SELECT extensions.ok(current_setting('app.chunk2c_connector_sync_run_anon')='true','connector_sync_run: anon CRUD permission denied independent of RLS');
-SET LOCAL ROLE authenticated;
-DO $$ DECLARE op text; message text; BEGIN
- FOREACH op IN ARRAY ARRAY['SELECT * FROM public.connector_sync_run','INSERT INTO public.connector_sync_run(tenant_id) VALUES(gen_random_uuid())','UPDATE public.connector_sync_run SET id=id','DELETE FROM public.connector_sync_run'] LOOP
-  BEGIN EXECUTE op; RAISE EXCEPTION 'connector_sync_run: authenticated CRUD unexpectedly allowed';
-  EXCEPTION WHEN insufficient_privilege THEN GET STACKED DIAGNOSTICS message=MESSAGE_TEXT;
-   IF position('permission denied for table connector_sync_run' in lower(message))=0 THEN RAISE EXCEPTION 'connector_sync_run: wrong ACL failure %',message; END IF;
-  END;
- END LOOP;
- PERFORM set_config('app.chunk2c_connector_sync_run_authenticated','true',true);
-END $$;
-RESET ROLE;
-SELECT extensions.ok(current_setting('app.chunk2c_connector_sync_run_authenticated')='true','connector_sync_run: authenticated CRUD permission denied independent of RLS');
-SET LOCAL ROLE rebatehq_app;
-SELECT pg_temp.use_identity('__PHASE1_USER_REP_ID__'),
- set_config('request.jwt.claims','{"sub":"__PHASE1_USER_REP_ID__","role":"authenticated"}',true);
-DO $$ DECLARE n integer; message text; BEGIN
- IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe rep policy test role'; END IF;
- SELECT count(*) INTO n FROM public.connector_sync_run WHERE tenant_id='__PHASE1_TENANT_B_ID__';
- IF n<>0 THEN RAISE EXCEPTION 'connector_sync_run: rep sees restricted rows'; END IF;
- UPDATE public.connector_sync_run SET id=id WHERE tenant_id='__PHASE1_TENANT_B_ID__'; GET DIAGNOSTICS n=ROW_COUNT;
- IF n<>0 THEN RAISE EXCEPTION 'connector_sync_run: rep UPDATE allowed'; END IF;
- DELETE FROM public.connector_sync_run WHERE tenant_id='__PHASE1_TENANT_B_ID__'; GET DIAGNOSTICS n=ROW_COUNT;
- IF n<>0 THEN RAISE EXCEPTION 'connector_sync_run: rep DELETE allowed'; END IF;
- BEGIN
-  INSERT INTO public.connector_sync_run SELECT (jsonb_populate_record(NULL::public.connector_sync_run,current_setting('app.phase1_tenant_b_fixtures')::jsonb->'connector_sync_run' || jsonb_build_object('id',gen_random_uuid()))).*;
-  RAISE EXCEPTION 'connector_sync_run: rep INSERT allowed';
- EXCEPTION WHEN insufficient_privilege THEN GET STACKED DIAGNOSTICS message=MESSAGE_TEXT;
-  IF position('row-level security' in lower(message))=0 THEN RAISE EXCEPTION 'connector_sync_run: wrong rep denial %',message; END IF;
- END;
- PERFORM set_config('app.chunk2c_connector_sync_run_rep','true',true);
-END $$;
-RESET ROLE;
-SELECT extensions.ok(current_setting('app.chunk2c_connector_sync_run_rep')='true','connector_sync_run: rep cannot read or mutate its own tenant restricted data');
 
 SELECT extensions.ok(EXISTS(
  SELECT 1 FROM pg_class c JOIN pg_attribute a ON a.attrelid=c.oid AND a.attname='tenant_id'
@@ -2128,243 +1476,34 @@ END $$;
 RESET ROLE;
 SELECT extensions.ok(current_setting('app.chunk2c_approval_rule_rep')='true','approval_rule: rep cannot read or mutate its own tenant restricted data');
 
-SELECT extensions.ok(EXISTS(
- SELECT 1 FROM pg_class c JOIN pg_attribute a ON a.attrelid=c.oid AND a.attname='tenant_id'
- WHERE c.oid='public.plan_feature'::regclass AND c.relrowsecurity AND c.relforcerowsecurity AND a.attnotnull
- AND EXISTS(SELECT 1 FROM pg_index i WHERE i.indrelid=c.oid AND i.indisvalid AND i.indkey[0]=a.attnum)
- AND EXISTS(SELECT 1 FROM pg_trigger g WHERE g.tgrelid=c.oid AND g.tgfoid='public.audit_row_change()'::regprocedure AND g.tgenabled='O' AND NOT g.tgisinternal)
-),'plan_feature: non-null indexed tenant, forced RLS and audit trigger');
-SELECT extensions.ok(NOT EXISTS(
- SELECT 1 FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.plan_feature'::regclass
- AND (a.grantee NOT IN(c.relowner,'rebatehq_app'::regrole)
- OR (a.grantee='rebatehq_app'::regrole AND (a.privilege_type NOT IN('SELECT','INSERT','UPDATE','DELETE') OR a.is_grantable))))
- AND (SELECT count(*) FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.plan_feature'::regclass AND a.grantee='rebatehq_app'::regrole)=4
- AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.plan_feature'::regclass AND attacl IS NOT NULL),
- 'plan_feature: exact owner/app CRUD ACL, no platform/column grants');
-SET LOCAL ROLE rebatehq_app;
-SELECT pg_temp.use_identity('__PHASE1_USER_A_ID__'),
- set_config('request.jwt.claims','{"sub":"__PHASE1_USER_A_ID__","role":"authenticated"}',true),
- set_config('app.real_actor_id','__PHASE1_USER_A_ID__',true);
-DO $$ DECLARE v_id uuid; n integer; BEGIN
- IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe policy test role'; END IF;
- INSERT INTO public.plan_feature SELECT (jsonb_populate_record(NULL::public.plan_feature,current_setting('app.phase1_tenant_a_fixtures')::jsonb->'plan_feature' || jsonb_build_object('id',gen_random_uuid(),'feature_key','p'||replace(gen_random_uuid()::text,'-','')))).* RETURNING id INTO v_id;
- SELECT count(*) INTO n FROM public.plan_feature WHERE id=v_id;
- IF n<>1 THEN RAISE EXCEPTION 'plan_feature: own SELECT returned % rows',n; END IF;
- UPDATE public.plan_feature SET id=id WHERE id=v_id; GET DIAGNOSTICS n=ROW_COUNT;
- IF n<>1 THEN RAISE EXCEPTION 'plan_feature: own UPDATE affected % rows',n; END IF;
- DELETE FROM public.plan_feature WHERE id=v_id; GET DIAGNOSTICS n=ROW_COUNT;
- IF n<>1 THEN RAISE EXCEPTION 'plan_feature: own DELETE affected % rows',n; END IF;
- IF (SELECT count(*) FROM public.audit_log WHERE tenant_id='__PHASE1_TENANT_A_ID__' AND entity_type='plan_feature' AND entity_id=v_id::text AND action IN ('plan_feature.insert','plan_feature.update','plan_feature.delete'))<>3 THEN RAISE EXCEPTION 'plan_feature: missing write audit event'; END IF;
- PERFORM set_config('app.chunk2c_plan_feature_own','true',true);
-END $$;
-DO $$ DECLARE n integer; message text; BEGIN
- SELECT count(*) INTO n FROM public.plan_feature WHERE tenant_id='__PHASE1_TENANT_B_ID__';
- IF n<>0 THEN RAISE EXCEPTION 'plan_feature: cross SELECT exposed % rows',n; END IF;
- UPDATE public.plan_feature SET id=id WHERE tenant_id='__PHASE1_TENANT_B_ID__'; GET DIAGNOSTICS n=ROW_COUNT;
- IF n<>0 THEN RAISE EXCEPTION 'plan_feature: cross UPDATE affected % rows',n; END IF;
- DELETE FROM public.plan_feature WHERE tenant_id='__PHASE1_TENANT_B_ID__'; GET DIAGNOSTICS n=ROW_COUNT;
- IF n<>0 THEN RAISE EXCEPTION 'plan_feature: cross DELETE affected % rows',n; END IF;
- BEGIN
-  INSERT INTO public.plan_feature SELECT (jsonb_populate_record(NULL::public.plan_feature,current_setting('app.phase1_tenant_b_fixtures')::jsonb->'plan_feature' || jsonb_build_object('id',gen_random_uuid(),'feature_key','p'||replace(gen_random_uuid()::text,'-','')))).*;
-  RAISE EXCEPTION 'plan_feature: cross INSERT unexpectedly succeeded';
- EXCEPTION WHEN insufficient_privilege THEN GET STACKED DIAGNOSTICS message=MESSAGE_TEXT;
-  IF position('row-level security' in lower(message))=0 THEN RAISE EXCEPTION 'plan_feature: expected RLS 42501, got %',message; END IF;
- END;
- BEGIN
-  UPDATE public.plan_feature SET tenant_id='__PHASE1_TENANT_B_ID__' WHERE tenant_id='__PHASE1_TENANT_A_ID__';
-  RAISE EXCEPTION 'plan_feature: tenant reassignment unexpectedly succeeded';
- EXCEPTION WHEN insufficient_privilege THEN GET STACKED DIAGNOSTICS message=MESSAGE_TEXT;
-  IF position('row-level security' in lower(message))=0 THEN RAISE EXCEPTION 'plan_feature: expected RLS 42501, got %',message; END IF;
- END;
- PERFORM set_config('app.chunk2c_plan_feature_cross','true',true);
-END $$;
-RESET ROLE;
-SELECT extensions.ok(current_setting('app.chunk2c_plan_feature_own')='true','plan_feature: own SELECT/INSERT/UPDATE/DELETE and three audit events');
-SELECT extensions.ok(current_setting('app.chunk2c_plan_feature_cross')='true','plan_feature: cross rows hidden, foreign INSERT and tenant reassignment fail with RLS 42501');
-SET LOCAL ROLE anon;
-DO $$ DECLARE op text; message text; BEGIN
- FOREACH op IN ARRAY ARRAY['SELECT * FROM public.plan_feature','INSERT INTO public.plan_feature(tenant_id) VALUES(gen_random_uuid())','UPDATE public.plan_feature SET id=id','DELETE FROM public.plan_feature'] LOOP
-  BEGIN EXECUTE op; RAISE EXCEPTION 'plan_feature: anon CRUD unexpectedly allowed';
-  EXCEPTION WHEN insufficient_privilege THEN GET STACKED DIAGNOSTICS message=MESSAGE_TEXT;
-   IF position('permission denied for table plan_feature' in lower(message))=0 THEN RAISE EXCEPTION 'plan_feature: wrong ACL failure %',message; END IF;
-  END;
- END LOOP;
- PERFORM set_config('app.chunk2c_plan_feature_anon','true',true);
-END $$;
-RESET ROLE;
-SELECT extensions.ok(current_setting('app.chunk2c_plan_feature_anon')='true','plan_feature: anon CRUD permission denied independent of RLS');
-SET LOCAL ROLE authenticated;
-DO $$ DECLARE op text; message text; BEGIN
- FOREACH op IN ARRAY ARRAY['SELECT * FROM public.plan_feature','INSERT INTO public.plan_feature(tenant_id) VALUES(gen_random_uuid())','UPDATE public.plan_feature SET id=id','DELETE FROM public.plan_feature'] LOOP
-  BEGIN EXECUTE op; RAISE EXCEPTION 'plan_feature: authenticated CRUD unexpectedly allowed';
-  EXCEPTION WHEN insufficient_privilege THEN GET STACKED DIAGNOSTICS message=MESSAGE_TEXT;
-   IF position('permission denied for table plan_feature' in lower(message))=0 THEN RAISE EXCEPTION 'plan_feature: wrong ACL failure %',message; END IF;
-  END;
- END LOOP;
- PERFORM set_config('app.chunk2c_plan_feature_authenticated','true',true);
-END $$;
-RESET ROLE;
-SELECT extensions.ok(current_setting('app.chunk2c_plan_feature_authenticated')='true','plan_feature: authenticated CRUD permission denied independent of RLS');
-SET LOCAL ROLE rebatehq_app;
-SELECT pg_temp.use_identity('__PHASE1_USER_REP_ID__'),
- set_config('request.jwt.claims','{"sub":"__PHASE1_USER_REP_ID__","role":"authenticated"}',true);
-DO $$ DECLARE n integer; message text; BEGIN
- IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe rep policy test role'; END IF;
- SELECT count(*) INTO n FROM public.plan_feature WHERE tenant_id='__PHASE1_TENANT_B_ID__';
- IF n<>0 THEN RAISE EXCEPTION 'plan_feature: rep sees restricted rows'; END IF;
- UPDATE public.plan_feature SET id=id WHERE tenant_id='__PHASE1_TENANT_B_ID__'; GET DIAGNOSTICS n=ROW_COUNT;
- IF n<>0 THEN RAISE EXCEPTION 'plan_feature: rep UPDATE allowed'; END IF;
- DELETE FROM public.plan_feature WHERE tenant_id='__PHASE1_TENANT_B_ID__'; GET DIAGNOSTICS n=ROW_COUNT;
- IF n<>0 THEN RAISE EXCEPTION 'plan_feature: rep DELETE allowed'; END IF;
- BEGIN
-  INSERT INTO public.plan_feature SELECT (jsonb_populate_record(NULL::public.plan_feature,current_setting('app.phase1_tenant_b_fixtures')::jsonb->'plan_feature' || jsonb_build_object('id',gen_random_uuid(),'feature_key','p'||replace(gen_random_uuid()::text,'-','')))).*;
-  RAISE EXCEPTION 'plan_feature: rep INSERT allowed';
- EXCEPTION WHEN insufficient_privilege THEN GET STACKED DIAGNOSTICS message=MESSAGE_TEXT;
-  IF position('row-level security' in lower(message))=0 THEN RAISE EXCEPTION 'plan_feature: wrong rep denial %',message; END IF;
- END;
- PERFORM set_config('app.chunk2c_plan_feature_rep','true',true);
-END $$;
-RESET ROLE;
-SELECT extensions.ok(current_setting('app.chunk2c_plan_feature_rep')='true','plan_feature: rep cannot read or mutate its own tenant restricted data');
-
-SELECT extensions.ok(EXISTS(
- SELECT 1 FROM pg_class c JOIN pg_attribute a ON a.attrelid=c.oid AND a.attname='tenant_id'
- WHERE c.oid='public.margin_snapshot'::regclass AND c.relrowsecurity AND c.relforcerowsecurity AND a.attnotnull
- AND EXISTS(SELECT 1 FROM pg_index i WHERE i.indrelid=c.oid AND i.indisvalid AND i.indkey[0]=a.attnum)
- AND EXISTS(SELECT 1 FROM pg_trigger g WHERE g.tgrelid=c.oid AND g.tgfoid='public.audit_row_change()'::regprocedure AND g.tgenabled='O' AND NOT g.tgisinternal)
-),'margin_snapshot: non-null indexed tenant, forced RLS and audit trigger');
-SELECT extensions.ok(NOT EXISTS(
- SELECT 1 FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.margin_snapshot'::regclass
- AND (a.grantee NOT IN(c.relowner,'rebatehq_app'::regrole)
- OR (a.grantee='rebatehq_app'::regrole AND (a.privilege_type NOT IN('SELECT','INSERT','UPDATE','DELETE') OR a.is_grantable))))
- AND (SELECT count(*) FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE c.oid='public.margin_snapshot'::regclass AND a.grantee='rebatehq_app'::regrole)=4
- AND NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.margin_snapshot'::regclass AND attacl IS NOT NULL),
- 'margin_snapshot: exact owner/app CRUD ACL, no platform/column grants');
-SET LOCAL ROLE rebatehq_app;
-SELECT pg_temp.use_identity('__PHASE1_USER_A_ID__'),
- set_config('request.jwt.claims','{"sub":"__PHASE1_USER_A_ID__","role":"authenticated"}',true),
- set_config('app.real_actor_id','__PHASE1_USER_A_ID__',true);
-DO $$ DECLARE v_id uuid; n integer; BEGIN
- IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe policy test role'; END IF;
- INSERT INTO public.margin_snapshot SELECT (jsonb_populate_record(NULL::public.margin_snapshot,current_setting('app.phase1_tenant_a_fixtures')::jsonb->'margin_snapshot' || jsonb_build_object('id',gen_random_uuid(),'entity_id',gen_random_uuid()::text))).* RETURNING id INTO v_id;
- SELECT count(*) INTO n FROM public.margin_snapshot WHERE id=v_id;
- IF n<>1 THEN RAISE EXCEPTION 'margin_snapshot: own SELECT returned % rows',n; END IF;
- UPDATE public.margin_snapshot SET id=id WHERE id=v_id; GET DIAGNOSTICS n=ROW_COUNT;
- IF n<>1 THEN RAISE EXCEPTION 'margin_snapshot: own UPDATE affected % rows',n; END IF;
- DELETE FROM public.margin_snapshot WHERE id=v_id; GET DIAGNOSTICS n=ROW_COUNT;
- IF n<>1 THEN RAISE EXCEPTION 'margin_snapshot: own DELETE affected % rows',n; END IF;
- IF (SELECT count(*) FROM public.audit_log WHERE tenant_id='__PHASE1_TENANT_A_ID__' AND entity_type='margin_snapshot' AND entity_id=v_id::text AND action IN ('margin_snapshot.insert','margin_snapshot.update','margin_snapshot.delete'))<>3 THEN RAISE EXCEPTION 'margin_snapshot: missing write audit event'; END IF;
- PERFORM set_config('app.chunk2c_margin_snapshot_own','true',true);
-END $$;
-DO $$ DECLARE n integer; message text; BEGIN
- SELECT count(*) INTO n FROM public.margin_snapshot WHERE tenant_id='__PHASE1_TENANT_B_ID__';
- IF n<>0 THEN RAISE EXCEPTION 'margin_snapshot: cross SELECT exposed % rows',n; END IF;
- UPDATE public.margin_snapshot SET id=id WHERE tenant_id='__PHASE1_TENANT_B_ID__'; GET DIAGNOSTICS n=ROW_COUNT;
- IF n<>0 THEN RAISE EXCEPTION 'margin_snapshot: cross UPDATE affected % rows',n; END IF;
- DELETE FROM public.margin_snapshot WHERE tenant_id='__PHASE1_TENANT_B_ID__'; GET DIAGNOSTICS n=ROW_COUNT;
- IF n<>0 THEN RAISE EXCEPTION 'margin_snapshot: cross DELETE affected % rows',n; END IF;
- BEGIN
-  INSERT INTO public.margin_snapshot SELECT (jsonb_populate_record(NULL::public.margin_snapshot,current_setting('app.phase1_tenant_b_fixtures')::jsonb->'margin_snapshot' || jsonb_build_object('id',gen_random_uuid(),'entity_id',gen_random_uuid()::text))).*;
-  RAISE EXCEPTION 'margin_snapshot: cross INSERT unexpectedly succeeded';
- EXCEPTION WHEN insufficient_privilege THEN GET STACKED DIAGNOSTICS message=MESSAGE_TEXT;
-  IF position('row-level security' in lower(message))=0 THEN RAISE EXCEPTION 'margin_snapshot: expected RLS 42501, got %',message; END IF;
- END;
- BEGIN
-  UPDATE public.margin_snapshot SET tenant_id='__PHASE1_TENANT_B_ID__' WHERE tenant_id='__PHASE1_TENANT_A_ID__';
-  RAISE EXCEPTION 'margin_snapshot: tenant reassignment unexpectedly succeeded';
- EXCEPTION WHEN insufficient_privilege THEN GET STACKED DIAGNOSTICS message=MESSAGE_TEXT;
-  IF position('row-level security' in lower(message))=0 THEN RAISE EXCEPTION 'margin_snapshot: expected RLS 42501, got %',message; END IF;
- END;
- PERFORM set_config('app.chunk2c_margin_snapshot_cross','true',true);
-END $$;
-RESET ROLE;
-SELECT extensions.ok(current_setting('app.chunk2c_margin_snapshot_own')='true','margin_snapshot: own SELECT/INSERT/UPDATE/DELETE and three audit events');
-SELECT extensions.ok(current_setting('app.chunk2c_margin_snapshot_cross')='true','margin_snapshot: cross rows hidden, foreign INSERT and tenant reassignment fail with RLS 42501');
-SET LOCAL ROLE anon;
-DO $$ DECLARE op text; message text; BEGIN
- FOREACH op IN ARRAY ARRAY['SELECT * FROM public.margin_snapshot','INSERT INTO public.margin_snapshot(tenant_id) VALUES(gen_random_uuid())','UPDATE public.margin_snapshot SET id=id','DELETE FROM public.margin_snapshot'] LOOP
-  BEGIN EXECUTE op; RAISE EXCEPTION 'margin_snapshot: anon CRUD unexpectedly allowed';
-  EXCEPTION WHEN insufficient_privilege THEN GET STACKED DIAGNOSTICS message=MESSAGE_TEXT;
-   IF position('permission denied for table margin_snapshot' in lower(message))=0 THEN RAISE EXCEPTION 'margin_snapshot: wrong ACL failure %',message; END IF;
-  END;
- END LOOP;
- PERFORM set_config('app.chunk2c_margin_snapshot_anon','true',true);
-END $$;
-RESET ROLE;
-SELECT extensions.ok(current_setting('app.chunk2c_margin_snapshot_anon')='true','margin_snapshot: anon CRUD permission denied independent of RLS');
-SET LOCAL ROLE authenticated;
-DO $$ DECLARE op text; message text; BEGIN
- FOREACH op IN ARRAY ARRAY['SELECT * FROM public.margin_snapshot','INSERT INTO public.margin_snapshot(tenant_id) VALUES(gen_random_uuid())','UPDATE public.margin_snapshot SET id=id','DELETE FROM public.margin_snapshot'] LOOP
-  BEGIN EXECUTE op; RAISE EXCEPTION 'margin_snapshot: authenticated CRUD unexpectedly allowed';
-  EXCEPTION WHEN insufficient_privilege THEN GET STACKED DIAGNOSTICS message=MESSAGE_TEXT;
-   IF position('permission denied for table margin_snapshot' in lower(message))=0 THEN RAISE EXCEPTION 'margin_snapshot: wrong ACL failure %',message; END IF;
-  END;
- END LOOP;
- PERFORM set_config('app.chunk2c_margin_snapshot_authenticated','true',true);
-END $$;
-RESET ROLE;
-SELECT extensions.ok(current_setting('app.chunk2c_margin_snapshot_authenticated')='true','margin_snapshot: authenticated CRUD permission denied independent of RLS');
-SET LOCAL ROLE rebatehq_app;
-SELECT pg_temp.use_identity('__PHASE1_USER_REP_ID__'),
- set_config('request.jwt.claims','{"sub":"__PHASE1_USER_REP_ID__","role":"authenticated"}',true);
-DO $$ DECLARE n integer; message text; BEGIN
- IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe rep policy test role'; END IF;
- SELECT count(*) INTO n FROM public.margin_snapshot WHERE tenant_id='__PHASE1_TENANT_B_ID__';
- IF n<>0 THEN RAISE EXCEPTION 'margin_snapshot: rep sees restricted rows'; END IF;
- UPDATE public.margin_snapshot SET id=id WHERE tenant_id='__PHASE1_TENANT_B_ID__'; GET DIAGNOSTICS n=ROW_COUNT;
- IF n<>0 THEN RAISE EXCEPTION 'margin_snapshot: rep UPDATE allowed'; END IF;
- DELETE FROM public.margin_snapshot WHERE tenant_id='__PHASE1_TENANT_B_ID__'; GET DIAGNOSTICS n=ROW_COUNT;
- IF n<>0 THEN RAISE EXCEPTION 'margin_snapshot: rep DELETE allowed'; END IF;
- BEGIN
-  INSERT INTO public.margin_snapshot SELECT (jsonb_populate_record(NULL::public.margin_snapshot,current_setting('app.phase1_tenant_b_fixtures')::jsonb->'margin_snapshot' || jsonb_build_object('id',gen_random_uuid(),'entity_id',gen_random_uuid()::text))).*;
-  RAISE EXCEPTION 'margin_snapshot: rep INSERT allowed';
- EXCEPTION WHEN insufficient_privilege THEN GET STACKED DIAGNOSTICS message=MESSAGE_TEXT;
-  IF position('row-level security' in lower(message))=0 THEN RAISE EXCEPTION 'margin_snapshot: wrong rep denial %',message; END IF;
- END;
- PERFORM set_config('app.chunk2c_margin_snapshot_rep','true',true);
-END $$;
-RESET ROLE;
-SELECT extensions.ok(current_setting('app.chunk2c_margin_snapshot_rep')='true','margin_snapshot: rep cannot read or mutate its own tenant restricted data');
-
 SELECT extensions.ok((SELECT array_agg(attname::text ORDER BY attname) FROM pg_attribute
  WHERE attrelid='public.quote_share_link'::regclass AND attnum>0 AND NOT attisdropped)
  =ARRAY['created_at','created_by','expires_at','id','quote_id','revoked_at','tenant_id','token_hash']::text[],
  'quote_share_link: exact metadata-only columns, no cost, margin, raw token or payload fields');
-SELECT extensions.throws_ok($c$UPDATE public.import_job SET accepted_rows=-1 WHERE tenant_id='__PHASE1_TENANT_A_ID__'$c$,'23514',NULL,'import_job: reject negative accepted rows');
-SELECT extensions.throws_ok($c$UPDATE public.import_job SET rejected_rows=-1 WHERE tenant_id='__PHASE1_TENANT_A_ID__'$c$,'23514',NULL,'import_job: reject negative rejected rows');
-SELECT extensions.throws_ok($c$UPDATE public.import_job SET status='unknown' WHERE tenant_id='__PHASE1_TENANT_A_ID__'$c$,'23514',NULL,'import_job: reject invalid import status');
-SELECT extensions.throws_ok($c$UPDATE public.import_job SET summary='[]'::jsonb WHERE tenant_id='__PHASE1_TENANT_A_ID__'$c$,'23514',NULL,'import_job: reject non-object import summary');
-SELECT extensions.throws_ok($c$UPDATE public.column_mapping_template SET version=0 WHERE tenant_id='__PHASE1_TENANT_A_ID__'$c$,'23514',NULL,'column_mapping_template: reject nonpositive mapping version');
-SELECT extensions.throws_ok($c$UPDATE public.column_mapping_template SET column_mapping='[]'::jsonb WHERE tenant_id='__PHASE1_TENANT_A_ID__'$c$,'23514',NULL,'column_mapping_template: reject non-object mapping');
-SELECT extensions.throws_ok($c$UPDATE public.connector_sync_run SET processed_count=-1 WHERE tenant_id='__PHASE1_TENANT_A_ID__'$c$,'23514',NULL,'connector_sync_run: reject negative sync count');
-SELECT extensions.throws_ok($c$UPDATE public.connector_sync_run SET status='unknown' WHERE tenant_id='__PHASE1_TENANT_A_ID__'$c$,'23514',NULL,'connector_sync_run: reject invalid sync status');
-SELECT extensions.throws_ok($c$UPDATE public.connector_sync_run SET status='succeeded',started_at=NULL,finished_at=NULL WHERE tenant_id='__PHASE1_TENANT_A_ID__'$c$,'23514',NULL,'connector_sync_run: reject terminal sync without finish');
 SELECT extensions.throws_ok($c$UPDATE public.quote_share_link SET expires_at=created_at WHERE tenant_id='__PHASE1_TENANT_A_ID__'$c$,'23514',NULL,'quote_share_link: reject nonpositive link lifetime');
 SELECT extensions.throws_ok($c$UPDATE public.quote_share_link SET token_hash='raw-token' WHERE tenant_id='__PHASE1_TENANT_A_ID__'$c$,'23514',NULL,'quote_share_link: reject raw or malformed token hash');
 SELECT extensions.throws_ok($c$UPDATE public.approval_rule SET minimum_margin_pct=100.001 WHERE tenant_id='__PHASE1_TENANT_A_ID__'$c$,'23514',NULL,'approval_rule: reject invalid approval percentage');
 SELECT extensions.throws_ok($c$UPDATE public.approval_rule SET status='unknown' WHERE tenant_id='__PHASE1_TENANT_A_ID__'$c$,'23514',NULL,'approval_rule: reject invalid approval status');
-SELECT extensions.throws_ok($c$UPDATE public.plan_feature SET usage_limit=-1 WHERE tenant_id='__PHASE1_TENANT_A_ID__'$c$,'23514',NULL,'plan_feature: reject negative plan limit');
-SELECT extensions.throws_ok($c$UPDATE public.plan_feature SET feature_key='Bad Key' WHERE tenant_id='__PHASE1_TENANT_A_ID__'$c$,'23514',NULL,'plan_feature: reject invalid feature key');
 SELECT extensions.throws_ok($c$UPDATE public.quote_share_link SET quote_id='__PHASE1_QUOTE_B_ID__' WHERE tenant_id='__PHASE1_TENANT_A_ID__'$c$,'23503',NULL,'quote_share_link: composite FK forbids a foreign tenant quote');
 
 
--- No authenticated context must hide every Chunk 2C table and margin snapshots.
+-- No authenticated context must hide every remaining Chunk 2C table.
 SET LOCAL ROLE rebatehq_app;
 SELECT pg_temp.use_identity(''),set_config('request.jwt.claims','{}',true);
 DO $$ DECLARE t text; n integer; checked integer:=0; BEGIN
  IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe no-context test role'; END IF;
- FOREACH t IN ARRAY ARRAY['import_job','column_mapping_template','connector_sync_run','quote_share_link','approval_rule','plan_feature','margin_snapshot'] LOOP
+ FOREACH t IN ARRAY ARRAY['quote_share_link','approval_rule'] LOOP
   checked:=checked+1;
   EXECUTE format('SELECT count(*) FROM public.%I',t) INTO n;
   IF n<>0 THEN RAISE EXCEPTION '%: unauthenticated context exposed % rows',t,n; END IF;
  END LOOP;
- IF checked<>7 THEN RAISE EXCEPTION 'No-context loop expected 7 tables, checked %',checked; END IF;
+ IF checked<>2 THEN RAISE EXCEPTION 'No-context loop expected 2 tables, checked %',checked; END IF;
  PERFORM set_config('app.chunk2c_no_context','true',true);
 END $$;
 RESET ROLE;
-SELECT extensions.ok(current_setting('app.chunk2c_no_context')='true','Chunk 2C tables and margin_snapshot return zero rows without user context');
+SELECT extensions.ok(current_setting('app.chunk2c_no_context')='true','Remaining Chunk 2C tables return zero rows without user context');
 
--- Manager may view governance records but cannot edit owner-only plan/rule rows.
+-- Manager may view approval rules but cannot edit these owner-only rows.
 UPDATE public.membership SET role='manager' WHERE tenant_id='__PHASE1_TENANT_B_ID__' AND user_id='__PHASE1_USER_B_ID__';
 SET LOCAL ROLE rebatehq_app;
 SELECT pg_temp.use_identity('__PHASE1_USER_B_ID__'),
@@ -2372,7 +1511,7 @@ SELECT pg_temp.use_identity('__PHASE1_USER_B_ID__'),
  set_config('app.real_actor_id','__PHASE1_USER_B_ID__',true);
 DO $$ DECLARE t text; n integer; checked integer:=0; message text; v_row jsonb; BEGIN
  IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe manager policy test role'; END IF;
- FOREACH t IN ARRAY ARRAY['approval_rule','plan_feature'] LOOP
+ FOREACH t IN ARRAY ARRAY['approval_rule'] LOOP
   checked:=checked+1;
   EXECUTE format('SELECT count(*) FROM public.%I WHERE tenant_id=$1',t) INTO n USING '__PHASE1_TENANT_B_ID__'::uuid;
   IF n<1 THEN RAISE EXCEPTION '%: manager SELECT failed',t; END IF;
@@ -2388,72 +1527,12 @@ DO $$ DECLARE t text; n integer; checked integer:=0; message text; v_row jsonb; 
    IF position('row-level security' in lower(message))=0 THEN RAISE EXCEPTION '%: wrong manager denial %',t,message; END IF;
   END;
  END LOOP;
- IF checked<>2 THEN RAISE EXCEPTION 'Manager loop expected 2 governance tables'; END IF;
+ IF checked<>1 THEN RAISE EXCEPTION 'Manager loop expected 1 governance table'; END IF;
  PERFORM set_config('app.chunk2c_manager_governance','true',true);
 END $$;
 RESET ROLE;
-SELECT extensions.ok(current_setting('app.chunk2c_manager_governance')='true','Only owners may mutate approval rules and plan features; managers can read');
+SELECT extensions.ok(current_setting('app.chunk2c_manager_governance')='true','Only owners may mutate approval rules; managers can read');
 
--- Chunk 3C adds evidence columns only; existing invoice-line RLS/ACL/audit
--- coverage stays intact. Capture restricted results before pgTAP assertions.
-SELECT extensions.ok((SELECT count(*)=2 FROM pg_attribute
- WHERE attrelid='public.invoice_line'::regclass AND attnum>0 AND NOT attisdropped
- AND ((attname='actual_cost_amount' AND format_type(atttypid,atttypmod)='numeric(18,4)' AND NOT attnotnull)
- OR (attname='actual_cost_source' AND atttypid='text'::regtype AND NOT attnotnull))),
- 'Chunk 3C: nullable numeric actual cost and separate source evidence columns exist');
-SELECT extensions.throws_ok($c$UPDATE public.invoice_line SET actual_cost_amount=1,actual_cost_source=NULL
- WHERE tenant_id='__PHASE1_TENANT_B_ID__'$c$,'23514',NULL,'Chunk 3C: actual invoice cost requires a source');
-SELECT extensions.throws_ok($c$UPDATE public.invoice_line SET actual_cost_amount=-1,actual_cost_source='bill'
- WHERE tenant_id='__PHASE1_TENANT_B_ID__'$c$,'23514',NULL,'Chunk 3C: negative invoice actual cost is rejected');
-SELECT set_config('app.chunk3c_audit_before',(SELECT count(*)::text FROM public.audit_log
- WHERE tenant_id='__PHASE1_TENANT_B_ID__' AND action='invoice_line.update'),true);
-SET LOCAL ROLE rebatehq_app;
-SELECT pg_temp.use_identity('__PHASE1_USER_B_ID__'),
- set_config('request.jwt.claims','{"sub":"__PHASE1_USER_B_ID__","role":"authenticated"}',true),
- set_config('app.real_actor_id','__PHASE1_USER_B_ID__',true);
-DO $$ DECLARE n integer; BEGIN
- IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe Chunk 3C actual-cost test role'; END IF;
- UPDATE public.invoice_line SET actual_cost_amount=0,actual_cost_source='checked-vendor-bill'
- WHERE tenant_id='__PHASE1_TENANT_B_ID__';
- GET DIAGNOSTICS n=ROW_COUNT; IF n<1 THEN RAISE EXCEPTION 'Actual-cost positive UPDATE control is empty'; END IF;
- IF NOT EXISTS(SELECT 1 FROM public.invoice_line WHERE tenant_id='__PHASE1_TENANT_B_ID__' AND actual_cost_amount=0 AND actual_cost_source='checked-vendor-bill') THEN RAISE EXCEPTION 'Actual-cost SELECT control failed'; END IF;
- PERFORM set_config('app.chunk3c_own_rows',n::text,true);
-END $$;
-RESET ROLE;
-SELECT extensions.ok(current_setting('app.chunk3c_own_rows')::integer>0 AND
- (SELECT count(*) FROM public.audit_log WHERE tenant_id='__PHASE1_TENANT_B_ID__' AND action='invoice_line.update')
- =current_setting('app.chunk3c_audit_before')::integer+current_setting('app.chunk3c_own_rows')::integer,
- 'Chunk 3C: app role reads/writes its own sourced zero actuals and every write is audited');
-SET LOCAL ROLE rebatehq_app;
-DO $$ DECLARE n integer; message text; BEGIN
- IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe Chunk 3C isolation test role'; END IF;
- SELECT count(*) INTO n FROM public.invoice_line WHERE tenant_id='__PHASE1_TENANT_A_ID__';
- IF n<>0 THEN RAISE EXCEPTION 'Foreign invoice actuals visible'; END IF;
- UPDATE public.invoice_line SET actual_cost_amount=3,actual_cost_source='forbidden' WHERE tenant_id='__PHASE1_TENANT_A_ID__';
- GET DIAGNOSTICS n=ROW_COUNT;IF n<>0 THEN RAISE EXCEPTION 'Foreign actual-cost UPDATE succeeded'; END IF;
- BEGIN
-  UPDATE public.invoice_line SET tenant_id='__PHASE1_TENANT_A_ID__' WHERE tenant_id='__PHASE1_TENANT_B_ID__';
-  RAISE EXCEPTION 'Actual-cost tenant reassignment was allowed';
- EXCEPTION WHEN insufficient_privilege THEN GET STACKED DIAGNOSTICS message=MESSAGE_TEXT;
-  IF position('row-level security' in lower(message))=0 THEN RAISE EXCEPTION 'Wrong actual-cost denial: %',message; END IF;
- END;
- PERFORM set_config('app.chunk3c_actuals_isolation','true',true);
-END $$;
-RESET ROLE;
-SELECT extensions.ok(current_setting('app.chunk3c_actuals_isolation')='true','Chunk 3C: cross-tenant actuals are invisible and reassignment fails with RLS 42501');
-SET LOCAL ROLE rebatehq_app;
-SELECT pg_temp.use_identity('__PHASE1_USER_REP_ID__'),
- set_config('request.jwt.claims','{"sub":"__PHASE1_USER_REP_ID__","role":"authenticated"}',true);
-DO $$ DECLARE n integer; BEGIN
- IF current_user<>'rebatehq_app' OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)) THEN RAISE EXCEPTION 'Unsafe Chunk 3C rep test role'; END IF;
- SELECT count(actual_cost_amount) INTO n FROM public.invoice_line WHERE tenant_id='__PHASE1_TENANT_B_ID__';
- IF n<>0 THEN RAISE EXCEPTION 'Rep can read invoice actual costs'; END IF;
- UPDATE public.invoice_line SET actual_cost_amount=3,actual_cost_source='forbidden' WHERE tenant_id='__PHASE1_TENANT_B_ID__';
- GET DIAGNOSTICS n=ROW_COUNT;IF n<>0 THEN RAISE EXCEPTION 'Rep can update invoice actual costs'; END IF;
- PERFORM set_config('app.chunk3c_actuals_rep','true',true);
-END $$;
-RESET ROLE;
-SELECT extensions.ok(current_setting('app.chunk3c_actuals_rep')='true','Chunk 3C: rep cannot read or mutate invoice actual cost evidence');
 
 -- INCLUDE CHUNK 5B CHECKS
 SELECT * FROM extensions.finish();

@@ -8,12 +8,10 @@ const repoRoot = path.join(__dirname, "..");
 const phase1Sql = fs.readFileSync(path.join(repoRoot, "supabase", "tests", "phase1_rls.sql"), "utf8").replace(/\r\n/g,"\n");
 const pgliteModule = import("@electric-sql/pglite");
 
+// 6R: the 16 tables that keep fixtures in phase1_rls.sql (wave-1 tables were dropped).
 const tables = [
-  "tenant", "membership", "customer", "product", "invite", "price_list", "price_list_version",
-  "price_list_item", "margin_policy", "quote", "quote_line", "approval", "sales_order",
-  "rebate_agreement", "rebate_progress", "invoice", "invoice_line", "cost_component",
-  "supplier_credit", "alert", "margin_snapshot", "connector_secret", "import_job", "audit_log",
-  "uom", "cost_history", "uom_conversion", "fx_rate", "data_quality_issue", "customer_group", "customer_price", "rebate_tier", "rebate_entry", "column_mapping_template", "connector_sync_run", "quote_share_link", "approval_rule", "plan_feature",
+  "tenant", "membership", "invite", "quote", "quote_line", "approval", "rebate_agreement", "rebate_progress",
+  "supplier_credit", "alert", "audit_log", "fx_rate", "rebate_tier", "rebate_entry", "quote_share_link", "approval_rule",
 ];
 const existingTenant = "20000000-0000-4000-8000-000000000001";
 const otherTenant = "20000000-0000-4000-8000-000000000002";
@@ -76,81 +74,25 @@ async function createHarnessSchema(db) {
       tenant_id uuid NOT NULL REFERENCES public.tenant(tenant_id), user_id uuid NOT NULL REFERENCES auth.users(id),
       email text, role text, PRIMARY KEY(tenant_id,user_id)
     );
-    CREATE TABLE public.customer (
-      id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES public.tenant(tenant_id), account_no text,
-      name text, assigned_rep_id uuid REFERENCES auth.users(id), UNIQUE(tenant_id,id), UNIQUE(tenant_id,account_no)
-    );
-    CREATE TABLE public.uom (
-      id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES public.tenant(tenant_id), code text NOT NULL,
-      display_name text NOT NULL, created_at timestamptz DEFAULT now(), UNIQUE(tenant_id,id), UNIQUE(tenant_id,code)
-    );
-    CREATE TABLE public.product (
-      id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES public.tenant(tenant_id), sku text, name text,
-      category text, list_price numeric, unit_cost numeric, uom text, UNIQUE(tenant_id,id), UNIQUE(tenant_id,sku)
-    );
-    CREATE TABLE public.cost_history (
-      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), tenant_id uuid NOT NULL REFERENCES public.tenant(tenant_id), product_id uuid NOT NULL,
-      cost numeric NOT NULL, basis text NOT NULL, effective_from date NOT NULL, effective_to date, source text NOT NULL,
-      created_by uuid REFERENCES auth.users(id), created_at timestamptz DEFAULT now(), currency text NOT NULL,
-      UNIQUE(tenant_id,id), FOREIGN KEY(tenant_id,product_id) REFERENCES public.product(tenant_id,id)
-    );
-    CREATE TABLE public.uom_conversion (
-      id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES public.tenant(tenant_id), product_id uuid,
-      from_uom_id uuid NOT NULL, to_uom_id uuid NOT NULL, factor numeric NOT NULL, direction text NOT NULL,
-      created_at timestamptz DEFAULT now(), UNIQUE(tenant_id,id),
-      FOREIGN KEY(tenant_id,product_id) REFERENCES public.product(tenant_id,id),
-      FOREIGN KEY(tenant_id,from_uom_id) REFERENCES public.uom(tenant_id,id),
-      FOREIGN KEY(tenant_id,to_uom_id) REFERENCES public.uom(tenant_id,id)
-    );
     CREATE TABLE public.fx_rate (
       id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES public.tenant(tenant_id), rate_date date NOT NULL,
       from_currency text NOT NULL, to_currency text NOT NULL, rate numeric NOT NULL, source text NOT NULL,
       created_at timestamptz DEFAULT now(), UNIQUE(tenant_id,id)
     );
-    CREATE TABLE public.data_quality_issue (
-      id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES public.tenant(tenant_id), issue_code text NOT NULL,
-      entity_type text NOT NULL, entity_id text NOT NULL, occurred_on date NOT NULL, details jsonb NOT NULL DEFAULT '{}',
-      created_by uuid REFERENCES auth.users(id), created_at timestamptz DEFAULT now(), resolved_at timestamptz,
-      resolved_by uuid REFERENCES auth.users(id), UNIQUE(tenant_id,id)
-    );
     CREATE TABLE public.invite (
       id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES public.tenant(tenant_id), email text, role text,
       token_hash text NOT NULL UNIQUE, invited_by uuid REFERENCES auth.users(id), expires_at timestamptz
     );
-    CREATE TABLE public.price_list (
-      id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES public.tenant(tenant_id), name text,
-      UNIQUE(tenant_id,id)
-    );
-    CREATE TABLE public.price_list_version (
-      id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES public.tenant(tenant_id), price_list_id uuid,
-      version_no integer, status text, created_by uuid REFERENCES auth.users(id), UNIQUE(tenant_id,id),
-      UNIQUE(tenant_id,price_list_id,version_no),
-      FOREIGN KEY(tenant_id,price_list_id) REFERENCES public.price_list(tenant_id,id)
-    );
-    CREATE TABLE public.price_list_item (
-      id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES public.tenant(tenant_id), price_list_id uuid,
-      product_id uuid, unit_price numeric, version_id uuid, effective_from date, effective_to date, currency text, UNIQUE(tenant_id,id),
-      FOREIGN KEY(tenant_id,price_list_id) REFERENCES public.price_list(tenant_id,id),
-      FOREIGN KEY(tenant_id,product_id) REFERENCES public.product(tenant_id,id),
-      FOREIGN KEY(tenant_id,version_id) REFERENCES public.price_list_version(tenant_id,id)
-    );
-    CREATE TABLE public.margin_policy (
-      id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES public.tenant(tenant_id), scope_type text,
-      scope_key text, target_margin_pct numeric, floor_margin_pct numeric, walkaway_margin_pct numeric,
-      updated_by uuid REFERENCES auth.users(id), UNIQUE(tenant_id,id), UNIQUE(tenant_id,scope_type,scope_key)
-    );
     CREATE TABLE public.quote (
       id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES public.tenant(tenant_id), customer_id uuid,
       created_by uuid REFERENCES auth.users(id), status text, pocket_price numeric, cogs_total numeric,
-      pocket_margin numeric, margin_pct numeric, margin_zone text, headroom numeric, UNIQUE(tenant_id,id),
-      FOREIGN KEY(tenant_id,customer_id) REFERENCES public.customer(tenant_id,id)
+      pocket_margin numeric, margin_pct numeric, margin_zone text, headroom numeric, UNIQUE(tenant_id,id)
     );
     CREATE TABLE public.quote_line (
       id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES public.tenant(tenant_id), quote_id uuid,
       product_id uuid, quantity numeric, list_price numeric, pocket_price numeric, cogs_total numeric,
       pocket_margin numeric, margin_pct numeric, currency text, uom_code text, UNIQUE(tenant_id,id),
-      FOREIGN KEY(tenant_id,quote_id) REFERENCES public.quote(tenant_id,id),
-      FOREIGN KEY(tenant_id,product_id) REFERENCES public.product(tenant_id,id)
+      FOREIGN KEY(tenant_id,quote_id) REFERENCES public.quote(tenant_id,id)
     );
     CREATE TABLE public.approval (
       id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES public.tenant(tenant_id), quote_id uuid NOT NULL,
@@ -158,12 +100,6 @@ async function createHarnessSchema(db) {
       policy_version integer, UNIQUE(tenant_id,id),
       CONSTRAINT approval_tenant_id_quote_id_fkey FOREIGN KEY(tenant_id,quote_id)
         REFERENCES public.quote(tenant_id,id)
-    );
-    CREATE TABLE public.sales_order (
-      id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES public.tenant(tenant_id), source_id text,
-      customer_id uuid, product_id uuid, quantity numeric, month_key text, transaction_date date, currency text, uom_code text, UNIQUE(tenant_id,id),
-      UNIQUE(tenant_id,source_id), FOREIGN KEY(tenant_id,customer_id) REFERENCES public.customer(tenant_id,id),
-      FOREIGN KEY(tenant_id,product_id) REFERENCES public.product(tenant_id,id)
     );
     CREATE TABLE public.rebate_agreement (
       id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES public.tenant(tenant_id), party_type text,
@@ -175,22 +111,6 @@ async function createHarnessSchema(db) {
       period_start date, period_end date, eligible_spend numeric, modeled_amount numeric, recorded_credits numeric, currency text,
       UNIQUE(tenant_id,id), FOREIGN KEY(tenant_id,agreement_id) REFERENCES public.rebate_agreement(tenant_id,id)
     );
-    CREATE TABLE public.invoice (
-      id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES public.tenant(tenant_id), customer_id uuid,
-      invoice_date date, source_ref text, UNIQUE(tenant_id,id),
-      FOREIGN KEY(tenant_id,customer_id) REFERENCES public.customer(tenant_id,id)
-    );
-    CREATE TABLE public.invoice_line (
-      id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES public.tenant(tenant_id), invoice_id uuid,
-      product_id uuid, quantity numeric, net_sales numeric, currency text, uom_code text, UNIQUE(tenant_id,id),
-      FOREIGN KEY(tenant_id,invoice_id) REFERENCES public.invoice(tenant_id,id),
-      FOREIGN KEY(tenant_id,product_id) REFERENCES public.product(tenant_id,id)
-    );
-    CREATE TABLE public.cost_component (
-      id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES public.tenant(tenant_id), invoice_line_id uuid,
-      component_type text, amount numeric, currency text, UNIQUE(tenant_id,id),
-      FOREIGN KEY(tenant_id,invoice_line_id) REFERENCES public.invoice_line(tenant_id,id)
-    );
     CREATE TABLE public.supplier_credit (
       id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES public.tenant(tenant_id), vendor_name text,
       credit_date date, amount numeric, reference text, currency text, UNIQUE(tenant_id,id)
@@ -199,25 +119,8 @@ async function createHarnessSchema(db) {
       id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES public.tenant(tenant_id), severity text,
       message text, UNIQUE(tenant_id,id)
     );
-    CREATE TABLE public.margin_snapshot (
-      id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES public.tenant(tenant_id), entity_type text,
-      entity_id text, period_month date, order_count integer, pocket_revenue numeric, pocket_margin numeric,
-      margin_pct numeric, currency text, UNIQUE(tenant_id,id)
-    );
-    CREATE TABLE public.connector_secret (
-      id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES public.tenant(tenant_id), provider text,
-      ciphertext text, nonce text, auth_tag text, created_by uuid REFERENCES auth.users(id),
-      UNIQUE(tenant_id,id), UNIQUE(tenant_id,provider)
-    );
-    CREATE TABLE public.import_job (
-      id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES public.tenant(tenant_id), import_type text,
-      status text, created_by uuid REFERENCES auth.users(id), UNIQUE(tenant_id,id)
-    );
-    CREATE TABLE public.column_mapping_template(id uuid PRIMARY KEY,tenant_id uuid NOT NULL REFERENCES tenant(tenant_id),name text,import_type text,column_mapping jsonb,UNIQUE(tenant_id,id),UNIQUE(tenant_id,name));
-    CREATE TABLE public.connector_sync_run(id uuid PRIMARY KEY,tenant_id uuid NOT NULL REFERENCES tenant(tenant_id),provider text,direction text,status text,UNIQUE(tenant_id,id));
     CREATE TABLE public.quote_share_link(id uuid PRIMARY KEY,tenant_id uuid NOT NULL REFERENCES tenant(tenant_id),quote_id uuid,token_hash text UNIQUE,expires_at timestamptz,UNIQUE(tenant_id,id),FOREIGN KEY(tenant_id,quote_id) REFERENCES quote(tenant_id,id));
     CREATE TABLE public.approval_rule(id uuid PRIMARY KEY,tenant_id uuid NOT NULL REFERENCES tenant(tenant_id),name text,minimum_margin_pct numeric,approver_role text,UNIQUE(tenant_id,id),UNIQUE(tenant_id,name));
-    CREATE TABLE public.plan_feature(id uuid PRIMARY KEY,tenant_id uuid NOT NULL REFERENCES tenant(tenant_id),feature_key text,enabled boolean,usage_limit bigint,UNIQUE(tenant_id,id),UNIQUE(tenant_id,feature_key));
     CREATE TABLE public.audit_log (
       id uuid PRIMARY KEY, tenant_id uuid, actor_id uuid, action text, entity_type text, entity_id text
     );
@@ -226,8 +129,6 @@ async function createHarnessSchema(db) {
 
 async function seedRestoredRows(db) {
   await db.exec(`
-    CREATE TABLE public.customer_group(id uuid PRIMARY KEY,tenant_id uuid NOT NULL REFERENCES tenant(tenant_id),name text,UNIQUE(tenant_id,id));
-    CREATE TABLE public.customer_price(id uuid PRIMARY KEY,tenant_id uuid NOT NULL REFERENCES tenant(tenant_id),group_id uuid,product_id uuid,rule_kind text,price numeric,currency text,effective_from date,effective_to date,source text,UNIQUE(tenant_id,id),FOREIGN KEY(tenant_id,group_id) REFERENCES customer_group(tenant_id,id),FOREIGN KEY(tenant_id,product_id) REFERENCES product(tenant_id,id));
     CREATE TABLE public.rebate_tier(id uuid PRIMARY KEY,tenant_id uuid NOT NULL REFERENCES tenant(tenant_id),agreement_id uuid,from_amount numeric,rate numeric,UNIQUE(tenant_id,id),FOREIGN KEY(tenant_id,agreement_id) REFERENCES rebate_agreement(tenant_id,id));
     CREATE TABLE public.rebate_entry(id uuid PRIMARY KEY,tenant_id uuid NOT NULL REFERENCES tenant(tenant_id),agreement_id uuid,entry_type text,amount numeric,currency text,occurred_on date,source_ref text,UNIQUE(tenant_id,id),FOREIGN KEY(tenant_id,agreement_id) REFERENCES rebate_agreement(tenant_id,id));
   `);
@@ -242,33 +143,11 @@ async function seedRestoredRows(db) {
     ($1,$3,'old-owner@example.invalid','owner'),($1,$4,'old-rep@example.invalid','rep'),
     ($2,$5,'other-owner@example.invalid','owner')`, [existingTenant, otherTenant, existingOwner, existingRep, otherOwner]);
 
-  const uomIds = [randomUUID(), randomUUID(), randomUUID(), randomUUID(), randomUUID(), randomUUID()];
-  await db.query(`INSERT INTO public.uom(id,tenant_id,code,display_name) VALUES
-    ($1,$7,'EA','Each'),($2,$7,'BOX','Box'),($3,$7,'CASE','Case'),
-    ($4,$8,'EA','Each'),($5,$8,'BOX','Box'),($6,$8,'CASE','Case')`, [...uomIds, existingTenant, otherTenant]);
-
+  // 6R: quote customer IDs no longer reference a server table.
   const customerIds = ["40000000-0000-4000-8000-000000000001", "40000000-0000-4000-8000-000000000002", "40000000-0000-4000-8000-000000000003"];
-  const productIds = ["50000000-0000-4000-8000-000000000001", "50000000-0000-4000-8000-000000000002", "50000000-0000-4000-8000-000000000003"];
-  await db.query(`INSERT INTO public.customer(id,tenant_id,account_no,name,assigned_rep_id) VALUES
-    ($1,$4,'R-1','Restored customer one',$6),($2,$4,'R-2','Restored customer two',$6),
-    ($3,$5,'O-1','Other tenant customer',$7)`, [...customerIds, existingTenant, otherTenant, existingRep, otherOwner]);
-  await db.query(`INSERT INTO public.product(id,tenant_id,sku,name,category,list_price,unit_cost,uom) VALUES
-    ($1,$4,'R-1','Restored product one','test',100,60,'EA'),($2,$4,'R-2','Restored product two','test',100,60,'EA'),
-    ($3,$5,'O-1','Other tenant product','test',100,60,'EA')`, [...productIds, existingTenant, otherTenant]);
-  await db.query(`INSERT INTO public.cost_history(id,tenant_id,product_id,cost,basis,effective_from,effective_to,source,currency) VALUES
-    ($1,$5,$7,55,'standard','2025-01-01','2025-06-01','restored old cost','USD'),
-    ($2,$5,$7,60,'standard','2025-06-01',NULL,'restored current cost','USD'),
-    ($3,$5,$8,45,'average','2025-01-01',NULL,'restored average cost','USD'),
-    ($4,$6,$9,70,'standard','2025-01-01',NULL,'other tenant cost','USD')`, [randomUUID(), randomUUID(), randomUUID(), randomUUID(), existingTenant, otherTenant, ...productIds]);
-  await db.query(`INSERT INTO public.uom_conversion(id,tenant_id,product_id,from_uom_id,to_uom_id,factor,direction) VALUES
-    ($1,$2,$3,$4,$5,2.5,'multiply'),($6,$2,NULL,$4,$5,12,'multiply'),
-    ($7,$8,$9,$10,$11,24,'multiply')`, [randomUUID(), existingTenant, productIds[0], uomIds[0], uomIds[1], randomUUID(), randomUUID(), otherTenant, productIds[2], uomIds[3], uomIds[4]]);
   await db.query(`INSERT INTO public.fx_rate(id,tenant_id,rate_date,from_currency,to_currency,rate,source) VALUES
     ($1,$4,'2026-10-01','USD','EUR',0.9,'restored fx'),($2,$4,'2026-10-02','USD','EUR',0.91,'restored fx'),
     ($3,$5,'2026-10-01','USD','EUR',0.9,'other tenant fx')`, [randomUUID(), randomUUID(), randomUUID(), existingTenant, otherTenant]);
-  await db.query(`INSERT INTO public.data_quality_issue(id,tenant_id,issue_code,entity_type,entity_id,occurred_on,details) VALUES
-    ($1,$4,'cost_history_gap','product',$6,'2026-01-01','{}'),($2,$4,'fx_rate_missing','order',$7,'2026-01-02','{}'),
-    ($3,$5,'uom_conversion_missing','product',$8,'2026-01-03','{}')`, [randomUUID(), randomUUID(), randomUUID(), existingTenant, otherTenant, productIds[0], quoteOne, productIds[2]]);
   await db.query(`INSERT INTO public.quote(id,tenant_id,customer_id,created_by) VALUES
     ($1,$2,$3,$4),($5,$2,$6,$4),($7,$8,$9,$10)`, [quoteOne, existingTenant, customerIds[0], existingOwner, quoteTwo, customerIds[1], otherQuote, otherTenant, customerIds[2], otherOwner]);
   await db.query(`INSERT INTO public.approval(id,tenant_id,quote_id,requested_by) VALUES
@@ -281,7 +160,7 @@ async function seedRestoredRows(db) {
       randomUUID(), existingTenant, existingOwner, randomUUID(), randomUUID(), otherTenant, otherOwner,
     ]);
 
-  const skip = new Set(["tenant", "membership", "customer", "product", "quote", "approval", "invite", "uom", "cost_history", "uom_conversion", "fx_rate", "data_quality_issue"]);
+  const skip = new Set(["tenant", "membership", "quote", "approval", "invite", "fx_rate"]);
   let counter = 1;
   for (const table of tables) {
     if (skip.has(table)) continue;
@@ -364,8 +243,8 @@ test("PGlite reproduces the arbitrary-clone FK failure and runs the explicit fix
       assert.deepEqual(actualTables, [...tables].sort());
       const tenantAFixtures = await db.query("SELECT table_name,row_data FROM pg_temp.phase1_rls_tenant_a_fixtures ORDER BY table_name");
       const tenantBFixtures = await db.query("SELECT table_name,row_data FROM pg_temp.phase1_rls_insert_fixtures ORDER BY table_name");
-      assert.equal(tenantAFixtures.rows.length, 38);
-      assert.equal(tenantBFixtures.rows.length, 38);
+      assert.equal(tenantAFixtures.rows.length, 16);
+      assert.equal(tenantBFixtures.rows.length, 16);
 
       const ids = runGraph.ids;
       const tenantA = ids.get("__PHASE1_TENANT_A_ID__");
@@ -386,7 +265,7 @@ test("PGlite reproduces the arbitrary-clone FK failure and runs the explicit fix
       await db.exec("ROLLBACK;");
       assert.deepEqual(await snapshotAllTenantTables(db), beforeGraph, `Fixture graph run ${run} must leave every tenant table unchanged after rollback.`);
     }
-    console.log("Explicit Tenant A/B fixture graph passed twice with 38 tenant tables and pre-existing multi-row restored data; both transactions rolled back with unchanged row counts.");
+    console.log("Explicit Tenant A/B fixture graph passed twice with 16 tenant tables and pre-existing multi-row restored data; both transactions rolled back with unchanged row counts.");
   } finally {
     await db.close();
   }

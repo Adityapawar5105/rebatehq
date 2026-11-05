@@ -1,25 +1,7 @@
-import { legacyBusinessEnabled, retiredBusinessResponse } from "@/lib/legacy-gate";
-import { readJsonLimited } from "@/lib/request";
-import { databaseContext } from "@/lib/context";
-import { NextResponse } from "next/server";
-import { randomUUID } from "node:crypto";
-import { getAppContext } from "@/lib/context";
-import { assertPermission,errorResponse } from "@/lib/authz";
-import { withDatabase } from "@/lib/db";
-import { QuoteRequestSchema } from "@/lib/validators";
-import { calculateServerQuote } from "@/lib/margin";
-import { can } from "@/lib/permissions";
-import { appendAudit } from "@/lib/audit";
-import { assertRepResponseSafe } from "@/lib/rep-response";
-export const runtime="nodejs";
-export async function GET(request:Request){if (!legacyBusinessEnabled()) return retiredBusinessResponse();try{const context=await getAppContext(request.headers);if(!context)return NextResponse.json({error:"Please sign in to continue."},{status:401});assertPermission(context,context.role==="rep"?"quotes.read.own":"quotes.read.all");const rows=await withDatabase(databaseContext(context,request.headers),async db=>{const sensitive=can(context.role,"costs.read");const fields=sensitive?"q.id,q.customer_id,c.name AS customer_name,q.status,q.margin_zone,q.headroom,q.pocket_price,q.cogs_total,q.pocket_margin,q.margin_pct,q.created_at":"q.id,q.customer_id,c.name AS customer_name,q.status,q.margin_zone,q.headroom,q.created_at";return(await db.query(`SELECT ${fields} FROM quote q JOIN customer c ON c.tenant_id=q.tenant_id AND c.id=q.customer_id WHERE q.tenant_id=$1 ORDER BY q.created_at DESC LIMIT 100`,[context.tenantId])).rows});
- const data=rows.map(row=>context.role==="rep"?{id:row.id,customerId:row.customer_id,customerName:row.customer_name,status:row.status,zone:row.margin_zone,headroom:row.headroom,createdAt:row.created_at}:{id:row.id,customerId:row.customer_id,customerName:row.customer_name,status:row.status,zone:row.margin_zone,headroom:row.headroom,pocketPrice:row.pocket_price,cogs:row.cogs_total,margin:row.pocket_margin,marginRate:row.margin_pct,createdAt:row.created_at});return NextResponse.json({data:assertRepResponseSafe(context.role,data)})}catch(e){return errorResponse(e)}}
-export async function POST(request:Request){if (!legacyBusinessEnabled()) return retiredBusinessResponse();try{const context=await getAppContext(request.headers);assertPermission(context,"quotes.create");const parsed=QuoteRequestSchema.safeParse(await readJsonLimited(request));if(!parsed.success)return NextResponse.json({error:"Check the customer and quote line values, then try again."},{status:400});const result=await withDatabase(databaseContext(context,request.headers),async db=>{const quote=await calculateServerQuote(db,context.tenantId,parsed.data.customerId,parsed.data.lines);if(quote.zone==="red")return{blocked:true,zone:quote.zone,headroom:quote.headroom};const needsApproval=quote.zone==="yellow"&&!can(context.role,"quotes.approve");const status=needsApproval?"pending_approval":"approved";const quoteId=randomUUID();await db.query(`INSERT INTO quote(tenant_id,id,customer_id,created_by,status,currency,pocket_price,cogs_total,pocket_margin,margin_pct,margin_zone,headroom,policy_version)
- VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,[context.tenantId,quoteId,parsed.data.customerId,context.userId,status,quote.currency,quote.math.pocket,quote.math.cogs,quote.math.margin,quote.math.rate,quote.zone,quote.headroom,quote.policyVersion]);
- for(const line of quote.math.lines as Array<{productId:string;qty:number;unitPrice:number;discount:number;list:number;rebate:number;freight:number;terms:number;accessory:number;pocket:number;cogs:number;margin:number;rate:number}>){const uom=quote.normalizedLines.find(item=>item.productId===line.productId)?.uom||null;await db.query(`INSERT INTO quote_line(tenant_id,quote_id,product_id,quantity,list_price,discount_pct,off_invoice_rebate_pct,freight,payment_terms_cost,accessory_amount,pocket_price,cogs_total,pocket_margin,margin_pct,currency,uom_code,price_explanation)
- VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,[context.tenantId,quoteId,line.productId,line.qty,line.unitPrice,line.discount/line.list*100||0,line.rebate/line.list*100||0,line.freight,line.terms,line.accessory,line.pocket,line.cogs,line.margin,line.rate,quote.currency,uom,JSON.stringify((line as any).pricingExplanation)]);}
- if(needsApproval)await db.query("INSERT INTO approval(tenant_id,quote_id,requested_by,status,margin_pct_at_decision,policy_version) VALUES($1,$2,$3,'pending',$4,$5)",[context.tenantId,quoteId,context.userId,quote.math.rate,quote.policyVersion]);
- await appendAudit(db,{tenantId:context.tenantId,actorId:context.actorId,action:"quote.create",entityType:"quote",entityId:quoteId,after:{status,zone:quote.zone,policyVersion:quote.policyVersion}});
- return{blocked:false,id:quoteId,status,zone:quote.zone,headroom:quote.headroom,math:quote.math,pricingExplanation:quote.math.lines.map((line:any)=>line.pricingExplanation),currency:quote.currency};});
- if(result.blocked)return NextResponse.json(assertRepResponseSafe(context.role,{error:"This quote is below the walk-away margin and cannot be created.",zone:result.zone,headroom:result.headroom}),{status:422});
-  const response=context.role==="rep"?{id:result.id,status:result.status,zone:result.zone,headroom:result.headroom,pricingExplanation:result.pricingExplanation}:{id:result.id,status:result.status,zone:result.zone,headroom:result.headroom,pocketPrice:result.math.pocket,pricingExplanation:result.pricingExplanation,cogs:result.math.cogs,margin:result.math.margin,marginRate:result.math.rate,lines:result.math.lines.map((line:any)=>({productId:line.productId,qty:line.qty,list:line.list,discount:line.discount,rebate:line.rebate,accessory:line.accessory,freight:line.freight,terms:line.terms,pocket:line.pocket,cogs:line.cogs,margin:line.margin,rate:line.rate}))};return NextResponse.json({data:assertRepResponseSafe(context.role,response)},{status:201})}catch(e){return errorResponse(e)}}
+// Retired in chunk 6R: the server tables behind this endpoint were dropped (wave 1).
+// It stays as a fixed 410 so the HTTP boundary and the privacy gate keep checking it.
+import { retiredBusinessResponse } from "@/lib/legacy-gate";
+
+export const runtime = "nodejs";
+export async function GET() { return retiredBusinessResponse(); }
+export async function POST() { return retiredBusinessResponse(); }

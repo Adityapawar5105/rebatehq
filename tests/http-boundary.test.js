@@ -8,9 +8,10 @@ test('every API is classified; retired handlers stop before any request or data 
  for(const name of RETIRED_API_PATHS){const file=`app/api/${name}/route.ts`,source=fs.readFileSync(file,'utf8');assert.match(source,/from ["']@\/lib\/legacy-gate/);
  const js=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText,ast=ts.createSourceFile(file,js,ts.ScriptTarget.Latest,true);
  const handlers=ast.statements.filter(n=>ts.isFunctionDeclaration(n)&&['GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS'].includes(n.name?.text));assert.ok(handlers.length);
- for(const h of handlers){const body=h.body.getText(ast).slice(1,-1);assert.match(body,/^\s*if\s*\(!legacyBusinessEnabled\(\)\)\s*return retiredBusinessResponse\(\);/);
+ // 6R: the tables behind these routes are dropped, so every handler is an unconditional 410 with no other code.
+ for(const h of handlers){const body=h.body.getText(ast).slice(1,-1);assert.match(body,/^\s*return retiredBusinessResponse\(\);\s*$/,name+' '+h.name.text+' must be a fixed retired response');
  const invoke=new (Object.getPrototypeOf(async()=>{}).constructor)('request','legacyBusinessEnabled','retiredBusinessResponse',body);
- const request=new Proxy({},{get(){throw Error('Retired route read request');}});const response=await invoke(request,()=>false,()=>new Response(null,{status:410}));assert.equal(response.status,410,name+' '+h.name.text);}}
+ const request=new Proxy({},{get(){throw Error('Retired route read request');}});const response=await invoke(request,()=>true,()=>new Response(null,{status:410}));assert.equal(response.status,410,name+' '+h.name.text);}}
 });
 test('reachable API import graphs contain no business-table writes',async()=>{
  const {CONTROL_API_PATHS,CONTROL_TABLES}=await import('../config/http-boundary.mjs');const writes=/\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM|TRUNCATE(?:\s+TABLE)?)\s+(?:public\.)?([a-z_][a-z0-9_]*)/gi;

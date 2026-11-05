@@ -53,6 +53,8 @@ import_job, column_mapping_template, connector_secret, connector_sync_run.
    business snapshots need an approved retention process first.
 6. Done when CI and a user-run Restore Drill pass and the migration is locked.
 
+**Wave 1 status (5 Nov 2026):** built in chunk 6R, pending CI and the user-run Restore Drill. 22 tables dropped (the 21 above plus `plan_feature`, which nothing read). The `quote`/`quote_line` foreign keys to customer, product and uom were dropped so the wave-2 rows could stay; the legacy quote API routes were retired with wave 1 because they priced quotes from the dropped tables. See [CHUNK_6R_VERIFICATION.md](./CHUNK_6R_VERIFICATION.md) and blueprint section 22, item 18.
+
 ## Wave 2 — chunk 8R (after 7A, 7B, 7D and 8B)
 
 12 tables with no local equivalent yet: quote, quote_line, quote_share_link,

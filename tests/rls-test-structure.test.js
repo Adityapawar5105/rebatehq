@@ -30,7 +30,7 @@ test("the restricted-role pgTAP checks capture results and run assertions after 
 });
 
 test("RLS fixtures prove tenant-positive paths, exact RLS write failures, and TRUNCATE protection", () => {
-  assert.match(sql, /extensions\.plan\(188 \+ CASE WHEN current_setting\('app\.restore_test_mode',true\)='true' THEN 3 ELSE 0 END\)/, "Fresh runs plan 188 checks; restored-data runs add three restore-only checks.");
+  assert.match(sql, /extensions\.plan\(113 \+ CASE WHEN current_setting\('app\.restore_test_mode',true\)='true' THEN 3 ELSE 0 END\)/, "Fresh runs plan 113 checks after 6R; restored-data runs add three restore-only checks.");
   assert.match(sql, /phase1_tenant_a_fixtures/, "Every application table must have a Tenant A fixture row.");
   assert.match(sql, /CREATE TEMP TABLE phase1_rls_fixture_keys/, "Fixture rows must be enumerated explicitly by table and generated primary key.");
   assert.match(sql, /replace\('__PHASE1_INVITE_A_ID__','-',''\)/, "Fixture invite tokens must be unique to generated fixture IDs.");
@@ -38,7 +38,7 @@ test("RLS fixtures prove tenant-positive paths, exact RLS write failures, and TR
   assert.match(sql, /Expected exactly one suite-created Tenant A fixture row in public\.% keyed by %; found %/, "Missing or duplicate fixtures must name the table and key.");
   assert.match(sql, /Expected exactly one suite-created Tenant B fixture row in public\.% keyed by %; found %/, "Missing or duplicate fixtures must name the table and key.");
   assert.doesNotMatch(sql, /Tenant A fixture clone failed|regexp_replace\([^\n]*'2\$','3'|SELECT[\s\S]{0,100}WHERE tenant_id[^\n]*LIMIT 1/i, "Tenant A rows must not be cloned from arbitrary restored data.");
-  assert.match(sql, /phase1_rls_fixture_keys[\s\S]*?\(10,'quote'[\s\S]*?\(11,'quote_line'[\s\S]*?\(12,'approval'[\s\S]*?\(13,'sales_order'/, "Fixture keys must follow the quote dependency order.");
+  assert.match(sql, /phase1_rls_fixture_keys[\s\S]*?\(4,'quote'[\s\S]*?\(5,'quote_line'[\s\S]*?\(6,'approval'[\s\S]*?\(7,'rebate_agreement'[\s\S]*?\(8,'rebate_progress'/, "Fixture keys must follow the quote dependency order.");
   assert.match(sql, /n<>expected_count THEN RAISE EXCEPTION 'Explicit fixture key list covers % tables/, "An uncovered tenant table must fail before any isolation loop.");
   assert.match(sql, /CREATE TEMP TABLE phase1_rls_tables[\s\S]*?SELECT c\.relname[\s\S]*?n\.nspname='public'/, "The isolation suite must enumerate every public application table, including new migrations.");
   assert.match(sql, /Tenant B fixture graph covers % tables; expected %/, "New tables without an explicit Tenant B fixture must fail before isolation checks.");
@@ -48,15 +48,15 @@ test("RLS fixtures prove tenant-positive paths, exact RLS write failures, and TR
   assert.match(sql, /TRUNCATE public\.audit_log/, "The restricted role must attempt audit_log TRUNCATE.");
   assert.match(sql, /Statement-level trigger rejects audit_log TRUNCATE/, "Elevated-role TRUNCATE must be blocked by the statement trigger.");
   assert.match(sql, /has_table_privilege\('rebatehq_app',[^\n]*'TRUNCATE'\)/, "The app role must be checked for TRUNCATE ACLs.");
-  assert.match(sql, /customer policy evaluates auth\.uid\(\).*without auth schema USAGE/i, "Policy evaluation must prove auth.uid works without schema USAGE.");
+  assert.match(sql, /quote policy evaluates auth\.uid\(\).*without auth schema USAGE/i, "Policy evaluation must prove auth.uid works without schema USAGE.");
   assert.match(sql, /through the Supabase platform PUBLIC grant/i);
   assert.match(sql, /auth_uid_authenticated_policy_query/);
   assert.match(sql, /auth_uid_missing_context_policy_query/);
   assert.doesNotMatch(sql, /\b(?:GRANT|REVOKE)\b[^;]*\bauth\.uid\s*\(/i, "The migration/test must not try to manage Supabase-owned auth.uid ACLs.");
   assert.match(sql, /App role has no table privileges in auth schema/, "Auth schema access must not imply auth table access.");
-  assert.match(sql, /Tenant A can UPDATE its own customer row/, "Allowed UPDATE requires a positive control.");
-  assert.match(sql, /Tenant A can DELETE its own inserted customer row/, "Allowed DELETE requires a positive control.");
-  assert.match(sql, /tenant rep can see a product but cannot DELETE/, "A policy-forbidden role needs a DELETE denial control.");
+  assert.match(sql, /Tenant A can UPDATE its own alert row/, "Allowed UPDATE requires a positive control.");
+  assert.match(sql, /Tenant A can DELETE its own inserted alert row/, "Allowed DELETE requires a positive control.");
+  assert.match(sql, /tenant rep can see an alert but cannot DELETE/, "A policy-forbidden role needs a DELETE denial control.");
   assert.match(sql, /record_failed_login always writes fixed auth\.login_failed with NULL tenant and actor/);
   assert.match(sql, /record_failed_login EXECUTE is revoked from PUBLIC, anon, and authenticated/);
   assert.match(sql, /All public SECURITY DEFINER EXECUTE ACLs match the owner\/app allowlist/);
@@ -84,8 +84,8 @@ test("RLS fixtures prove tenant-positive paths, exact RLS write failures, and TR
   assert.match(sql, /app\.phase1_anon_function_exec_result/);
   assert.match(sql, /app\.phase1_authenticated_function_exec_result/);
   assert.match(sql, /has_function_privilege\(current_user,p\.oid,'EXECUTE'\)/);
-  assert.match(runner, /expectedFixturePlan = 188/);
-  assert.match(runner, /restoreFixturePlan = 191/);
+  assert.match(runner, /expectedFixturePlan = 113/);
+  assert.match(runner, /restoreFixturePlan = 116/);
   assert.match(runner, /planned !== expectedPlan/);
   assert.match(runner, /all \$\{expectedPlan\} checks passing/);
   assert.match(runner, /materializeFixtureIds/);
@@ -93,19 +93,19 @@ test("RLS fixtures prove tenant-positive paths, exact RLS write failures, and TR
   assert.match(runner, /Legacy fixed-ID fixture\/sentinel diagnostic/);
   assert.match(runner, /RESTORE_BASELINE_PATH/);
   assert.match(runner, /phase1_restore_expected_tenant_counts/);
-  assert.match(sql, /Restore-only: sentinel tenant and product are present with the source content hash/);
+  assert.match(sql, /Restore-only: sentinel tenant and rebate agreement are present with the source content hash/);
   assert.match(sql, /Restore-only: every table\/tenant row count still matches the source baseline/);
   assert.match(sql, /Restore-only: synthetic Tenant A sees zero rows from the real restored sentinel tenant in every application table/);
   assert.match(sql, /phase1_restore_real_isolation_result/);
   assert.match(sql, /SELECT \* FROM extensions\.finish\(\);\s*ROLLBACK;/, "Fixture rows and settings must roll back after pgTAP finishes.");
   assert.doesNotMatch(sql, /ON CONFLICT/i, "Fixtures must not silently reuse incomplete pre-existing rows.");
   assert.doesNotMatch(sql, /(?:10000000|20000000|30000000|37000000)-0000-4000-8000-00000000000[123]/, "Historical fixed fixture UUIDs must not be embedded in the suite.");
-  for (const [before, after] of [["INSERT INTO public.tenant", "INSERT INTO public.membership"], ["INSERT INTO public.membership", "INSERT INTO public.customer"], ["INSERT INTO public.customer", "INSERT INTO public.product"], ["INSERT INTO public.product", "INSERT INTO public.quote"], ["INSERT INTO public.quote(", "INSERT INTO public.approval"]]) {
+  for (const [before, after] of [["INSERT INTO public.tenant", "INSERT INTO public.membership"], ["INSERT INTO public.membership", "INSERT INTO public.invite"], ["INSERT INTO public.invite", "INSERT INTO public.quote"], ["INSERT INTO public.quote(", "INSERT INTO public.approval"]]) {
     assert.ok(sql.indexOf(before) >= 0 && sql.indexOf(after) > sql.indexOf(before), `${before} must be seeded before ${after}.`);
   }
   assert.match(roleSetup, /quotedRoleGrant\(admin, "authenticated", testLogin, version\)/, "The disposable test login must be able to SET ROLE authenticated for the ACL probe.");
   assert.match(sql, /permission denied for table tenant/);
-  assert.match(sql, /permission denied for table product/);
+  assert.match(sql, /permission denied for table alert/);
   assert.match(aclMigration, /REVOKE ALL PRIVILEGES ON TABLE public\.%I FROM %s/);
   assert.match(aclMigration, /REVOKE %s \(%I\) ON TABLE public\.%I FROM %s/);
   assert.match(aclMigration, /ALTER DEFAULT PRIVILEGES FOR ROLE %I%s REVOKE ALL ON %s FROM %s/);
@@ -127,7 +127,7 @@ test("database repeatability command runs the suite twice and proves no tenant r
   assert.match(repeatability, /await runDatabaseSuite\(\)[\s\S]*?const afterSecond = await snapshotTenantRows\(pool\)/);
   assert.match(repeatability, /assertTenantRowCountsEqual\(before, afterSecond/);
   assert.match(repeatability, /GROUP BY c\.relname\s+ORDER BY c\.relname/, "Tenant tables must be uniquely and deterministically sorted by name.");
-  assert.match(repeatability, /tables\.rows\.length >= 42/);
+  assert.match(repeatability, /tables\.rows\.length >= 20/);
   assert.match(rowCountHelpers, /public\.\$\{tableName\}/, "Count mismatch errors must identify the public table.");
 });
 
@@ -141,15 +141,15 @@ test("auth function access stays minimal and failed-login audit writes use the d
 
 test("table loops are guarded against empty fixtures and SQL errors include server context", () => {
   assert.doesNotMatch(sql, /\bc\s+record\b/i, "Avoid ambiguous/unassigned RECORD loop variables in test SQL.");
-  assert.match(sql, /Explicit fixture graph needs at least 38 tenant tables/);
+  assert.match(sql, /Explicit fixture graph needs at least 16 tenant tables/);
   assert.match(sql, /Tenant B fixture graph covers % tables; expected %/);
   assert.match(sql, /Tenant A fixture graph covers % tables; expected %/);
-  assert.match(sql, /Tenant A positive SELECT loop expected at least 38 tables/);
-  assert.match(sql, /Tenant B cross-SELECT loop expected at least 38 tables/);
-  assert.match(sql, /positive INSERT loop expected at least 35 policy-allowed tables/);
-  assert.match(sql, /Cross-tenant UPDATE loop expected at least 36 eligible tables/);
-  assert.match(sql, /Cross-tenant DELETE loop expected at least 36 eligible tables/);
-  assert.match(sql, /Cross-tenant INSERT loop expected at least 35 eligible tables/);
+  assert.match(sql, /Tenant A positive SELECT loop expected at least 16 tables/);
+  assert.match(sql, /Tenant B cross-SELECT loop expected at least 16 tables/);
+  assert.match(sql, /positive INSERT loop expected at least 14 policy-allowed tables/);
+  assert.match(sql, /Cross-tenant UPDATE loop expected at least 14 eligible tables/);
+  assert.match(sql, /Cross-tenant DELETE loop expected at least 14 eligible tables/);
+  assert.match(sql, /Cross-tenant INSERT loop expected at least 14 eligible tables/);
   for (const field of ["where", "routine", "position", "detail", "hint"]) {
     assert.match(runner, new RegExp(`pgError\\.${field}`), `Postgres error field ${field} should be emitted.`);
   }

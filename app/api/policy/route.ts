@@ -1,15 +1,7 @@
-import { legacyBusinessEnabled, retiredBusinessResponse } from "@/lib/legacy-gate";
-import { readJsonLimited } from "@/lib/request";
-import { databaseContext } from "@/lib/context";
-import { NextResponse } from "next/server";
-import { getAppContext } from "@/lib/context";
-import { assertPermission,errorResponse,HttpError } from "@/lib/authz";
-import { withDatabase } from "@/lib/db";
-import { MarginPolicySchema } from "@/lib/validators";
-import { appendAudit } from "@/lib/audit";
-import { assertRepResponseSafe } from "@/lib/rep-response";
-export const runtime="nodejs";
-export async function GET(request:Request){if (!legacyBusinessEnabled()) return retiredBusinessResponse();try{const context=await getAppContext(request.headers);assertPermission(context,"policy.read");const data=await withDatabase(databaseContext(context,request.headers),async db=>{const policies=(await db.query("SELECT scope_type,scope_key,target_margin_pct,floor_margin_pct,walkaway_margin_pct,version,updated_at FROM margin_policy WHERE tenant_id=$1 ORDER BY scope_type,scope_key",[context.tenantId])).rows;const categories=(await db.query("SELECT DISTINCT category FROM product WHERE tenant_id=$1 AND active=true ORDER BY category",[context.tenantId])).rows.map(row=>row.category as string);const tiers=(await db.query("SELECT DISTINCT tier FROM customer WHERE tenant_id=$1 AND tier IS NOT NULL ORDER BY tier",[context.tenantId])).rows.map(row=>row.tier as string);return{policies,categories,tiers}});return NextResponse.json(assertRepResponseSafe(context.role,{data,canEdit:context.role==="owner"||context.role==="manager"}))}catch(error){return errorResponse(error)}}
-export async function PUT(request:Request){if (!legacyBusinessEnabled()) return retiredBusinessResponse();try{const context=await getAppContext(request.headers);assertPermission(context,"policy.edit");const parsed=MarginPolicySchema.safeParse(await readJsonLimited(request,8_000));if(!parsed.success)throw new HttpError(400,parsed.error.issues[0]?.message||"Check the margin thresholds.");const p=parsed.data;const result=await withDatabase(databaseContext(context,request.headers),async db=>{const key=p.scopeType==="global"?"":p.scopeKey;const before=await db.query("SELECT target_margin_pct,floor_margin_pct,walkaway_margin_pct,version FROM margin_policy WHERE tenant_id=$1 AND scope_type=$2 AND scope_key=$3 FOR UPDATE",[context.tenantId,p.scopeType,key]);const after=await db.query(`INSERT INTO margin_policy(tenant_id,scope_type,scope_key,target_margin_pct,floor_margin_pct,walkaway_margin_pct,version,updated_by)
- VALUES($1,$2,$3,$4,$5,$6,1,$7) ON CONFLICT(tenant_id,scope_type,scope_key) DO UPDATE SET target_margin_pct=EXCLUDED.target_margin_pct,floor_margin_pct=EXCLUDED.floor_margin_pct,walkaway_margin_pct=EXCLUDED.walkaway_margin_pct,version=margin_policy.version+1,updated_by=EXCLUDED.updated_by,updated_at=now()
- RETURNING scope_type,scope_key,target_margin_pct,floor_margin_pct,walkaway_margin_pct,version,updated_at`,[context.tenantId,p.scopeType,key,p.target,p.floor,p.walkAway,context.userId]);await appendAudit(db,{tenantId:context.tenantId,actorId:context.actorId,action:"margin_policy.updated",entityType:"margin_policy",entityId:`${p.scopeType}:${key}`,before:before.rows[0]||null,after:after.rows[0]});return after.rows[0]});return NextResponse.json({data:result})}catch(error){return errorResponse(error)}}
+// Retired in chunk 6R: the server tables behind this endpoint were dropped (wave 1).
+// It stays as a fixed 410 so the HTTP boundary and the privacy gate keep checking it.
+import { retiredBusinessResponse } from "@/lib/legacy-gate";
+
+export const runtime = "nodejs";
+export async function GET() { return retiredBusinessResponse(); }
+export async function PUT() { return retiredBusinessResponse(); }

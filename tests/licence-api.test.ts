@@ -26,7 +26,7 @@ test('all licence admin endpoint SQL branches run against PGlite with signed RLS
   assert.equal((await call('locations',{name:'One metadata location',erpProfile:'p21'})).status,200);
   assert.equal((await call('devices',{id:device,status:'revoked'})).status,200);
   role='rep';assert.equal((await call('seats',{userId:member})).status,403);
-  const empty=(await db.query('SELECT (SELECT count(*) FROM product)::int AS products,(SELECT count(*) FROM margin_policy)::int AS policies')).rows[0];assert.deepEqual(empty,{products:0,policies:0});
+  const empty=(await db.query('SELECT (SELECT count(*) FROM quote)::int AS quotes,(SELECT count(*) FROM rebate_agreement)::int AS agreements,(SELECT count(*) FROM alert)::int AS alerts')).rows[0];assert.deepEqual(empty,{quotes:0,agreements:0,alerts:0});
   await db.exec('ROLLBACK');
  }finally{await db.close();}
 });
