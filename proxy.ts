@@ -2,10 +2,25 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { randomBytes } from "node:crypto";
 
+/**
+ * CSRF guard for state-changing requests that carry an Origin header. The origin must
+ * name the host the browser addressed (X-Forwarded-Host behind a proxy, else Host), the
+ * same check Next.js applies to Server Actions. nextUrl reflects the address the server
+ * is bound to (for example 0.0.0.0 in a container or CI), so comparing against it
+ * rejected every legitimate browser POST there (found by the 7A relay gate, CI #80).
+ */
+export function originVerdict(origin:string,headers:Headers,fallbackHost:string):"same"|"cross"|"invalid"{
+ let url:URL;try{url=new URL(origin);}catch{return "invalid";}
+ if(!["http:","https:"].includes(url.protocol))return "invalid";
+ const forwarded=headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+ const host=(forwarded||headers.get("host")||fallbackHost).toLowerCase();
+ return url.host.toLowerCase()===host?"same":"cross";
+}
 export async function proxy(request:NextRequest){
  const origin=request.headers.get("origin");
  if(origin&&["POST","PUT","PATCH","DELETE"].includes(request.method)){
-  try{if(new URL(origin).origin!==request.nextUrl.origin)return new NextResponse("Cross-origin request denied",{status:403,headers:{"cache-control":"no-store"}})}catch{return new NextResponse("Invalid request origin",{status:403,headers:{"cache-control":"no-store"}})}
+  const verdict=originVerdict(origin,request.headers,request.nextUrl.host);
+  if(verdict!=="same")return new NextResponse(verdict==="invalid"?"Invalid request origin":"Cross-origin request denied",{status:403,headers:{"cache-control":"no-store"}});
  }
  const requestHeaders=new Headers(request.headers);const nonce=randomBytes(18).toString("base64");
  const supabaseUrl=process.env.NEXT_PUBLIC_SUPABASE_URL||"";let connectOrigin="";try{connectOrigin=new URL(supabaseUrl).origin}catch{}
