@@ -1,6 +1,6 @@
 # Chunk 7A verification — ciphertext-only collaboration relay
 
-5 November 2026. **CI-verified in [CI #82](https://github.com/Adityapawar5105/rebatehq/actions/runs/42034048481) on `a65c395`; pending the user-run Restore Drill.** The new migration `20261105130000_chunk7a_ciphertext_relay.sql` stays *pending* in `migrations.lock` until both pass, then it is locked in a follow-up change. Design: [RELAY_DESIGN.md](./RELAY_DESIGN.md).
+5 November 2026. **7A is complete:** CI-verified in [CI #82](https://github.com/Adityapawar5105/rebatehq/actions/runs/42034048481) on `a65c395`, with CI passing again on `7652013`, and [Restore Drill #19](https://github.com/Adityapawar5105/rebatehq/actions/runs/42043079490) (local target) passed on `7652013`. The migration is now **locked** in `migrations.lock` (11 applied, 0 pending). The new migration `20261105130000_chunk7a_ciphertext_relay.sql` stays *pending* in `migrations.lock` until both pass, then it is locked in a follow-up change. Design: [RELAY_DESIGN.md](./RELAY_DESIGN.md).
 
 Built by Codex from `CODEX_PROMPT_7A.md`. Codex hit its usage limit before committing. Claude Code then checked the uncommitted work, reran the checks below and committed it. The concurrent blueprint v2.3 draft (BLUEPRINT.md, BLUEPRINT_EXECUTION_PLAN.md, AGENTS.md) is a separate change and is **not** part of this commit.
 
@@ -58,8 +58,11 @@ Built by Codex from `CODEX_PROMPT_7A.md`. Codex hit its usage limit before commi
   - Failures now log each page's scrubbed panel state.
 - **[CI #82](https://github.com/Adityapawar5105/rebatehq/actions/runs/42034048481)** (`a65c395`) **passed:** 78 JS and 131 TS tests, pgTAP `1..152` twice, the authenticated vault privacy gate (`"auth": true`), and the relay round trip, "11 checks passed (chromium, real authenticated local Supabase)".
 
+## Restore Drill #19
+
+The drill applied the 7A migration, seeded encrypted relay rows with the restore sentinel, restored into a fresh database and passed every check, including the relay-content hash comparison.
+
 ## Not verified yet
 
-- **The user-run Restore Drill** with the encrypted relay seed.
 - **The customer-track gate** ("ask pilots before 7A") was not met; no pilot exists. The user chose to proceed (ASSUMPTIONS.md).
 - **No hosted deployment;** `RELAY_ENABLED` is off by default.
