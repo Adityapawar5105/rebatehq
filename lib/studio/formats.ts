@@ -1,6 +1,6 @@
 // Import Studio shared types, canonical role columns and header/role detection.
 // Pure functions: no DOM, DuckDB or Node APIs, so they run in the worker and in unit tests.
-export type Role = "sales_history" | "item_master" | "customer_list" | "vendor_cost" | "rebate_agreement" | "price_list";
+export type Role = "sales_history" | "item_master" | "customer_list" | "vendor_cost" | "rebate_agreement" | "price_list" | "order_header";
 export type Kind = "csv" | "tsv" | "txt" | "xlsx" | "xlsm" | "xls" | "xlsb" | "ods" | "json" | "xml";
 export type Encoding = "utf-8" | "utf-16le" | "utf-16be" | "windows-1252";
 export type Delimiter = "," | ";" | "\t" | "|";
@@ -9,10 +9,10 @@ export type Settings = { sheet: string | null; headerRow: number; headerDepth: 1
 export type StudioIssue = { row: number; column: string; message: string };
 export class StudioError extends Error {}
 
-export const ROLES: Role[] = ["sales_history", "item_master", "customer_list", "vendor_cost", "price_list", "rebate_agreement"];
+export const ROLES: Role[] = ["sales_history", "item_master", "customer_list", "vendor_cost", "price_list", "rebate_agreement", "order_header"];
 export const ROLE_LABELS: Record<Role, string> = {
   sales_history: "Sales history", item_master: "Item master", customer_list: "Customer list",
-  vendor_cost: "Vendor cost sheet", rebate_agreement: "Rebate agreement", price_list: "Price list",
+  vendor_cost: "Vendor cost sheet", rebate_agreement: "Rebate agreement", price_list: "Price list", order_header: "Order headers (joined to lines)",
 };
 export const DATE_FORMATS: DateFormat[] = ["YYYY-MM-DD", "MM/DD/YYYY", "DD/MM/YYYY", "DD.MM.YYYY", "DD-MM-YYYY"];
 export const DELIMITERS: Delimiter[] = [",", ";", "\t", "|"];
@@ -33,13 +33,17 @@ export const ROLE_FIELDS: Record<Role, Field[]> = {
   vendor_cost: [f("vendor", "text", true, 200), f("product_id", "id", true), f("cost", "amount", true), f("effective_date", "date", true)],
   price_list: [f("product_id", "id"), f("category", "text", false, 200), f("customer_id", "id"), f("tier", "text", false, 100), f("qty_break", "quantity0"), f("price", "amount", true), f("valid_from", "date", true), f("valid_to", "date")],
   rebate_agreement: [f("program_id", "text", true, 100), f("party", "text", true, 200), f("rate_percent", "quantity0", true), f("threshold_amount", "amount"), f("period_start", "date", true), f("period_end", "date", true)],
+  // 6A: an order-header export (customer, date, freight per invoice) joined to a lines file by invoice number. Never stored on its own.
+  order_header: [f("invoice_id", "text", true, 64), f("customer_id", "id", true), f("sale_date", "date", true), f("freight_amount", "amount")],
 };
 /** Roles whose rows load into the vault in Phase 1. Rebate agreements load in Phase 2. */
 export const LOADABLE: Role[] = ["sales_history", "item_master", "customer_list", "vendor_cost", "price_list"];
+/** Roles a batch can use: the loadable ones plus order headers, which fill in sales lines and are not stored themselves. */
+export const USABLE: Role[] = [...LOADABLE, "order_header"];
 export const FILE_HINTS: Array<[Role, RegExp]> = [
   ["sales_history", /sales|invoice|history|orders?/i], ["item_master", /item|product|catalog|sku/i],
   ["customer_list", /customer|account|client/i], ["vendor_cost", /vendor|supplier|cost/i],
-  ["rebate_agreement", /rebate|program|agreement/i], ["price_list", /price|matrix|tariff/i],
+  ["rebate_agreement", /rebate|program|agreement/i], ["price_list", /price|matrix|tariff/i], ["order_header", /head(er)?s?\b|^orders?\.\w+$/i],
 ];
 
 export function normalizeHeader(value: string) { return value.normalize("NFKC").toLowerCase().replace(/[^a-z0-9]+/g, ""); }

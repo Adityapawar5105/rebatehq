@@ -149,7 +149,7 @@ function parseSource(v: string): FieldSource {
   const [kind, rest] = v.split(":");
   if (kind === "column" || kind === "unit" || kind === "percent" || kind === "fraction") return { kind, index: Number(rest) };
   if (kind === "generate") return { kind, lineNo: rest === "" ? null : Number(rest) };
-  return { kind: kind as "zero" | "none" };
+  return { kind: kind as "zero" | "none" | "header" | "item_cost" };
 }
 /** Column mapping: one source per canonical field, with confidence and the reason it was suggested. */
 function MappingEditor({ file, busy, patch }: { file: FileView; busy: boolean; patch: (data: Patch) => Promise<void> }) {
@@ -171,6 +171,8 @@ function MappingEditor({ file, busy, patch }: { file: FileView; busy: boolean; p
         <td><select aria-label={`Source for ${m.field}`} value={sourceValue(m.source)} disabled={busy} onChange={e => void patch({ field: { name: m.field, source: parseSource(e.target.value) } })}>
           {(!m.required || m.source.kind === "none") && <option value="none">{m.options.includes("none") ? "Not in file: leave unknown" : m.required ? "Choose a column…" : "Not in file"}</option>}
           {m.options.includes("zero") && <option value="zero">Not in file: use 0</option>}
+          {m.options.includes("header") && <option value="header">From the order header file (matched by invoice number{m.field === "freight_amount" ? ", spread over the lines" : ""})</option>}
+          {m.options.includes("item_cost") && <option value="item_cost">Not in file: quantity × the item list&apos;s current cost</option>}
           {m.options.includes("generate") && <option value={m.source.kind === "generate" ? sourceValue(m.source) : "generate:"}>Generate from invoice number{m.source.kind === "generate" && m.source.lineNo !== null ? " and line number" : ""}</option>}
           {columns.map(c => <option key={`c${c.i}`} value={`column:${c.i}`}>{c.label}</option>)}
           {m.options.includes("unit") && columns.map(c => <option key={`u${c.i}`} value={`unit:${c.i}`}>{c.label} × quantity</option>)}

@@ -6,7 +6,8 @@ import { XMLParser } from "fast-xml-parser";
 import { MAX_COLUMNS, MAX_CELL } from "./text";
 import { StudioError, columnLetter, type Kind, type StudioIssue } from "./formats";
 export const MAX_SHEET_BYTES = 64 * 1024 * 1024, MAX_SHEET_ROWS = 300_000, MAX_SHEET_CELLS = 4_000_000, MAX_DOC_BYTES = 64 * 1024 * 1024;
-export type Grid = { rows: string[][]; rowNumbers: number[]; colOffset: number; merged: boolean; notices: string[]; issues: StudioIssue[]; keyed: boolean };
+/** streamed (6A): rows holds only a preview; the import reads the whole sheet with streamSheet. */
+export type Grid = { rows: string[][]; rowNumbers: number[]; colOffset: number; merged: boolean; notices: string[]; issues: StudioIssue[]; keyed: boolean; streamed?: { totalRows: number } };
 
 async function head(bytes: Uint8Array, method: number) {
   if (method === 0) return new TextDecoder().decode(bytes.subarray(0, 4096));
@@ -86,7 +87,7 @@ export function sheetGrid(bytes: Uint8Array, sheet: string, zipNotices: string[]
   const ws = wb.Sheets[sheet];
   if (!ws) throw new StudioError("That sheet was not found in the workbook.");
   const range = XLSX.utils.decode_range(ws["!ref"] || "A1:A1"), height = range.e.r - range.s.r + 1;
-  if (height >= MAX_SHEET_ROWS + 50) throw new StudioError(`This sheet has more than ${MAX_SHEET_ROWS.toLocaleString("en-US")} rows. Save it as CSV and import the CSV instead.`);
+  if (height >= MAX_SHEET_ROWS + 50) throw new StudioError(`This sheet has more than ${MAX_SHEET_ROWS.toLocaleString("en-US")} rows. Save it as XLSX or CSV and import that instead.`);
   const width = Math.min(range.e.c - range.s.c + 1, MAX_COLUMNS);
   if (range.e.c - range.s.c + 1 > MAX_COLUMNS) notices.push(`Only the first ${MAX_COLUMNS} columns were read.`);
   if (height * width > MAX_SHEET_CELLS) throw new StudioError("This sheet is too large to convert in the browser. Save it as CSV and import the CSV instead.");

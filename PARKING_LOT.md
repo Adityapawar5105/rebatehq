@@ -1,7 +1,7 @@
 # Parking lot
 
 - CI warns Node.js 20 is deprecated for actions/checkout@v4, actions/setup-node@v4 and pnpm/action-setup@v4; bump them in a separate small chunk.
-- **Header/line exports (found in 6A, Northwind):** some exports put customer, date and freight in an order-header file and the items in a lines file. Import Studio needs one flat invoice-line file, so the lines file cannot load alone. A "join a header file by invoice number" converter step (with freight spread over the lines) would fix it. Every target ERP can export a flat invoice-line report, so this waits for a pilot that needs it.
-- **Item-master cost on sales lines (found in 6A, QuickBooks):** when the sales export has no cost but the item list does, margin shows in the 5A cost-basis comparison (replacement cost) but the leak finder only uses invoice-line cost, so it finds no margin leaks. Decide whether the chosen cost basis should feed the leak finder.
-- **Spreadsheets over 300,000 rows per sheet (6A, UCI Online Retail II):** refused with "save it as CSV" as the blueprint states. A streaming XLSX reader would remove the extra step; not needed while CSV export is available.
-- **German (and other non-English) header names (6A, SAP Business One):** parsing is right (`;`, comma decimals, DD.MM.YYYY, Windows-1252) but the role and columns must be mapped by hand once; a saved recipe then repeats it. Add localized synonyms only if pilots outside English-speaking markets need them.
+- **Credits on item-list cost files (6A follow-up, QuickBooks):** returns loaded later from Fix Later keep an unknown cost, even when the sales file takes its cost from the item list, so their pocket stays out of margin. Costing credits from the item list at that step would close it.
+- **Freight on orders whose lines all failed (6A follow-up):** the batch report warns and the freight is not loaded. Reloading the fixed lines from Fix Later does not bring the header's freight back; re-import the lines with the header file instead.
+
+Done on 5 Nov 2026 (blueprint section 22, item 17): header/line joins, item-list cost as a cost source, streaming reads of XLSX/XLSM sheets over 300,000 rows, and German/French/Spanish/Dutch header names. See [PILOT_FILES.md](./PILOT_FILES.md).

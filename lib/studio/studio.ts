@@ -7,18 +7,19 @@ import { sqlText } from "../spike/exact";
 import { appendAudit } from "../vault/audit";
 import { CAPS, type Tier } from "../vault/protocol";
 import {
-  DATE_FORMATS, DELIMITERS, LOADABLE, ROLES, ROLE_FIELDS, ROLE_LABELS, SPREADSHEET, StudioError, TEXT, canonicalValue, columnLetter, detectDateFormat, detectDecimal,
+  DATE_FORMATS, DELIMITERS, LOADABLE, USABLE, ROLES, ROLE_FIELDS, ROLE_LABELS, SPREADSHEET, StudioError, TEXT, canonicalValue, columnLetter, detectDateFormat, detectDecimal,
   NO_HEADER, detectHeader, fingerprint, headerNames, isoDate, kindOf, normalizeHeader, type FieldType, type Kind, type Role, type Settings, type StudioIssue,
 } from "./formats";
 import { ALTERNATIVES, PROFILES, PROFILE_IDS, columnOf, detectProfile, detectRole, lineIdFor, mappingProblems, needsConfirmation, suggestMapping, type ErpProfile, type FieldSource, type MappedField } from "./mapper";
 import { NOTE_TEXT, cleanDate, cleanId, cleanNumber, lineTotal, shareOf, toCents, type CleanNote } from "./clean";
 import { bomLength, detectDelimiter, detectEncoding, sampleRows } from "./text";
-import { MAX_DOC_BYTES, MAX_SHEET_BYTES, checkZip, jsonGrid, sheetGrid, sheetNames, xmlGrid, type Grid } from "./sheets";
+import { MAX_DOC_BYTES, MAX_SHEET_BYTES, MAX_SHEET_ROWS, checkZip, jsonGrid, sheetGrid, sheetNames, xmlGrid, type Grid } from "./sheets";
+import { sampleSheet, sheetSize, streamSheet } from "./xlsxstream";
 import { CsvWriter, Normalizer, emptyStats, headingColumns, headingLevel, streamGrid, streamText, type Stats } from "./rows";
 /** Line types that are product lines; with a line type column mapped, other lines (G/L accounts, charges, comments) are skipped. */
 const ITEM_LINE = new Set(["item", "items", "inventory", "inventorypart", "noninventorypart", "noninventory", "product", "stock", "nonstock", "goods", "merchandise", "part", "assembly", "kit", "artikel"]);
 export const isItemLine = (value: string) => ITEM_LINE.has(normalizeHeader(value));
-import { CODES, capUsage, commitSql, counts, createStage, finishRemovalSql, issueColumn, issueMessage, removeChildrenSql, resetStage, salesRanges, sampleIssues, stageFile, validate, type StagedFile } from "./load";
+import { CODES, capUsage, commitSql, counts, createStage, dropOutsideRange, fillItemCost, finishRemovalSql, issueColumn, issueMessage, joinHeaders, markUnjoined, removeChildrenSql, resetStage, salesRanges, sampleIssues, spreadFreight, stageFile, validate, type StagedFile } from "./load";
 
 export const MAX_TEXT_BYTES = 256 * 1024 * 1024, MAX_FILES = 64, SAMPLE_BYTES = 256 * 1024;
 export type Recipe = { id: string; name: string; profile: string; settings: Settings & { kind: Kind; role: Role | null; erp?: ErpProfile; mapping?: Record<string, FieldSource> } };
@@ -87,7 +88,7 @@ export function canonicalRow(role: Role, mapping: Record<string, FieldSource>, s
       values.set(f.name, cents ?? v);
     }
     else if (s.kind === "zero") values.set(f.name, "0");
-    else if (s.kind === "none") values.set(f.name, "");
+    else if (s.kind === "none" || s.kind === "header" || s.kind === "item_cost") values.set(f.name, ""); // header and item cost are filled in SQL
     else if (s.kind === "unit") {
       const unit = clean("amount", cell(s), settings, notes, f.name), total = lineTotal(unit, values.get("quantity") ?? "");
       values.set(f.name, total ?? unit);
@@ -155,7 +156,7 @@ export class Studio {
         entry.bytes = new Uint8Array(await file.arrayBuffer());
         if (kind !== "xls") entry.zipNotices = await checkZip(entry.bytes, kind);
         entry.sheets = sheetNames(entry.bytes); entry.settings.sheet = entry.sheets[0];
-        entry.grid = sheetGrid(entry.bytes, entry.sheets[0], entry.zipNotices);
+        entry.grid = await this.loadSheet(entry, entry.sheets[0]);
       } else {
         const text = await file.text();
         entry.grid = kind === "json" ? jsonGrid(text) : xmlGrid(text);
@@ -217,6 +218,18 @@ export class Studio {
   private refine(entry: Entry, m: MappedField): MappedField {
     if (entry.role === "sales_history" && m.field === "product_id" && m.source.kind === "none" && entry.headings.length)
       return { field: m.field, source: { kind: "column", index: entry.headings.at(-1)! }, confidence: 0.7, reason: "Taken from the report's section headings; check it" };
+    // 6A: a lines file without customer, date or freight takes them from an order header file in the batch.
+    if (entry.role === "sales_history" && ["customer_id", "sale_date", "freight_amount"].includes(m.field) && (m.source.kind === "none" || m.source.kind === "zero")) {
+      const header = this.others(entry).find(e => e.role === "order_header");
+      if (header && this.mappingOf(header)[m.field]?.kind === "column")
+        return { field: m.field, source: { kind: "header" }, confidence: 0.7, reason: m.field === "freight_amount" ? "From the order header file, spread over the order's lines by list amount; check it" : "From the order header file, matched by invoice number; check it" };
+    }
+    // 6A: no cost in the sales file, but an item list in the batch has one: quantity x that cost.
+    if (entry.role === "sales_history" && m.field === "cost_amount" && m.source.kind === "none") {
+      const items = this.others(entry).find(e => e.role === "item_master");
+      if (items && this.mappingOf(items).current_cost?.kind === "column")
+        return { field: m.field, source: { kind: "item_cost" }, confidence: 0.7, reason: "Not in this file: quantity x the item list's current cost; check it" };
+    }
     // Only a loosely named column ("discount"), never "discount_amount" or "Disc Amt": small amounts are real amounts.
     if (m.field === "discount_amount" && m.source.kind === "column" && m.confidence < 1 && !/amount|amt|value|total|\$/i.test(this.headers(entry)[m.source.index] ?? "")) {
       const at = m.source.index, values = this.rows(entry).slice(entry.settings.headerRow + 1, entry.settings.headerRow + 200)
@@ -226,6 +239,7 @@ export class Studio {
     }
     return m;
   }
+  private others(entry: Entry) { return this.order.flatMap(x => { const e = this.entries.get(x); return e && e !== entry ? [e] : []; }); }
   private mappingOf(entry: Entry) { return Object.fromEntries(this.mapping(entry).map(m => [m.field, m.source])) as Record<string, FieldSource>; }
   private headers(entry: Entry) {
     const rows = this.rows(entry);
@@ -274,7 +288,7 @@ export class Studio {
     if (patch.headerDepth === 1 || patch.headerDepth === 2 || patch.headerDepth === 3) next.headerDepth = patch.headerDepth;
     if (patch.headerRow !== undefined && Number.isInteger(patch.headerRow) && patch.headerRow >= NO_HEADER && patch.headerRow < 40) next.headerRow = patch.headerRow;
     entry.settings = next;
-    if (next.sheet !== before.sheet && entry.bytes) { entry.grid = sheetGrid(entry.bytes, next.sheet!, entry.zipNotices); this.detect(entry); }
+    if (next.sheet !== before.sheet && entry.bytes) { entry.grid = await this.loadSheet(entry, next.sheet!); this.detect(entry); }
     else if (TEXT.includes(entry.kind) && (next.encoding !== before.encoding || next.delimiter !== before.delimiter)) entry.sample = sampleRows(await this.sampleText(entry), next.delimiter, 60);
     if (patch.role !== undefined) { entry.role = patch.role && ROLES.includes(patch.role) ? patch.role : null; entry.roleManual = true; }
     else if (!entry.roleManual) entry.role = detectRole(entry.file.name, this.headers(entry)).role;
@@ -291,7 +305,7 @@ export class Studio {
     const ok = source.kind === "column" ? Number.isInteger(source.index) && source.index >= 0 && source.index < width
       : source.kind === "unit" || source.kind === "percent" || source.kind === "fraction" ? allowed.includes(source.kind) && Number.isInteger(source.index) && source.index >= 0 && source.index < width
       : source.kind === "generate" ? allowed.includes("generate") && (source.lineNo === null || (Number.isInteger(source.lineNo) && source.lineNo >= 0 && source.lineNo < width))
-      : source.kind === "zero" ? allowed.includes("zero") : source.kind === "none" ? !field.required || allowed.includes("none") : false;
+      : source.kind === "zero" || source.kind === "header" || source.kind === "item_cost" ? allowed.includes(source.kind) : source.kind === "none" ? !field.required || allowed.includes("none") : false;
     if (!ok) throw new StudioError(`That source is not allowed for ${name}.`);
     entry.overrides[name] = source;
   }
@@ -305,10 +319,10 @@ export class Studio {
     const letter = (i: number) => entry.grid?.keyed ? headers[i] : columnLetter((entry.grid?.colOffset ?? 0) + i);
     const start = Math.max(0, entry.settings.headerRow - entry.settings.headerDepth + 1 - 2);
     const confirm = needsConfirmation(mapped);
-    const reason = !role ? "Choose what this file contains." : !LOADABLE.includes(role) ? `${ROLE_LABELS[role]} files can be converted and downloaded now; loading them arrives in Phase 2.`
+    const reason = !role ? "Choose what this file contains." : !USABLE.includes(role) ? `${ROLE_LABELS[role]} files can be converted and downloaded now; loading them arrives in Phase 2.`
       : missing.length ? `Map these field(s): ${missing.join(", ")}.` : confirm && !entry.confirmed ? "Check the column mapping below and confirm it." : null;
     // Text files: records in the 256 KiB sample scaled to the file size (exact for small files).
-    const dataRows = entry.grid ? entry.grid.rows.length - entry.settings.headerRow - 1 : Math.round(entry.file.size * entry.sampleRecords / Math.max(1, entry.sampleBytes)) - entry.settings.headerRow - 1;
+    const dataRows = entry.grid ? (entry.grid.streamed?.totalRows ?? entry.grid.rows.length) - entry.settings.headerRow - 1 : Math.round(entry.file.size * entry.sampleRecords / Math.max(1, entry.sampleBytes)) - entry.settings.headerRow - 1;
     const recipe = this.matchRecipe(entry, recipes);
     return {
       id: entry.id, name: entry.file.name, bytes: String(entry.file.size), kind: entry.kind, sheets: entry.sheets, settings: entry.settings, role,
@@ -342,9 +356,20 @@ export class Studio {
     this.applySettings(entry, recipe); this.invalidate();
   }
 
-  private async run(entry: Entry, normalizer: Normalizer, signal: AbortSignal, progress?: (bytes: number) => void) {
+  /** XLSX/XLSM sheets over the grid limit are previewed from their first rows and streamed at import (6A). */
+  private async loadSheet(entry: Entry, sheet: string): Promise<Grid> {
+    if (entry.kind === "xlsx" || entry.kind === "xlsm") {
+      const size = await sheetSize(entry.bytes!, sheet).catch(() => null);
+      if (size && size.lastRow - size.firstRow + 1 > MAX_SHEET_ROWS) { const grid = await sampleSheet(entry.bytes!, sheet); grid.notices.unshift(...entry.zipNotices); return grid; }
+    }
+    return sheetGrid(entry.bytes!, sheet, entry.zipNotices);
+  }
+  /** Feed every row to the normalizer. Returns the cell issues found while reading (null: they are in the grid). */
+  private async run(entry: Entry, normalizer: Normalizer, signal: AbortSignal, progress?: (bytes: number) => void): Promise<{ issues: StudioIssue[]; count: number } | null> {
+    if (entry.grid?.streamed) { const issues: StudioIssue[] = []; const r = await streamSheet(entry.bytes!, entry.settings.sheet!, (cells, row, index) => normalizer.accept(cells, row, index), issues, signal); return { issues, count: r.issueCount }; }
     if (entry.grid) streamGrid(entry.grid, normalizer, signal);
     else await streamText(entry.file, entry.settings, normalizer, signal, progress);
+    return null;
   }
   /** Clean, formula-safe UTF-8 CSV of one file for download. */
   async download(fileId: string, signal: AbortSignal) {
@@ -381,14 +406,19 @@ export class Studio {
     const warnings: string[] = [], replaces = entries.find(e => e.replaces)?.replaces ?? null;
     for (const e of entries) {
       if (!e.role) throw new StudioError(`${e.file.name}: choose what this file contains before importing.`);
-      if (!LOADABLE.includes(e.role)) continue;
+      if (!USABLE.includes(e.role)) continue;
       const mapped = this.mapping(e), missing = mappingProblems(e.role, this.mappingOf(e));
       if (missing.length) throw new StudioError(`${e.file.name}: map ${missing.join(", ")} in "Preview and fix", or remove the file from the batch.`);
       if (needsConfirmation(mapped) && !e.confirmed) throw new StudioError(`${e.file.name}: check the column mapping in "Preview and fix" and confirm it before importing.`);
     }
-    const load = entries.filter(e => LOADABLE.includes(e.role!));
-    for (const e of entries.filter(x => !LOADABLE.includes(x.role!))) warnings.push(`${e.file.name}: ${ROLE_LABELS[e.role!]} files are converted only; loading them arrives in Phase 2.`);
-    if (!load.length) throw new StudioError("No file in this batch can be loaded yet. Download the converted CSVs instead.");
+    const load = entries.filter(e => USABLE.includes(e.role!));
+    for (const e of entries.filter(x => !USABLE.includes(x.role!))) warnings.push(`${e.file.name}: ${ROLE_LABELS[e.role!]} files are converted only; loading them arrives in Phase 2.`);
+    if (!load.some(e => LOADABLE.includes(e.role!))) throw new StudioError(load.length ? "Order header files only fill in sales lines. Add the lines file that goes with them." : "No file in this batch can be loaded yet. Download the converted CSVs instead.");
+    const headerFile = load.some(e => e.role === "order_header");
+    for (const e of load) if (e.role === "sales_history" && !headerFile && Object.values(this.mappingOf(e)).some(s => s.kind === "header"))
+      throw new StudioError(`${e.file.name}: some fields come from an order header file. Add that file to this batch, or map those fields to columns.`);
+    if (headerFile && !load.some(e => e.role === "sales_history" && Object.values(this.mappingOf(e)).some(s => s.kind === "header")))
+      warnings.push("The order header file is not used: no sales file takes its customer, date or freight. Map those fields to \"From the order header file\" if they belong together.");
     if (replaces) {
       const role = (await engine.conn.query(`SELECT role FROM source_files WHERE id=${sqlText(replaces)}`)).toArray()[0]?.role;
       if (!role) throw new StudioError("The file being replaced is no longer in the vault.");
@@ -422,12 +452,13 @@ export class Studio {
           if (role === "sales_history" && ++batchRows > rowCap) throw tooBig();
           writer.row(out, row);
         }, emptyStats(), letter, cut => cut.every(i => !used.has(i)));
-        await this.run(e, normalizer, signal, bytes => progress(`Converting ${e.file.name} (${ord + 1} of ${load.length})`, String(bytes), String(e.file.size)));
+        const read = await this.run(e, normalizer, signal, bytes => progress(`Converting ${e.file.name} (${ord + 1} of ${load.length})`, String(bytes), String(e.file.size)));
         const headers = normalizer.headers ?? [];
-        for (const issue of e.grid?.issues ?? []) normalizer.stats.issues.push(issue);
-        normalizer.stats.issueCount += e.grid?.issues.length ?? 0;
+        for (const issue of read?.issues ?? e.grid?.issues ?? []) normalizer.stats.issues.push(issue);
+        normalizer.stats.issueCount += read?.count ?? e.grid?.issues.length ?? 0;
         const alignment = Object.entries(mapping).flatMap(([field, s]) => { const index = columnOf(s); return index === null ? [] : [{ field, index }]; });
-        const staged: StagedFile = { ord, role, name: e.file.name, bytes: e.file.size, fingerprint: await fileFingerprint(e.file), alignment, settings: e.settings, keyed: !!e.grid?.keyed, headers, colOffset: e.grid?.colOffset ?? 0, generatedIds: mapping.line_id?.kind === "generate" && mapping.line_id.lineNo === null };
+        const staged: StagedFile = { ord, role, name: e.file.name, bytes: e.file.size, fingerprint: await fileFingerprint(e.file), alignment, settings: e.settings, keyed: !!e.grid?.keyed, headers, colOffset: e.grid?.colOffset ?? 0, generatedIds: mapping.line_id?.kind === "generate" && mapping.line_id.lineNo === null,
+          fromHeader: Object.entries(mapping).flatMap(([field, s]) => s.kind === "header" ? [field] : []), itemCost: mapping.cost_amount?.kind === "item_cost" };
         signal.throwIfAborted();
         await stageFile(engine, staged, writer.blob());
         const structure = [...(normalizer.headings ? [{ field: "rows", note: "section headings copied into the rows below (heading rows not loaded)", count: String(normalizer.headings) }] : []),
@@ -437,14 +468,43 @@ export class Studio {
         files.push(staged); stats.set(ord, normalizer.stats); cleanups.set(ord, [...structure, ...[...notes].flatMap(([field, m]) => [...m].map(([n, count]) => ({ field, note: NOTE_TEXT[n], count: String(count) })))]);
       }
       progress("Checking values, duplicates and plan limits", "0", "1");
-      for (const role of roles) { signal.throwIfAborted(); await validate(engine, role as Exclude<Role, "rebate_agreement">, files, replaces); }
+      // Headers and item lists first: sales lines take customer, date and freight from the one and cost from the other.
+      const sequence = (["order_header", "item_master", "customer_list", "vendor_cost", "price_list", "sales_history"] as const).filter(r => roles.has(r));
+      for (const role of sequence) {
+        signal.throwIfAborted();
+        if (role === "sales_history") {
+          const joins = await joinHeaders(engine, files);
+          for (const [ord, j] of joins ?? []) {
+            const f = files[ord], st = stats.get(ord)!, notes = cleanups.get(ord)!;
+            if (j.joined) notes.push({ field: (f.fromHeader ?? []).join(", "), note: "filled from the order header file by invoice number", count: String(j.joined) });
+            const range = load[ord].range;
+            if (f.fromHeader?.includes("sale_date") && (range.from || range.to)) {
+              const dropped = await dropOutsideRange(engine, ord, range);
+              if (dropped) { st.read -= dropped; st.skipped += dropped; notes.push({ field: "sale_date", note: `skipped rows outside the chosen dates (${range.from ?? "start"} to ${range.to ?? "end"})`, count: String(dropped) }); }
+            }
+          }
+        }
+        await validate(engine, role, files, replaces);
+        if (role === "sales_history") {
+          await markUnjoined(engine, files);
+          const freight = await spreadFreight(engine, files);
+          if (freight.spread) for (const f of files.filter(x => x.fromHeader?.includes("freight_amount"))) cleanups.get(f.ord)!.push({ field: "freight_amount", note: "order freight spread over each order's loaded lines by list amount (exact to the cent)", count: `${freight.spread} orders` });
+          if (freight.unspread) warnings.push(`Freight on ${freight.unspread} order(s) was not loaded because none of their lines loaded. Fix those lines, then load them again with the header file.`);
+          const cost = await fillItemCost(engine, files, roles.has("item_master"));
+          if (cost.costed || cost.unknown) for (const f of files.filter(x => x.itemCost)) {
+            if (cost.costed) cleanups.get(f.ord)!.push({ field: "cost_amount", note: "quantity x the item list's current cost (not an invoice cost)", count: String(cost.costed) });
+            if (cost.unknown) cleanups.get(f.ord)!.push({ field: "cost_amount", note: "left unknown: the item list has no cost for these items", count: String(cost.unknown) });
+          }
+        }
+      }
       const reports: FileReport[] = [];
       let loaded = BigInt(0), rejected = BigInt(0);
-      for (const role of roles) for (const c of await counts(engine, role)) {
+      for (const f of files) if (f.role === "order_header") cleanups.get(f.ord)!.push({ field: "rows", note: "order header rows only fill in the sales lines; they are not stored on their own", count: "all" });
+      for (const role of sequence) for (const c of await counts(engine, role)) {
         const file = files[c.ord], st = stats.get(c.ord)!, sampled = await sampleIssues(engine, role, c.ord);
         const issues = [...st.issues.slice(0, 50), ...sampled.map(s => ({ row: s.row, column: issueColumn(s.code, file), message: issueMessage(s.code, file.settings) }))].sort((a, b) => a.row - b.row).slice(0, 100);
         const bad = BigInt(c.bad) + BigInt(st.rejected);
-        loaded += BigInt(c.ok); rejected += bad;
+        if (role !== "order_header") { loaded += BigInt(c.ok); rejected += bad; }
         reports.push({ id: load[c.ord].id, name: file.name, role, rowsRead: String(st.read), rowsLoaded: c.ok, rowsRejected: String(bad), rowsSkipped: String(st.skipped), issueCount: String(BigInt(c.bad) + BigInt(st.issueCount)), issues, dateRange: null, cleaned: cleanups.get(c.ord) ?? [] });
       }
       for (const f of files) if (!reports.some(r => r.id === load[f.ord].id)) {
@@ -478,28 +538,30 @@ export class Studio {
     if (report.loaded === "0") throw new StudioError("No valid rows to load. Fix the issues listed and review again.");
     if (report.rejected !== "0" && !acknowledge) throw new StudioError("Confirm that rejected rows will not be loaded.");
     if (!report.capOk) throw new StudioError(report.capMessage!);
-    const now = new Date().toISOString(), sources = staged.files.map(() => id());
-    const values = staged.files.map((f, i) => `(${f.ord},${sqlText(sources[i])},${sqlText(f.name)})`).join(",");
-    const messages = staged.files.flatMap(f => CODES(f.role).map(code => `(${f.ord},${sqlText(code)},${sqlText(issueColumn(code, f))},${sqlText(issueMessage(code, f.settings))})`)).join(",");
+    // Order header files only filled in sales lines during review; they are not stored as sources.
+    const kept = staged.files.filter(f => f.role !== "order_header"), headerNames = staged.files.filter(f => f.role === "order_header").map(f => f.name).join(", ");
+    const now = new Date().toISOString(), sources = kept.map(() => id());
+    const values = kept.map((f, i) => `(${f.ord},${sqlText(sources[i])},${sqlText(f.name)})`).join(",");
+    const messages = kept.flatMap(f => CODES(f.role).map(code => `(${f.ord},${sqlText(code)},${sqlText(issueColumn(code, f))},${sqlText(issueMessage(code, f.settings))})`)).join(",");
     await engine.conn.query("BEGIN");
     try {
       if (staged.replaces) await engine.conn.query(removeChildrenSql(staged.replaces));
       await engine.conn.query(`CREATE TEMP TABLE studio_files AS SELECT * FROM (VALUES ${values}) v(file_ord, source_id, name);
 CREATE TEMP TABLE studio_messages AS SELECT * FROM (VALUES ${messages}) v(file_ord, code, column_name, message)`);
-      for (const [i, f] of staged.files.entries()) {
+      for (const [i, f] of kept.entries()) {
         const r = report.files.find(x => x.id === staged.entries[f.ord].id)!;
         await engine.conn.query(`INSERT INTO source_files VALUES (${sqlText(sources[i])},${sqlText(f.name)},${sqlText(f.role)},${f.bytes},${sqlText(now)});
 INSERT INTO import_batches(id,source_id,rows_loaded,rows_rejected,imported_at,content_sha256,fingerprint,rows_skipped) VALUES (${sqlText(id())},${sqlText(sources[i])},${r.rowsLoaded},${r.rowsRejected},${sqlText(now)},NULL,${sqlText(f.fingerprint)},${r.rowsSkipped})`);
       }
-      await engine.conn.query(commitSql(staged.roles));
-      for (const [i, f] of staged.files.entries()) {
+      await engine.conn.query(commitSql(new Set([...staged.roles].filter(r => r !== "order_header"))));
+      for (const [i, f] of kept.entries()) {
         const issues = staged.stats.get(f.ord)!.issues;
         for (let at = 0; at < issues.length; at += 500) await engine.conn.query(`INSERT INTO import_issues(id,source_id,row_number,column_name,message,status,code) VALUES ${issues.slice(at, at + 500).map(x => `(${sqlText(id())},${sqlText(sources[i])},${Math.max(1, x.row)},${sqlText(x.column)},${sqlText(x.message)},'open','structure')`).join(",")}`);
         // Rows rejected before mapping (wrong column count, oversized cells) can only be dismissed in Fix Later.
         const rows = staged.stats.get(f.ord)!.rejectedRows;
         for (let at = 0; at < rows.length; at += 500) await engine.conn.query(`INSERT INTO rejected_rows VALUES ${rows.slice(at, at + 500).map(r => `(${sqlText(sources[i])},${Math.max(1, r)},${sqlText(f.role)},'structure',${Array(12).fill("NULL").join(",")},'open')`).join(",")} ON CONFLICT DO NOTHING`);
         const r = report.files.find(x => x.id === staged.entries[f.ord].id)!;
-        await appendAudit(engine, "import.committed", { source_id: sources[i], file_name: f.name, role: f.role, rows_loaded: r.rowsLoaded, rows_rejected: r.rowsRejected, ...(staged.replaces ? { replaces: staged.replaces } : {}) });
+        await appendAudit(engine, "import.committed", { source_id: sources[i], file_name: f.name, role: f.role, rows_loaded: r.rowsLoaded, rows_rejected: r.rowsRejected, ...(staged.replaces ? { replaces: staged.replaces } : {}), ...(f.fromHeader?.length && headerNames ? { header_files: headerNames } : {}), ...(f.itemCost ? { cost_source: "item list current cost" } : {}) });
       }
       await engine.conn.query("COMMIT");
     } catch (error) { await engine.conn.query("ROLLBACK").catch(() => undefined); throw error; }
@@ -508,7 +570,7 @@ INSERT INTO import_batches(id,source_id,rows_loaded,rows_rejected,imported_at,co
       try { await engine.conn.query(`BEGIN; ${finishRemovalSql(staged.replaces)} COMMIT`); } catch { await engine.conn.query("ROLLBACK").catch(() => undefined); cleanup = false; }
     }
     await resetStage(engine).catch(() => undefined);
-    const result = { loaded: report.loaded, rejected: report.rejected, files: String(staged.files.length), cleanup };
+    const result = { loaded: report.loaded, rejected: report.rejected, files: String(kept.length), cleanup };
     this.clear(); return result;
   }
 }
@@ -537,7 +599,7 @@ export async function loadRecipes(engine: Engine): Promise<Recipe[]> {
       const s = JSON.parse(String(r.settings));
       const valid = DELIMITERS.includes(s.delimiter) && DATE_FORMATS.includes(s.dateFormat) && ["dot", "comma"].includes(s.decimal) && [1, 2, 3].includes(s.headerDepth) && Number.isInteger(s.headerRow) && kindOf("x." + s.kind) === s.kind && (s.role === null || ROLES.includes(s.role));
       // Mappings are re-checked against the file when applied; keep only well-formed sources here.
-      const sourceOk = (x: FieldSource) => x && ["column", "unit", "percent", "fraction", "zero", "none", "generate"].includes(x.kind) && (!("index" in x) || Number.isInteger(x.index));
+      const sourceOk = (x: FieldSource) => x && ["column", "unit", "percent", "fraction", "zero", "none", "generate", "header", "item_cost"].includes(x.kind) && (!("index" in x) || Number.isInteger(x.index));
       if (s.mapping && (typeof s.mapping !== "object" || !Object.values(s.mapping as Record<string, FieldSource>).every(sourceOk))) delete s.mapping;
       if (s.erp && !PROFILE_IDS.includes(s.erp)) delete s.erp;
       return valid ? [{ id: String(r.id), name: String(r.name), profile: String(r.profile), settings: s }] : [];

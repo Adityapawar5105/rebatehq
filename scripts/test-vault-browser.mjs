@@ -194,6 +194,24 @@ try {
   const afterReload = path.resolve("test-results", "synthetic-after-reload.csv"); await writeFile(afterReload, csv(1, 700001));
   await importFiles([afterReload], 100017);
   await page.reload(); await ready(); await unlock(); assert.equal(await page.getByTestId("line-count").innerText(), "100017"); results.checks.firstMutationAfterUnlock = true;
+  // 6A: storage near quota. The origin quota is cut to current usage + 64 KiB, so the next encrypted save cannot fit.
+  const quotaCdp = await context.newCDPSession(page), origin = new URL(base).origin;
+  const setQuota = async on => quotaCdp.send("Storage.overrideQuotaForOrigin", on ? { origin, quotaSize: await page.evaluate(async () => (await navigator.storage.estimate()).usage) + 65536 } : { origin });
+  const nearQuota = path.resolve("test-results", "synthetic-near-quota.csv"); await writeFile(nearQuota, csv(1, 700002));
+  const importOverQuota = async () => {
+    await page.getByRole("link", { name: "Data Hub", exact: true }).click(); await review([nearQuota]);
+    await page.getByRole("button", { name: "Confirm and import locally" }).click();
+    await page.getByRole("alert").filter({ hasText: /could not be saved/ }).waitFor({ timeout: 120000 });
+    await page.getByText("A change is not yet saved").waitFor();
+  };
+  await setQuota(true); await importOverQuota();
+  // The failed save left the previous encrypted snapshot intact: a reload drops only the unsaved change.
+  await page.reload(); await ready(); await unlock(); assert.equal(await page.getByTestId("line-count").innerText(), "100017", "A failed save damaged or replaced the previous snapshot");
+  // Fail again, free space, and Retry Save makes the same change durable.
+  await importOverQuota(); await setQuota(false);
+  await page.getByRole("button", { name: "Retry Save", exact: true }).click(); await page.getByRole("status").filter({ hasText: "Encrypted save completed." }).waitFor({ timeout: 120000 });
+  await page.reload(); await ready(); await unlock(); assert.equal(await page.getByTestId("line-count").innerText(), "100018"); await quotaCdp.detach().catch(() => undefined);
+  results.checks.nearQuota = { failedSaveKeptPreviousSnapshot: true, retryAfterFreeingSpaceSaved: true };
   // Real-world shaped export (InvoiceNo/StockCode/UnitPrice, M/D/YY dates, blank customers): mapping must be
   // confirmed, rejected rows go to Fix Later, a bulk fix and group re-check loads them. Marker sits in StockCode.
   await page.getByRole("link", { name: "Data Hub", exact: true }).click();
@@ -210,16 +228,16 @@ try {
   await page.getByText(/sale_date: expanded two-digit years/).waitFor();
   await page.getByRole("checkbox", { name: /Load the 20 valid rows/ }).check();
   await page.getByRole("button", { name: "Confirm and import locally" }).click();
-  await page.getByTestId("line-count").filter({ hasText: /^100037$/ }).waitFor({ timeout: 120000 });
+  await page.getByTestId("line-count").filter({ hasText: /^100038$/ }).waitFor({ timeout: 120000 });
   await page.getByLabel("New customer_id for all rows in this group").fill("CASH-SALE");
   await page.getByRole("button", { name: "Set customer_id for all rows" }).click(); await page.getByRole("status").filter({ hasText: /Re-check the group/ }).waitFor();
   await page.getByRole("button", { name: "Re-check and load customer_id rows" }).click();
-  await page.getByTestId("line-count").filter({ hasText: /^100039$/ }).waitFor({ timeout: 60000 });
+  await page.getByTestId("line-count").filter({ hasText: /^100040$/ }).waitFor({ timeout: 60000 });
   await page.getByRole("heading", { name: /^Data health: \d+%$/ }).waitFor();
   results.checks.mappingAndFixLater = { confirmedMapping: true, loaded: 20, fixedThenLoaded: 2 };
   // 4D: the cancellation row loads from Fix Later as a credit line, then the Margin UI is driven end to end.
   await page.getByRole("button", { name: "Load negative-quantity rows of retail-like.csv as returns and credits" }).click();
-  await page.getByTestId("line-count").filter({ hasText: /^100040$/ }).waitFor({ timeout: 60000 });
+  await page.getByTestId("line-count").filter({ hasText: /^100041$/ }).waitFor({ timeout: 60000 });
   // The retail-like fixture's invoices span several customers: reconciliation must flag them, never adjust them.
   const diffs = page.getByRole("table", { name: "Reconciliation differences" }); await diffs.waitFor({ timeout: 60000 });
   const levels = await diffs.locator("tbody tr td:first-child").allInnerTexts();

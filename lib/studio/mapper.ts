@@ -11,7 +11,11 @@ export type FieldSource =
   | { kind: "column"; index: number } | { kind: "unit"; index: number } | { kind: "zero" } | { kind: "none" }
   | { kind: "generate"; lineNo: number | null }
   /** 6A: a discount given as a percent (0-100) or a share (0-1) of the line's list amount. */
-  | { kind: "percent"; index: number } | { kind: "fraction"; index: number };
+  | { kind: "percent"; index: number } | { kind: "fraction"; index: number }
+  /** 6A: from the order header file in the same batch, matched by invoice number (customer, date; freight is spread over the lines). */
+  | { kind: "header" }
+  /** 6A: not in the sales file: quantity x the current cost on the item list (in this batch or already in the vault). */
+  | { kind: "item_cost" };
 /** Sources that read one column of the file. */
 export const COLUMN_KINDS = ["column", "unit", "percent", "fraction"] as const;
 export const columnOf = (s: FieldSource) => s.kind === "column" || s.kind === "unit" || s.kind === "percent" || s.kind === "fraction" ? s.index : null;
@@ -20,8 +24,10 @@ export type MappedField = { field: string; source: FieldSource; confidence: numb
 
 /** Alternatives each field may use when no column holds it. */
 export const ALTERNATIVES: Partial<Record<Role, Record<string, FieldSource["kind"][]>>> = {
-  sales_history: { line_id: ["generate"], list_amount: ["unit"], discount_amount: ["zero", "percent", "fraction"], freight_amount: ["zero"], rebate_amount: ["zero"], cost_amount: ["unit", "none"] },
+  sales_history: { line_id: ["generate"], customer_id: ["header"], sale_date: ["header"], list_amount: ["unit"], discount_amount: ["zero", "percent", "fraction"], freight_amount: ["zero", "header"], rebate_amount: ["zero"], cost_amount: ["unit", "none", "item_cost"] },
 };
+/** Sources that are not read from the file's own columns. */
+export const DERIVED_KINDS: FieldSource["kind"][] = ["unit", "zero", "generate", "percent", "fraction", "header", "item_cost"];
 const n = (...names: string[]) => names.map(normalizeHeader);
 /** Generic synonyms seen in distributor exports, per canonical field (normalized). */
 const SYNONYMS: Record<string, { column: string[]; unit?: string[] }> = {
@@ -55,14 +61,51 @@ const SYNONYMS: Record<string, { column: string[]; unit?: string[] }> = {
   valid_to: { column: n("valid to", "end date", "expiry date", "expiration date", "to date") },
   qty_break: { column: n("qty break", "quantity break", "min qty", "minimum quantity", "break qty") },
 };
-const LINE_NO = n("line no", "line number", "line", "line num", "lineno", "seq", "sequence");
+// "Order ID" (Northwind, many web shops) is the invoice key of order-based exports.
+SYNONYMS.invoice_id.column.push(...n("order id", "order number", "sales order", "sales order no"));
+/**
+ * 6A: German, French, Spanish and Dutch header names (SAP Business One, DATEV, Sage and
+ * Exact exports). normalizeHeader drops accented letters the same way for the file's
+ * headers, so "Stückpreis" is listed as written. Line totals that may be net of discount
+ * ("Zeilensumme", "Montant HT") are deliberately not mapped to the list amount.
+ */
+const LOCALIZED: Record<string, { column?: string[]; unit?: string[] }> = {
+  invoice_id: { column: ["belegnummer", "beleg nr", "rechnungsnummer", "rechnung nr", "rechnungsnr", "auftragsnummer", "numéro de facture", "n° facture", "facture", "número factura", "nº factura", "factura", "factuurnummer", "factuur"] },
+  product_id: { column: ["artikelnummer", "artikel nr", "artikelnr", "artikel", "materialnummer", "material nr", "référence article", "réf article", "article", "code article", "código artículo", "artículo", "referencia", "artikelcode"] },
+  customer_id: { column: ["kundennummer", "kunden nr", "kundennr", "kunde", "debitor", "debitorennummer", "code client", "client", "numéro client", "código cliente", "cliente", "klantnummer", "klant"] },
+  sale_date: { column: ["buchungsdatum", "belegdatum", "rechnungsdatum", "lieferdatum", "datum", "date facture", "date de facture", "date pièce", "fecha", "fecha factura", "factuurdatum"] },
+  quantity: { column: ["menge", "anzahl", "liefermenge", "quantité", "qté", "cantidad", "aantal"] },
+  list_amount: { column: ["betrag", "montant", "importe", "bedrag"], unit: ["einzelpreis", "verkaufspreis", "stückpreis", "preis", "prix unitaire", "prix", "precio unitario", "precio", "eenheidsprijs", "prijs"] },
+  discount_amount: { column: ["rabatt", "rabattbetrag", "remise", "descuento", "korting"] },
+  freight_amount: { column: ["fracht", "frachtkosten", "versandkosten", "porto", "frais de port", "port", "flete", "gastos de envío", "vracht", "verzendkosten"] },
+  cost_amount: { column: ["einstandsbetrag", "wareneinsatz", "coût total", "coste total", "kostprijs totaal"], unit: ["einstandspreis", "einkaufspreis", "ek preis", "prix de revient", "coût unitaire", "coste unitario", "costo unitario", "kostprijs"] },
+  description: { column: ["artikelbeschreibung", "artikelbezeichnung", "bezeichnung", "beschreibung", "désignation", "libellé", "descripción", "omschrijving"] },
+  category: { column: ["warengruppe", "artikelgruppe", "kategorie", "famille", "catégorie", "categoría", "familia", "productgroep"] },
+  uom: { column: ["einheit", "mengeneinheit", "unité", "unidad", "eenheid"] },
+  current_cost: { column: ["einstandspreis", "einkaufspreis", "prix de revient", "coste", "kostprijs"] },
+  list_price: { column: ["listenpreis", "verkaufspreis", "prix de vente", "prix catalogue", "precio de venta", "precio lista", "verkoopprijs"] },
+  name: { column: ["kundenname", "nom", "nom client", "raison sociale", "nombre", "nombre cliente", "klantnaam", "naam"] },
+  tier: { column: ["preisgruppe", "kundenpreisgruppe", "preisliste", "groupe de prix", "catégorie tarifaire", "grupo de precios", "tarifa", "prijsgroep"] },
+  branch: { column: ["filiale", "niederlassung", "lager", "agence", "sucursal", "filiaal"] },
+  region: { column: ["land", "pays", "país"] },
+  payment_terms: { column: ["zahlungsbedingungen", "zahlungsbedingung", "conditions de paiement", "condiciones de pago", "betalingsvoorwaarden"] },
+  vendor: { column: ["lieferant", "kreditor", "fournisseur", "proveedor", "leverancier"] },
+};
+// Each name also counts without its accents ("Quantité" and "Quantite" exports both occur).
+const unaccented = (names: string[]) => names.flatMap(x => [x, x.normalize("NFD").replace(/\p{M}/gu, "")]);
+for (const [field, names] of Object.entries(LOCALIZED)) {
+  const s = SYNONYMS[field];
+  s.column.push(...n(...unaccented(names.column ?? [])));
+  if (names.unit) (s.unit ??= []).push(...n(...unaccented(names.unit)));
+}
+const LINE_NO = n("line no", "line number", "line", "line num", "lineno", "seq", "sequence", "position", "pos", "zeile", "zeilennr", "ligne", "linea", "línea", "regel");
 /** A master list's own key column often has a bare name ("No." in Business Central). */
-const LIST_KEY = n("no", "nr", "number", "id", "code", "key");
+const LIST_KEY = n("no", "nr", "number", "id", "code", "key", "nummer", "numero", "numéro", "número", "codigo", "código");
 const LIST_KEY_FIELD: Partial<Record<Role, string>> = { customer_list: "customer_id", item_master: "product_id" };
 /** When no customer ID column exists, the customer's name is the key (NetSuite and QuickBooks use "Name"). */
-const CUSTOMER_NAME = n("name", "customer name", "company", "company name", "account name", "customer full name");
+const CUSTOMER_NAME = n("name", "customer name", "company", "company name", "account name", "customer full name", "kundenname", "nom client", "nombre cliente", "klantnaam");
 /** A discount column holding a percent rather than an amount ("Line Discount %", "Rabatt %"). */
-export const isPercentHeader = (header: string) => /%|\bpct\b|percent|prozent/i.test(header);
+export const isPercentHeader = (header: string) => /%|\bpct\b|percent|prozent|pourcentage|porcentaje|procent/i.test(header);
 type ProfileField = { column?: string[]; unit?: string[] };
 /** ERP-specific header names (normalized). Source: public documentation; unverified. markers: extra names that identify the ERP's export. */
 export const PROFILES: Record<ErpProfile, { label: string; note: string; fields: Record<string, ProfileField>; lineNo: string[]; markers?: string[] }> = {
@@ -121,7 +164,8 @@ function candidates(role: Role, headers: string[], profile: ErpProfile) {
 /** Suggest a mapping: best candidates assigned greedily, one column per field. */
 export function suggestMapping(role: Role, headers: string[], profile: ErpProfile = detectProfile(headers)): MappedField[] {
   const fields = ROLE_FIELDS[role], alt = ALTERNATIVES[role] ?? {};
-  const all = candidates(role, headers, profile).sort((a, b) => b.score - a.score || (a.kind === "column" ? -1 : 1));
+  // Ties keep column order (a stable sort): "Order Date" before "Shipped Date", the first of equally good names.
+  const all = candidates(role, headers, profile).sort((a, b) => b.score - a.score || (a.kind === b.kind ? 0 : a.kind === "column" ? -1 : 1));
   const used = new Set<number>(), result = new Map<string, MappedField>();
   for (const c of all) {
     if (result.has(c.field) || used.has(c.index)) continue;
@@ -155,7 +199,8 @@ export function mappingProblems(role: Role, mapping: Mapping) {
     else if (f.required && s.kind === "none") problems.push(f.name);
   }
   if (role === "sales_history" && (mapping.line_id?.kind === "generate") && mapping.invoice_id?.kind !== "column") problems.push("invoice_id (needed to generate line IDs)");
-  if ((mapping.list_amount?.kind === "unit" || mapping.cost_amount?.kind === "unit") && mapping.quantity?.kind !== "column") problems.push("quantity (needed for unit x quantity)");
+  if ((mapping.list_amount?.kind === "unit" || mapping.cost_amount?.kind === "unit" || mapping.cost_amount?.kind === "item_cost") && mapping.quantity?.kind !== "column") problems.push("quantity (needed for unit x quantity)");
+  if (role === "sales_history" && Object.values(mapping).some(s => s.kind === "header") && mapping.invoice_id?.kind !== "column") problems.push("invoice_id (needed to join the order header file)");
   const share = mapping.discount_amount?.kind;
   if ((share === "percent" || share === "fraction") && mapping.list_amount?.kind !== "column" && mapping.list_amount?.kind !== "unit") problems.push("list_amount (needed for a discount % of list)");
   if (role === "price_list" && mapping.product_id?.kind !== "column" && mapping.category?.kind !== "column") problems.push("product_id or category");
@@ -163,10 +208,15 @@ export function mappingProblems(role: Role, mapping: Mapping) {
 }
 /** A mapping needs an explicit check when anything was inferred rather than matched exactly. */
 export function needsConfirmation(fields: MappedField[]) {
-  return fields.some(f => (f.source.kind === "column" && f.confidence < 1) || f.source.kind === "unit" || f.source.kind === "zero" || f.source.kind === "generate" || f.source.kind === "percent" || f.source.kind === "fraction" || (f.source.kind === "none" && f.confidence === 0));
+  return fields.some(f => (f.source.kind === "column" && f.confidence < 1) || DERIVED_KINDS.includes(f.source.kind) || (f.source.kind === "none" && f.confidence === 0));
+}
+/** Lines files (with a quantity column) are never order headers, although they also hold invoice, customer and date. */
+function looksLikeLines(headers: string[]) {
+  return suggestMapping("sales_history", headers).find(x => x.field === "quantity")?.source.kind === "column";
 }
 /** Role score: required-field coverage (alternatives count half) and how much of the file the role explains. */
 export function roleScore(role: Role, headers: string[]) {
+  if (role === "order_header" && looksLikeLines(headers)) return 0;
   const fields = suggestMapping(role, headers), required = ROLE_FIELDS[role].filter(f => f.required);
   const cover = required.reduce((s, f) => { const m = fields.find(x => x.field === f.name)!; return s + (m.source.kind === "column" ? m.confidence : m.source.kind === "unit" ? 0.75 : m.source.kind === "generate" ? 0.5 : 0); }, 0) / Math.max(1, required.length);
   const explained = new Set(fields.flatMap(f => { const i = columnOf(f.source); return i === null ? [] : [i]; })).size / Math.max(1, headers.filter(h => normalizeHeader(h)).length);

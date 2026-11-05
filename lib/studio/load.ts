@@ -8,7 +8,11 @@ import { sqlText } from "../spike/exact";
 import { ROLE_FIELDS, columnLetter, type Alignment, type DateFormat, type Field, type Role, type Settings } from "./formats";
 // Staged values are canonical (cleaned in JS: dot decimals, ISO dates), one column per
 // ROLE_FIELDS entry. `alignment` maps fields back to source columns for issue labels.
-export type StagedFile = { ord: number; role: Role; name: string; bytes: number; fingerprint: string; alignment: Alignment; settings: Settings; keyed: boolean; headers: string[]; colOffset: number; generatedIds?: boolean };
+export type StagedFile = { ord: number; role: Role; name: string; bytes: number; fingerprint: string; alignment: Alignment; settings: Settings; keyed: boolean; headers: string[]; colOffset: number; generatedIds?: boolean;
+  /** Sales fields taken from the batch's order header file (6A). */
+  fromHeader?: string[];
+  /** Cost is quantity x the item list's current cost (6A). */
+  itemCost?: boolean };
 const CANONICAL: Pick<Settings, "decimal" | "dateFormat"> = { decimal: "dot", dateFormat: "YYYY-MM-DD" };
 const STRPTIME: Record<DateFormat, string> = { "YYYY-MM-DD": "%Y-%m-%d", "MM/DD/YYYY": "%m/%d/%Y", "DD/MM/YYYY": "%d/%m/%Y", "DD.MM.YYYY": "%d.%m.%Y", "DD-MM-YYYY": "%d-%m-%Y" };
 const q = (name: string) => `"${name}"`;
@@ -39,6 +43,7 @@ export function issueMessage(code: string, settings: Settings) {
   if (code === "exists") return "Already loaded from another file in the vault. Remove or replace that file first.";
   if (code === "scope") return "Give a product_id or a category for this price.";
   if (code === "valid_to:range") return "valid_to must be later than valid_from.";
+  if (code === "no_header") return "No row in the order header file has this invoice number, so the line's customer and date are unknown. Add the header file that holds this order, then review again.";
   if (kind === "required") return `${name} is required but empty.`;
   if (code === "credit:sign") return "A return with a positive amount: the quantity is negative but an amount is above zero. Correct the sign in the file, then load the group as credits.";
   if (kind === "negative") return name === "quantity" ? "Negative quantity (a return or credit). Check the rows, then load the group as returns and credits; they net against sales in the margin waterfall." : `Negative ${name} on a positive quantity (a credit memo or adjustment). These are not loaded; correct or dismiss them.`;
@@ -59,14 +64,14 @@ export function issueColumn(code: string, file: StagedFile) {
   if (!at) return "";
   return file.keyed ? file.headers[at.index] : columnLetter(file.colOffset + at.index);
 }
-export const CODES = (role: Role) => [...ROLE_FIELDS[role].flatMap(f => [`${f.name}:required`, `${f.name}:invalid`, `${f.name}:negative`]), "duplicate_row", "duplicate_key", "exists", "scope", "valid_to:range"];
+export const CODES = (role: Role) => [...ROLE_FIELDS[role].flatMap(f => [`${f.name}:required`, `${f.name}:invalid`, `${f.name}:negative`]), "duplicate_row", "duplicate_key", "exists", "scope", "valid_to:range", "no_header"];
 const KEYS: Record<Exclude<Role, "rebate_agreement">, string[]> = {
-  sales_history: ["line_id"], item_master: ["product_id"], customer_list: ["customer_id"],
+  sales_history: ["line_id"], item_master: ["product_id"], customer_list: ["customer_id"], order_header: ["invoice_id"],
   vendor_cost: ["vendor", "product_id", "effective_date"], price_list: ["product_id", "category", "customer_id", "tier", "qty_break", "valid_from"],
 };
 export async function resetStage(engine: Engine) {
   for (const role of Object.keys(KEYS) as Role[]) await engine.conn.query(`DROP TABLE IF EXISTS temp.${stage(role)}; DROP TABLE IF EXISTS temp.${typed(role)}`);
-  await engine.conn.query("DROP TABLE IF EXISTS temp.studio_files; DROP TABLE IF EXISTS temp.studio_messages; DROP TABLE IF EXISTS temp.studio_affected");
+  await engine.conn.query("DROP TABLE IF EXISTS temp.studio_files; DROP TABLE IF EXISTS temp.studio_messages; DROP TABLE IF EXISTS temp.studio_affected; DROP TABLE IF EXISTS temp.studio_headers; DROP TABLE IF EXISTS temp.studio_unjoined");
 }
 export async function createStage(engine: Engine, role: Role) {
   const cols = ROLE_FIELDS[role].map(f => `${q(f.name)} VARCHAR`).join(",");
@@ -116,8 +121,86 @@ WHERE ${t}.file_ord=d.file_ord AND ${t}.src_row=d.src_row`);
     customer_list: `customer_id IN (SELECT customer_id FROM customers WHERE source_id IS NOT NULL AND ${other()})`,
     vendor_cost: `EXISTS (SELECT 1 FROM vendor_costs v WHERE v.vendor=${t}.vendor AND v.product_id=${t}.product_id AND v.effective_date=${t}.effective_date AND ${other("v.")})`,
     price_list: `EXISTS (SELECT 1 FROM price_matrix p WHERE p.product_id IS NOT DISTINCT FROM ${t}.product_id AND p.category IS NOT DISTINCT FROM ${t}.category AND p.customer_id IS NOT DISTINCT FROM ${t}.customer_id AND p.tier IS NOT DISTINCT FROM ${t}.tier AND p.qty_break=coalesce(${t}.qty_break,0) AND p.valid_from=${t}.valid_from AND ${other("p.")})`,
+    order_header: "false", // headers are never stored, so nothing can already exist
   };
   await engine.conn.query(`UPDATE ${t} SET err='exists' WHERE err IS NULL AND ${exists[role]}`);
+}
+const SALES = stage("sales_history"), TY_SALES = typed("sales_history");
+/**
+ * 6A header/line exports: fill the customer and date of staged sales lines from the
+ * batch's valid order header rows, matched by invoice number. Call after the header
+ * file is validated and before the sales lines are. Returns the invoice numbers'
+ * coverage; lines without a header row are marked by markUnjoined after validation.
+ */
+export async function joinHeaders(engine: Engine, files: StagedFile[]) {
+  await engine.conn.query("DROP TABLE IF EXISTS temp.studio_headers; DROP TABLE IF EXISTS temp.studio_unjoined");
+  const joined = files.filter(f => f.role === "sales_history" && f.fromHeader?.length);
+  if (!joined.length) return;
+  await engine.conn.query(`CREATE TEMP TABLE studio_headers AS SELECT invoice_id, customer_id, strftime(sale_date,'%Y-%m-%d') AS sale_date, freight_cents FROM ${typed("order_header")} WHERE err IS NULL;
+CREATE TEMP TABLE studio_unjoined AS SELECT file_ord, src_row FROM ${SALES} s WHERE file_ord IN (${joined.map(f => f.ord).join(",")}) AND NOT EXISTS (SELECT 1 FROM studio_headers h WHERE h.invoice_id=s.invoice_id)`);
+  const out = new Map<number, { joined: number; unjoined: number }>();
+  for (const f of joined) {
+    const set = (f.fromHeader ?? []).filter(x => x === "customer_id" || x === "sale_date").map(x => `${q(x)}=h.${q(x)}`);
+    if (set.length) await engine.conn.query(`UPDATE ${SALES} SET ${set.join(",")} FROM studio_headers h WHERE ${SALES}.file_ord=${f.ord} AND ${SALES}.invoice_id=h.invoice_id`);
+    const r = (await engine.conn.query(`SELECT count(*)::VARCHAR AS n, (SELECT count(*) FROM studio_unjoined WHERE file_ord=${f.ord})::VARCHAR AS u FROM ${SALES} WHERE file_ord=${f.ord}`)).toArray()[0];
+    out.set(f.ord, { joined: Number(r.n) - Number(r.u), unjoined: Number(r.u) });
+  }
+  return out;
+}
+/** Drop staged lines of one file outside a date range (dates that came from the header file). Returns how many. */
+export async function dropOutsideRange(engine: Engine, ord: number, range: { from: string | null; to: string | null }) {
+  const cond = [range.from ? `sale_date<${sqlText(range.from)}` : null, range.to ? `sale_date>${sqlText(range.to)}` : null].filter(Boolean).join(" OR ");
+  if (!cond) return 0;
+  const where = `file_ord=${ord} AND sale_date IS NOT NULL AND (${cond})`;
+  const n = Number((await engine.conn.query(`SELECT count(*)::VARCHAR AS n FROM ${SALES} WHERE ${where}`)).toArray()[0].n);
+  if (n) await engine.conn.query(`DELETE FROM ${SALES} WHERE ${where}; DELETE FROM studio_unjoined WHERE file_ord=${ord} AND src_row NOT IN (SELECT src_row FROM ${SALES} WHERE file_ord=${ord})`);
+  return n;
+}
+/** Lines whose customer or date had to come from a header row that does not exist (after validation). */
+export async function markUnjoined(engine: Engine, files: StagedFile[]) {
+  const ords = files.filter(f => f.role === "sales_history" && f.fromHeader?.some(x => x === "customer_id" || x === "sale_date")).map(f => f.ord);
+  if (!ords.length) return;
+  await engine.conn.query(`UPDATE ${TY_SALES} SET err='no_header' WHERE file_ord IN (${ords.join(",")}) AND EXISTS (SELECT 1 FROM studio_unjoined u WHERE u.file_ord=${TY_SALES}.file_ord AND u.src_row=${TY_SALES}.src_row)`);
+}
+/**
+ * Spread each header's freight over its valid lines in proportion to their list amounts
+ * (equally when they are all zero). Whole cents: each line gets the floor of its share and
+ * the leftover cents go to the largest remainders, so the lines add up to the header exactly.
+ * Returns the number of headers with freight whose lines all failed (their freight is not loaded).
+ */
+export async function spreadFreight(engine: Engine, files: StagedFile[]) {
+  const ords = files.filter(f => f.role === "sales_history" && f.fromHeader?.includes("freight_amount")).map(f => f.ord);
+  if (!ords.length) return { spread: 0, unspread: 0 };
+  const scope = `file_ord IN (${ords.join(",")})`;
+  await engine.conn.query(`UPDATE ${TY_SALES} SET freight_cents=0 WHERE ${scope} AND err IS NULL`);
+  await engine.conn.query(`UPDATE ${TY_SALES} SET freight_cents=a.cents FROM (
+WITH l AS (SELECT t.file_ord, t.src_row, t.invoice_id, t.list_cents::HUGEINT AS list, h.freight_cents::HUGEINT AS f FROM ${TY_SALES} t JOIN studio_headers h ON h.invoice_id=t.invoice_id WHERE t.err IS NULL AND t.${scope} AND h.freight_cents>0),
+w AS (SELECT *, sum(list) OVER (PARTITION BY invoice_id) AS tot, count(*) OVER (PARTITION BY invoice_id) AS n FROM l),
+b AS (SELECT *, CASE WHEN tot>0 THEN list ELSE 1 END AS wt, CASE WHEN tot>0 THEN tot ELSE n END AS den FROM w),
+c AS (SELECT *, (f*wt)//den AS base, (f*wt)%den AS rem FROM b),
+d AS (SELECT *, f-sum(base) OVER (PARTITION BY invoice_id) AS leftover, row_number() OVER (PARTITION BY invoice_id ORDER BY rem DESC, file_ord, src_row) AS rk FROM c)
+SELECT file_ord, src_row, (base+CASE WHEN rk<=leftover THEN 1 ELSE 0 END)::BIGINT AS cents FROM d) a
+WHERE ${TY_SALES}.file_ord=a.file_ord AND ${TY_SALES}.src_row=a.src_row`);
+  const r = (await engine.conn.query(`SELECT count(DISTINCT h.invoice_id) FILTER (WHERE v.invoice_id IS NOT NULL)::VARCHAR AS spread, count(DISTINCT h.invoice_id) FILTER (WHERE v.invoice_id IS NULL)::VARCHAR AS unspread
+FROM studio_headers h JOIN (SELECT DISTINCT invoice_id FROM ${SALES} WHERE ${scope}) s ON s.invoice_id=h.invoice_id
+LEFT JOIN (SELECT DISTINCT invoice_id FROM ${TY_SALES} WHERE ${scope} AND err IS NULL) v ON v.invoice_id=h.invoice_id WHERE h.freight_cents>0`)).toArray()[0];
+  return { spread: Number(r.spread), unspread: Number(r.unspread) };
+}
+/**
+ * 6A: cost from the item list. Valid lines of these files get quantity x the item's current
+ * cost, rounded half away from zero to the cent: from a valid item list row in this batch,
+ * else from the item already in the vault. Lines whose item has no cost stay unknown.
+ */
+export async function fillItemCost(engine: Engine, files: StagedFile[], batchItems: boolean) {
+  const ords = files.filter(f => f.role === "sales_history" && f.itemCost).map(f => f.ord);
+  if (!ords.length) return { costed: 0, unknown: 0 };
+  const scope = `file_ord IN (${ords.join(",")})`;
+  await engine.conn.query(`UPDATE ${TY_SALES} SET cost_cents=CAST(round(${TY_SALES}.quantity*c.cost) AS BIGINT) FROM (
+SELECT product_id, cost FROM (SELECT product_id, current_cost::DECIMAL(18,0) AS cost, 0 AS pri FROM ${batchItems ? `${typed("item_master")} WHERE err IS NULL AND current_cost IS NOT NULL` : "products WHERE false"}
+ UNION ALL SELECT product_id, current_cost::DECIMAL(18,0), 1 FROM products WHERE current_cost IS NOT NULL) QUALIFY row_number() OVER (PARTITION BY product_id ORDER BY pri)=1) c
+WHERE ${TY_SALES}.product_id=c.product_id AND ${TY_SALES}.${scope} AND ${TY_SALES}.quantity IS NOT NULL`);
+  const r = (await engine.conn.query(`SELECT count(*) FILTER (WHERE cost_cents IS NOT NULL)::VARCHAR AS costed, count(*) FILTER (WHERE cost_cents IS NULL)::VARCHAR AS unknown FROM ${TY_SALES} WHERE ${scope} AND err IS NULL`)).toArray()[0];
+  return { costed: Number(r.costed), unknown: Number(r.unknown) };
 }
 export async function counts(engine: Engine, role: Role) {
   return (await engine.conn.query(`SELECT file_ord, count(*) FILTER (WHERE err IS NULL)::VARCHAR AS ok, count(*) FILTER (WHERE err IS NOT NULL)::VARCHAR AS bad FROM ${typed(role)} GROUP BY file_ord`)).toArray().map(r => ({ ord: Number(r.file_ord), ok: String(r.ok), bad: String(r.bad) }));
