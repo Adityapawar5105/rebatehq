@@ -4,11 +4,11 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import pg from "pg";
 
-// All application functions participate in grant preservation. Two app-executable
+// All application functions participate in grant preservation. The relay helpers and two app-executable
 // SECURITY DEFINER functions are printed at every diagnostic checkpoint. 6R dropped the
-// Chunk 2A pair that Drill #9 implicated, so these two now carry the same role; the list
+// Chunk 2A pair that Drill #9 implicated, so these carry the same role; the list
 // is checked against config/function-acl-allowlist.sql by tests/restore-acl-checkpoints.test.js.
-export const FOCUS_FUNCTIONS = Object.freeze(["create_tenant_with_owner", "record_failed_login"]);
+export const FOCUS_FUNCTIONS = Object.freeze(["create_tenant_with_owner", "record_failed_login", "relay_allowed", "relay_directory"]);
 export const FUNCTION_ACL_SQL = `
   SELECT p.proname::text AS function_name,
          format('%I.%I(%s)',n.nspname,p.proname,pg_get_function_identity_arguments(p.oid)) AS signature,

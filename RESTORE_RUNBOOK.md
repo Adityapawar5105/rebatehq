@@ -107,3 +107,28 @@ The explicit dump allowlist is public,rebatehq_private; Supabase-managed schemas
 Restore owned roles, then schema with the dump's grants, then run the idempotent restore-only platform ACL cleanup (now covers the private schema as well). Restore synthetic auth references and application data with ON_ERROR_STOP and existing strict trigger handling. Never replay historical migrations on the restored schema. Compare all public table/function ACLs and counts, both schema ACLs, and the private table/sequence owner, RLS, ACL, key fingerprint and counter state. Do not widen target grants. Then create the restricted login, run the signed-context runtime/no-user check and the full 188-fresh / 191-restore suite twice, with identical tenant row counts. The sequence may advance during tests by design; tenant rows may not change.
 
 5B CI (#65, `38911ee`) and the user-run RebateHQ Restore Drill #16 (local target) both passed on 4 November 2026, and the 5B migration is now locked. Drill #15 had failed only on a verifier bug (a NULL sequence ACL expanded with the foreign-server default `acldefault('S')` instead of `'s'`), fixed in `38911ee`. Future migrations follow the same rule: pending until CI and a user-run drill pass; PGlite or browser-only tests never count. The table-retirement plan was approved on 5 Nov 2026 (RETIREMENT_PROPOSAL.md): tables drop only inside chunks 6R and 8R, each through a new migration, CI and a user-run drill. No DROP or purge is authorized outside them.
+
+
+## 7A relay restore additions — unverified until user-run drill passes
+
+The new pending migration adds four ciphertext-relay tables; the public minimum
+is now **24**. Source seeding includes a real cryptographic device registration,
+epoch, wrapped key and event for the restore-sentinel tenant. Private synthetic
+seed keys exist only in test-runner memory and are neither dumped nor logged.
+The browser's actual private keys remain in its encrypted local vault/backup;
+restoring server data cannot reconstruct them or recover lost passphrases.
+
+Automatic inventory/strict equivalence compares all four tables' owners, exact
+ACLs, columns, total/per-tenant counts and hashes over every column (ciphertext,
+signatures, key wraps and routing metadata). Complete public function comparisons
+and four-stage ACL checkpoints include the new helpers. A missing table/function
+or changed byte must fail. Restore-only isolation additionally proves each new
+table contains real restored sentinel rows that a different tenant cannot see.
+
+Never replay old migrations over a restored schema or add app grants to make a
+comparison match. Continue to use dump grants plus the restore-only platform ACL
+cleanup. Keep ON_ERROR_STOP and warning gates. Run the full **155-check** restored
+suite twice with no row-count residue (fresh CI suite: **152** checks). The new
+migration stays pending until CI and the user's manually triggered local-target
+Restore Drill both pass. Hosted target, independent protocol review, physical
+crash recovery and operational key-loss recovery remain unverified.

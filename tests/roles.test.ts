@@ -35,12 +35,13 @@ test("every role has the capabilities the blueprint gives it; reps never get cos
   assert.ok(has("sales_manager", "cost") && !has("sales_manager", "pricing") && !has("sales_manager", "data") && !has("sales_manager", "export"));
   assert.ok(!has("sales_rep", "cost"), "a rep never sees cost by default"); assert.ok(has("sales_rep", "cost", false, true), "unless the owner allows it");
   assert.ok(!has("sales_rep", "data") && !has("sales_rep", "pricing") && !has("sales_rep", "export") && !has("sales_rep", "approve") && !has("sales_rep", "roles"));
+  assert.ok(!has("admin", "collaborate"), "Admin/IT cannot receive decrypted business collaboration");
   assert.ok(!has("admin", "cost") && !has("admin", "pricing") && has("admin", "roles") && has("admin", "backup") && has("admin", "audit"));
   assert.ok(has("accountant", "cost") && has("accountant", "reconcile") && !has("accountant", "pricing") && !has("accountant", "data"));
   assert.deepEqual(sectionsFor(capsFor("sales_rep", false, false)), ["Home", "Pricing"]);
   assert.ok(!sectionsFor(capsFor("sales_rep", false, false)).includes("Margin"));
   assert.deepEqual(sectionsFor(capsFor("admin", false, false)), ["Home", "Pricing", "Reports", "Settings"]); // Reports holds the audit log for Admin / IT
-  assert.deepEqual(intersect(capsFor("owner", false, false), capsFor("sales_rep", false, false)), ["view", "guards"]);
+  assert.deepEqual(intersect(capsFor("owner", false, false), capsFor("sales_rep", false, false)), ["view", "guards", "collaborate"]);
 });
 test("every command is classified, and the dispatcher handles exactly the classified commands", () => {
   const source = readFileSync(new URL("../lib/vault/dispatch.ts", import.meta.url), "utf8");
@@ -80,10 +81,10 @@ test("the owner's switch gives reps cost, and nothing else; a preview can only r
     c.query("UPDATE access_settings SET rep_sees_cost=false");
     const s = serviceFor(c, "owner1"); assert.ok((await s.access()).caps.includes("cost"));
     s.viewAs = "sales_rep"; s.accessCache = null; const view = await s.access();
-    assert.equal(view.role, "sales_rep"); assert.equal(view.viewAs, "sales_rep"); assert.deepEqual(view.caps, ["view", "guards"]);
+    assert.equal(view.role, "sales_rep"); assert.equal(view.viewAs, "sales_rep"); assert.deepEqual(view.caps, ["view", "guards", "collaborate"]);
     await assert.rejects(s.guard("cost"), /cannot do this/); await s.guard(ACTION_CAP.rolePreview); // leaving a preview is always allowed
     const rep2 = serviceFor(c, "rep"); rep2.viewAs = "owner"; rep2.accessCache = null; // a rep "previewing" Owner gains nothing
-    assert.deepEqual((await rep2.access()).caps, ["view", "guards"]);
+    assert.deepEqual((await rep2.access()).caps, ["view", "guards", "collaborate"]);
   } finally { c.close(); }
 });
 test("an unassigned person is a Sales Rep; a vault with no roles at all belongs to whoever opens it", async () => {

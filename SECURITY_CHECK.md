@@ -1,5 +1,21 @@
 # RebateHQ security verification
 
+## Chunk 7A — pending verification
+
+Implementation and evidence ledger: [CHUNK_7A_VERIFICATION.md](./CHUNK_7A_VERIFICATION.md).
+Current proposed acceptance inventory: **24 tenant tables, 152 fresh / 155 restore
+pgTAP checks**, all with exact grants and the single public-function allowlist.
+New relay controls are **unverified in CI** until an actual passing run is cited.
+The migration remains pending until the user-run Restore Drill also passes.
+Existing historical verification below remains scoped to its original commit.
+Local PGlite/Chrome/Edge results never establish hosted or independent assurance.
+
+The relay privacy test inspects all four relay tables and columns plus relay
+audit rows, all browser request URLs/headers/bodies and console arguments, after
+real local-Supabase PKCE sessions for three members in CI. Its 11 named checks
+must execute, with no skip/zero-test fallback. The existing 36-check vault gate
+also remains required. No app-wide local-only claim; 12 legacy tables/readers remain.
+
 ## Chunk 6B — security review (5 November 2026)
 
 Review and remaining-risk register: [SECURITY_REVIEW.md](./SECURITY_REVIEW.md).

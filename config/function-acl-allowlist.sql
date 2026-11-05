@@ -22,7 +22,10 @@ INSERT INTO pg_temp.phase1_function_allowlist(signature,grantees) VALUES
  ('public.audit_actor_key_change()',ARRAY['$owner']),
  ('public.control_member(uuid,boolean)',ARRAY['$owner','rebatehq_app']),
  ('public.enforce_licence_limits()',ARRAY['$owner']),
- ('public.invite_licence_limit()',ARRAY['$owner']);
+ ('public.invite_licence_limit()',ARRAY['$owner']),
+ ('public.relay_allowed(uuid,boolean)',ARRAY['$owner','rebatehq_app']),
+ ('public.relay_directory(uuid)',ARRAY['$owner','rebatehq_app']),
+ ('public.relay_check_insert()',ARRAY['$owner']);
 
 CREATE TEMP VIEW phase1_public_function_inventory AS
 SELECT p.oid,p.proowner,p.prosecdef,p.proacl,

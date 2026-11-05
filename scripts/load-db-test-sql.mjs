@@ -9,5 +9,6 @@ export async function loadDatabaseTestSql() {
   if (template.split(marker).length !== 2) throw new Error('Database suite must include the function ACL manifest exactly once.');
   if (!allowlist.trim()) throw new Error('Function ACL manifest must not be empty.');
   const chunk5b=await readFile(new URL('../supabase/tests/chunk5b_control.sql',import.meta.url),'utf8');
-  return template.replace(marker, () => allowlist).replace('-- INCLUDE CHUNK 5B CHECKS',()=>chunk5b);
+  const chunk7a=await readFile(new URL('../supabase/tests/chunk7a_relay.sql',import.meta.url),'utf8');
+  return template.replace(marker, () => allowlist).replace('-- INCLUDE CHUNK 5B CHECKS',()=>chunk5b).replace('-- INCLUDE CHUNK 7A CHECKS',()=>chunk7a);
 }

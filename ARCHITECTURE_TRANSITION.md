@@ -141,3 +141,24 @@ Class C/X handlers and pages are now behind default-off LEGACY_BUSINESS_ENABLED;
 ## Chunk 6R transition (wave 1, CI-verified in CI #73 and Restore Drill #18 on `8a34e06`)
 
 The migration `20261105120000_chunk6r_retire_wave1.sql` drops 22 class C/X tables (customer, customer_group, product, uom, uom_conversion, cost_history, cost_component, price_list, price_list_version, price_list_item, customer_price, margin_policy, invoice, invoice_line, sales_order, margin_snapshot, data_quality_issue, import_job, column_mapping_template, connector_secret, connector_sync_run, plan_feature) and three functions. The server now stores **20 tables**: 8 control plane (tenant, membership, invite, audit_log, workspace_licence, licence_seat, licence_location, licence_device) and 12 wave-2 legacy tables (quote, quote_line, quote_share_link, approval, approval_rule, rebate_agreement, rebate_progress, rebate_tier, rebate_entry, supplier_credit, alert, fx_rate), dropped in 8R. Every class C/X API route is a fixed 410 stub; the server import, ingestion, connector-secret, prototype-import, readiness and quote-pricing modules are deleted. Pure logic kept for porting: the margin engine and golden cases, rebate tier maths, the rep-safe response guard. See [CHUNK_6R_VERIFICATION.md](./CHUNK_6R_VERIFICATION.md).
+
+
+## Chunk 7A relay transition — pending CI/restore evidence
+
+Four new class A ciphertext-relay tables (`relay_device_key`, `relay_epoch`,
+`relay_key_wrap`, `relay_event`) bring the public tenant inventory from 20 to 24:
+8 identity/licensing controls, 4 relay tables and 12 unchanged wave-2 legacy
+business tables. No legacy quote/approval/share-link table is reused or extended.
+`/api/relay` accepts only strict public cryptographic/routing metadata and opaque
+content; it never decrypts. Licence, seat, membership, approved device and signed
+actor checks apply afresh in each restricted transaction. It is default-off.
+
+Local vault v9 adds `relay_state` (31 local tables), migrated forward from v1–v8.
+The worker owns device keys, key wrapping, verified history/outbox, business
+content, thresholds and derived approval state. Only encrypted payloads and
+public metadata cross HTTP. Private keys are persisted only by the existing
+atomic encrypted vault snapshot. UI receives rendered inbox data, never keys or
+raw SQL access. Lost acknowledgements use an encrypted durable outbox; no silent
+re-signing after a competing append. Signed invalid content is quarantined
+without applying an approval. See RELAY_DESIGN.md for the trust ceremony and
+hash-chain limitations. No 7B or later features are included.

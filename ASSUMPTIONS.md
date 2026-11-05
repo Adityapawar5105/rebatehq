@@ -422,3 +422,54 @@ Only 5A; no 5B. Supabase migrations and `migrations.lock` are untouched. New loc
 - Offline grace covers an already loaded shell and the worker/cache protocol. Offline cold navigation to the authenticated server-rendered /home page is not provided; the later offline-PWA chunk remains deferred. No claim of offline cold-start support is made.
 
 After an operator upgrades the workspace licence, an Owner/Admin can choose **Use licensed capacity** in local Settings. It updates only the encrypted vault’s capacity metadata, with a local audit entry; it neither sends rows to the server nor recreates the vault. Lower profiles stay available at setup.
+
+## Chunk 7A — collaboration relay (5 November 2026, unverified)
+
+- User explicitly chose to proceed without pilots/prospect input; the customer-track
+  gate is not met. Shared quote/price-change/rebate references support later 7B/7D,
+  without building either feature now. No hosted Supabase project exists.
+- RELAY_DESIGN.md was written before implementation. Sharing is workspace-wide,
+  with separate device encryption/signing keys, verified fingerprints, random
+  epoch keys and rotation after membership/device changes. The vault passphrase
+  is never the sharing key and no server recovery escrow exists.
+- Relay is operator-disabled by default (RELAY_ENABLED); CI/local harnesses enable
+  it explicitly. Independent cryptographic/operational review is still open before
+  production enablement. Do not treat local tests as CI or hosted evidence.
+- One new Supabase migration only. CLI created 20261105092750, earlier than the
+  already-locked 6R filename (12:00); its empty, unapplied file was renamed to
+  20261105130000_chunk7a_ciphertext_relay.sql to preserve migration order.
+  Only pending lock fields are appended; applied entries/hashes stay unchanged.
+- Four new tables raise the server inventory from 20 to 24. A composite unique
+  control-plane key on licence_device enables a tenant-safe foreign key. No
+  legacy quote/approval/share-link table is reused. The browser vault moves to v9.
+- Presets use integer minor units: standard needs one approval through 500000
+  (5000.00), two above; conservative always needs two. Distinct non-requester
+  approvers must be owner/manager control-plane members designated as Pricing
+  Owner then manager. Future 7B validates the actual quote revision; a reference
+  alone does not prove the sender's amount. Phase 1 export approval is unchanged.
+- Initial ciphertext quota is 16 KiB/message, 16 MiB/10000 events per workspace,
+  with 60 devices and 256 epochs. No automatic pruning. Comments/requests are
+  append-only; signed invalid operations are rejected visibly without poisoning
+  the whole cryptographic stream. No automatic re-signing after a CAS conflict;
+  sync and explicitly discard/recreate the pending operation.
+- A server can withhold an unseen tail or isolate clients on valid forks until
+  heads are compared. Known-head rollback, observed gaps/replays and alterations
+  fail closed. No global transparency or instant offline revocation is claimed.
+- Local Admin/IT cannot open collaboration business views. Other business roles
+  gain a distinct collaborate capability; server approver/admin authority still
+  comes from fresh membership, not a local role preview. Online sharing only;
+  encrypted local backups retain the keys/history already possessed.
+- Restore Drill must be triggered by the user after CI is green. Until that run
+  passes, the new migration stays pending and 7A is not marked complete.
+
+
+7A verification inventory is **152 fresh / 155 restore-mode pgTAP checks**, with
+planned == ran and 24 public tenant tables. Local vault v9 has 31 tables. Local
+headless Chrome 156.0.8078.80 and Edge 156.0.4314.58 passed the 11-check relay
+round trip on 5 Nov 2026 using production UI/worker plus a PGlite test transport;
+this is not real-auth/hosted evidence. The authenticated real-local-Supabase CI
+gate remains unverified until its actual run is linked. Ten applied migrations
+and their lock entries stay unchanged. The new migration stays pending until
+CI and the user's restore run pass. Concurrent blueprint v2.3/7U planning edits
+were observed during this work; they do not authorize implementing 7U or another
+chunk. This chunk makes no blueprint changes and does not commit those edits.

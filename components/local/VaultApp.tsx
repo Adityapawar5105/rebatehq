@@ -10,6 +10,7 @@ import { HomeView } from "./HomeView";
 import { CleanupView } from "./CleanupView";
 import { CostBasisView } from "./CostBasisView";
 import { RolesView } from "./RolesView";
+import { RelayPanel } from './RelayPanel';
 import styles from "./vault.module.css";
 const sections = ["Home", "Data Hub", "Margin", "Pricing", "Reports", "Settings"] as const;
 type Section = typeof sections[number];
@@ -78,6 +79,7 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
           {status.dirty && <section className={styles.error}>⚠ A change is not yet saved. Keep this tab open. <button onClick={() => void operation(async () => { setStatus(await client.current!.call("save", {})); setMessage("Encrypted save completed."); })}>Retry Save</button></section>}
           <div className={styles.stats}><div><span>Invoice lines</span><strong data-testid="line-count">{status.lines}</strong></div><div><span>Products</span><strong>{status.products}</strong></div><div><span>Customers</span><strong>{status.customers}</strong></div><div><span>Encrypted generation</span><strong>{status.generation}</strong></div></div>
           {shown === "Home" && client.current && <HomeView client={client.current} userId={scope.userId} version={`${status.lines}|${status.generation}|${access?.role}`} busy={busy} operation={operation} refresh={async () => setStatus(await client.current!.call("status", {}))}/>}
+          {shown === "Home" && client.current && caps.includes('collaborate') && status.licence?.tier!=='starter' && <RelayPanel client={client.current} userId={scope.userId} onChange={async()=>setStatus(await client.current!.call('status',{}))}/>}
           {shown === "Data Hub" && client.current && <>
             <ImportStudio client={client.current} status={status} busy={busy} operation={operation} onStatus={setStatus} setMessage={setMessage}/>
             <CleanupView client={client.current} version={`${status.lines}|${status.generation}`} busy={busy} operation={operation} onStatus={setStatus} setMessage={setMessage}/>

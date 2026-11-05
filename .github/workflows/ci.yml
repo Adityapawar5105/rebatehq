@@ -73,6 +73,8 @@ jobs:
           for(const [key,value] of Object.entries(values)){if(!value)throw Error('Missing local-stack setting '+key);if(key.includes('KEY'))console.log('::add-mask::'+value);fs.appendFileSync(process.env.GITHUB_ENV,key+'='+value+'\n');}
           JS
       - name: Required authenticated local-vault privacy gate
+        env:
+          RELAY_ENABLED: "true"
         shell: bash
         run: |
           set -euo pipefail
@@ -85,6 +87,7 @@ jobs:
           let ready=false;for(let i=0;i<60;i++){try{if((await fetch('http://localhost:3000/login')).ok){ready=true;break}}catch{}await new Promise(r=>setTimeout(r,1000))}if(!ready)throw Error('App did not start for the privacy gate');
           JS
           pnpm test:vault:privacy --browser=chromium
+          node scripts/test-relay-browser.mjs --auth --browser=chromium
       - name: Upload privacy gate failure diagnostics
         if: failure()
         uses: actions/upload-artifact@v4

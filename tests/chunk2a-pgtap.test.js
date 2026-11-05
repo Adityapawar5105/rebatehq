@@ -100,7 +100,7 @@ test("full pgTAP SQL executes in PGlite with assertion stubs and planned checks 
     );
     const snapshot = async () => {
       const tables=(await db.query("SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('r','p') AND EXISTS(SELECT 1 FROM pg_attribute a WHERE a.attrelid=c.oid AND a.attname='tenant_id') ORDER BY c.relname")).rows;
-      assert.ok(tables.length>=20);
+      assert.ok(tables.length>=24);
       const counts={};
       for(const t of tables) counts[t.relname]=(await db.query(`SELECT count(*)::text AS n FROM public.${t.relname}`)).rows[0].n;
       return counts;
@@ -139,7 +139,12 @@ test("full pgTAP SQL executes in PGlite with assertion stubs and planned checks 
     await db.query("INSERT INTO public.workspace_licence(tenant_id,tier,valid_until) VALUES($1,'scale',now()+interval '7 days')",[sentinelTenant]);
     await db.query('INSERT INTO public.licence_seat(tenant_id,user_id) VALUES($1,$2)',[sentinelTenant,restoredUser]);
     await db.query("INSERT INTO public.licence_location(tenant_id,name,erp_profile) VALUES($1,'Restored location','generic')",[sentinelTenant]);
-    await db.query('INSERT INTO public.licence_device(id,tenant_id,user_id) VALUES($1,$2,$3)',[randomUUID(),sentinelTenant,restoredUser]);
+    const restoredDevice=randomUUID();
+    await db.query('INSERT INTO public.licence_device(id,tenant_id,user_id) VALUES($1,$2,$3)',[restoredDevice,sentinelTenant,restoredUser]);
+    const {build}=await import('esbuild');
+    const compiled=await build({entryPoints:['scripts/seed-restore-relay.ts'],bundle:true,platform:'node',format:'esm',write:false});
+    const {seedRestoreRelay}=await import('data:text/javascript;base64,'+Buffer.from(compiled.outputFiles[0].text).toString('base64'));
+    await seedRestoreRelay(db,sentinelTenant,restoredUser,restoredDevice);
     // 6R: the quote's customer ID no longer references a server table.
     await db.query("INSERT INTO public.quote(id,tenant_id,customer_id,created_by,status,margin_zone) VALUES($1,$2,$3,$4,'draft','green')", [restoredQuote,sentinelTenant,randomUUID(),restoredUser]);
     for (let i=0;i<2;i++) {

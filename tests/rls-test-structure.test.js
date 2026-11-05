@@ -30,7 +30,7 @@ test("the restricted-role pgTAP checks capture results and run assertions after 
 });
 
 test("RLS fixtures prove tenant-positive paths, exact RLS write failures, and TRUNCATE protection", () => {
-  assert.match(sql, /extensions\.plan\(113 \+ CASE WHEN current_setting\('app\.restore_test_mode',true\)='true' THEN 3 ELSE 0 END\)/, "Fresh runs plan 113 checks after 6R; restored-data runs add three restore-only checks.");
+  assert.match(sql, /extensions\.plan\(152 \+ CASE WHEN current_setting\('app\.restore_test_mode',true\)='true' THEN 3 ELSE 0 END\)/, "Fresh runs plan 152 checks after 7A; restored-data runs add three restore-only checks.");
   assert.match(sql, /phase1_tenant_a_fixtures/, "Every application table must have a Tenant A fixture row.");
   assert.match(sql, /CREATE TEMP TABLE phase1_rls_fixture_keys/, "Fixture rows must be enumerated explicitly by table and generated primary key.");
   assert.match(sql, /replace\('__PHASE1_INVITE_A_ID__','-',''\)/, "Fixture invite tokens must be unique to generated fixture IDs.");
@@ -84,8 +84,8 @@ test("RLS fixtures prove tenant-positive paths, exact RLS write failures, and TR
   assert.match(sql, /app\.phase1_anon_function_exec_result/);
   assert.match(sql, /app\.phase1_authenticated_function_exec_result/);
   assert.match(sql, /has_function_privilege\(current_user,p\.oid,'EXECUTE'\)/);
-  assert.match(runner, /expectedFixturePlan = 113/);
-  assert.match(runner, /restoreFixturePlan = 116/);
+  assert.match(runner, /expectedFixturePlan = 152/);
+  assert.match(runner, /restoreFixturePlan = 155/);
   assert.match(runner, /planned !== expectedPlan/);
   assert.match(runner, /all \$\{expectedPlan\} checks passing/);
   assert.match(runner, /materializeFixtureIds/);
@@ -127,7 +127,7 @@ test("database repeatability command runs the suite twice and proves no tenant r
   assert.match(repeatability, /await runDatabaseSuite\(\)[\s\S]*?const afterSecond = await snapshotTenantRows\(pool\)/);
   assert.match(repeatability, /assertTenantRowCountsEqual\(before, afterSecond/);
   assert.match(repeatability, /GROUP BY c\.relname\s+ORDER BY c\.relname/, "Tenant tables must be uniquely and deterministically sorted by name.");
-  assert.match(repeatability, /tables\.rows\.length >= 20/);
+  assert.match(repeatability, /tables\.rows\.length >= 24/);
   assert.match(rowCountHelpers, /public\.\$\{tableName\}/, "Count mismatch errors must identify the public table.");
 });
 

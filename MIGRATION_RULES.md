@@ -29,3 +29,17 @@ Keep every database assertion non-vacuous: provide valid positive fixtures and a
 ## 5B global security metadata exception
 
 The explicitly reviewed owner-only table rebatehq_private.actor_key has a nullable tenant_id constrained to NULL (global issuer material), forced RLS, zero app/platform privileges, and redacted operation-only audit coverage. No new private/global table is accepted by the schema lint without a new review. The private login_budget sequence has no app privileges and deliberately survives rollback. Include both in restore scope/inventory and compare key fingerprints (never values), counter state, owner, RLS and full ACLs. The public tenant-table minimum is now 42. Neither object stores customer business data. Public functions still require the single exact function ACL registry. Legitimate CREATE OR REPLACE across different NEW migrations is allowed; duplicate definitions within a migration and non-replacement duplicates still fail.
+
+
+## Current inventory after 7A (pending evidence)
+
+The public tenant-table minimum is **24**, superseding the historical 42/20
+counts above. The four append-only relay tables have explicit dependency-ordered
+fixtures in `supabase/tests/chunk7a_relay.sql`, included by the shared SQL loader;
+152 fresh / 155 restore-mode checks are required, with planned == ran. They have
+positive SELECT/INSERT controls, real cross-tenant RLS denials, exact ACLs,
+platform-role denials, no-context isolation and metadata-only audit checks.
+No app UPDATE/DELETE/TRUNCATE is permitted on them. Every new helper remains in
+the one function ACL registry. The pending migration must not be locked until
+both green CI and a **user-run** Restore Drill pass. Only pending lock entries
+may change in this chunk; all ten applied SQL hashes remain frozen.

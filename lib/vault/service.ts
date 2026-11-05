@@ -27,7 +27,28 @@ import * as setup from "../setup/checklist";
 import * as roles from "../roles/store";
 import { isRole, type Cap, type RoleId } from "../roles/access";
 import type { Access, CleanupApplied, CleanupMergedAll, CleanupUndone, HomeData, RoleList } from "./protocol";
+import {RelaySession,emptyRelay,type RelayState} from '../relay/session';
+import {relayHttp} from '../relay/http';
+import {RelayError} from '../relay/protocol';
+import {minorUnits} from '../spike/exact';
 export class VaultService {
+  async relay(request:Extract<import('./protocol').Request,{action:`relay${string}`}>,signal:AbortSignal){
+    this.licence.assert();if(this.licence.tier==='starter')throw new VaultError('LICENCE','Workspace sharing requires Professional or Scale. Your local data is safe.');
+    const deviceId=this.licence.claims?.device??'';
+    if(!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(deviceId))throw new VaultError('LICENCE','Reconnect to verify this approved device before sharing.');
+    const rows=(await this.requireEngine().conn.query('SELECT payload FROM relay_state WHERE id=1')).toArray();
+    const state:RelayState=rows.length?JSON.parse(String(rows[0].payload)):emptyRelay();
+    const session=new RelaySession({...this.identity,deviceId},state,relayHttp(deviceId,signal),async(value,stage)=>{
+      await this.write('relay.'+stage,{actor:this.identity.userId},async e=>{await e.conn.query(`INSERT INTO relay_state VALUES(1,${sqlText(JSON.stringify(value))}) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload`);});
+    },signal);
+    switch(request.action){
+      case 'relayView':return session.view();case 'relayRegister':return session.register();case 'relayJoin':return session.join(request.data.fingerprint);
+      case 'relayRotate':return session.rotate(request.data.confirmations);case 'relaySync':return session.sync();
+      case 'relayShare':{const {amount,...input}=request.data.input;let amountMinor:string;try{amountMinor=minorUnits(amount).toString();}catch{throw new RelayError('CONTENT','Enter a non-negative amount with at most two decimal places.');}return session.share({...input,amountMinor});}
+      case 'relayRequest':return session.request(request.data.id,request.data.approvers);case 'relayDecide':return session.decide(request.data.id,request.data.decision);
+      case 'relayComment':return session.comment(request.data.id,request.data.text,request.data.mentions);case 'relayRetry':return session.retry();case 'relayDiscard':return session.discard();
+    }
+  }
   engine: Engine | null = null;
   async capacityUpgrade(){
     this.licence.assert();const tier=this.licence.tier;

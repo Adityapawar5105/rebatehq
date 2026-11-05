@@ -51,13 +51,13 @@ and [local Restore #18](https://github.com/Adityapawar5105/rebatehq/actions/runs
 | Vault and unlocked RAM | Scope-bound snapshot, Web Lock per user/workspace | GCM authenticates header/chunk index; audit verify on unlock; runtime engine integrity | Hash-chain detects edits relative to saved tip, not a keyholder rewriting the whole chain | PBKDF2/AES-GCM; memory-only engine; auto-lock; no guaranteed physical memory erasure | Bounded header/512 MiB snapshot, KDF settings fixed before derivation; wrong-key fixed error | No source DDL executed on upgrade; known schema/table inventory; OS/origin compromise excluded |
 | Encrypted backups | Scope/passphrase required on restore | Authenticated chunks, current/previous generation; import validates before publish | Restore/export entries when writable; read-only recovery intentionally need not mutate | Copies existing ciphertext; file handles/settings only in IndexedDB | Quota/interrupted-write recovery; browser grants can expire; external backup needed | Folder access only by user-granted handle; no guarantee against an OS admin |
 | Control plane | Verified Supabase identity + transaction-bound signed actor; Ed25519 licences bound to user/workspace/device | Restricted DB login + forced RLS, exact table/function ACLs; CSRF origin checks on mutations | Append-only DB audit, signed actor and failed-login limits | Default-off legacy readers; 15 retired APIs unconditional 410; public app metadata is separate | Configured production rate limiter fails closed if absent; DB failed-login budget survives rollback | No superuser/BYPASSRLS app role; no memberships; function allowlists, pinned definer search paths |
-| Future relay (not implemented) | Require authenticated membership and recipient/key confirmation | Require per-message AEAD, authenticated sender/recipient/version/id, replay rejection | Require signed authorship/receipt semantics; avoid claiming non-repudiation from a hash chain | Ciphertext-only bodies, no keys in server logs; metadata leakage still exists | Require byte/retention/rate caps and tenant quotas | Require key rotation/removal tests; revoked members must not receive future keys |
+| 7A relay (CI/restore unverified) | Fresh signed actor, licence/seat/device gates; independent fingerprint ceremony | ECDSA low-S signatures, AEAD/AAD, sequence/hash/epoch verification; invalid signed content quarantined | Signed immutable subject/request binding, ordered distinct approvers; no absolute non-repudiation claim | Browser-only keys/content; public keys, membership and traffic metadata remain visible | Bounded pages/bytes/registration/send quotas; operator can deny service | Removal blocks server reads; verified rotation excludes removed keys; old content cannot be remotely erased |
 
 Evidence: `tests/studio.test.ts`, `tests/pilot-*.test.ts`, `tests/vault.test.ts`,
 `tests/licence*.test.ts`, `tests/control-plane.test.ts`,
 `tests/http-boundary.test.js`, `supabase/tests/*.sql`, and
 `scripts/test-vault-browser.mjs` / `tests/browser/vault-worker.ts`.
-The relay row is a **pre-enable checklist**, not test evidence.
+The relay row describes 7A implementation, not passing CI or independent-review evidence. See CHUNK_7A_VERIFICATION.md.
 
 ## Control review
 
@@ -93,7 +93,7 @@ limits or operational checks, not claimed verified.
 | R06 | Medium, open operational check | Establish signer-key rotation/restore drill, origin release access controls, auth/log retention, trusted proxy IP configuration and distributed rate limiter in hosted environment | Aditya Pawar / 2026-11-19 |
 | R07 | Low, open | Node20 action deprecation, current v2 Supabase CLI vs v3 breaking changes, typeless-module warning. Upgrade separately with local-stack/restore gates; current frozen lock remains unchanged | Aditya Pawar / 2026-11-12 |
 | R08 | Low, open | Warm-up can delay reads; 2M leak scan ~11.5s. Caps/cancel retained. Performance is not a security guarantee; no optimization in 6B | Aditya Pawar / next performance chunk, review 2026-11-19 |
-| R09 | Medium, pre-enable gate | Future relay requirements above must receive independent review, adversarial tests and a new privacy gate before enabling. Nothing shipped in 6B | Aditya Pawar + independent reviewer / before 7A enablement, review 2026-11-19 |
+| R09 | Medium, pre-enable gate | 7A is implemented behind RELAY_ENABLED=false. Adversarial unit/PGlite/browser tests are added; authenticated CI and user-run restore remain unverified. Independent review is still required before production enablement | Aditya Pawar + independent reviewer / before 7A enablement, review 2026-11-19 |
 | R10 | Low, open | GET licence refresh may enrol a pending device; top-level navigation can cause this metadata side effect. No licence authority is gained without owner activation. Review separating enrolment from refresh | Aditya Pawar / 2026-11-19 |
 
 ## References and evidence discipline
@@ -105,3 +105,36 @@ limits or operational checks, not claimed verified.
 - No migration, locked hash, DB privilege, money rule or new feature is changed.
   No SQL added. Existing complete SQL suite executes under PGlite in `pnpm test`;
   real Postgres and authenticated local-stack results require the CI run.
+
+
+## 7A relay review addendum — 5 November 2026
+
+Design was written before code in RELAY_DESIGN.md. New tables contain only
+cryptographic material and routing metadata. Server SQL uses the restricted app
+role with signed request context. Public verification is allowed server-side;
+no private device key, passphrase, workspace key or plaintext content is accepted.
+The app's standard flow encrypts in the worker before any network send. A hostile
+client/keyholder can submit arbitrary bytes; opaque storage alone cannot prove
+that an intentionally malicious client encrypted them. The fixture privacy gate
+proves the tested normal flow, not resistance to a compromised trusted client.
+
+New reviewed controls: manual fingerprint confirmation (no silent TOFU), separate
+ECDH/ECDSA keys, ephemeral HKDF/GCM key wraps, per-message HKDF subkeys/random IVs,
+canonical signed headers, low-S signature validation, global signed chain and
+signed rotation base, durable encrypted outbox/idempotency, strict body schemas,
+metadata-only DB audit, append-only app ACLs and bounded quotas. Any signed but
+invalid/undecryptable content is visibly quarantined after signature validation;
+it never grants approval. A bad signature or missing/reordered history stops sync.
+
+| ID | Severity / state | Finding / action | Owner / review |
+|---|---|---|---|
+| R11 | Medium, accepted limit | A malicious relay can hide an unseen tail or maintain forks for isolated devices. Compare verification heads through an independent channel. No external transparency service or unconditional completeness claim | Aditya Pawar / 2026-11-19 |
+| R12 | Medium, open | Independent cryptography/protocol review, hosted configuration and operational recovery have not happened. Keep operator flag off until the review/CI/restore gates are satisfied | Aditya Pawar + reviewer / before production enablement |
+| R13 | Medium, accepted limit | All approved workspace relay members share the epoch key. Removal needs rotation; old ciphertext/keys cannot be erased. Losing all trusted admin devices/backups makes sharing unrecoverable | Workspace owner / onboarding and each removal |
+| R14 | Low, open | Manual sync only; no email/push, retention pruning or subgroup keys. Workspace quota exhaustion requires an operator-managed reviewed recovery/export procedure | Aditya Pawar / before broad deployment |
+
+No locked migration or legacy business-table definition was changed. The one new
+migration changes the existing audit trigger function only to redact relay rows;
+its prior behavior remains for other tables. Default ACL and function-registry
+checks remain strict. No new high/critical finding was identified in this
+first-party review; this is not independent assurance. Blueprint unchanged.

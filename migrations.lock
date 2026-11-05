@@ -34,8 +34,12 @@
     "20261104160022_chunk5b_control_plane.sql",
     "20261105120000_chunk6r_retire_wave1.sql"
   ],
-  "pendingOrder": [],
-  "pendingMigrations": {},
+  "pendingOrder": [
+    "20261105130000_chunk7a_ciphertext_relay.sql"
+  ],
+  "pendingMigrations": {
+    "20261105130000_chunk7a_ciphertext_relay.sql": "a5b51bc918c7fb4d5a619eed535090f5f4bd7ff711b1ad58722cd734e9338aeb"
+  },
   "appliedMigrationEvidence": {
     "202610250001_revoke_platform_public_privileges.sql": {
       "date": "2026-10-26",

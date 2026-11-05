@@ -66,7 +66,7 @@ RebateHQ is being moved from a browser-local prototype to a multi-tenant app for
 | 4 | Phase 1 core | 4.0, 4A, 4B, 4C-1/4C-2, 4D, 4E | Implemented; 4E CI-verified in [CI #55](https://github.com/Adityapawar5105/rebatehq/actions/runs/41814159704), `7fe3db8`; performance remains local evidence |
 | 5 | Phase 1b + control plane | 5A cleanup, cost basis, checklist, roles · 5B licences, retire server business-data paths, carried security fixes | **5A CI-verified** in [RebateHQ CI #59](https://github.com/Adityapawar5105/rebatehq/actions/runs/41854329390) on `632b24f`, [CI #60](https://github.com/Adityapawar5105/rebatehq/actions/runs/41855953059) on `7ec683e` (real-export evidence), and [CI #61](https://github.com/Adityapawar5105/rebatehq/actions/runs/41858525178) on `2fbb283` (merge-all and batch undo), 4 November 2026. See [CHUNK_5A_VERIFICATION.md](./CHUNK_5A_VERIFICATION.md). **5B CI-verified** in [CI #65](https://github.com/Adityapawar5105/rebatehq/actions/runs/41883249192) on `38911ee` and [Restore Drill #16](https://github.com/Adityapawar5105/rebatehq/actions/runs/41886437905); see [CHUNK_5B_VERIFICATION.md](./CHUNK_5B_VERIFICATION.md) |
 | 6 | Pilot hardening + security | 6A real files · 6R legacy table retirement (wave 1) · 6B security review and whitepaper → sellable v1 | 6A CI-verified (CI #68, #69, #70); see [CHUNK_6A_VERIFICATION.md](./CHUNK_6A_VERIFICATION.md). 6R CI-verified (CI #73, Restore Drill #18; 22 server tables dropped, 20 remain); see [CHUNK_6R_VERIFICATION.md](./CHUNK_6R_VERIFICATION.md). 6B CI-verified ([CI #75](https://github.com/Adityapawar5105/rebatehq/actions/runs/41989796464) on ade310e; [CI #77](https://github.com/Adityapawar5105/rebatehq/actions/runs/41992372460) on 0aae4aa); see [record](./CHUNK_6B_VERIFICATION.md) |
-| 7 | Phase 2 | 7A–7F | Not started |
+| 7 | Phase 2 | 7A–7F | 7A implemented; CI and user-run restore verification pending. 7B–7F not started |
 | 8 | Phase 3 | 8A–8D | Not started |
 
 ## Local app
@@ -199,3 +199,33 @@ Assertions last one hour online, refresh every five minutes, and allow up to 24 
 Keep `LEGACY_BUSINESS_ENABLED` unset/false. The retired class C/X handlers return 410 before request/auth/database access, pages 404, and legacy links are absent. Enabling the emergency legacy flag invalidates the local-only boundary. Historical business tables are retained and protected; [RETIREMENT_PROPOSAL.md](./RETIREMENT_PROPOSAL.md) awaits your approval. The old purge job is suspended and scheduled server ingestion fails closed while the flag is off.
 
 After an operator upgrades the workspace licence, an Owner/Admin can choose **Use licensed capacity** in local Settings. It updates only the encrypted vault’s capacity metadata, with a local audit entry; it neither sends rows to the server nor recreates the vault. Lower profiles stay available at setup.
+
+
+### Chunk 7A — encrypted collaboration relay (verification pending)
+
+Home → **Open shared inbox** adds workspace-wide encrypted quote, price-change
+and rebate references, one/two-level preset approvals, comments and mentions.
+This is a reference workflow, not Quote Desk or a vault share. It requires an
+active Professional/Scale seat and an approved device. Local Admin/IT cannot
+open business collaboration. Existing Phase 1 Pricing Owner export approval stays.
+
+Operators must explicitly set `RELAY_ENABLED=true`; it defaults off. Before
+starting/rotating, verify every device fingerprint through a separate trusted
+channel. Joining members enter the administrator fingerprint independently.
+Private keys and workspace keys stay inside the encrypted browser vault. There
+is no server recovery; revoke lost devices and rotate from a surviving trusted
+admin device. Rotation cannot erase old plaintext or old keys already held.
+
+Standard preset: one distinct approver through 5000.00 currency units, two above;
+Conservative: always two. These are nominal per-currency presets, not FX-adjusted
+or customer-configurable policy. Requesters cannot approve themselves. Rejection
+is final for that revision. Sync retrieves the inbox; email/push is not implemented.
+All approved relay members can decrypt a shared reference; mentions are attention
+metadata and do not create private subgroups.
+
+Limits: 60 active devices, 256 epochs, 10000 events/16 MiB ciphertext per workspace,
+16 KiB encrypted message. Quotas stop new writes rather than delete history.
+See [RELAY_DESIGN.md](./RELAY_DESIGN.md), [CHUNK_7A_VERIFICATION.md](./CHUNK_7A_VERIFICATION.md)
+and the security review for metadata visibility and fork/rollback limits.
+A malicious endpoint or trusted deployment can still read an unlocked vault.
+New migration remains pending until green CI plus the user's Restore Drill.

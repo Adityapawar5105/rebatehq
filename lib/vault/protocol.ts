@@ -14,6 +14,8 @@ import type { Cap, RoleId } from "../roles/access";
 import type { Checklist, Step } from "../setup/checklist";
 import type { FixKind, FixView, Scan } from "../cleanup/item-master";
 import type { BasisId, CostBasisView } from "../cost/basis";
+import type { RelayView } from '../relay/session';
+import type { ShareInput } from '../relay/protocol';
 export type Tier = "starter" | "professional" | "scale";
 export type Scope = { userId: string; tenantId: string };
 /** What the signed-in person may do in this vault. Computed in the worker; the UI only mirrors it. */
@@ -42,6 +44,8 @@ export type CleanupUndone = { summary: string; restored: string; skipped: string
 export type StorageStatus = { persistent: boolean; usage: string; quota: string; namedOpfsBytes: string; files: string };
 export type ImportEstimate = { bytes: string; estimatedMemoryBytes: string; maxLines: string; maxProducts: string; warning: string };
 export type Commands = {
+  relayView:Record<string,never>;relayRegister:Record<string,never>;relayJoin:{fingerprint:string};relayRotate:{confirmations:{deviceId:string;fingerprint:string}[]};relaySync:Record<string,never>;
+  relayShare:{input:Omit<ShareInput,'amountMinor'>&{amount:string}};relayRequest:{id:string;approvers:string[]};relayDecide:{id:string;decision:'approve'|'reject'};relayComment:{id:string;text:string;mentions:string[]};relayRetry:Record<string,never>;relayDiscard:Record<string,never>;
   home: Record<string, never>;
   checklist: Record<string, never>;
   checklistMark: { step: Step };
@@ -121,6 +125,7 @@ export type Commands = {
 export type LeaksView = { result: LeakResult; roi: RoiSummary; sample: boolean; recorded: number };
 export type CommitResult = { loaded: string; rejected: string; files: string; cleanup: boolean };
 export type Results = {
+  relayView:RelayView;relayRegister:RelayView;relayJoin:RelayView;relayRotate:RelayView;relaySync:RelayView;relayShare:RelayView;relayRequest:RelayView;relayDecide:RelayView;relayComment:RelayView;relayRetry:RelayView;relayDiscard:RelayView;
   capacityUpgrade: VaultStatus;
   licenceSet: VaultStatus;
   home: HomeData; checklist: Checklist; checklistMark: Checklist; roleList: RoleList; roleSet: RoleList; roleRemove: RoleList; accessSet: RoleList; rolePreview: RoleList;

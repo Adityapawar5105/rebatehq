@@ -9,5 +9,5 @@ await run(['node_modules/next/dist/bin/next','build']);
 const server=spawn(process.execPath,['node_modules/next/dist/bin/next','start','--hostname','127.0.0.1','--port','3100'],{env,stdio:'ignore'});
 try{
  let ready=false;for(let i=0;i<60;i++){try{if((await fetch(env.VAULT_TEST_URL+'/lab/vault')).ok){ready=true;break;}}catch{}await new Promise(r=>setTimeout(r,1000));}if(!ready)throw Error('Local lab server did not start.');
- for(const browser of ['chrome','msedge'])await run(['scripts/test-vault-browser.mjs','--browser='+browser]);
+ for(const browser of (process.argv.find(v=>v.startsWith('--browser='))?[process.argv.find(v=>v.startsWith('--browser=')).split('=')[1]]:['chrome','msedge'])){if(!process.argv.includes('--relay-only'))await run(['scripts/test-vault-browser.mjs','--browser='+browser]);await run(['scripts/test-relay-browser.mjs','--browser='+browser]);}
 }finally{server.kill();}

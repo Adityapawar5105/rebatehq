@@ -1,11 +1,12 @@
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 9;
 const V1_TABLES = ["vault_meta", "products", "customers", "price_matrix", "price_guardrails", "source_files", "import_batches", "sales_lines", "vendor_costs", "cost_basis_settings", "rules", "rule_runs", "price_versions", "roi_ledger", "audit_log", "import_issues", "converter_recipes"] as const;
 const V4_TABLES = [...V1_TABLES, "rejected_rows"] as const;
 const V5_TABLES = [...V4_TABLES, "agg_cpm", "agg_cm", "agg_p", "recon_issues"] as const;
 const V6_TABLES = [...V5_TABLES, "pricing_settings", "rule_revisions", "rule_changes"] as const;
-export const TABLES = [...V6_TABLES, "role_assignments", "access_settings", "cleanup_fixes", "cleanup_changes", "setup_progress"] as const;
+const V7_TABLES = [...V6_TABLES, "role_assignments", "access_settings", "cleanup_fixes", "cleanup_changes", "setup_progress"] as const;
+export const TABLES = [...V7_TABLES, "relay_state"] as const;
 /** Tables that exist at a schema version (in creation order, so copy-on-write inserts parents first). */
-export function tablesFor(version: number): readonly string[] { return version >= 7 ? TABLES : version >= 6 ? V6_TABLES : version >= 5 ? V5_TABLES : version >= 4 ? V4_TABLES : V1_TABLES; }
+export function tablesFor(version: number): readonly string[] { return version >= 9 ? TABLES : version >= 7 ? V7_TABLES : version >= 6 ? V6_TABLES : version >= 5 ? V5_TABLES : version >= 4 ? V4_TABLES : V1_TABLES; }
 // These are local DuckDB migrations, not Supabase migrations. V1 stays frozen
 // so the committed encrypted compatibility fixture exercises a real upgrade.
 export const V1_SQL = `
@@ -111,7 +112,10 @@ INSERT INTO sales_lines SELECT * FROM md_v7_sales ORDER BY customer_id, sale_dat
 DROP TABLE md_v7_sales;
 CREATE INDEX sales_lines_customer_date ON sales_lines(customer_id,sale_date);
 CREATE INDEX sales_lines_product_date ON sales_lines(product_id,sale_date);`;
-const STEPS = [V1_SQL, V2_SQL, V3_SQL, V4_SQL, V5_SQL, V6_SQL, V7_SQL, V8_SQL];
+// Only inside the encrypted local vault: device private JWKs, epoch keys,
+// authenticated inbox and durable outbox. None of this table goes to the API.
+export const V9_SQL = `CREATE TABLE relay_state(id INTEGER PRIMARY KEY CHECK(id=1), payload VARCHAR NOT NULL);`;
+const STEPS = [V1_SQL, V2_SQL, V3_SQL, V4_SQL, V5_SQL, V6_SQL, V7_SQL, V8_SQL, V9_SQL];
 function checkVersion(version: number) {
   if (!Number.isInteger(version) || version < 1 || version > SCHEMA_VERSION) throw new Error("Unsupported vault schema version; update the app before opening this vault.");
 }

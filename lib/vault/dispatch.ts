@@ -12,6 +12,7 @@ export async function dispatch(service: VaultService, request: Request, hooks: H
   service.licenceGuard(request.action);
   const { progress } = hooks;
   switch (request.action) {
+    case "relayView":case "relayRegister":case "relayJoin":case "relayRotate":case "relaySync":case "relayShare":case "relayRequest":case "relayDecide":case "relayComment":case "relayRetry":case "relayDiscard":return service.relay(request,hooks.signal());
     case "home": return service.home();
     case "checklist": return service.checklist();
     case "checklistMark": return service.checklistMark(request.data.step);

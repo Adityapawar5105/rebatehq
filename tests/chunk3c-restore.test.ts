@@ -29,12 +29,12 @@ test("Chunk 3C migration upgrades existing invoice rows without inventing actual
 });
 test("Restore inventory hashes wave-2 rows whose IDs outlived the retired tables; column mismatches stay fatal (6R)",async()=>{
  const executed=new Set<string>(),db=await testDatabase(executed);
- const {applicationColumnsSql,assertApplicationColumnsEqual,wave2EvidenceSql}=await import("../scripts/verify-restore-equivalence.mjs");
+ const {applicationColumnsSql,assertApplicationColumnsEqual,wave2EvidenceSql,relayEvidenceSql,assertRelayEvidenceEqual}=await import("../scripts/verify-restore-equivalence.mjs");
  try{
   await db.query("BEGIN");const rows=await seedRestoreData(db);await db.query("COMMIT");
   assert.equal((await db.query("SELECT name FROM public.rebate_agreement WHERE id=$1",[rows.agreement])).rows[0].name,"RESTORE-SENTINEL");
   const tableNames=(await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")).rows.map((r:any)=>r.tablename);
-  assert.equal(tableNames.length,20);
+  assert.equal(tableNames.length,24);
   const columns=(await db.query(applicationColumnsSql,[tableNames])).rows;
   assert.equal(assertApplicationColumnsEqual(columns,structuredClone(columns)),true);
   assert.throws(()=>assertApplicationColumnsEqual(columns,columns.filter((c:any)=>c.column_name!=="uom_code")),/quote_line.uom_code/);
@@ -48,6 +48,12 @@ test("Restore inventory hashes wave-2 rows whose IDs outlived the retired tables
   }
   assert.deepEqual((await db.query(wave2EvidenceSql)).rows[0],content);
   // The seeded source is now pre-existing data. Repeated checks preserve it.
+  const relayEvidence=(await db.query(relayEvidenceSql)).rows;
+  assert.equal(assertRelayEvidenceEqual(relayEvidence,structuredClone(relayEvidence)),true);
+  await db.exec('BEGIN');await db.query("UPDATE public.relay_event SET ciphertext=decode(repeat('00',32),'hex'),ciphertext_bytes=32 WHERE id=$1::uuid",[rows.relay.event]);
+  assert.throws(()=>assertRelayEvidenceEqual(relayEvidence,[]),/four tables/);
+  assert.throws(()=>assertRelayEvidenceEqual(relayEvidence,relayEvidence.map((r:any)=>({...r,content_hash:'changed'}))),/content hashes differ/);
+  assert.notDeepEqual((await db.query(relayEvidenceSql)).rows,relayEvidence);await db.exec('ROLLBACK');
   const baseline=await tenantCounts(db);
   for(let i=0;i<2;i++){await db.query("BEGIN");await assert.rejects(seedRestoreData(db),/sentinel UUID collision/);await db.query("ROLLBACK");assert.deepEqual(await tenantCounts(db),baseline);}
   const source=ts.createSourceFile("seed",readFileSync("scripts/seed-restore-drill.ts","utf8"),ts.ScriptTarget.Latest,true);

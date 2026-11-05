@@ -21,10 +21,10 @@ export const isRole = (value: unknown): value is RoleId => typeof value === "str
  * pricing: guardrails, rules, simulations. approve: approve a price change. export: ERP files.
  * reconcile: reconciliation. audit: verify the audit chain. roles: team roles. backup: backups.
  */
-export type Cap = "view" | "guards" | "cost" | "data" | "pricing" | "approve" | "export" | "reconcile" | "audit" | "roles" | "backup";
-export const CAPS_ALL: Cap[] = ["view", "guards", "cost", "data", "pricing", "approve", "export", "reconcile", "audit", "roles", "backup"];
+export type Cap = "view" | "guards" | "cost" | "data" | "pricing" | "approve" | "export" | "reconcile" | "audit" | "roles" | "backup" | "collaborate";
+export const CAPS_ALL: Cap[] = ["view", "guards", "cost", "data", "pricing", "approve", "export", "reconcile", "audit", "roles", "backup", "collaborate"];
 const PRICING_OWNER: Cap[] = CAPS_ALL;
-const BASE: Cap[] = ["view", "guards"];
+const BASE: Cap[] = ["view", "guards", "collaborate"];
 const BY_ROLE: Record<RoleId, Cap[]> = {
   owner: CAPS_ALL.filter(c => c !== "approve"), // approval belongs to the named Pricing Owner
   pricing_owner: PRICING_OWNER,
@@ -32,7 +32,7 @@ const BY_ROLE: Record<RoleId, Cap[]> = {
   sales_manager: [...BASE, "cost"],
   sales_rep: BASE,
   accountant: [...BASE, "cost", "reconcile", "audit"],
-  admin: [...BASE, "roles", "backup", "audit"],
+  admin: ["view", "guards", "roles", "backup", "audit"],
 };
 /** Capabilities of one person: their role, plus everything a Pricing Owner may do when they are the named owner. */
 export function capsFor(role: RoleId, namedOwner: boolean, repSeesCost: boolean): Cap[] {
@@ -49,6 +49,7 @@ export const intersect = (a: Cap[], b: Cap[]) => a.filter(c => b.includes(c));
  * fail when a new command is added without a decision.
  */
 export const ACTION_CAP: Record<Action, Cap | null> = {
+  relayView:"collaborate",relayRegister:"collaborate",relayJoin:"collaborate",relayRotate:"collaborate",relaySync:"collaborate",relayShare:"collaborate",relayRequest:"collaborate",relayDecide:"collaborate",relayComment:"collaborate",relayRetry:"collaborate",relayDiscard:"collaborate",
   capacityUpgrade: "roles", licenceSet: null, init: null, create: null, unlock: null, lock: null, touch: null, cancel: null, save: null, storage: null,
   status: null, home: "view", checklist: "view", checklistMark: "roles", roleList: "view",
   // Previewing a role can only remove capabilities (see accessFor), so anyone may use it, which also lets an Owner leave a preview.

@@ -1,0 +1,23 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {generateIdentity,newEpoch,encryptEvent} from '../lib/relay/crypto';
+import {fold,type Applied} from '../lib/relay/state';
+import {ZERO_HASH,type Content} from '../lib/relay/protocol';
+test('two-level requests enforce threshold, distinct approvers, no self-approval, level order, final rejection and signed-content rejection without log poisoning',async()=>{
+ const t=crypto.randomUUID(),owner=await generateIdentity(t,crypto.randomUUID(),crypto.randomUUID()),manager=await generateIdentity(t,crypto.randomUUID(),crypto.randomUUID()),rep=await generateIdentity(t,crypto.randomUUID(),crypto.randomUUID());
+ const {epoch,key}=await newEpoch(owner,[{...owner.device,role:'owner'},{...manager.device,role:'manager'},{...rep.device,role:'rep'}],null,{sequence:'0',hash:ZERO_HASH});
+ const entries:Applied[]=[],obj=crypto.randomUUID();let head={sequence:'0',hash:ZERO_HASH};
+ const add=async(who:typeof owner,content:Content,recipients:string[]=[])=>{const event=await encryptEvent(who,epoch,key,head,obj,'quote',content,recipients);entries.push({event,content});head={sequence:event.sequence,hash:event.hash};return event;};
+ const share=await add(rep,{kind:'share',subject:{objectKind:'quote',reference:'local-quote-1',title:'Private quote',amountMinor:'500001',currency:'USD',preset:'standard'}});
+ await add(rep,{kind:'request',subjectHash:share.hash,approvers:[owner.device.userId]},[owner.device.userId]);
+ assert.equal(fold(entries,[epoch]).rejected.length,1);assert.equal(fold(entries,[epoch]).objects[0].approval,null);
+ const request=await add(rep,{kind:'request',subjectHash:share.hash,approvers:[owner.device.userId,manager.device.userId]},[owner.device.userId,manager.device.userId]);
+ const decide=(level:'1'|'2',decision:'approve'|'reject')=>({kind:'decision' as const,requestId:request.id,requestHash:request.hash,level,decision});
+ await add(rep,decide('1','approve'));await add(manager,decide('2','approve'));
+ assert.equal(fold(entries,[epoch]).objects[0].approval!.status,'pending');assert.equal(fold(entries,[epoch]).rejected.length,3);
+ await add(owner,decide('1','approve'));assert.equal(fold(entries,[epoch]).objects[0].approval!.decisions.length,1);
+ await add(owner,decide('1','approve'));await add(manager,decide('2','reject'));await add(manager,decide('2','approve'));
+ assert.equal(fold(entries,[epoch]).objects[0].approval!.status,'rejected');assert.equal(fold(entries,[epoch]).rejected.length,5);
+ await add(rep,{kind:'comment',text:'A later valid comment still arrives'},[owner.device.userId]);
+ const view=fold(entries,[epoch]);assert.equal(view.objects[0].comments.length,1);assert.equal(view.objects[0].approval!.status,'rejected');
+});

@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT extensions.plan(113 + CASE WHEN current_setting('app.restore_test_mode',true)='true' THEN 3 ELSE 0 END);
+SELECT extensions.plan(152 + CASE WHEN current_setting('app.restore_test_mode',true)='true' THEN 3 ELSE 0 END);
 SELECT set_config('app.phase1_migration_owner',current_user,true);
 -- INCLUDE FUNCTION ACL ALLOWLIST
 
@@ -41,7 +41,7 @@ ORDER BY c.oid;
 DO $$ DECLARE t text; n integer; v_sentinel jsonb; v_expected_hash text; v_actual_hash text;
   v_count_match boolean:=true; v_sentinel_present boolean:=false; v_detail text:=''; BEGIN
   SELECT count(*) INTO n FROM pg_temp.phase1_rls_tables;
-  IF n<20 THEN RAISE EXCEPTION 'Expected at least 20 application tenant tables after 6R; found %',n; END IF;
+  IF n<24 THEN RAISE EXCEPTION 'Expected at least 24 application tenant tables after 7A; found %',n; END IF;
   IF current_setting('app.restore_test_mode',true)='true' THEN
     v_expected_hash:=current_setting('app.restore_sentinel_content_hash');
     -- 6R: the sentinel is a rebate agreement (same hash as scripts/verify-restore-equivalence.mjs).
@@ -92,7 +92,7 @@ END $$;
 
 -- 6R: 16 foundation tables keep fixtures here (wave-1 tables were dropped). Four operation-specific licence
 -- tables are tested in chunk5b_control.sql, including exact ACLs and cross writes.
-DELETE FROM pg_temp.phase1_rls_tables WHERE table_name IN ('workspace_licence','licence_seat','licence_location','licence_device');
+DELETE FROM pg_temp.phase1_rls_tables WHERE table_name IN ('workspace_licence','licence_seat','licence_location','licence_device','relay_device_key','relay_epoch','relay_key_wrap','relay_event');
 -- Suite-owned auth users and tenants are inserted before dependent rows.
 INSERT INTO auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,created_at,updated_at)
 VALUES
@@ -648,7 +648,7 @@ DO $$ DECLARE t text; n integer; expected_count integer; v_bad text:='';
   v_state text; v_msg text; BEGIN
   IF current_setting('app.restore_test_mode',true)='true' THEN
     SELECT count(*) INTO expected_count FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='r';
-    IF expected_count<20 THEN RAISE EXCEPTION 'Restore isolation check expected at least 20 tenant tables; found %',expected_count; END IF;
+    IF expected_count<24 THEN RAISE EXCEPTION 'Restore isolation check expected at least 24 tenant tables; found %',expected_count; END IF;
     FOR t IN SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='r' LOOP
       BEGIN
         EXECUTE format('SELECT count(*) FROM public.%I WHERE tenant_id=$1',t)
@@ -786,7 +786,7 @@ DO $$ DECLARE v_update_state text:='00000'; v_delete_state text:='00000'; v_trun
 END $$;
 
 
--- fx_rate is the only Chunk 2A table left after 6R; it keeps its positive UPDATE and DELETE controls.
+-- fx_rate is the only Chunk 2A table left after 7A; it keeps its positive UPDATE and DELETE controls.
 DO $$ DECLARE v_rows integer; v_ok boolean:=true; v_detail text:=''; BEGIN
   PERFORM pg_temp.use_identity('__PHASE1_USER_A_ID__');
   PERFORM set_config('request.jwt.claims','{"sub":"__PHASE1_USER_A_ID__","role":"authenticated"}',true);
@@ -1535,5 +1535,6 @@ SELECT extensions.ok(current_setting('app.chunk2c_manager_governance')='true','O
 
 
 -- INCLUDE CHUNK 5B CHECKS
+-- INCLUDE CHUNK 7A CHECKS
 SELECT * FROM extensions.finish();
 ROLLBACK;

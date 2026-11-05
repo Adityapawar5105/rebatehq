@@ -3,7 +3,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { CONTROL_TABLES } from "../config/http-boundary.mjs";
+// Historical schema snapshot: later chunks add control/relay tables after 6R.
+const CONTROL_TABLES=['tenant','membership','invite','audit_log','workspace_licence','licence_seat','licence_location','licence_device'];
 
 const MIGRATION = "20261105120000_chunk6r_retire_wave1.sql";
 export const WAVE1 = ["customer", "customer_group", "product", "uom", "uom_conversion", "cost_history", "cost_component", "price_list", "price_list_version", "price_list_item", "customer_price", "margin_policy", "invoice", "invoice_line", "sales_order", "margin_snapshot", "data_quality_issue", "import_job", "column_mapping_template", "connector_secret", "connector_sync_run", "plan_feature"];

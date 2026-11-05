@@ -54,8 +54,8 @@ choose to create. Identity, licences and authentication records reach the contro
 plane. Legacy rebate/audit readers and historical server tables still exist
 behind a default-off flag; retired business APIs return 410. We make no app-wide
 “nothing ever leaves your device” claim. A compromised computer, extension or
-application origin can read an unlocked vault. The future sharing relay is not
-implemented or verified. Hosted sign-in, independent review and real crash/picker
+application origin can read an unlocked vault. The new sharing relay is default-off and not yet CI/restore verified;
+no relay privacy claim is made here until its linked acceptance run passes. Hosted sign-in, independent review and real crash/picker
 checks remain unverified.
 [Boundary tests](https://github.com/Adityapawar5105/rebatehq/blob/ade310e/tests/http-boundary.test.js)
 · [CI #75](https://github.com/Adityapawar5105/rebatehq/actions/runs/41989796464).

@@ -1,3 +1,4 @@
+import {seedRestoreRelay} from './seed-restore-relay';
 import {randomUUID} from "node:crypto";
 import {pathToFileURL} from "node:url";
 import {Pool} from "pg";
@@ -20,13 +21,14 @@ export async function seedRestoreData(db:DB){
  await db.query("INSERT INTO public.licence_seat(tenant_id,user_id) VALUES($1::uuid,$2::uuid)",[tenant,owner]);
  await db.query("INSERT INTO public.licence_location(tenant_id,name,erp_profile) VALUES($1::uuid,'Synthetic restore location','generic')",[tenant]);
  await db.query("INSERT INTO public.licence_device(id,tenant_id,user_id) VALUES($1::uuid,$2::uuid,$3::uuid)",[device,tenant,owner]);
- return {tenant,agreement,quote,line,owner};
+ const relay=await seedRestoreRelay(db,tenant,owner,device);
+ return {tenant,agreement,quote,line,owner,relay};
 }
 async function main(){
  if(!process.env.SEED_DATABASE_URL)throw new Error("SEED_DATABASE_URL is required for the disposable restore drill.");
  const pool=new Pool({connectionString:process.env.SEED_DATABASE_URL,ssl:/(localhost|127\.0\.0\.1)/i.test(process.env.SEED_DATABASE_URL)?false:{rejectUnauthorized:true}});
  const db=await pool.connect();
- try{await db.query("BEGIN");await seedRestoreData(db);await db.query("COMMIT");process.stdout.write("Seeded the restore sentinel agreement, a quote with retired-table IDs and control-plane rows.\n");}
+ try{await db.query("BEGIN");await seedRestoreData(db);await db.query("COMMIT");process.stdout.write("Seeded the restore sentinel agreement, a quote with retired-table IDs and control-plane plus encrypted relay rows.\n");}
  catch(e){await db.query("ROLLBACK");throw e;}finally{db.release();await pool.end();}
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href)main().catch(()=>{process.stderr.write("Could not seed disposable restore fixtures. Check source setup and sentinel UUID collisions.\n");process.exitCode=1;});

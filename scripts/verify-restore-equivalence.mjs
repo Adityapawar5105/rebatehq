@@ -42,6 +42,16 @@ export const wave2EvidenceSql=`
  (SELECT md5(COALESCE(string_agg(jsonb_build_object('id',id,'tenant',tenant_id,'party',party_id,'name',name,
   'rate',rate_pct::text,'threshold',threshold_amount::text,'start',period_start,'end',period_end)::text,'|' ORDER BY tenant_id,id),''))
   FROM public.rebate_agreement) AS rebate_agreements`;
+// UTC rendering plus all columns preserves ciphertext, signatures, keys and metadata.
+export const relayEvidenceSql=`SELECT 'relay_device_key'::text AS table_name,md5(COALESCE(string_agg(((to_jsonb(t)-'signed_at'-'received_at')||jsonb_build_object('signed_at_utc',to_char((to_jsonb(t)->>'signed_at')::timestamptz AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),'received_at_utc',to_char(t.received_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')))::text,'|' ORDER BY tenant_id,id),'')) AS content_hash FROM public.relay_device_key t
+ UNION ALL SELECT 'relay_epoch',md5(COALESCE(string_agg(((to_jsonb(t)-'signed_at'-'received_at')||jsonb_build_object('signed_at_utc',to_char((to_jsonb(t)->>'signed_at')::timestamptz AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),'received_at_utc',to_char(t.received_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')))::text,'|' ORDER BY tenant_id,id),'')) FROM public.relay_epoch t
+ UNION ALL SELECT 'relay_key_wrap',md5(COALESCE(string_agg(((to_jsonb(t)-'signed_at'-'received_at')||jsonb_build_object('signed_at_utc',to_char((to_jsonb(t)->>'signed_at')::timestamptz AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),'received_at_utc',to_char(t.received_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')))::text,'|' ORDER BY tenant_id,id),'')) FROM public.relay_key_wrap t
+ UNION ALL SELECT 'relay_event',md5(COALESCE(string_agg(((to_jsonb(t)-'signed_at'-'received_at')||jsonb_build_object('signed_at_utc',to_char((to_jsonb(t)->>'signed_at')::timestamptz AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),'received_at_utc',to_char(t.received_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')))::text,'|' ORDER BY tenant_id,id),'')) FROM public.relay_event t ORDER BY table_name`;
+export function assertRelayEvidenceEqual(source,restored){
+ assert.equal(source?.length,4,'Source relay content inventory must cover four tables.');
+ assert.equal(restored?.length,4,'Restored relay content inventory must cover four tables.');
+ assert.deepEqual(restored,source,'Relay ciphertext/public-key/signature/metadata content hashes differ.');return true;
+}
 export function compareApplicationTableAcls(sourceTables, restoredTables) {
   const sourceByName = new Map(sourceTables.map(table => [table.object_name, table]));
   const restoredByName = new Map(restoredTables.map(table => [table.object_name, table]));
@@ -293,6 +303,7 @@ async function snapshot(pool, applicationTableNames, authUserIds) {
   const applicationTables = (await pool.query(applicationTableAclSql, [applicationTableNames])).rows;
   const applicationColumns=(await pool.query(applicationColumnsSql,[applicationTableNames])).rows;
   const wave2Evidence=(await pool.query(wave2EvidenceSql)).rows[0];
+  const relayEvidence=(await pool.query(relayEvidenceSql)).rows;
   const functions = (await pool.query(publicFunctionAclSql)).rows;
   const securityDefiners = functions.filter(fn => fn.security_type === "DEFINER");
   const schemas = (await pool.query(schemaAclSql)).rows;
@@ -315,8 +326,8 @@ async function snapshot(pool, applicationTableNames, authUserIds) {
   const authUserCount = authUserIds.length
     ? Number((await pool.query("SELECT count(*)::int AS count FROM auth.users WHERE id=ANY($1::uuid[])", [authUserIds])).rows[0].count)
     : 0;
-  assert.ok(Object.keys(tenantRowCounts).length >= 20,
-    `Restore equivalence found only ${Object.keys(tenantRowCounts).length} tenant tables; expected at least 20 after Chunk 6R.`);
+  assert.ok(Object.keys(tenantRowCounts).length >= 24,
+    `Restore equivalence found only ${Object.keys(tenantRowCounts).length} tenant tables; expected at least 24 after Chunk 7A.`);
   assert.equal(authUserCount, authUserIds.length, "A referenced auth.users ID is missing from the source or restored target.");
   const sentinelResult = await pool.query(`
     SELECT a.tenant_id::text,a.id::text,md5(jsonb_build_object(
@@ -329,7 +340,7 @@ async function snapshot(pool, applicationTableNames, authUserIds) {
     WHERE a.tenant_id=$1::uuid AND a.id=$2::uuid AND a.name='RESTORE-SENTINEL'
     ORDER BY a.tenant_id,a.id
   `, ["61000000-0000-4000-8000-000000000001", "62000000-0000-4000-8000-000000000001"]);  const sentinel = sentinelResult.rows.length === 1 ? sentinelResult.rows[0] : null;
-  return { privateIssuer, role, applicationTableNames: [...applicationTableNames].sort(), applicationTables, applicationColumns, wave2Evidence, securityDefiners, functions, schemas, defaultPrivileges, applicationRows, tenantRowCounts, authUserCount, sentinel };
+  return { privateIssuer, role, applicationTableNames: [...applicationTableNames].sort(), applicationTables, applicationColumns, wave2Evidence, relayEvidence, securityDefiners, functions, schemas, defaultPrivileges, applicationRows, tenantRowCounts, authUserCount, sentinel };
 }
 
 function comparableAcl(items) {
@@ -358,8 +369,8 @@ async function main() {
   if (!databaseUrl) throw new Error(`${mode === "--snapshot" ? "RESTORE_TEST_SOURCE_DATABASE_URL" : "RESTORE_TEST_TARGET_DATABASE_URL"} is required.`);
   const inventory = JSON.parse(readFileSync(inventoryPath, "utf8"));
   assert.deepEqual(inventory.applicationSchemas, [...APPLICATION_SCHEMAS], "Restore equivalence only accepts the reviewed public application schema allowlist.");
-  assert.ok(Array.isArray(inventory.schemaTables) && inventory.schemaTables.filter(t=>t.schema==='public').length >= 20,
-    `Dump inventory contains ${inventory.schemaTables?.length ?? 0} application tables; expected at least 20 after Chunk 6R.`);
+  assert.ok(Array.isArray(inventory.schemaTables) && inventory.schemaTables.filter(t=>t.schema==='public').length >= 24,
+    `Dump inventory contains ${inventory.schemaTables?.length ?? 0} application tables; expected at least 24 after Chunk 7A.`);
   const applicationTableNames = inventory.schemaTables.filter(t=>t.schema==='public').map(item => {
     assert.equal(item.schema, "public", `Unexpected non-application table ${item.schema}.${item.table}.`);
     return item.table;
@@ -439,6 +450,7 @@ async function main() {
     reportSection("application table inventory", () => assert.deepEqual(sourceState.applicationTableNames, targetState.applicationTableNames, "Application table inventory differs."), failures);
     reportSection("application column inventory",()=>assertApplicationColumnsEqual(sourceState.applicationColumns,targetState.applicationColumns),failures);
     reportSection("quote, quote line and rebate agreement content hashes",()=>assert.deepEqual(sourceState.wave2Evidence,targetState.wave2Evidence,"Quote, quote line or rebate agreement contents differ (hashes only)."),failures);
+    reportSection("relay ciphertext, keys, signatures and metadata hashes",()=>assertRelayEvidenceEqual(sourceState.relayEvidence,targetState.relayEvidence),failures);
     reportSection("application row counts", () => assert.deepEqual(sourceState.applicationRows, targetState.applicationRows, "Application row counts differ."), failures);
     reportSection("per-tenant row counts", () => assert.deepEqual(sourceState.tenantRowCounts, targetState.tenantRowCounts, "Per-tenant row counts differ."), failures);
     reportSection("referenced auth.users IDs", () => assert.equal(targetState.authUserCount, sourceState.authUserCount, "Referenced auth.users IDs differ."), failures);
