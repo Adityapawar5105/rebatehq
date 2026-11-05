@@ -4,7 +4,7 @@ import {writeFile,mkdir} from 'node:fs/promises';
 import {build} from 'esbuild';
 import {chromium} from '@playwright/test';
 import pg from 'pg';
-import {signInLocal,localUrl} from './vault-test-auth.mjs';
+import {signInLocal,localUrl,localDatabaseUrl} from './vault-test-auth.mjs';
 import {assertNoRelayPlaintext,scanRelayDatabase} from './relay-privacy-scan.mjs';
 const auth=process.argv.includes('--auth'),channel=process.argv.find(v=>v.startsWith('--browser='))?.split('=')[1]??'chrome';
 const base=process.env.VAULT_TEST_URL??'http://localhost:3100',route=auth?'/home':'/lab/vault';
@@ -21,7 +21,7 @@ async function close(page){await page.getByRole('button',{name:'Close shared inb
 async function syncAndSelect(page,title){await click(page,'Sync inbox');await page.getByRole('button',{name:title,exact:true}).click();}
 try{
  await mkdir('test-results',{recursive:true});
- if(auth){assert.equal(process.env.RELAY_ENABLED,'true','Authenticated CI relay gate must be explicitly enabled');localUrl(process.env.SEED_DATABASE_URL,'Relay test database');db=new pg.Client({connectionString:process.env.SEED_DATABASE_URL});await db.connect();}
+ if(auth){assert.equal(process.env.RELAY_ENABLED,'true','Authenticated CI relay gate must be explicitly enabled');localDatabaseUrl(process.env.SEED_DATABASE_URL,'Relay test database');db=new pg.Client({connectionString:process.env.SEED_DATABASE_URL});await db.connect();}
  else{const compiled=await build({entryPoints:['scripts/relay-browser-db.ts'],bundle:true,platform:'node',format:'esm',packages:'external',write:false});await writeFile('test-results/relay-browser-db.mjs',compiled.outputFiles[0].contents);local=await (await import('../test-results/relay-browser-db.mjs')).localRelayDatabase();db=local;}
  for(let i=0;i<3;i++){
   const context=await browser.newContext({viewport:{width:1365,height:900}});contexts.push(context);

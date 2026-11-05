@@ -8,6 +8,13 @@ export function localUrl(value, label) {
   assert.ok(["localhost", "127.0.0.1", "[::1]"].includes(url.hostname), `${label} must target the disposable local stack`);
   assert.ok(["http:", "https:"].includes(url.protocol)); return url;
 }
+/** A disposable local Postgres connection string (postgres:// or postgresql:// on a loopback host). */
+export function localDatabaseUrl(value, label) {
+  assert.ok(value, `${label} is required`);
+  const url = new URL(value);
+  assert.ok(["localhost", "127.0.0.1", "[::1]"].includes(url.hostname), `${label} must target the disposable local stack`);
+  assert.ok(["postgres:", "postgresql:"].includes(url.protocol), `${label} must be a Postgres connection string`); return url;
+}
 async function emailLink(mailUrl, email, authUrl) {
   const mailbox = email.split("@")[0];
   for (let attempt = 0; attempt < 45; attempt++) {
