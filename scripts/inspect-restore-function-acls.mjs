@@ -4,8 +4,11 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import pg from "pg";
 
-// All application functions participate in grant preservation. Only the two
-// functions implicated in Drill #9 are printed at every diagnostic checkpoint.
+// All application functions participate in grant preservation. Two app-executable
+// SECURITY DEFINER functions are printed at every diagnostic checkpoint. 6R dropped the
+// Chunk 2A pair that Drill #9 implicated, so these two now carry the same role; the list
+// is checked against config/function-acl-allowlist.sql by tests/restore-acl-checkpoints.test.js.
+export const FOCUS_FUNCTIONS = Object.freeze(["create_tenant_with_owner", "record_failed_login"]);
 export const FUNCTION_ACL_SQL = `
   SELECT p.proname::text AS function_name,
          format('%I.%I(%s)',n.nspname,p.proname,pg_get_function_identity_arguments(p.oid)) AS signature,
@@ -58,8 +61,9 @@ async function main() {
   try {
     await client.connect();
     const rows = (await client.query(FUNCTION_ACL_SQL)).rows;
-    const focus = rows.filter(row => ["convert_quantity","record_data_quality_issue"].includes(row.function_name));
-    assert.equal(new Set(focus.map(row => row.function_name)).size, 2, `${stage}: both Chunk 2A functions must exist.`);
+    const focus = rows.filter(row => FOCUS_FUNCTIONS.includes(row.function_name));
+    assert.equal(new Set(focus.map(row => row.function_name)).size, FOCUS_FUNCTIONS.length, `${stage}: every checkpoint focus function must exist (${FOCUS_FUNCTIONS.join(", ")}).`);
+    assert.ok(focus.some(row => row.grantee === "rebatehq_app"), `${stage}: the focus functions must keep their rebatehq_app EXECUTE grant.`);
     const output = `Function ACL checkpoint: ${stage}\n${JSON.stringify(focus,null,2)}`;
     process.stdout.write(`${output}\n`);
     if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, `\n### Function ACL checkpoint: ${stage}\n\n\`\`\`json\n${JSON.stringify(focus,null,2)}\n\`\`\`\n`);

@@ -44,3 +44,25 @@ test("workflow order diagnostic prints every named step and local/hosted conditi
   assert.ok(result.indexOf("Capture function ACLs after data restore") < result.indexOf("Compare restored role attributes"));
   assert.match(result,/Stop local target stack \[if: always\(\) && inputs.target == 'local'\]/);
 });
+
+test("restore checkpoint focus functions exist after every migration and keep their app grant (6R regression)", async () => {
+  // Restore Drill #17 failed because the checkpoint still required two functions 6R dropped.
+  const { FOCUS_FUNCTIONS } = await import("../scripts/inspect-restore-function-acls.mjs");
+  const registry = fs.readFileSync(path.join(__dirname, "..", "config", "function-acl-allowlist.sql"), "utf8");
+  assert.ok(FOCUS_FUNCTIONS.length >= 2);
+  for (const name of FOCUS_FUNCTIONS) assert.match(registry, new RegExp(`'public\\.${name}\\([^)]*\\)',ARRAY\\[[^\\]]*'rebatehq_app'`), `${name} must be registered with a rebatehq_app grant`);
+  const { PGlite } = await import("@electric-sql/pglite");
+  const { pgcrypto } = await import("@electric-sql/pglite/contrib/pgcrypto");
+  const { btree_gist } = await import("@electric-sql/pglite/contrib/btree_gist");
+  const { FUNCTION_ACL_SQL } = await import("../scripts/inspect-restore-function-acls.mjs");
+  const db = new PGlite({ extensions: { pgcrypto, btree_gist } });
+  try {
+    await db.exec(`CREATE SCHEMA extensions;CREATE SCHEMA auth;CREATE ROLE anon;CREATE ROLE authenticated;CREATE ROLE service_role BYPASSRLS;
+      CREATE TABLE auth.users(id uuid PRIMARY KEY,email text,email_confirmed_at timestamptz);
+      CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;`);
+    for (const name of fs.readdirSync(path.join(__dirname, "..", "supabase", "migrations")).filter(n => n.endsWith(".sql")).sort())
+      await db.exec(fs.readFileSync(path.join(__dirname, "..", "supabase", "migrations", name), "utf8"));
+    const rows = (await db.query(FUNCTION_ACL_SQL)).rows;
+    for (const name of FOCUS_FUNCTIONS) assert.ok(rows.some(row => row.function_name === name && row.grantee === "rebatehq_app"), `${name} exists with its rebatehq_app EXECUTE grant after all migrations`);
+  } finally { await db.close(); }
+});

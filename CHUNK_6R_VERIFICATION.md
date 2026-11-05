@@ -53,6 +53,14 @@ The user's Supabase account (organization "Adi") has **no projects** (checked 5 
 | `check-service-role` | Passed |
 | New `tests/chunk6r-retirement.test.ts` | Seeds customer, product and a quote that references them, then applies 6R. Exactly the 20 expected tables remain, the quote rows keep their IDs, no foreign key points at a dropped table, the three functions are gone and every table still forces RLS. The migration refuses to run if an expected foreign key is missing |
 
+## CI and Restore Drill
+
+- [RebateHQ CI #72](https://github.com/Adityapawar5105/rebatehq/actions/runs/41974478845) passed on `2afefc5`. It ran 75 JS and 116 TS tests, the pgTAP suite twice on real PostgreSQL 17 (`1..113` each run, row counts unchanged), and the authenticated privacy gate.
+- [Restore Drill #17](https://github.com/Adityapawar5105/rebatehq/actions/runs/41976359534) on `2afefc5` **failed** at its first function-ACL checkpoint, before any restore. `scripts/inspect-restore-function-acls.mjs` still required the two Chunk 2A functions (`convert_quantity`, `record_data_quality_issue`) that 6R dropped. CI never runs that workflow-only script.
+- **Fix:** the checkpoint now prints `create_tenant_with_owner` and `record_failed_login`, two app-executable SECURITY DEFINER functions that remain. It still requires their `rebatehq_app` grant. Every application function's grants are still compared at each stage, as before.
+- **Regression test:** `tests/restore-acl-checkpoints.test.js` checks that the focus functions are in the ACL registry and exist with their app grant after all migrations. A future drop now fails in CI.
+- A sweep of every other script the drill calls found no other wave-1 assumption.
+
 ## Not verified yet
 
 - **CI:** the real-Postgres pgTAP suite, the restricted-role checks and the authenticated privacy gate.
