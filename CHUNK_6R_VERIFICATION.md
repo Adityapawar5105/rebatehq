@@ -1,6 +1,6 @@
 # Chunk 6R verification — legacy table retirement, wave 1
 
-5 November 2026. **Local evidence; pending RebateHQ CI and a user-run Restore Drill.** The new migration stays *pending* in `migrations.lock` until both pass; then it is locked in a follow-up change. Plan: [RETIREMENT_PROPOSAL.md](./RETIREMENT_PROPOSAL.md) (approved 5 Nov 2026; blueprint section 22, items 15 and 18).
+5 November 2026. **6R is complete and CI-verified:** RebateHQ [CI #73](https://github.com/Adityapawar5105/rebatehq/actions/runs/41977200715) and [Restore Drill #18](https://github.com/Adityapawar5105/rebatehq/actions/runs/41979671868) (local target) passed on `8a34e06`. The migration is now **locked** in `migrations.lock` (10 applied, 0 pending). Plan: [RETIREMENT_PROPOSAL.md](./RETIREMENT_PROPOSAL.md) (approved 5 Nov 2026; blueprint section 22, items 15 and 18).
 
 ## Precondition
 
@@ -61,8 +61,12 @@ The user's Supabase account (organization "Adi") has **no projects** (checked 5 
 - **Regression test:** `tests/restore-acl-checkpoints.test.js` checks that the focus functions are in the ACL registry and exist with their app grant after all migrations. A future drop now fails in CI.
 - A sweep of every other script the drill calls found no other wave-1 assumption.
 
-## Not verified yet
+## Verified by Restore Drill #18
 
-- **CI:** the real-Postgres pgTAP suite, the restricted-role checks and the authenticated privacy gate.
-- **The user-run Restore Drill** with the new seed, sentinel and equivalence checks.
-- The migration is pending, not locked, until both pass.
+- Every `rebatehq_app` function grant was preserved through the source, after-schema, after-cleanup and after-data stages.
+- The rebate-agreement sentinel was restored with the source content hash.
+- Restore-mode pgTAP passed `1..116` twice, with tenant row counts unchanged.
+
+## Not verified
+
+- The migration has not been applied to any hosted database: none exists. It must ship with the matching app build.

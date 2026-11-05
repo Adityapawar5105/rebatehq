@@ -7,9 +7,9 @@
   "hashUpdateDate": "2026-10-25",
   "hashUpdateReason": "Windows CRLF versus CI LF caused different raw-byte hashes; normalized hash matches the CI content hash.",
   "sqlContentUnchangedSinceBaselineRun": true,
-  "lockUpdateDate": "2026-11-04",
-  "lockUpdateReason": "Chunk 5B control-plane migration promoted from pending to locked after RebateHQ CI #65 and Restore Drill #16 (local) passed on 38911ee (CI #63 on 8867b96 and CI #64 on 1dd9451 also applied it; Drill #15 failed only on a verifier ACL-default bug fixed in 38911ee, not on the migration); normalized hash and SQL content unchanged since 8867b96. Prior locked migrations unchanged.",
-  "appliedThrough": "20261104160022_chunk5b_control_plane.sql",
+  "lockUpdateDate": "2026-11-05",
+  "lockUpdateReason": "Chunk 6R wave-1 retirement migration promoted from pending to locked after RebateHQ CI #73 and Restore Drill #18 (local) passed on 8a34e06 (CI #72 on 2afefc5 also applied it; Drill #17 failed only on a drill ACL-checkpoint script that still named two functions 6R drops, fixed in 8a34e06, not on the migration); normalized hash and SQL content unchanged since 2afefc5. Prior locked migrations unchanged.",
+  "appliedThrough": "20261105120000_chunk6r_retire_wave1.sql",
   "appliedMigrations": {
     "202610240001_phase1_foundation.sql": "8faa57997119f29b3921b0e15b4b9e964edbc7fa2ecd8b52fbe32392be38c3bb",
     "202610250001_revoke_platform_public_privileges.sql": "d4b48072fac75e3d5a6683fe4b13e00042c9feb5a6a65a9e5576e44ecb9214a2",
@@ -19,7 +19,8 @@
     "20261028173257_chunk2c_foundation_tables.sql": "03fccfa0a75954c206e2b091c474409162304d770e5803c3a7e2527bfcaa6dc3",
     "20261029175710_chunk3c_invoice_actual_cost.sql": "c5d8c6da2caf5018ace042ed8ff79e988781c096af51a9b3776ef68c1930a353",
     "20261104120000_rename_app_role_to_rebatehq.sql": "5bb6e52a4b94e0b6710c79e952e4e8f7b23004800a47d6f503432551f3a57008",
-    "20261104160022_chunk5b_control_plane.sql": "5eb84212424e1c3d92e0ef3768cabf5bb6335c6e53343073d7f4babad165c34d"
+    "20261104160022_chunk5b_control_plane.sql": "5eb84212424e1c3d92e0ef3768cabf5bb6335c6e53343073d7f4babad165c34d",
+    "20261105120000_chunk6r_retire_wave1.sql": "855101531f9846b1f50dc088b370b3c21e4834a0deb72a7b25863ac9f662a668"
   },
   "appliedOrder": [
     "202610240001_phase1_foundation.sql",
@@ -30,14 +31,11 @@
     "20261028173257_chunk2c_foundation_tables.sql",
     "20261029175710_chunk3c_invoice_actual_cost.sql",
     "20261104120000_rename_app_role_to_rebatehq.sql",
-    "20261104160022_chunk5b_control_plane.sql"
-  ],
-  "pendingOrder": [
+    "20261104160022_chunk5b_control_plane.sql",
     "20261105120000_chunk6r_retire_wave1.sql"
   ],
-  "pendingMigrations": {
-    "20261105120000_chunk6r_retire_wave1.sql": "855101531f9846b1f50dc088b370b3c21e4834a0deb72a7b25863ac9f662a668"
-  },
+  "pendingOrder": [],
+  "pendingMigrations": {},
   "appliedMigrationEvidence": {
     "202610250001_revoke_platform_public_privileges.sql": {
       "date": "2026-10-26",
@@ -86,6 +84,12 @@
       "commit": "38911ee",
       "ciRun": "https://github.com/Adityapawar5105/rebatehq/actions/runs/41883249192",
       "restoreRun": "https://github.com/Adityapawar5105/rebatehq/actions/runs/41886437905"
+    },
+    "20261105120000_chunk6r_retire_wave1.sql": {
+      "date": "2026-11-05",
+      "commit": "8a34e06",
+      "ciRun": "https://github.com/Adityapawar5105/rebatehq/actions/runs/41977200715",
+      "restoreRun": "https://github.com/Adityapawar5105/rebatehq/actions/runs/41979671868"
     }
   }
 }
