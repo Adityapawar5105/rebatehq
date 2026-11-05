@@ -1,6 +1,12 @@
 # Chunk 6B verification — security review and whitepaper
 
-5 November 2026. Baseline `adb6265`; current changes **unverified in CI**.
+5 November 2026. Baseline `adb6265`; **6B CI-verified** in [CI #75](https://github.com/Adityapawar5105/rebatehq/actions/runs/41989796464) on `ade310e`, 5 November 2026.
+The GitHub run API says completed/success. Its job log confirms the required
+authenticated privacy step ran and passed: `auth:true`, `status:passed`,
+**36 named checks**, including both tampered-asset probes. Unit suite: **76 JS +
+118 TS = 194 tests**, no failures/skips. Real Postgres: **113 checks twice**,
+planned equals ran and repeatability leaves row counts unchanged. The high/critical
+dependency audit gate passed (one tracked moderate advisory).
 No later chunk started. No SQL, migration, migration hash, dependency version or
 money calculation changed. Blueprint unchanged.
 
@@ -60,10 +66,34 @@ existing auth/pgTAP stubs in pnpm test; that does not replace real CI Postgres.
 
 ## Remaining unverified
 
-6B CI until linked; deployed/hosted Supabase sign-in and restore, hosted headers,
+Deployed/hosted Supabase sign-in and restore, hosted headers,
 rate limiter/proxy/log-retention/key-rotation configuration, headed/manual checks,
 physical crash/quota/picker/multi-tab recovery, historical storage-estimate
 discrepancy, cryptographic independent review (including the 64-bit nonce prefix),
 prospect ERP files/profiles and future relay. Full risk register has owner/date.
 No Restore Drill is required for this chunk because no schema, ACL or restore
 inventory changes. Prior local Restore #18 is not hosted restore evidence.
+
+## Files changed (20)
+
+- Runtime/build/CI: `.github/workflows/ci.yml`, `proxy.ts`,
+  `lib/secure-logger.ts`, `lib/spike/db.ts`, `lib/vault/engine.ts`,
+  `lib/vault/asset-integrity.ts`, `scripts/build-spike.mjs`,
+  `scripts/test-vault-browser.mjs`.
+- Tests: `tests/browser/vault-worker.ts`, `tests/security-review.test.ts`,
+  `tests/spike.test.ts`, `tests/vault.test.ts`.
+- Documents: `ASSUMPTIONS.md`, `BLUEPRINT_EXECUTION_PLAN.md`, `README.md`,
+  `SECURITY_CHECK.md`, `SECURITY_REVIEW.md`, `SECURITY_WHITEPAPER.md`,
+  `EXTERNAL_SECURITY_REVIEW.md`, `CHUNK_6B_VERIFICATION.md`.
+
+`git add` used the explicit list above; `git commit -F test-results/6b-commit.txt`
+and `git push origin main` passed (code commit ade310e). The pre-existing
+`.claude/` and `CODEX_PROMPT_6B.md` remain untouched/untracked. GitHub jobs,
+logs and run metadata were read to confirm CI #75's result and counts. No Restore
+Drill was triggered. This follow-up changes evidence documents only; the tested
+runtime/test/workflow content is still exactly ade310e.
+
+Documentation closeout validation: `node --test tests/brand-name.test.js`
+passed 2 tests; `pnpm check:migrations-lock` passed (10 applied / 0 pending);
+`git diff --check` passed; `git diff adb6265 --name-only -- supabase/migrations migrations.lock`
+was empty. No locked migration or hash changed.

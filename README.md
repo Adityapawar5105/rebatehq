@@ -3,7 +3,7 @@
 Security: [one-page whitepaper](./SECURITY_WHITEPAPER.md),
 [STRIDE review and findings](./SECURITY_REVIEW.md), and
 [independent reviewer checklist](./EXTERNAL_SECURITY_REVIEW.md).
-Chunk 6B is built locally, awaiting CI; see [verification](./CHUNK_6B_VERIFICATION.md).
+Chunk 6B is CI-verified in [CI #75](https://github.com/Adityapawar5105/rebatehq/actions/runs/41989796464) on `ade310e`, 5 November 2026; see [verification](./CHUNK_6B_VERIFICATION.md).
 These documents distinguish the local vault flow from control metadata and
 remaining legacy readers. They make no app-wide or independently certified
 security claim.
@@ -65,7 +65,7 @@ RebateHQ is being moved from a browser-local prototype to a multi-tenant app for
 | 0–3 | Foundations | 0, 1, 2A–2C, 3A–3C | Verified (CI #39, Restore Drill #13) |
 | 4 | Phase 1 core | 4.0, 4A, 4B, 4C-1/4C-2, 4D, 4E | Implemented; 4E CI-verified in [CI #55](https://github.com/Adityapawar5105/rebatehq/actions/runs/41814159704), `7fe3db8`; performance remains local evidence |
 | 5 | Phase 1b + control plane | 5A cleanup, cost basis, checklist, roles · 5B licences, retire server business-data paths, carried security fixes | **5A CI-verified** in [RebateHQ CI #59](https://github.com/Adityapawar5105/rebatehq/actions/runs/41854329390) on `632b24f`, [CI #60](https://github.com/Adityapawar5105/rebatehq/actions/runs/41855953059) on `7ec683e` (real-export evidence), and [CI #61](https://github.com/Adityapawar5105/rebatehq/actions/runs/41858525178) on `2fbb283` (merge-all and batch undo), 4 November 2026. See [CHUNK_5A_VERIFICATION.md](./CHUNK_5A_VERIFICATION.md). **5B CI-verified** in [CI #65](https://github.com/Adityapawar5105/rebatehq/actions/runs/41883249192) on `38911ee` and [Restore Drill #16](https://github.com/Adityapawar5105/rebatehq/actions/runs/41886437905); see [CHUNK_5B_VERIFICATION.md](./CHUNK_5B_VERIFICATION.md) |
-| 6 | Pilot hardening + security | 6A real files · 6R legacy table retirement (wave 1) · 6B security review and whitepaper → sellable v1 | 6A CI-verified (CI #68, #69, #70); see [CHUNK_6A_VERIFICATION.md](./CHUNK_6A_VERIFICATION.md). 6R CI-verified (CI #73, Restore Drill #18; 22 server tables dropped, 20 remain); see [CHUNK_6R_VERIFICATION.md](./CHUNK_6R_VERIFICATION.md). 6B built locally; awaiting CI ([record](./CHUNK_6B_VERIFICATION.md)) |
+| 6 | Pilot hardening + security | 6A real files · 6R legacy table retirement (wave 1) · 6B security review and whitepaper → sellable v1 | 6A CI-verified (CI #68, #69, #70); see [CHUNK_6A_VERIFICATION.md](./CHUNK_6A_VERIFICATION.md). 6R CI-verified (CI #73, Restore Drill #18; 22 server tables dropped, 20 remain); see [CHUNK_6R_VERIFICATION.md](./CHUNK_6R_VERIFICATION.md). 6B CI-verified ([CI #75](https://github.com/Adityapawar5105/rebatehq/actions/runs/41989796464), ade310e); see [record](./CHUNK_6B_VERIFICATION.md) |
 | 7 | Phase 2 | 7A–7F | Not started |
 | 8 | Phase 3 | 8A–8D | Not started |
 

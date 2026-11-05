@@ -13,7 +13,8 @@
   verified in-memory WASM can load. Page connect-src stays self-only.
 - Existing passing evidence: CI #73 / Restore #18, 113 fresh / 116 restored
   checks, 20 server tenant tables. New integrity/logging/audit-gate changes are
-  unverified in CI until the 6B record links a passing run.
+  CI-verified in [CI #75](https://github.com/Adityapawar5105/rebatehq/actions/runs/41989796464) on `ade310e`, 5 November 2026: 194 unit tests, 113 fresh checks twice,
+  36 named authenticated local-stack privacy checks.
 - One moderate UUID advisory is retained for review (ExcelJS calls the unaffected
   v4 path). No high/critical advisory in the 5 Nov audit. The CI high/critical
   audit gate fails closed; it cannot prove absence of unknown vulnerabilities.

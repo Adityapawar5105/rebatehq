@@ -7,7 +7,10 @@ Customer-facing, evidence-limited page: [SECURITY_WHITEPAPER.md](./SECURITY_WHIT
 Independent review: [EXTERNAL_SECURITY_REVIEW.md](./EXTERNAL_SECURITY_REVIEW.md),
 not performed. No discovered high/critical finding in this first-party review;
 this is not a certification. Engine asset integrity and fixed-field auth logging
-are fixed in code, **unverified in CI** pending the 6B run. The dependency audit
+are **CI-verified** in [CI #75](https://github.com/Adityapawar5105/rebatehq/actions/runs/41989796464) on `ade310e`, 5 November 2026. The required authenticated
+privacy gate ran (not skipped): `auth: true`, `status: passed`, 36 named checks,
+including both tampered-asset rejections under production CSP. 76 JS + 118 TS
+tests and 113 real-Postgres checks twice passed. The dependency audit
 has zero high/critical and one moderate UUID advisory on an unused v3/v5/v6 path;
 CI now rejects high/critical advisories. No SQL, migration, DB grant or locked
 hash changed. Existing CI #73 / Restore #18 remain the control-plane baseline

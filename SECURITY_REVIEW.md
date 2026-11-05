@@ -6,8 +6,9 @@ and design requirements for the **unimplemented** collaboration relay.
 This is a first-party engineering review, not an independent penetration test.
 No high or critical vulnerability was identified in the reviewed paths. That is
 not a claim that none exists. See the findings and external review gates below.
-Current 6B changes are **unverified in CI** until the run is recorded in
-[CHUNK_6B_VERIFICATION.md](./CHUNK_6B_VERIFICATION.md).
+6B is **CI-verified** in [CI #75](https://github.com/Adityapawar5105/rebatehq/actions/runs/41989796464) on `ade310e`, 5 November 2026: 194 unit tests,
+113 fresh pgTAP checks twice and 36 named authenticated privacy checks.
+See [CHUNK_6B_VERIFICATION.md](./CHUNK_6B_VERIFICATION.md).
 
 ## Assets and trust boundaries
 
@@ -64,7 +65,7 @@ The relay row is a **pre-enable checklist**, not test evidence.
 |---|---|
 | CSP | Production nonce + `strict-dynamic`; no JS `unsafe-eval`; `wasm-unsafe-eval` scoped to local/lab assets; worker `self blob:`; local page connect-src self, worker assets self + blob for verified WASM; object/frame denied. Inline styles remain allowed. Browser gate checks production headers. CSP is mitigation, not a defence against trusted malicious app code |
 | COOP/COEP | `same-origin` / `require-corp` in Next headers, confirmed in gate. Real local Supabase PKCE/callback works in CI. Hosted sign-in, SSO and third-party resources remain unverified |
-| SRI / engine assets | 6B embeds SHA-256 + exact-byte pins into owning bundles, verifies Fetch SRI and bytes before executing child workers/WASM via ephemeral Blob URLs; redirects forbidden, 30s deadline, no runtime manifest trust. Top-level app JS/worker and the pins trust the same deployment. Browser tamper probes + `security-review.test.ts`; 6B CI pending |
+| SRI / engine assets | 6B embeds SHA-256 + exact-byte pins into owning bundles, verifies Fetch SRI and bytes before executing child workers/WASM via ephemeral Blob URLs; redirects forbidden, 30s deadline, no runtime manifest trust. Top-level app JS/worker and the pins trust the same deployment. Browser tamper probes + `security-review.test.ts`; CI #75 passed |
 | Dependency audit | `pnpm audit --json`, 5 Nov: 0 critical/high, 1 moderate (`exceljs > uuid@8.3.2`, GHSA-w5hq-g745-h8pq). ExcelJS uses `v4()` without output buffers; advisory affects v3/v5/v6 buffer handling. Do not force a major override without compatibility testing. CI now fails on high/critical advisories and on audit-service failure. Audit does not cover every flaw, the vendored WASM engine or all tarball advisories |
 | KDF and encryption | PBKDF2-HMAC-SHA256 600,000; random 128-bit salt; nonextractable AES-256-GCM key; 1 MiB chunks, full header + chunk-index AAD; fixed bounded metadata checked before KDF/allocation. Passphrases 12–256 characters; recommend a long unique phrase. Not a FIPS certification. 64-bit random snapshot nonce prefix + 32-bit chunk counter: see R03 |
 | Auto-lock | Ten-minute worker timer reset by activity; cancels active work then serializes save/dispose; even failed save disposes engine/key reference. Tests use a shortened timer. Browser suspension or a stuck engine can delay it; OS screen lock still needed. JS strings/GC offer no verified erasure |
@@ -77,12 +78,13 @@ The relay row is a **pre-enable checklist**, not test evidence.
 
 Severity reflects a concrete exploit path, not just impact if the trusted OS or
 deployment is fully compromised. **No open high/critical finding** from this review.
-Closed-in-code items stay unverified in CI until the new run passes.
+F01/F02 and their regression tests passed in CI #75; remaining items are open
+limits or operational checks, not claimed verified.
 
 | ID | Severity / state | Finding / action | Owner / due date |
 |---|---|---|---|
-| F01 | Medium, fixed; CI pending | Build hashes were unused at runtime. Verify child-worker/WASM bytes with embedded pins, reject corruption in browser tests | Aditya Pawar / 2026-11-05 |
-| F02 | Medium, fixed; CI pending | Auth logger accepted arbitrary/nested fields and raw IP under an `ip_hash` label. Fixed allowlists, email hashing and no raw-IP logging; regression tests | Aditya Pawar / 2026-11-05 |
+| F01 | Medium, fixed; CI #75 passed | Build hashes were unused at runtime. Verify child-worker/WASM bytes with embedded pins, reject corruption in browser tests | Aditya Pawar / 2026-11-05 |
+| F02 | Medium, fixed; CI #75 passed | Auth logger accepted arbitrary/nested fields and raw IP under an `ip_hash` label. Fixed allowlists, email hashing and no raw-IP logging; regression tests | Aditya Pawar / 2026-11-05 |
 | R01 | Moderate, open | UUID advisory in ExcelJS: current v4 call not affected. Evaluate upstream release or a tested replacement; audit gate covers new high/critical issues | Aditya Pawar / 2026-11-19 |
 | R02 | Medium, open | No independent review or hosted config evidence. Run external checklist before broad paid deployment; pilot risk must be disclosed | Aditya Pawar + independent reviewer / 2026-11-19 |
 | R03 | Medium, open | GCM prefix has 64 random bits per snapshot under a reused derived key; collision probability grows with saves. Independently review a format-versioned per-snapshot subkey/nonce design and legacy compatibility before high-volume deployment. No cryptographic redesign in this review | Aditya Pawar + cryptography reviewer / 2026-11-19 |
