@@ -473,3 +473,14 @@ and their lock entries stay unchanged. The new migration stays pending until
 CI and the user's restore run pass. Concurrent blueprint v2.3/7U planning edits
 were observed during this work; they do not authorize implementing 7U or another
 chunk. This chunk makes no blueprint changes and does not commit those edits.
+
+## Chunk 7U — UX foundations (5 November 2026, local evidence only until CI)
+
+- **Languages:** English (en-US formats), Spanish (`es`, formal *usted*, es-US formats), French (fr-FR formats) and Canadian French (fr-CA, overrides only where wording differs). Machine-assisted translations; native-speaker review is required before a language ships to a pilot (blueprint section 13).
+- **No currency column yet:** money shows as an exact decimal amount with locale separators. Screens that already showed `$` (Margin, Leak Report) keep a currency symbol with USD assumed, as before 7U. Real currency handling belongs to the later FX work.
+- **Display preferences** (language and theme) are UI settings, kept in `localStorage` and first-party cookies (`rebatehq_locale`, `rebatehq_theme`). They hold no business data.
+- **Client screens render English for the first paint** (server rendering and hydration), then apply the stored language. Server-rendered account pages use the cookie or Accept-Language.
+- **Worker-created text** carries its message key invisibly (Unicode tag characters), so stored text such as Fix Later reasons, cleanup summaries, leak titles and rule explanations translates at render time. Vaults saved before 7U hold plain English for these fields; it is shown as stored.
+- **Kept language-neutral on purpose:** ERP exports and their change log, audit-log details, mapper header synonyms, Playground sample data and the invitation e-mail body.
+- **Not translated:** the legacy server pages behind the default-off flag (`app/legacy/**`, `app/dashboard`). They are retired in 8R.
+- **The pseudo-locale is a test tool.** It is offered in the lab harness and reachable through stored preference.

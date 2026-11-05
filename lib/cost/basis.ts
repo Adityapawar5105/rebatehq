@@ -12,9 +12,10 @@ import { sqlText } from "../spike/exact";
 import { rateBp, bpText } from "../margin/decimal";
 import { rhaSql } from "../margin/sql";
 import { VaultError } from "../vault/protocol";
+import { msg } from "../i18n/core";
 export const BASES = ["last", "average", "replacement"] as const;
 export type BasisId = typeof BASES[number];
-export const BASIS_LABEL: Record<BasisId | "invoice", string> = { invoice: "Invoice cost", last: "Last cost", average: "Average cost", replacement: "Replacement cost" };
+export const BASIS_LABEL: Record<BasisId | "invoice", string> = { invoice: msg("basis.lib.invoiceCost"), last: msg("basis.lib.lastCost"), average: msg("basis.lib.averageCost"), replacement: msg("basis.lib.replacementCost") };
 export const NO_CATEGORY = "(No category)";
 export type BasisCols = { pocket: string; cost: string; margin: string; rate: string; uncostedLines: string };
 export type BasisGroup = { group: string; lines: string; invoice: BasisCols; last: BasisCols; average: BasisCols; replacement: BasisCols; selected: BasisId | null; selectedMargin: string; selectedRate: string };
@@ -27,7 +28,7 @@ function cols(r: Record<string, unknown>, k: string): BasisCols {
   const pocket = big(r[`${k}_pocket`]), cost = big(r[`${k}_cost`]), margin = pocket - cost;
   return { pocket: String(pocket), cost: String(cost), margin: String(margin), rate: bpText(rateBp(margin, pocket)), uncostedLines: String(r[`${k}_unknown`]) };
 }
-export const FORMULA = "Margin under a basis = pocket of the lines whose product has that cost - (unit cost x quantity, rounded half away from zero per customer x product x month). Products without that cost are left out and counted, never costed at zero.";
+export const FORMULA = msg("basis.lib.marginUnderABasis");
 /** Per-product unit costs as a fraction num/den (exact), one CTE per basis. */
 const BASES_SQL = `WITH v AS (SELECT product_id, cost, row_number() OVER (PARTITION BY product_id ORDER BY effective_date DESC, id DESC) AS rk FROM vendor_costs),
 c_last AS (SELECT product_id, CAST(cost AS HUGEINT) AS num, CAST(1 AS HUGEINT) AS den FROM v WHERE rk = 1),
@@ -56,8 +57,8 @@ GROUP BY coalesce(nullif(p.category, ''), ${sqlText(NO_CATEGORY)}), s.basis ORDE
 }
 /** SQL that records the basis chosen for a product group (the "(No category)" label stands for an empty category). */
 export function basisSql(group: string, basis: BasisId | null) {
-  if (typeof group !== "string" || !group.trim() || group.length > 160 || /[\x00-\x1f]/.test(group)) throw new VaultError("COST_BASIS", "Choose a product group.");
-  if (basis !== null && !BASES.includes(basis)) throw new VaultError("COST_BASIS", "Choose last, average or replacement cost.");
+  if (typeof group !== "string" || !group.trim() || group.length > 160 || /[\x00-\x1f]/.test(group)) throw new VaultError("COST_BASIS", msg("basis.lib.chooseAProductGroup"));
+  if (basis !== null && !BASES.includes(basis)) throw new VaultError("COST_BASIS", msg("basis.lib.chooseLastAverageOr"));
   const key = group === NO_CATEGORY ? "" : group;
   return `DELETE FROM cost_basis_settings WHERE product_group=${sqlText(key)};${basis ? ` INSERT INTO cost_basis_settings VALUES(${sqlText(key)},${sqlText(basis)});` : ""}`;
 }

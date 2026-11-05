@@ -7,6 +7,7 @@ import * as XLSX from "xlsx";
 import { MAX_CELL, MAX_COLUMNS } from "./text";
 import { StudioError, columnLetter, type StudioIssue } from "./formats";
 import type { Grid } from "./sheets";
+import { msg } from "../i18n/core";
 
 type Part = { method: number; packed: number; dataAt: number };
 /** Central directory: part name -> where its (possibly deflated) bytes start. */
@@ -14,7 +15,7 @@ function parts(bytes: Uint8Array) {
   const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), out = new Map<string, Part>();
   let end = -1;
   for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 65557); i--) if (v.getUint32(i, true) === 0x06054b50) { end = i; break; }
-  if (end < 0) throw new StudioError("Unsupported workbook ZIP directory.");
+  if (end < 0) throw new StudioError(msg("sheet.stream.unsupportedWorkbookZipDirectory"));
   let at = v.getUint32(end + 16, true);
   for (let i = 0, count = v.getUint16(end + 10, true); i < count; i++) {
     const method = v.getUint16(at + 10, true), packed = v.getUint32(at + 20, true), n = v.getUint16(at + 28, true), extra = v.getUint16(at + 30, true), comment = v.getUint16(at + 32, true), local = v.getUint32(at + 42, true);
@@ -50,7 +51,7 @@ async function book(bytes: Uint8Array, sheet: string): Promise<Book> {
   const rid = tag && /\br:id="([^"]+)"/.exec(tag)?.[1];
   const rel = rid ? [...rels.matchAll(/<Relationship\b[^>]*>/g)].map(m => m[0]).find(t => attr(t, "Id") === rid) : null;
   const target = rel ? attr(rel, "Target") : null;
-  if (!target) throw new StudioError("That sheet was not found in the workbook.");
+  if (!target) throw new StudioError(msg("sheet.stream.thatSheetWasNot2"));
   const sheetPath = target.startsWith("/") ? target.slice(1) : "xl/" + target.replace(/^\.\//, "");
   const shared: string[] = [];
   for (const m of (await text(bytes, zip.get("xl/sharedStrings.xml"))).matchAll(/<si\b[^>]*?(?:\/>|>([\s\S]*?)<\/si>)/g)) shared.push(runs(m[1] ?? ""));
@@ -65,7 +66,7 @@ const pad = (n: number, w: number) => String(n).padStart(w, "0");
 /** The sheet's declared size (<dimension>), or null when the sheet does not declare one. */
 export async function sheetSize(bytes: Uint8Array, sheet: string, known?: Book) {
   const b = known ?? await book(bytes, sheet), part = parts(bytes).get(b.sheetPath);
-  if (!part) throw new StudioError("That sheet was not found in the workbook.");
+  if (!part) throw new StudioError(msg("sheet.stream.thatSheetWasNot"));
   let head = "";
   for await (const c of chunks(bytes, part)) { head += c; if (head.length > 8192 || head.includes("<sheetData")) break; }
   const m = /<dimension\b[^>]*\bref="([A-Z]+\d+)(?::([A-Z]+\d+))?"/.exec(head);
@@ -80,27 +81,27 @@ class Stop extends Error {}
  */
 export async function streamSheet(bytes: Uint8Array, sheet: string, sink: RowSink, issues: StudioIssue[], signal?: AbortSignal) {
   const b = await book(bytes, sheet), size = await sheetSize(bytes, sheet, b), part = parts(bytes).get(b.sheetPath)!;
-  if (!size) throw new StudioError("This sheet does not declare its size. Save it as CSV and import the CSV instead.");
+  if (!size) throw new StudioError(msg("sheet.stream.thisSheetDoesNot2"));
   const width = Math.min(size.lastCol - size.firstCol + 1, MAX_COLUMNS), rowRe = /<row\b([^>]*?)(?:\/>|>([\s\S]*?)<\/row>)/g, cellRe = /<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g;
   let buffer = "", next = size.firstRow, index = 0, done = false, issueCount = 0;
   const issue = (x: StudioIssue) => { issueCount++; if (issues.length < 10_000) issues.push(x); };
   const emit = (cells: string[], row: number) => { sink(cells, row, index++); };
   const cellText = (attrs: string, inner: string, row: number, col: number) => {
     const where = columnLetter(col);
-    if (inner.includes("<f")) { issue({ row, column: where, message: "Formula ignored; its cached result was not read. Type the value or export values only." }); return ""; }
+    if (inner.includes("<f")) { issue({ row, column: where, message: msg("sheet.stream.formulaIgnoredItsCached") }); return ""; }
     const t = attr(attrs, "t") ?? "n", v = /<v>([\s\S]*?)<\/v>/.exec(inner)?.[1];
     if (t === "inlineStr") return runs(/<is>([\s\S]*?)<\/is>/.exec(inner)?.[1] ?? "");
     if (v === undefined) return "";
     if (t === "s") return b.shared[Number(v)] ?? "";
     if (t === "str") return unescapeXml(v);
     if (t === "b") return v === "1" ? "TRUE" : "FALSE";
-    if (t === "e") { issue({ row, column: where, message: "Spreadsheet error value; the cell was left blank." }); return ""; }
+    if (t === "e") { issue({ row, column: where, message: msg("sheet.stream.spreadsheetErrorValueThe") }); return ""; }
     if (t === "d") return /^\d{4}-\d{2}-\d{2}/.exec(v)?.[0] ?? "";
     const n = Number(v);
     if (!Number.isFinite(n)) return "";
     if (b.dateStyles.has(Number(attr(attrs, "s") ?? 0))) { const p = XLSX.SSF.parse_date_code(n, { date1904: b.date1904 }); return p ? `${p.y}-${pad(p.m, 2)}-${pad(p.d, 2)}` : ""; }
     const s = String(n);
-    if (/e/i.test(s)) { issue({ row, column: where, message: "Number too large or small to read exactly; the cell was left blank." }); return ""; }
+    if (/e/i.test(s)) { issue({ row, column: where, message: msg("sheet.stream.numberTooLargeOr") }); return ""; }
     return s;
   };
   for await (const chunk of chunks(bytes, part, signal)) {
@@ -128,17 +129,17 @@ export async function streamSheet(bytes: Uint8Array, sheet: string, sink: RowSin
     if (buffer.includes("</sheetData>")) { done = true; break; }
     const open = buffer.indexOf("<row"); buffer = open >= 0 ? buffer.slice(open) : buffer.slice(-16);
   }
-  if (!done && buffer.includes("<row")) throw new StudioError("The sheet ended part-way through a row. Save it again from Excel or LibreOffice.");
+  if (!done && buffer.includes("<row")) throw new StudioError(msg("sheet.stream.theSheetEndedPart"));
   return { rows: index, issueCount, firstRow: size.firstRow, firstCol: size.firstCol, width, wider: size.lastCol - size.firstCol + 1 > MAX_COLUMNS };
 }
 /** A preview grid of the first rows of a large sheet; the import streams the rest. */
 export async function sampleSheet(bytes: Uint8Array, sheet: string, limit = 400): Promise<Grid & { streamed: { totalRows: number } }> {
   const size = await sheetSize(bytes, sheet);
-  if (!size) throw new StudioError("This sheet does not declare its size. Save it as CSV and import the CSV instead.");
+  if (!size) throw new StudioError(msg("sheet.stream.thisSheetDoesNot"));
   const rows: string[][] = [], rowNumbers: number[] = [], issues: StudioIssue[] = [];
   try { await streamSheet(bytes, sheet, (cells, row) => { rows.push(cells); rowNumbers.push(row); if (rows.length >= limit) throw new Stop(); }, issues); }
   catch (error) { if (!(error instanceof Stop)) throw error; }
-  const notices = [`This sheet has about ${(size.lastRow - size.firstRow + 1).toLocaleString("en-US")} rows, more than a spreadsheet preview holds, so it is read in a stream. Merged cells are not filled in and hidden rows are read like visible ones.`];
-  if (size.lastCol - size.firstCol + 1 > MAX_COLUMNS) notices.push(`Only the first ${MAX_COLUMNS} columns were read.`);
+  const notices = [msg("sheet.stream.thisSheetHasAbout", { value: size.lastRow - size.firstRow + 1 })];
+  if (size.lastCol - size.firstCol + 1 > MAX_COLUMNS) notices.push(msg("sheet.stream.onlyTheFirstColumns", { maxcolumns: MAX_COLUMNS }));
   return { rows, rowNumbers, colOffset: size.firstCol, merged: false, notices, issues, keyed: false, streamed: { totalRows: size.lastRow - size.firstRow + 1 } };
 }

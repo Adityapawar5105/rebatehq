@@ -116,7 +116,8 @@ export type Commands = {
   marginMath: { metric: Metric; filters?: Filters; offset?: number };
   leaks: Record<string, never>;
   leakRows: { id: string; offset?: number };
-  leakReport: Record<string, never>;
+  leakReport: { locale?: string };
+  search: { text: string };
   roi: Record<string, never>;
   reconcile: Record<string, never>;
   reconAccept: { id: string | null };
@@ -128,6 +129,7 @@ export type Results = {
   relayView:RelayView;relayRegister:RelayView;relayJoin:RelayView;relayRotate:RelayView;relaySync:RelayView;relayShare:RelayView;relayRequest:RelayView;relayDecide:RelayView;relayComment:RelayView;relayRetry:RelayView;relayDiscard:RelayView;
   capacityUpgrade: VaultStatus;
   licenceSet: VaultStatus;
+  search: SearchHit[];
   home: HomeData; checklist: Checklist; checklistMark: Checklist; roleList: RoleList; roleSet: RoleList; roleRemove: RoleList; accessSet: RoleList; rolePreview: RoleList;
   cleanupScan: Scan; cleanupHistory: FixView[]; cleanupApply: CleanupApplied; cleanupUndo: CleanupUndone; cleanupMergeAll: CleanupMergedAll; cleanupUndoMany: CleanupUndone;
   costBasis: CostBasisView; costBasisSet: CostBasisView;
@@ -169,6 +171,8 @@ export type Response = { [K in Action]: { id: string; action: K; result: Results
   | { event: "locked"; reason: string }
   | { event: "writable" }
   | { event: "licence"; status:VaultStatus };
+/** Command palette hit: IDs and names only, never cost or price (chunk 7U). */
+export type SearchHit = { kind: "product" | "customer"; id: string; label: string; detail: string };
 export class VaultError extends Error {
   constructor(public code: string, message: string) { super(message); }
 }

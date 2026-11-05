@@ -66,7 +66,7 @@ RebateHQ is being moved from a browser-local prototype to a multi-tenant app for
 | 4 | Phase 1 core | 4.0, 4A, 4B, 4C-1/4C-2, 4D, 4E | Implemented; 4E CI-verified in [CI #55](https://github.com/Adityapawar5105/rebatehq/actions/runs/41814159704), `7fe3db8`; performance remains local evidence |
 | 5 | Phase 1b + control plane | 5A cleanup, cost basis, checklist, roles · 5B licences, retire server business-data paths, carried security fixes | **5A CI-verified** in [RebateHQ CI #59](https://github.com/Adityapawar5105/rebatehq/actions/runs/41854329390) on `632b24f`, [CI #60](https://github.com/Adityapawar5105/rebatehq/actions/runs/41855953059) on `7ec683e` (real-export evidence), and [CI #61](https://github.com/Adityapawar5105/rebatehq/actions/runs/41858525178) on `2fbb283` (merge-all and batch undo), 4 November 2026. See [CHUNK_5A_VERIFICATION.md](./CHUNK_5A_VERIFICATION.md). **5B CI-verified** in [CI #65](https://github.com/Adityapawar5105/rebatehq/actions/runs/41883249192) on `38911ee` and [Restore Drill #16](https://github.com/Adityapawar5105/rebatehq/actions/runs/41886437905); see [CHUNK_5B_VERIFICATION.md](./CHUNK_5B_VERIFICATION.md) |
 | 6 | Pilot hardening + security | 6A real files · 6R legacy table retirement (wave 1) · 6B security review and whitepaper → sellable v1 | 6A CI-verified (CI #68, #69, #70); see [CHUNK_6A_VERIFICATION.md](./CHUNK_6A_VERIFICATION.md). 6R CI-verified (CI #73, Restore Drill #18; 22 server tables dropped, 20 remain); see [CHUNK_6R_VERIFICATION.md](./CHUNK_6R_VERIFICATION.md). 6B CI-verified ([CI #75](https://github.com/Adityapawar5105/rebatehq/actions/runs/41989796464) on ade310e; [CI #77](https://github.com/Adityapawar5105/rebatehq/actions/runs/41992372460) on 0aae4aa); see [record](./CHUNK_6B_VERIFICATION.md) |
-| 7 | Phase 2 | 7A–7F | 7A CI-verified ([CI #82](https://github.com/Adityapawar5105/rebatehq/actions/runs/42034048481), [Restore Drill #19](https://github.com/Adityapawar5105/rebatehq/actions/runs/42043079490); migration locked). 7B–7F not started |
+| 7 | Phase 2 | 7A, 7U, 7B–7F | 7A CI-verified ([CI #82](https://github.com/Adityapawar5105/rebatehq/actions/runs/42034048481), [Restore Drill #19](https://github.com/Adityapawar5105/rebatehq/actions/runs/42043079490); migration locked). 7U built, local evidence only (CI pending). 7B–7F not started |
 | 8 | Phase 3 | 8A–8D | Not started |
 
 ## Local app
@@ -200,6 +200,10 @@ Keep `LEGACY_BUSINESS_ENABLED` unset/false. The retired class C/X handlers retur
 
 After an operator upgrades the workspace licence, an Owner/Admin can choose **Use licensed capacity** in local Settings. It updates only the encrypted vault’s capacity metadata, with a local audit entry; it neither sends rows to the server nor recreates the vault. Lower profiles stay available at setup.
 
+
+### Chunk 7U — themes, languages, command palette and glossary (local evidence; CI pending)
+
+Every screen now reads its text from message keys (`lib/i18n/locales`). The header has a **language** picker (English, Español, Français, Français (Canada)) and a **theme** picker (system, light, dark, high contrast). Both are display settings kept in this browser. Numbers, amounts, percentages and dates use `Intl`, and the Leak Report PDF is generated in the chosen language. **Ctrl/Cmd+K** opens a command palette for screens, commands, SKUs and customers. Typing only filters the list; SKU and customer matches come from the local vault and never include cost. A finance glossary on Home, and **?** buttons beside the margin numbers, explain the terms. ERP exports and the audit log stay language-neutral. Translations are machine-assisted and need native-speaker review before a pilot. See [CHUNK_7U_VERIFICATION.md](./CHUNK_7U_VERIFICATION.md).
 
 ### Chunk 7A — encrypted collaboration relay (CI-verified: CI #82, Restore Drill #19)
 

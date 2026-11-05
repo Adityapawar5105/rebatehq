@@ -5,6 +5,7 @@ import { csvSafeCell } from "../csv";
 import { FOOTER, TOTAL, classifyRow, headerNames, type Settings, type StudioIssue } from "./formats";
 import { CsvTokenizer, decodeChunks } from "./text";
 import type { Grid } from "./sheets";
+import { msg } from "../i18n/core";
 export const MAX_STORED_ISSUES = 10_000;
 export type Stats = { read: number; skipped: number; rejected: number; issues: StudioIssue[]; issueCount: number; rejectedRows: number[] };
 export const emptyStats = (): Stats => ({ read: 0, skipped: 0, rejected: 0, issues: [], issueCount: 0, rejectedRows: [] });
@@ -68,8 +69,8 @@ export class Normalizer {
     if (verdict !== "data") { this.stats.skipped++; return; }
     this.stats.read++;
     if (oversized && cut.length && this.allowLong(cut)) { this.longCellsIgnored++; oversized = false; }
-    if (oversized) { this.reject(row); addIssue(this.stats, { row, column: "", message: "A cell is longer than 4,000 characters or the row has more than 256 columns. The row was not loaded." }); return; }
-    if (cells.length > width && cells.slice(width).some(v => v !== "")) { this.reject(row); addIssue(this.stats, { row, column: this.letter(width), message: "The row has more values than there are column headers. The row was not loaded." }); return; }
+    if (oversized) { this.reject(row); addIssue(this.stats, { row, column: "", message: msg("issue.row.aCellIsLonger") }); return; }
+    if (cells.length > width && cells.slice(width).some(v => v !== "")) { this.reject(row); addIssue(this.stats, { row, column: this.letter(width), message: msg("issue.row.theRowHasMore") }); return; }
     const out = cells.length === width ? cells : cells.length > width ? cells.slice(0, width) : [...cells, ...new Array(width - cells.length).fill("")];
     this.onData(out.map(v => v.trim()), row);
   }

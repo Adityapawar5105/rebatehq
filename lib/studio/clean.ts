@@ -2,12 +2,13 @@
 // validation. Anything that cannot be cleaned unambiguously is returned unchanged,
 // so the import rejects it with a location instead of guessing. Pure functions.
 import { isoDate, type DateFormat } from "./formats";
+import { msg } from "../i18n/core";
 export type CleanNote = "symbols" | "grouping" | "placeholder" | "negative" | "time" | "short_year" | "month_name" | "id_decimal" | "apostrophe" | "spaces" | "rounded";
 export const NOTE_TEXT: Record<CleanNote, string> = {
-  rounded: "rounded amounts with more than two decimals to the cent (half away from zero)",
-  symbols: "removed currency symbols or codes", grouping: "removed thousands separators", placeholder: "treated placeholders (TBD, CALL, N/A, -) as empty",
-  negative: "read parentheses or a trailing minus as negative", time: "dropped the time of day", short_year: "expanded two-digit years",
-  month_name: "read month names", id_decimal: "removed a spreadsheet .0 from IDs", apostrophe: "removed a leading text apostrophe", spaces: "collapsed repeated spaces",
+  rounded: msg("cleaned.roundedAmountsWithMore"),
+  symbols: msg("cleaned.removedCurrencySymbolsOr"), grouping: msg("cleaned.removedThousandsSeparators"), placeholder: msg("cleaned.treatedPlaceholdersTbdCall"),
+  negative: msg("cleaned.readParenthesesOrA"), time: msg("cleaned.droppedTheTimeOf"), short_year: msg("cleaned.expandedTwoDigitYears"),
+  month_name: msg("cleaned.readMonthNames"), id_decimal: msg("cleaned.removedASpreadsheet0"), apostrophe: msg("cleaned.removedALeadingText"), spaces: msg("cleaned.collapsedRepeatedSpaces"),
 };
 const PLACEHOLDER = /^(tbd|tba|call|call for price|n\/?a|na|null|none|nil|pending|see note|\?+|-+|–|—|#n\/a|#value!|#ref!)$/i;
 const CURRENCY = /^(usd|cad|aud|eur|gbp|inr|mxn)\s*|\s*(usd|cad|aud|eur|gbp|inr|mxn)$|[$£€¥₹]/gi;

@@ -9,7 +9,29 @@ export class Pdf {
   private get ops() { if (!this.pages.length) this.page(); return this.pages[this.pages.length - 1]; }
   get pageCount() { return this.pages.length; }
   static ascii(s: string) { return s.replace(/[‒-―]/g, "-").replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/×/g, "x").replace(/[^\x20-\x7e]/g, "?"); }
-  static esc(s: string) { return Pdf.ascii(s).replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)"); }
+  /**
+   * PDF string escape in WinAnsiEncoding (chunk 7U): accented Latin letters used by Spanish and
+   * French (é, ñ, ç, à, œ, «, €…) are written as octal escapes, so the stream stays ASCII.
+   * Spaces Intl uses in French numbers become ordinary spaces; anything else outside WinAnsi is "?".
+   */
+  static esc(s: string) {
+    let out = "";
+    for (const ch of s) {
+      if (ch === "\\" || ch === "(" || ch === ")") { out += "\\" + ch; continue; }
+      const code = Pdf.winAnsi(ch);
+      out += code === null ? "?" : code >= 0x20 && code < 0x7f ? String.fromCharCode(code) : "\\" + code.toString(8).padStart(3, "0");
+    }
+    return out;
+  }
+  private static readonly CP1252: Record<string, number> = { "€": 0x80, "‚": 0x82, "ƒ": 0x83, "„": 0x84, "…": 0x85, "†": 0x86, "‡": 0x87, "ˆ": 0x88, "‰": 0x89, "Š": 0x8a, "‹": 0x8b, "Œ": 0x8c, "Ž": 0x8e, "‘": 0x91, "’": 0x92, "“": 0x93, "”": 0x94, "•": 0x95, "–": 0x96, "—": 0x97, "˜": 0x98, "™": 0x99, "š": 0x9a, "›": 0x9b, "œ": 0x9c, "ž": 0x9e, "Ÿ": 0x9f };
+  static winAnsi(ch: string): number | null {
+    const p = ch.codePointAt(0)!;
+    if (p >= 0x20 && p < 0x7f) return p;
+    if (p === 0x202f || p === 0x2009 || p === 0x2007 || p === 0x00a0) return 0x20;
+    if (p === 0x2212 || p === 0x2012 || p === 0x2011) return 0x2d;
+    if (p >= 0xa1 && p <= 0xff) return p;
+    return Pdf.CP1252[ch] ?? null;
+  }
   /** Approximate Helvetica width (points) for layout; good enough for truncation. */
   static widthOf(s: string, size: number) { let w = 0; for (const ch of s) w += /[il.,:;'|!]/.test(ch) ? 0.28 : /[mwMW]/.test(ch) ? 0.86 : /[A-Z0-9$%]/.test(ch) ? 0.64 : 0.52; return w * size; }
   static fit(s: string, size: number, max: number) { if (Pdf.widthOf(s, size) <= max) return s; let t = s; while (t.length > 1 && Pdf.widthOf(t + "...", size) > max) t = t.slice(0, -1); return t + "..."; }

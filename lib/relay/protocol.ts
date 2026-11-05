@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { msg } from "../i18n/core";
 export const RELAY_LIMITS = { messageBytes: 16_384, totalBytes: 16_777_216, events: 10_000, devices: 60, epochs: 256, page: 25, responseBytes: 3_145_728 } as const;
 export const ZERO_HASH = '0'.repeat(64);
 const uuid = z.string().uuid().transform(s => s.toLowerCase());
@@ -40,7 +41,7 @@ export type Page = {epochs:Epoch[];events:RelayEvent[];latestEpoch:string;head:{
 export const DirectorySchema=z.object({devices:z.array(DeviceSchema.extend({role:RelayRole,label:z.string().max(320).optional()}).strict()).max(RELAY_LIMITS.devices),latest:EpochSchema.nullable(),head:z.object({sequence:counter,hash}).strict()}).strict();
 export const PageSchema=z.object({epochs:z.array(EpochSchema).max(8),events:z.array(EventSchema).max(RELAY_LIMITS.page),latestEpoch:counter,head:z.object({sequence:counter,hash}).strict()}).strict();
 export class RelayError extends Error { constructor(public code:string,message:string){super(message);this.name='RelayError';} }
-export function fail(message='The shared item could not be verified. Nothing was applied.'):never {throw new RelayError('VERIFY',message);}
+export function fail(message=msg("relay.proto.theSharedItemCould")):never {throw new RelayError('VERIFY',message);}
 export const admin = (role:string) => role==='owner'||role==='manager';
 export function levelsFor(amountMinor:string,preset:ShareInput['preset']):1|2 {
  if(!/^(0|[1-9][0-9]{0,17})$/.test(amountMinor))fail();

@@ -3,6 +3,7 @@ import { withDatabase } from './db';
 import { HttpError, errorResponse } from './authz';
 import { readJsonLimited } from './request';
 import { z } from 'zod';
+import { msg } from "./i18n/core";
 const schemas = {
   seats: z.object({userId:z.uuid(),remove:z.boolean().optional()}).strict(),
   locations: z.object({name:z.string().trim().min(1).max(120),erpProfile:z.enum(['generic','netsuite','p21','infor','bc','quickbooks'])}).strict(),
@@ -10,8 +11,8 @@ const schemas = {
 };
 export async function licenceAdmin(request:Request, kind:keyof typeof schemas) {
   try {
-    const ctx=await getAppContext(request.headers);if(!ctx)throw new HttpError(401,'Sign in first.');
-    if(request.method!=='GET'&&ctx.role!=='owner')throw new HttpError(403,'Only the workspace owner can manage licences.');
+    const ctx=await getAppContext(request.headers);if(!ctx)throw new HttpError(401,msg("api.licenceAdmin.signInFirst"));
+    if(request.method!=='GET'&&ctx.role!=='owner')throw new HttpError(403,msg("api.licenceAdmin.onlyTheWorkspaceOwner"));
     const input=request.method==='GET'?null:schemas[kind].parse(await readJsonLimited(request));
     const data=await withDatabase(databaseContext(ctx,request.headers),async db=>{
       if(!input){if(kind==='seats')return(await db.query('SELECT id,user_id,created_at FROM licence_seat WHERE tenant_id=$1::uuid ORDER BY created_at',[ctx.tenantId])).rows;
@@ -22,5 +23,5 @@ export async function licenceAdmin(request:Request, kind:keyof typeof schemas) {
       else await db.query('UPDATE licence_device SET status=$3::text WHERE tenant_id=$1::uuid AND id=$2::uuid',[ctx.tenantId,input.id,input.status]);
       return {ok:true};
     });return Response.json({data},{headers:{'Cache-Control':'no-store'}});
-  }catch(e){if(typeof e==='object'&&e&&'code'in e&&e.code==='23514')return Response.json({error:'Licence limit reached. Ask your owner to upgrade or renew the workspace licence.'},{status:409});return errorResponse(e);}
+  }catch(e){if(typeof e==='object'&&e&&'code'in e&&e.code==='23514')return Response.json({error:msg("api.licenceAdmin.licenceLimitReachedAsk")},{status:409});return errorResponse(e);}
 }

@@ -7,6 +7,7 @@ import { rateBp, centsText, bpText } from "./decimal";
 import { lineFromCents } from "./engine";
 import { POCKET, MARGIN, rateBpSql } from "./sql";
 import { VaultError } from "../vault/protocol";
+import { msg } from "../i18n/core";
 
 export type Dim = "product" | "category" | "customer" | "branch" | "tier" | "region" | "month";
 export const DIMS: Dim[] = ["product", "category", "customer", "branch", "tier", "region", "month"];
@@ -24,9 +25,9 @@ function col(dim: Dim, lines = false) {
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 export function checkFilters(f: Filters | undefined): Filters {
   const by = Array.isArray(f?.by) ? f!.by : [];
-  if (by.length > 6) throw new VaultError("FILTER", "Use at most six filters.");
-  for (const x of by) if (!DIMS.includes(x.dim) || typeof x.value !== "string" || x.value.length > 200) throw new VaultError("FILTER", "Unsupported filter.");
-  for (const m of [f?.from, f?.to]) if (m != null && !MONTH.test(m)) throw new VaultError("FILTER", "Use months as YYYY-MM.");
+  if (by.length > 6) throw new VaultError("FILTER", msg("waterfall.useAtMostSix"));
+  for (const x of by) if (!DIMS.includes(x.dim) || typeof x.value !== "string" || x.value.length > 200) throw new VaultError("FILTER", msg("waterfall.unsupportedFilter"));
+  for (const m of [f?.from, f?.to]) if (m != null && !MONTH.test(m)) throw new VaultError("FILTER", msg("waterfall.useMonthsAsYyyy"));
   return { by, from: f?.from ?? null, to: f?.to ?? null };
 }
 function where(f: Filters, lines = false) {
@@ -65,17 +66,17 @@ export async function waterfall(engine: Engine, filters?: Filters): Promise<Wate
   const lines = s.lines + c.lines, costedLines = s.costedLines + c.costedLines, uncostedPocket = netPocket - costedPocket;
   const str = (x: typeof s): Comp => ({ lines: String(x.lines), list: String(x.list), discount: String(x.discount), rebate: String(x.rebate), freight: String(x.freight), pocket: String(x.pocket) });
   const steps: Step[] = [
-    { key: "list", label: "List (sales)", cents: String(s.list), kind: "start" },
-    { key: "discount", label: "Discounts", cents: String(-s.discount), kind: "minus" },
-    { key: "rebate", label: "Off-invoice rebates", cents: String(-s.rebate), kind: "minus" },
-    { key: "freight", label: "Freight", cents: String(-s.freight), kind: "minus" },
-    { key: "salesPocket", label: "Pocket (sales)", cents: String(s.pocket), kind: "subtotal" },
-    { key: "credits", label: "Returns and credits", cents: String(c.pocket), kind: "plus" },
-    { key: "netPocket", label: "Net pocket", cents: String(netPocket), kind: "subtotal" },
-    { key: "uncostedPocket", label: "Pocket with unknown cost (left out of margin)", cents: String(-uncostedPocket), kind: "excluded" },
-    { key: "costedPocket", label: "Pocket with known cost", cents: String(costedPocket), kind: "subtotal" },
-    { key: "cost", label: "Cost", cents: String(-cost), kind: "minus" },
-    { key: "margin", label: "Pocket margin", cents: String(margin), kind: "end" },
+    { key: "list", label: msg("waterfall.listSales"), cents: String(s.list), kind: "start" },
+    { key: "discount", label: msg("waterfall.discounts2"), cents: String(-s.discount), kind: "minus" },
+    { key: "rebate", label: msg("waterfall.offInvoiceRebates"), cents: String(-s.rebate), kind: "minus" },
+    { key: "freight", label: msg("waterfall.freight2"), cents: String(-s.freight), kind: "minus" },
+    { key: "salesPocket", label: msg("waterfall.pocketSales2"), cents: String(s.pocket), kind: "subtotal" },
+    { key: "credits", label: msg("waterfall.returnsAndCredits2"), cents: String(c.pocket), kind: "plus" },
+    { key: "netPocket", label: msg("waterfall.netPocket3"), cents: String(netPocket), kind: "subtotal" },
+    { key: "uncostedPocket", label: msg("waterfall.pocketWithUnknownCost3"), cents: String(-uncostedPocket), kind: "excluded" },
+    { key: "costedPocket", label: msg("waterfall.pocketWithKnownCost5"), cents: String(costedPocket), kind: "subtotal" },
+    { key: "cost", label: msg("waterfall.cost2"), cents: String(-cost), kind: "minus" },
+    { key: "margin", label: msg("waterfall.pocketMargin2"), cents: String(margin), kind: "end" },
   ];
   return { filters: f, lines: String(lines), sales: str(s), credits: str(c), netPocket: String(netPocket), costedLines: String(costedLines), costedPocket: String(costedPocket), cost: String(cost), margin: String(margin),
     rate: bpText(rateBp(margin, costedPocket)), uncostedLines: String(lines - costedLines), uncostedPocket: String(uncostedPocket), steps, ms: Math.round((performance.now() - t0) * 10) / 10 };
@@ -83,7 +84,7 @@ export async function waterfall(engine: Engine, filters?: Filters): Promise<Wate
 export type DrillRow = { key: string; label: string; lines: string; list: string; discount: string; rebate: string; freight: string; credits: string; pocket: string; costedLines: string; cost: string; margin: string; rate: string; uncostedLines: string };
 export type Drill = { dim: Dim; filters: Filters; rows: DrillRow[]; total: string; ms: number };
 export async function drill(engine: Engine, dim: Dim, filters?: Filters, sort: "margin" | "pocket" | "rate" = "pocket", limit = 100): Promise<Drill> {
-  if (!DIMS.includes(dim)) throw new VaultError("FILTER", "Unsupported drill-down.");
+  if (!DIMS.includes(dim)) throw new VaultError("FILTER", msg("waterfall.unsupportedDrillDown"));
   const f = checkFilters(filters), t0 = performance.now(), k = col(dim);
   const pocket = `(sum(a.list_cents) - sum(a.discount_cents) - sum(a.rebate_cents) - sum(a.freight_cents))`, margin = "(sum(a.costed_pocket_cents) - sum(a.cost_cents))";
   const order = sort === "margin" ? `${margin} ASC` : sort === "rate" ? `${rateBpSql(margin, "sum(a.costed_pocket_cents)")} ASC NULLS LAST` : `${pocket} DESC`;
@@ -106,7 +107,7 @@ export type Whale = { available: boolean; reason?: string; customers: string; to
 /** Customer profitability: customers ranked by pocket margin (known cost), cumulative margin as % of the total. */
 export async function whale(engine: Engine, tier: string, filters?: Filters): Promise<Whale> {
   const empty = { customers: "0", totalMargin: "0", peakMargin: "0", peakAt: "0", peakPct: "n/a", losers: "0", loserMargin: "0", points: [], top: [], bottom: [], uncostedCustomers: "0", ms: 0 };
-  if (tier === "starter") return { available: false, reason: "Customer profitability (the whale curve) is part of the Professional and Scale plans.", ...empty };
+  if (tier === "starter") return { available: false, reason: msg("waterfall.customerProfitabilityTheWhale"), ...empty };
   const f = checkFilters(filters), t0 = performance.now();
   const rows = (await engine.conn.query(`SELECT a.customer_id, (sum(a.costed_pocket_cents) - sum(a.cost_cents))::VARCHAR AS margin, (sum(a.lines) - sum(a.costed_lines))::VARCHAR AS uncosted
 FROM ${fromAgg(f)} ${where(f)} GROUP BY a.customer_id ORDER BY sum(a.costed_pocket_cents) - sum(a.cost_cents) DESC, a.customer_id`)).toArray();
@@ -123,18 +124,18 @@ FROM ${fromAgg(f)} ${where(f)} GROUP BY a.customer_id ORDER BY sum(a.costed_pock
 }
 // ---- Show me the math ---------------------------------------------------------------
 const CONTRIB: Record<Exclude<Metric, "rate">, { expr: string; kind?: "sale" | "credit"; cost?: "known" | "unknown"; formula: string }> = {
-  list: { expr: "s.list_cents", kind: "sale", formula: "List = sum of list_amount on sales lines" },
-  discount: { expr: "s.discount_cents", kind: "sale", formula: "Discounts = sum of discount_amount on sales lines" },
-  rebate: { expr: "s.rebate_cents", kind: "sale", formula: "Off-invoice rebates = sum of rebate_amount on sales lines" },
-  freight: { expr: "s.freight_cents", kind: "sale", formula: "Freight = sum of freight_amount on sales lines" },
-  salesPocket: { expr: POCKET, kind: "sale", formula: "Pocket (sales) = List - Discounts - Rebates - Freight" },
-  credits: { expr: POCKET, kind: "credit", formula: "Returns and credits = sum over credit lines of (list - discount - rebate - freight); credit amounts are negative" },
-  netPocket: { expr: POCKET, formula: "Net pocket = Pocket (sales) + Returns and credits" },
-  uncostedPocket: { expr: POCKET, cost: "unknown", formula: "Pocket with unknown cost = net pocket of lines whose cost is unknown. It is left out of margin; cost is never assumed to be zero" },
-  costedPocket: { expr: POCKET, cost: "known", formula: "Pocket with known cost = Net pocket - Pocket with unknown cost" },
-  cost: { expr: "s.cost_cents", cost: "known", formula: "Cost = sum of cost_amount on lines with a known cost" },
-  margin: { expr: MARGIN, cost: "known", formula: "Pocket margin = Pocket with known cost - Cost" },
-  lines: { expr: "1", formula: "Lines = number of invoice lines (sales and credits)" },
+  list: { expr: "s.list_cents", kind: "sale", formula: msg("waterfall.listSumOfList") },
+  discount: { expr: "s.discount_cents", kind: "sale", formula: msg("waterfall.discountsSumOfDiscount") },
+  rebate: { expr: "s.rebate_cents", kind: "sale", formula: msg("waterfall.offInvoiceRebatesSum") },
+  freight: { expr: "s.freight_cents", kind: "sale", formula: msg("waterfall.freightSumOfFreight") },
+  salesPocket: { expr: POCKET, kind: "sale", formula: msg("waterfall.pocketSalesListDiscounts") },
+  credits: { expr: POCKET, kind: "credit", formula: msg("waterfall.returnsAndCreditsSum") },
+  netPocket: { expr: POCKET, formula: msg("waterfall.netPocketPocketSales") },
+  uncostedPocket: { expr: POCKET, cost: "unknown", formula: msg("waterfall.pocketWithUnknownCost2") },
+  costedPocket: { expr: POCKET, cost: "known", formula: msg("waterfall.pocketWithKnownCost4") },
+  cost: { expr: "s.cost_cents", cost: "known", formula: msg("waterfall.costSumOfCost") },
+  margin: { expr: MARGIN, cost: "known", formula: msg("waterfall.pocketMarginPocketWith") },
+  lines: { expr: "1", formula: msg("waterfall.linesNumberOfInvoice") },
 };
 export type MathRow = { sourceFile: string; sourceId: string; sourceRow: string; lineId: string; invoice: string; date: string; product: string; customer: string; kind: string; quantity: string;
   list: string; discount: string; rebate: string; freight: string; cost: string | null; pocket: string; margin: string | null; contribution: string };
@@ -143,7 +144,7 @@ export type MathPanel = { metric: Metric; label: string; value: string; formula:
 /** The formula, its inputs (recomputed by the JS engine) and the source rows behind one waterfall number. */
 export async function math(engine: Engine, metric: Metric, filters?: Filters, offset = 0): Promise<MathPanel> {
   const f = checkFilters(filters), w = await waterfall(engine, f);
-  if (!(metric in CONTRIB) && metric !== "rate") throw new VaultError("FILTER", "Unsupported number.");
+  if (!(metric in CONTRIB) && metric !== "rate") throw new VaultError("FILTER", msg("waterfall.unsupportedNumber"));
   const s = w.sales, c = w.credits, n = (v: string) => BigInt(v);
   const pocket = (x: Comp) => lineFromCents({ list: n(x.list), discount: n(x.discount), rebate: n(x.rebate), freight: n(x.freight), cost: null }).pocket;
   const engineValue: Record<Metric, () => bigint> = {
@@ -154,12 +155,12 @@ export async function math(engine: Engine, metric: Metric, filters?: Filters, of
   const shown: Record<Metric, string> = { list: s.list, discount: s.discount, rebate: s.rebate, freight: s.freight, salesPocket: s.pocket, credits: c.pocket, netPocket: w.netPocket, uncostedPocket: w.uncostedPocket,
     costedPocket: w.costedPocket, cost: w.cost, margin: w.margin, rate: String(rateBp(n(w.margin), n(w.costedPocket)) ?? "0"), lines: w.lines };
   const inputs: Record<Metric, Array<[string, string]>> = {
-    list: [["List on sales lines", s.list]], discount: [["Discounts on sales lines", s.discount]], rebate: [["Rebates on sales lines", s.rebate]], freight: [["Freight on sales lines", s.freight]],
-    salesPocket: [["List", s.list], ["Discounts", s.discount], ["Rebates", s.rebate], ["Freight", s.freight]],
-    credits: [["Credit list", c.list], ["Credit discounts", c.discount], ["Credit rebates", c.rebate], ["Credit freight", c.freight]],
-    netPocket: [["Pocket (sales)", s.pocket], ["Returns and credits", c.pocket]], uncostedPocket: [["Net pocket", w.netPocket], ["Pocket with known cost", w.costedPocket]],
-    costedPocket: [["Net pocket", w.netPocket], ["Pocket with unknown cost", w.uncostedPocket]], cost: [["Cost on lines with known cost", w.cost]],
-    margin: [["Pocket with known cost", w.costedPocket], ["Cost", w.cost]], rate: [["Pocket margin", w.margin], ["Pocket with known cost", w.costedPocket]], lines: [["Sales lines", s.lines], ["Credit lines", c.lines]],
+    list: [[msg("waterfall.listOnSalesLines"), s.list]], discount: [[msg("waterfall.discountsOnSalesLines"), s.discount]], rebate: [[msg("waterfall.rebatesOnSalesLines"), s.rebate]], freight: [[msg("waterfall.freightOnSalesLines"), s.freight]],
+    salesPocket: [[msg("waterfall.list"), s.list], [msg("waterfall.discounts"), s.discount], [msg("waterfall.rebates"), s.rebate], [msg("waterfall.freight"), s.freight]],
+    credits: [[msg("waterfall.creditList"), c.list], [msg("waterfall.creditDiscounts"), c.discount], [msg("waterfall.creditRebates"), c.rebate], [msg("waterfall.creditFreight"), c.freight]],
+    netPocket: [[msg("waterfall.pocketSales"), s.pocket], [msg("waterfall.returnsAndCredits"), c.pocket]], uncostedPocket: [[msg("waterfall.netPocket2"), w.netPocket], [msg("waterfall.pocketWithKnownCost3"), w.costedPocket]],
+    costedPocket: [[msg("waterfall.netPocket"), w.netPocket], [msg("waterfall.pocketWithUnknownCost"), w.uncostedPocket]], cost: [[msg("waterfall.costOnLinesWith"), w.cost]],
+    margin: [[msg("waterfall.pocketWithKnownCost2"), w.costedPocket], [msg("waterfall.cost"), w.cost]], rate: [[msg("waterfall.pocketMargin"), w.margin], [msg("waterfall.pocketWithKnownCost"), w.costedPocket]], lines: [[msg("waterfall.salesLines"), s.lines], [msg("waterfall.creditLines"), c.lines]],
   };
   const computed = engineValue[metric]();
   const spec = metric === "rate" ? CONTRIB.margin : CONTRIB[metric];
@@ -171,9 +172,9 @@ export async function math(engine: Engine, metric: Metric, filters?: Filters, of
  s.list_cents::VARCHAR AS list, s.discount_cents::VARCHAR AS discount, s.rebate_cents::VARCHAR AS rebate, s.freight_cents::VARCHAR AS freight, s.cost_cents::VARCHAR AS cost, ${POCKET.replaceAll("list_cents", "s.list_cents").replaceAll("discount_cents", "s.discount_cents").replaceAll("rebate_cents", "s.rebate_cents").replaceAll("freight_cents", "s.freight_cents")}::VARCHAR AS pocket,
  (CASE WHEN s.cost_cents IS NULL THEN NULL ELSE s.list_cents - s.discount_cents - s.rebate_cents - s.freight_cents - s.cost_cents END)::VARCHAR AS margin, (${spec.expr})::VARCHAR AS contribution
  ${base.replace("FROM sales_lines s", "FROM sales_lines s JOIN source_files f ON f.id = s.source_id")} ORDER BY abs(${spec.expr}) DESC, s.source_id, s.source_row LIMIT 25 OFFSET ${at}`)).toArray();
-  const label = w.steps.find(x => x.key === metric)?.label ?? (metric === "rate" ? "Pocket margin rate" : "Lines");
+  const label = w.steps.find(x => x.key === metric)?.label ?? (metric === "rate" ? msg("waterfall.pocketMarginRate") : msg("waterfall.lines"));
   const value = shown[metric];
-  return { metric, label, value, formula: metric === "rate" ? "Pocket margin rate = Pocket margin / Pocket with known cost, in % rounded half away from zero to 0.01%" : spec.formula,
+  return { metric, label, value, formula: metric === "rate" ? msg("waterfall.pocketMarginRatePocket") : spec.formula,
     inputs: inputs[metric].map(([l, v]) => ({ label: l, cents: v })), check: { engine: String(computed), agrees: String(computed) === value },
     rowCount: String(agg.n), rowsSum: String(agg.total), rowsAgree: metric === "rate" ? String(agg.total) === w.margin : String(agg.total) === value, offset: at,
     rows: rows.map(r => ({ sourceFile: String(r.file), sourceId: String(r.source_id), sourceRow: String(r.source_row), lineId: String(r.line_id), invoice: String(r.invoice), date: String(r.d), product: String(r.product_id), customer: String(r.customer_id), kind: String(r.line_kind), quantity: String(r.q),

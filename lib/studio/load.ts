@@ -6,6 +6,7 @@ import * as duckdb from "@duckdb/duckdb-wasm";
 import type { Engine } from "../vault/engine";
 import { sqlText } from "../spike/exact";
 import { ROLE_FIELDS, columnLetter, type Alignment, type DateFormat, type Field, type Role, type Settings } from "./formats";
+import { msg } from "../i18n/core";
 // Staged values are canonical (cleaned in JS: dot decimals, ISO dates), one column per
 // ROLE_FIELDS entry. `alignment` maps fields back to source columns for issue labels.
 export type StagedFile = { ord: number; role: Role; name: string; bytes: number; fingerprint: string; alignment: Alignment; settings: Settings; keyed: boolean; headers: string[]; colOffset: number; generatedIds?: boolean;
@@ -38,25 +39,25 @@ function fieldSql(field: Field, settings: Pick<Settings, "decimal" | "dateFormat
 }
 export function issueMessage(code: string, settings: Settings) {
   const [name, kind] = code.split(":"), field = Object.values(ROLE_FIELDS).flat().find(f => f.name === name);
-  if (code === "duplicate_row") return "Exact copy of an earlier row in this batch. The copy was not loaded.";
-  if (code === "duplicate_key") return "Repeats the key of an earlier row in this batch with different values. Only the first row is loaded.";
-  if (code === "exists") return "Already loaded from another file in the vault. Remove or replace that file first.";
-  if (code === "scope") return "Give a product_id or a category for this price.";
-  if (code === "valid_to:range") return "valid_to must be later than valid_from.";
-  if (code === "no_header") return "No row in the order header file has this invoice number, so the line's customer and date are unknown. Add the header file that holds this order, then review again.";
-  if (kind === "required") return `${name} is required but empty.`;
-  if (code === "credit:sign") return "A return with a positive amount: the quantity is negative but an amount is above zero. Correct the sign in the file, then load the group as credits.";
-  if (kind === "negative") return name === "quantity" ? "Negative quantity (a return or credit). Check the rows, then load the group as returns and credits; they net against sales in the margin waterfall." : `Negative ${name} on a positive quantity (a credit memo or adjustment). These are not loaded; correct or dismiss them.`;
+  if (code === "duplicate_row") return msg("issue.exactCopyOfAn");
+  if (code === "duplicate_key") return msg("issue.repeatsTheKeyOf");
+  if (code === "exists") return msg("issue.alreadyLoadedFromAnother");
+  if (code === "scope") return msg("issue.giveAProductId");
+  if (code === "valid_to:range") return msg("issue.validToMustBe");
+  if (code === "no_header") return msg("issue.noRowInThe");
+  if (kind === "required") return msg("issue.isRequiredButEmpty", { name });
+  if (code === "credit:sign") return msg("issue.aReturnWithA");
+  if (kind === "negative") return name === "quantity" ? msg("issue.negativeQuantityAReturn") : msg("issue.negativeOnAPositive", { name });
   switch (field?.type) {
-    case "line_id": return "Use a positive whole line ID of up to 18 digits.";
-    case "id": return "Use an ID of 1-64 characters without control characters.";
-    case "text": case "code": return `Use at most ${field.max ?? 200} characters.`;
-    case "date": return `Use a real date in ${settings.dateFormat} format.`;
-    case "quantity": return `Use a quantity above zero with up to four decimals (${settings.decimal === "comma" ? "comma" : "dot"} decimal, no grouping).`;
-    case "quantity0": return `Use a non-negative number with up to four decimals (${settings.decimal === "comma" ? "comma" : "dot"} decimal, no grouping).`;
-    case "amount": return `Use a non-negative amount with up to two decimals (${settings.decimal === "comma" ? "comma" : "dot"} decimal, no currency symbols or grouping).`;
+    case "line_id": return msg("issue.useAPositiveWhole");
+    case "id": return msg("issue.useAnIdOf");
+    case "text": case "code": return msg("issue.useAtMostCharacters", { value: field.max ?? 200 });
+    case "date": return msg("issue.useARealDate", { dateFormat: settings.dateFormat });
+    case "quantity": return msg("issue.useAQuantityAbove", { value: msg(settings.decimal === "comma" ? "issue.decimalComma" : "issue.decimalDot") });
+    case "quantity0": return msg("issue.useANonNegative2", { value: msg(settings.decimal === "comma" ? "issue.decimalComma" : "issue.decimalDot") });
+    case "amount": return msg("issue.useANonNegative", { value: msg(settings.decimal === "comma" ? "issue.decimalComma" : "issue.decimalDot") });
   }
-  return "Invalid value.";
+  return msg("issue.invalidValue");
 }
 /** Source column label for an error code: the letter (or field name for JSON/XML). */
 export function issueColumn(code: string, file: StagedFile) {

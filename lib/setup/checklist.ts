@@ -6,17 +6,18 @@ import type { Engine } from "../vault/engine";
 import { sqlText as Q } from "../spike/exact";
 import { SETUP_STEPS } from "../vault/schema";
 import { PLAYGROUND_PREFIX } from "../studio/playground";
+import { msg } from "../i18n/core";
 export type Step = typeof SETUP_STEPS[number];
 export type StepView = { step: Step; label: string; day: number; hint: string; where: string; done: boolean; doneAt: string | null; how: "auto" | "manual" | null; manual: boolean };
 export type Checklist = { steps: StepView[]; done: number; total: number; startedAt: string | null; day: number; complete: boolean; hasOwner: boolean };
 export const STEP_INFO: Record<Step, { label: string; day: number; hint: string; where: string; manual?: boolean }> = {
-  import: { label: "Import your ERP sales history", day: 1, hint: "Drop a real sales export in Data Hub. The Playground sample does not count.", where: "#data-hub" },
-  map: { label: "Map your item master or customers", day: 1, hint: "Import an item master, customer list or vendor cost file (or save a mapping recipe) so products, tiers and costs are known.", where: "#data-hub" },
-  fix: { label: "Fix what the import flagged", day: 2, hint: "Work through Fix Later and the item master cleanup, or clear every rejected row.", where: "#data-hub" },
-  report: { label: "Run your first report", day: 3, hint: "Open Margin and download the Margin Leak Report from your real data.", where: "#margin" },
-  rule: { label: "Create your first pricing rule", day: 4, hint: "Save a cost-rise rule in Pricing.", where: "#pricing" },
-  export: { label: "Export your first price file", day: 5, hint: "Approve a simulation as Pricing Owner, then export the ERP price file.", where: "#pricing" },
-  team: { label: "Invite the team", day: 7, hint: "Assign a role to each colleague in Settings, or mark this done once your team has access.", where: "#settings", manual: true },
+  import: { label: msg("setup.importYourErpSales"), day: 1, hint: msg("setup.dropARealSales"), where: "#data-hub" },
+  map: { label: msg("setup.mapYourItemMaster"), day: 1, hint: msg("setup.importAnItemMaster"), where: "#data-hub" },
+  fix: { label: msg("setup.fixWhatTheImport"), day: 2, hint: msg("setup.workThroughFixLater"), where: "#data-hub" },
+  report: { label: msg("setup.runYourFirstReport"), day: 3, hint: msg("setup.openMarginAndDownload"), where: "#margin" },
+  rule: { label: msg("setup.createYourFirstPricing"), day: 4, hint: msg("setup.saveACostRise"), where: "#pricing" },
+  export: { label: msg("setup.exportYourFirstPrice"), day: 5, hint: msg("setup.approveASimulationAs"), where: "#pricing" },
+  team: { label: msg("setup.inviteTheTeam"), day: 7, hint: msg("setup.assignARoleTo"), where: "#settings", manual: true },
 };
 const REAL = `name NOT LIKE ${Q(PLAYGROUND_PREFIX + "%")}`;
 /** Which steps the vault's own data proves right now. */

@@ -1,0 +1,48 @@
+/* Theme tokens (chunk 7U). Every colour in the app comes from these tokens; tests/theme.test.ts
+   checks each theme's text and control pairs against WCAG contrast and rejects colour literals
+   anywhere else. "system" (no data-theme attribute) follows the operating system. */
+:root,:root[data-theme="light"]{color-scheme:light;
+--bg:#f4f6f7;--surface:#ffffff;--surface-2:#f1f5f6;--accent-surface:#e2f1f3;--selected:#d9edef;--on-selected:#152a32;
+--text:#152a32;--heading:#163447;--text-muted:#466069;--link:#075e6d;
+--border:#d2dcdf;--border-subtle:#e3e9eb;--border-strong:#72868b;--control-border:#49636b;--control-text:#153e48;
+--accent:#075e6d;--on-accent:#ffffff;--accent-hover:#054b57;--focus:#b65e00;--focus-ring:#1775891a;
+--warn-bg:#fff0d9;--warn-border:#b55b00;--warn-text:#733600;
+--bad-bg:#fdeae6;--bad-border:#c0503f;--bad-text:#842d24;
+--ok-bg:#e7f4ea;--ok-border:#2d6a3e;--ok-text:#1d4a2a;
+--info-bg:#eef2f4;--info-text:#465961;
+--chart-red:#ef9b8a;--chart-yellow:#f1cc6d;--chart-green:#83c7a0;--chart-teal:#49a0a6;--chart-track:#e6edef;
+--shadow-color:#162f3a14;--backdrop:#152a3299;--toast-bg:#163447;--toast-text:#ffffff}
+:root[data-theme="dark"]{color-scheme:dark;
+--bg:#0f1a1e;--surface:#172429;--surface-2:#1e2f35;--accent-surface:#173a40;--selected:#1f4a52;--on-selected:#e6eef0;
+--text:#e6eef0;--heading:#d4e7ec;--text-muted:#a9bcc2;--link:#7fd3df;
+--border:#33474e;--border-subtle:#2a3c42;--border-strong:#86a0a7;--control-border:#8aa3aa;--control-text:#d6e7ea;
+--accent:#5cc2cf;--on-accent:#08181c;--accent-hover:#7fd3df;--focus:#ffb35c;--focus-ring:#5cc2cf40;
+--warn-bg:#3a2a12;--warn-border:#e0913a;--warn-text:#ffd8a8;
+--bad-bg:#3d1c18;--bad-border:#e07a6a;--bad-text:#ffc4ba;
+--ok-bg:#12301d;--ok-border:#5fb377;--ok-text:#b9ebc6;
+--info-bg:#22343a;--info-text:#c3d4d9;
+--chart-red:#d9806f;--chart-yellow:#d6b252;--chart-green:#68ad85;--chart-teal:#4fb3ba;--chart-track:#2a3c42;
+--shadow-color:#00000066;--backdrop:#000000b3;--toast-bg:#d4e7ec;--toast-text:#0f1a1e}
+:root[data-theme="contrast"]{color-scheme:light;
+--bg:#ffffff;--surface:#ffffff;--surface-2:#f2f2f2;--accent-surface:#e8f0ff;--selected:#000000;--on-selected:#ffffff;
+--text:#000000;--heading:#000000;--text-muted:#1f1f1f;--link:#00317a;
+--border:#000000;--border-subtle:#4d4d4d;--border-strong:#000000;--control-border:#000000;--control-text:#000000;
+--accent:#00317a;--on-accent:#ffffff;--accent-hover:#000000;--focus:#c40000;--focus-ring:#c4000040;
+--warn-bg:#fff3cc;--warn-border:#000000;--warn-text:#000000;
+--bad-bg:#ffe5e5;--bad-border:#000000;--bad-text:#000000;
+--ok-bg:#e5f5e9;--ok-border:#000000;--ok-text:#000000;
+--info-bg:#f2f2f2;--info-text:#000000;
+--chart-red:#b30000;--chart-yellow:#8a6d00;--chart-green:#006b2e;--chart-teal:#00317a;--chart-track:#d9d9d9;
+--shadow-color:#00000000;--backdrop:#000000cc;--toast-bg:#000000;--toast-text:#ffffff}
+@media (prefers-color-scheme:dark){:root:not([data-theme]){color-scheme:dark;
+--bg:#0f1a1e;--surface:#172429;--surface-2:#1e2f35;--accent-surface:#173a40;--selected:#1f4a52;--on-selected:#e6eef0;
+--text:#e6eef0;--heading:#d4e7ec;--text-muted:#a9bcc2;--link:#7fd3df;
+--border:#33474e;--border-subtle:#2a3c42;--border-strong:#86a0a7;--control-border:#8aa3aa;--control-text:#d6e7ea;
+--accent:#5cc2cf;--on-accent:#08181c;--accent-hover:#7fd3df;--focus:#ffb35c;--focus-ring:#5cc2cf40;
+--warn-bg:#3a2a12;--warn-border:#e0913a;--warn-text:#ffd8a8;
+--bad-bg:#3d1c18;--bad-border:#e07a6a;--bad-text:#ffc4ba;
+--ok-bg:#12301d;--ok-border:#5fb377;--ok-text:#b9ebc6;
+--info-bg:#22343a;--info-text:#c3d4d9;
+--chart-red:#d9806f;--chart-yellow:#d6b252;--chart-green:#68ad85;--chart-teal:#4fb3ba;--chart-track:#2a3c42;
+--shadow-color:#00000066;--backdrop:#000000b3;--toast-bg:#d4e7ec;--toast-text:#0f1a1e}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important;scroll-behavior:auto!important}}

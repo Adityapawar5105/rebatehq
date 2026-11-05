@@ -1,6 +1,7 @@
 // Text exports (CSV/TSV/TXT): encoding detection, chunked decoding and a streaming
 // RFC 4180 tokenizer. Never holds a whole large file as one string or row array.
 import { DELIMITERS, StudioError, type Delimiter, type Encoding } from "./formats";
+import { msg } from "../i18n/core";
 export const MAX_COLUMNS = 256, MAX_CELL = 4000, CHUNK_BYTES = 4 * 1024 * 1024;
 
 export function detectEncoding(head: Uint8Array): { encoding: Encoding; bom: number } {
@@ -36,7 +37,7 @@ export async function* decodeChunks(file: Blob, encoding: Encoding, signal?: Abo
     }
   } catch (error) {
     if (signal?.aborted) throw error;
-    if (error instanceof TypeError) throw new StudioError(`The file is not valid ${encoding.toUpperCase()}. Choose the correct encoding in the preview.`);
+    if (error instanceof TypeError) throw new StudioError(msg("issue.text.theFileIsNot", { encoding: encoding.toUpperCase() }));
     throw error;
   }
 }

@@ -102,7 +102,7 @@ async function importFiles(paths, lines, acknowledge = false) {
   await review(paths);
   if (acknowledge) await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "Confirm and import locally" }).click();
-  await page.getByTestId("line-count").filter({ hasText: new RegExp(`^${lines}$`) }).waitFor({ timeout: 120000 });
+  await page.locator(`[data-testid="line-count"][data-value="${lines}"]`).waitFor({ timeout: 120000 });
 }
 async function clearBatch() { await page.getByRole("button", { name: "Clear batch" }).click(); await page.getByRole("heading", { name: "Batch report" }).waitFor({ state: "detached" }); }
 // Synthetic multi-format fixtures (TSV, JSON, XML, XLSX) with the private marker in product_id.
@@ -121,7 +121,7 @@ try {
   const response = await page.goto(base + route); assert.equal(response.status(), 200); assert.equal(response.headers()["cross-origin-embedder-policy"], "require-corp"); assert.ok(!response.headers()["content-security-policy"].includes("'unsafe-eval'"));
   assert.match(response.headers()["content-security-policy"], /connect-src 'self';/, 'Page fetch policy must remain self-only; Blob fetch is worker-only');
   await ready();
-  await page.getByTestId("licence-status").filter({hasText:"Licensed: scale"}).waitFor();results.checks.signedLicence=true;
+  await page.getByTestId("licence-status").filter({hasText:"Licensed: Scale"}).waitFor();results.checks.signedLicence=true;
   dataPlaneActive = true;
   for(const name of ['vault-ram-worker.js','duckdb-eh.wasm']) {
     const pattern='**/spike/'+name;
@@ -177,9 +177,9 @@ try {
   await page.getByRole("link", { name: "Data Hub", exact: true }).click();
   const capPath = path.resolve("test-results", "synthetic-over-cap.csv"); await writeFile(capPath, csv(100001, 200001));
   await review([capPath]);
-  await page.getByRole("alert").filter({ hasText: /exceeds your starter limit/ }).waitFor();
+  await page.getByRole("alert").filter({ hasText: /exceeds your starter limit/i }).waitFor();
   assert.ok(await page.getByRole("button", { name: "Confirm and import locally" }).isDisabled(), "Over-cap batch must not be importable");
-  assert.equal(await page.getByTestId("line-count").innerText(), "100000"); assert.match(await page.getByRole("alert").filter({hasText:/exceeds your starter limit/}).innerText(),/upgrade/i);results.checks.licenceUpgradePrompt=true;results.checks.capRollback = true; await clearBatch();
+  assert.equal(await page.getByTestId("line-count").getAttribute("data-value"), "100000"); assert.match(await page.getByRole("alert").filter({hasText:/exceeds your starter limit/i}).innerText(),/upgrade/i);results.checks.licenceUpgradePrompt=true;results.checks.capRollback = true; await clearBatch();
   const invalid = path.resolve("test-results", "synthetic-invalid.csv"); await writeFile(invalid, header + `1,1,1,2025-01-01,1,${marker},0.00,0.00,0.00,1.00\n`);
   await review([invalid]);
   await page.getByText(/Row 2, column F: Use a non-negative amount/).waitFor(); await page.getByRole("alert").filter({ hasText: /No valid rows to load/ }).waitFor();
@@ -187,11 +187,11 @@ try {
   const duplicate = path.resolve("test-results", "synthetic-duplicate.csv"), oneRow = csv(1).toString().slice(header.length);
   await writeFile(duplicate, header + oneRow + oneRow); await review([duplicate]);
   await page.getByText(/Row 2: Already loaded from another file/).waitFor(); await page.getByText(/Row 3: Exact copy of an earlier row/).waitFor();
-  assert.equal(await page.getByTestId("line-count").innerText(), "100000"); results.checks.locatedDuplicate = true; await clearBatch();
+  assert.equal(await page.getByTestId("line-count").getAttribute("data-value"), "100000"); results.checks.locatedDuplicate = true; await clearBatch();
   const cancelPath = path.resolve("test-results", "synthetic-cancel.csv"); await writeFile(cancelPath, csv(1000000, 300001));
   await page.getByTestId("studio-files").setInputFiles(cancelPath); await page.getByRole("button", { name: "Review import" }).click();
   await page.getByRole("button", { name: "Cancel import" }).click(); await page.getByRole("alert").filter({ hasText: /Import cancelled/ }).waitFor();
-  assert.equal(await page.getByTestId("line-count").innerText(), "100000"); results.checks.cancelRollback = true; await clearBatch();
+  assert.equal(await page.getByTestId("line-count").getAttribute("data-value"), "100000"); results.checks.cancelRollback = true; await clearBatch();
   // Privacy gate across formats: the marker sits in product_id inside TSV, JSON, XML and XLSX files.
   const marked = fixtures.markedSales(marker, 600001).map(f => ({ ...f, path: path.resolve("test-results", f.name) }));
   for (const f of marked) await writeFile(f.path, f.bytes);
@@ -199,22 +199,22 @@ try {
   const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Download all as ZIP" }).click()]);
   assert.equal(download.suggestedFilename(), "rebatehq-converted.zip"); assert.ok((await readFile(await download.path())).length > 100, "Converted ZIP is empty");
   await page.getByRole("button", { name: "Confirm and import locally" }).click();
-  await page.getByTestId("line-count").filter({ hasText: /^100016$/ }).waitFor({ timeout: 120000 });
+  await page.locator('[data-testid="line-count"][data-value="100016"]').waitFor({ timeout: 120000 });
   results.checks.multiFormatImport = { files: marked.map(f => f.name), lines: 16 };
   await page.getByRole("link", { name: "Settings", exact: true }).click(); await page.getByRole("button", { name: "Request persistent storage" }).click();
   await page.getByRole("status").filter({ hasText: /Storage status refreshed/ }).waitFor(); results.checks.storage = await worker("storage");
   results.checks.cipherOnly = await worker("cipherOnly");
   // A killed renderer cannot complete a pagehide save. Success must already be durable.
   const cdp = await context.newCDPSession(page); await Promise.race([cdp.send("Page.crash").catch(() => undefined), new Promise(resolve => setTimeout(resolve, 3000))]); await page.close().catch(() => undefined);
-  page = await openPage(); await page.goto(base + route); await ready(); await unlock(); assert.equal(await page.getByTestId("line-count").innerText(), "100016"); results.checks.killedTabRecovery = true;
+  page = await openPage(); await page.goto(base + route); await ready(); await unlock(); assert.equal(await page.getByTestId("line-count").getAttribute("data-value"), "100016"); results.checks.killedTabRecovery = true;
   await page.getByRole("button", { name: "Lock vault", exact: true }).click(); await ready();
   await page.getByLabel("Vault passphrase").fill("deliberately-wrong-passphrase"); await page.getByRole("button", { name: "Unlock vault", exact: true }).click(); await page.getByRole("alert").filter({ hasText: /Wrong passphrase/ }).waitFor(); results.checks.wrongPassphrase = true;
-  await unlock(); await page.reload(); await ready(); await unlock(); assert.equal(await page.getByTestId("line-count").innerText(), "100016"); results.checks.reload = true;
+  await unlock(); await page.reload(); await ready(); await unlock(); assert.equal(await page.getByTestId("line-count").getAttribute("data-value"), "100016"); results.checks.reload = true;
   // First change straight after unlock: the import waits for the background warm-up instead of failing.
   await page.getByRole("link", { name: "Data Hub", exact: true }).click();
   const afterReload = path.resolve("test-results", "synthetic-after-reload.csv"); await writeFile(afterReload, csv(1, 700001));
   await importFiles([afterReload], 100017);
-  await page.reload(); await ready(); await unlock(); assert.equal(await page.getByTestId("line-count").innerText(), "100017"); results.checks.firstMutationAfterUnlock = true;
+  await page.reload(); await ready(); await unlock(); assert.equal(await page.getByTestId("line-count").getAttribute("data-value"), "100017"); results.checks.firstMutationAfterUnlock = true;
   // 6A: storage near quota. The origin quota is cut to current usage + 64 KiB, so the next encrypted save cannot fit.
   const quotaCdp = await context.newCDPSession(page), origin = new URL(base).origin;
   const setQuota = async on => quotaCdp.send("Storage.overrideQuotaForOrigin", on ? { origin, quotaSize: await page.evaluate(async () => (await navigator.storage.estimate()).usage) + 65536 } : { origin });
@@ -227,11 +227,11 @@ try {
   };
   await setQuota(true); await importOverQuota();
   // The failed save left the previous encrypted snapshot intact: a reload drops only the unsaved change.
-  await page.reload(); await ready(); await unlock(); assert.equal(await page.getByTestId("line-count").innerText(), "100017", "A failed save damaged or replaced the previous snapshot");
+  await page.reload(); await ready(); await unlock(); assert.equal(await page.getByTestId("line-count").getAttribute("data-value"), "100017", "A failed save damaged or replaced the previous snapshot");
   // Fail again, free space, and Retry Save makes the same change durable.
   await importOverQuota(); await setQuota(false);
   await page.getByRole("button", { name: "Retry Save", exact: true }).click(); await page.getByRole("status").filter({ hasText: "Encrypted save completed." }).waitFor({ timeout: 120000 });
-  await page.reload(); await ready(); await unlock(); assert.equal(await page.getByTestId("line-count").innerText(), "100018"); await quotaCdp.detach().catch(() => undefined);
+  await page.reload(); await ready(); await unlock(); assert.equal(await page.getByTestId("line-count").getAttribute("data-value"), "100018"); await quotaCdp.detach().catch(() => undefined);
   results.checks.nearQuota = { failedSaveKeptPreviousSnapshot: true, retryAfterFreeingSpaceSaved: true };
   // Real-world shaped export (InvoiceNo/StockCode/UnitPrice, M/D/YY dates, blank customers): mapping must be
   // confirmed, rejected rows go to Fix Later, a bulk fix and group re-check loads them. Marker sits in StockCode.
@@ -249,20 +249,20 @@ try {
   await page.getByText(/sale_date: expanded two-digit years/).waitFor();
   await page.getByRole("checkbox", { name: /Load the 20 valid rows/ }).check();
   await page.getByRole("button", { name: "Confirm and import locally" }).click();
-  await page.getByTestId("line-count").filter({ hasText: /^100038$/ }).waitFor({ timeout: 120000 });
+  await page.locator('[data-testid="line-count"][data-value="100038"]').waitFor({ timeout: 120000 });
   await page.getByLabel("New customer_id for all rows in this group").fill("CASH-SALE");
   await page.getByRole("button", { name: "Set customer_id for all rows" }).click(); await page.getByRole("status").filter({ hasText: /Re-check the group/ }).waitFor();
   await page.getByRole("button", { name: "Re-check and load customer_id rows" }).click();
-  await page.getByTestId("line-count").filter({ hasText: /^100040$/ }).waitFor({ timeout: 60000 });
+  await page.locator('[data-testid="line-count"][data-value="100040"]').waitFor({ timeout: 60000 });
   await page.getByRole("heading", { name: /^Data health: \d+%$/ }).waitFor();
   results.checks.mappingAndFixLater = { confirmedMapping: true, loaded: 20, fixedThenLoaded: 2 };
   // 4D: the cancellation row loads from Fix Later as a credit line, then the Margin UI is driven end to end.
   await page.getByRole("button", { name: "Load negative-quantity rows of retail-like.csv as returns and credits" }).click();
-  await page.getByTestId("line-count").filter({ hasText: /^100041$/ }).waitFor({ timeout: 60000 });
+  await page.locator('[data-testid="line-count"][data-value="100041"]').waitFor({ timeout: 60000 });
   // The retail-like fixture's invoices span several customers: reconciliation must flag them, never adjust them.
   const diffs = page.getByRole("table", { name: "Reconciliation differences" }); await diffs.waitFor({ timeout: 60000 });
   const levels = await diffs.locator("tbody tr td:first-child").allInnerTexts();
-  assert.ok(levels.length > 0 && levels.every(l => l === "invoice"), `Unexpected reconciliation differences: ${levels.join(",")}`);
+  assert.ok(levels.length > 0 && levels.every(l => l === "Invoice"), `Unexpected reconciliation differences: ${levels.join(",")}`);
   await page.getByRole("button", { name: "Accept all differences" }).click();
   await page.getByTestId("recon-ok").waitFor({ timeout: 60000 });
   results.checks.reconciliation = { invoiceSplitsFlagged: levels.length, accepted: true };
@@ -308,15 +308,15 @@ try {
     'pricing-costs.csv':'vendor,product_id,cost,effective_date\nPrivacy Mills,'+priceSku+',60.00,2025-01-01\nPrivacy Mills,'+priceSku+',66.00,2025-02-01\n',
     'pricing-sales.csv':header+'9000001,'+priceSku+',E-CUSTOMER,2025-03-01,1,100.00,10.00,1.00,0.00,66.00\n'
   };const pricePaths=[];for(const [name,body]of Object.entries(files4E)){const file=path.resolve('test-results',name);await writeFile(file,body);pricePaths.push(file);}
-  const oldCount=BigInt(await page.getByTestId('line-count').innerText());await importFiles(pricePaths,String(oldCount+BigInt(1)));
+  const oldCount=BigInt(await page.getByTestId('line-count').getAttribute('data-value'));await importFiles(pricePaths,String(oldCount+BigInt(1)));
   await page.getByRole('link',{name:'Settings',exact:true}).click();
   await page.evaluate(()=>{window.showDirectoryPicker=async()=>await(await navigator.storage.getDirectory()).getDirectoryHandle('privacy-backup-seam',{create:true});});
   await page.getByRole('button',{name:'Choose backup folder',exact:true}).click();await page.getByRole('status').filter({hasText:'Encrypted folder backup written.'}).waitFor();
   await page.getByRole('link',{name:'Pricing',exact:true}).click();await page.getByLabel('Pricing Owner name',{exact:true}).fill('Synthetic Pricing Owner');
   await page.getByRole('button',{name:'Name me as Pricing Owner',exact:true}).click();await page.getByRole('status').filter({hasText:'Pricing Owner saved.'}).waitFor();
-  for(const [key,value]of Object.entries({tier:'E-TIER',category:'Privacy category',start:'11000',target:'10500',floor:'9500'}))await page.getByLabel('Guardrail '+key,{exact:true}).fill(value);
+  for(const [label,value]of Object.entries({'Customer tier':'E-TIER','Product category':'Privacy category','Start price (cents)':'11000','Target price (cents)':'10500','Floor price (cents)':'9500'}))await page.getByLabel(label,{exact:true}).fill(value);
   await page.getByRole('button',{name:'Save guardrails',exact:true}).click();await page.getByRole('status').filter({hasText:'Guardrails saved.'}).waitFor();
-  for(const [key,value]of Object.entries({name:marker+' rule',category:'Privacy category',vendor:'Privacy Mills',threshold:'5',increase:'4.5'}))await page.getByLabel('Rule '+key,{exact:true}).fill(value);
+  for(const [label,value]of Object.entries({'Rule name':marker+' rule','Rule category':'Privacy category','Cost source (supplier)':'Privacy Mills','Cost rise threshold (%)':'5','Price increase (%)':'4.5'}))await page.getByLabel(label,{exact:true}).fill(value);
   await page.getByRole('button',{name:'Save rule version',exact:true}).click();await page.getByRole('status').filter({hasText:'Rule version saved.'}).waitFor();
   await page.getByRole('button',{name:'Simulate price change',exact:true}).click();await page.getByRole('heading',{name:'Change preview',exact:true}).waitFor();
   await page.getByRole('cell',{name:'⚠ Yellow · owner review',exact:true}).waitFor();await page.getByRole('cell',{name:'104.50',exact:true}).first().waitFor();
@@ -329,6 +329,61 @@ try {
   if(!auth){await page.getByRole('button',{name:'Use licensed capacity',exact:true}).click();await page.getByRole('status').filter({hasText:'Licensed capacity applied'}).waitFor();results.checks.licensedCapacityUpgrade=true;}
   results.checks.pricingUi={owner:true,guardrails:true,rule:true,simulation:true,preview:true,approval:true,erpExportAndLog:true,folderHandleSeam:true,encryptedBackup:true};
 
+  // 7U: a language switch changes every screen and the generated text. The pseudo-locale brackets
+  // every message (⟦…⟧), so any visible word outside a bracket is hard-coded or untranslated text.
+  // Data the test imported is marked translate="no" by the UI and skipped.
+  const sectionLinks=['#home','#data-hub','#margin','#pricing','#reports','#settings'];
+  async function untranslated(){
+    return page.evaluate(()=>{const out=[];const roots=[...document.querySelectorAll('header,nav,main')];
+      const skip=n=>{for(let e=n.parentElement;e;e=e.parentElement){if(e.getAttribute('translate')==='no'||['SCRIPT','STYLE','CODE','OPTION'].includes(e.tagName)||e.hidden)return true;const st=getComputedStyle(e);if(st.display==='none'||st.visibility==='hidden')return true;}return false;};
+      for(const root of roots){const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);for(let n=walker.nextNode();n;n=walker.nextNode()){if(skip(n))continue;let t=n.textContent||'';
+        // Remove bracketed pseudo text, innermost first (nested references).
+        for(let i=0;i<5;i++)t=t.replace(/⟦[^⟦⟧]*⟧/g,' ');
+        // Intl-formatted dates use the pseudo-locale's en-US month names; they are values, not messages.
+        t=t.replace(/(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s\d{1,2},\s\d{4}(,\s\d{1,2}:\d{2}\s[AP]M)?/g,' ');
+        const words=t.match(/[A-Za-z]{3,}/g);if(words)out.push(t.trim().slice(0,120));}}
+      for(const el of document.querySelectorAll('main [aria-label],header [aria-label],nav [aria-label],main [placeholder],main [title]'))for(const a of ['aria-label','placeholder','title']){const v=el.getAttribute(a);if(v&&/[A-Za-z]{3,}/.test(v.replace(/⟦[^⟧]*⟧/g,''))&&el.closest('[translate="no"]')===null)out.push(`@${a}=${v.slice(0,80)}`);}
+      return [...new Set(out)];});
+  }
+  await page.evaluate(()=>localStorage.setItem('rebatehq.locale','pseudo'));
+  await page.reload();await page.locator('form input[type="password"]').waitFor();
+  assert.equal(await page.evaluate(()=>document.documentElement.lang),'en-XA','The pseudo-locale did not apply after reload');
+  const lockedLeft=await untranslated();assert.deepEqual(lockedLeft,[],'Untranslated text on the unlock screen');
+  await page.locator('form input[type="password"]').fill(secret);await page.locator('form:has(input[type="password"]) button').click();
+  await page.locator('[data-testid="line-count"]').waitFor({timeout:45000});
+  const pseudoFindings={};
+  for(const hash of sectionLinks){const link=page.locator(`nav a[href="${hash}"]`);if(!await link.count())continue;await link.click();
+    await page.waitForFunction(()=>!document.querySelector('main [aria-busy="true"]'),null,{timeout:60000}).catch(()=>undefined);await page.waitForTimeout(1500);
+    const left=await untranslated();if(left.length)pseudoFindings[hash]=left;}
+  assert.deepEqual(pseudoFindings,{},'Untranslated text in the pseudo-locale:\n'+JSON.stringify(pseudoFindings,null,1));
+  // Switch to French with the language picker: navigation, headings and the generated PDF follow.
+  await page.getByTestId('language').first().selectOption('fr');
+  await page.locator('nav a[href="#home"]').filter({hasText:'Accueil'}).waitFor();
+  assert.equal(await page.evaluate(()=>document.documentElement.lang),'fr');
+  await page.locator('nav a[href="#reports"]').click();await page.getByRole('heading',{name:'Rapport des fuites de marge'}).waitFor();
+  const [frPdf]=await Promise.all([page.waitForEvent('download'),page.getByRole('button',{name:'Télécharger le rapport des fuites (PDF)'}).click()]);
+  const frBytes=(await readFile(await frPdf.path())).toString('latin1');
+  assert.ok(frBytes.includes('Rapport des fuites de marge')&&!frBytes.includes('Margin Leak Report'),'The Leak Report PDF did not follow the chosen language');
+  assert.ok(/\\351/.test(frBytes),'French accents were not encoded in the PDF');
+  await page.locator('nav a[href="#data-hub"]').click();await page.getByRole('heading',{name:"Studio d'importation"}).waitFor();
+  // Spanish and Canadian French both switch the same screen.
+  await page.getByTestId('language').first().selectOption('es');await page.getByRole('heading',{name:'Estudio de importación'}).waitFor();
+  await page.getByTestId('language').first().selectOption('fr-CA');await page.getByRole('heading',{name:"Studio d'importation"}).waitFor();
+  await page.getByTestId('language').first().selectOption('en');await page.getByRole('heading',{name:'Import Studio'}).waitFor();
+  // Themes: the picker sets data-theme and the tokens change the rendered colours.
+  const bg=()=>page.evaluate(()=>getComputedStyle(document.querySelector('header')).backgroundColor);
+  const light=await bg();await page.getByTestId('theme').first().selectOption('dark');
+  assert.equal(await page.evaluate(()=>document.documentElement.dataset.theme),'dark');assert.notEqual(await bg(),light,'The dark theme did not change the background');
+  await page.getByTestId('theme').first().selectOption('contrast');assert.equal(await bg(),'rgb(255, 255, 255)','The high-contrast theme background is not white');
+  await page.getByTestId('theme').first().selectOption('system');assert.equal(await page.evaluate(()=>document.documentElement.dataset.theme??null),null);
+  // Command palette: Ctrl+K opens it, typing filters screens and finds a SKU from the vault.
+  await page.keyboard.press('Control+k');await page.getByTestId('command-palette').waitFor();
+  await page.getByRole('combobox',{name:'Search screens, commands, SKUs and customers'}).fill('pricing');
+  await page.getByRole('option',{name:/Pricing/}).first().waitFor();
+  await page.getByTestId('command-palette').getByRole('combobox').fill(priceSku);await page.getByRole('option',{name:new RegExp(priceSku)}).waitFor({timeout:15000});
+  await page.keyboard.press('Escape');await page.getByTestId('command-palette').waitFor({state:'hidden'});
+  results.checks.i18nUi={pseudoLocaleEveryScreen:true,french:true,spanish:true,canadianFrench:true,frenchLeakReportPdf:true,themes:['light','dark','contrast','system'],commandPalette:true};
+
   await page.getByRole("button", { name: "Lock vault", exact: true }).click(); await ready();
   if (full) {
     assert.ok(!auth, "Synthetic benchmark must not reset an authenticated vault");
@@ -340,7 +395,7 @@ try {
       results.measurements[`seed${rows}`] = await worker("seed", { rows });
       await context.close(); context = await chromium.launchPersistentContext(profile, browserOptions); await configureContext();
       page = await openPage(); await page.goto(base + route); await ready(); await unlock();
-      assert.equal(await page.getByTestId("line-count").innerText(), String(rows));
+      assert.equal(await page.getByTestId("line-count").getAttribute("data-value"), String(rows));
       results.measurements[`navigationToUnlocked${rows}Ms`] = await page.evaluate(() => Math.round(performance.now()));
       results.checks[`startup${rows}Under3s`] = results.measurements[`navigationToUnlocked${rows}Ms`] < 3000;
       if (rows === 1000000) assert.ok(results.checks.startup1000000Under3s, "1M encrypted startup missed the local three-second target");

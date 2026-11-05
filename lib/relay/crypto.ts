@@ -1,4 +1,5 @@
 import { DeviceSchema,EpochSchema,EventSchema,ContentSchema,RelayError,ZERO_HASH,admin,fail,type Device,type DirectoryDevice,type Epoch,type Wrap,type RelayEvent,type Content } from './protocol';
+import { msg } from "../i18n/core";
 const enc=new TextEncoder();
 const bytes=(v:Uint8Array)=>new Uint8Array(v).buffer;
 export const base64=(v:Uint8Array)=>{let s='';for(const b of v)s+=String.fromCharCode(b);return btoa(s);};
@@ -49,7 +50,7 @@ export async function verifyEpoch(value:unknown,previous:Epoch|null,expectedFing
  const e=EpochSchema.parse(value),signer=e.members.find(m=>m.deviceId===e.signerDevice&&m.userId===e.signerUser);
  if(!signer||!admin(signer.role))fail();
  if(previous){const old=previous.members.find(m=>m.deviceId===e.signerDevice&&m.userId===e.signerUser);if(!old||!admin(old.role)||old.signing!==signer.signing||old.ecdh!==signer.ecdh||e.tenantId!==previous.tenantId||BigInt(e.number)!==BigInt(previous.number)+BigInt(1)||e.previousHash!==previous.hash||BigInt(e.baseSequence)<BigInt(previous.baseSequence))fail();}
- else if(!expectedFingerprint||await fingerprint(signer)!==expectedFingerprint)fail('Verify the administrator fingerprint before joining this workspace.');
+ else if(!expectedFingerprint||await fingerprint(signer)!==expectedFingerprint)fail(msg("relay.crypto.verifyTheAdministratorFingerprint"));
  if(!await verifySignature(signer.signing,epochBody(e),e.signature)||e.hash!==await sha([epochBody(e),e.signature]))fail();return e;
 }
 export async function unwrapEpoch(identity:Identity,epoch:Epoch){
@@ -57,7 +58,7 @@ export async function unwrapEpoch(identity:Identity,epoch:Epoch){
  const header=wrapHeader(epoch.tenantId,epoch.id,epoch.signerDevice,w),k=await wrappingKey(await privateKey(identity.ecdhPrivate,'ECDH'),w.ephemeral,epoch.id,header);
  const raw=new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv:bytes(unbase64(w.iv)),additionalData:bytes(canonical(header))},k,bytes(unbase64(w.wrappedKey))));
  try{if(raw.length!==32)fail();return base64(raw);}finally{raw.fill(0);}
- }catch{throw new RelayError('KEY','This device cannot open the shared workspace key. Ask a trusted administrator to rotate and add this device.');}
+ }catch{throw new RelayError('KEY',msg("relay.crypto.thisDeviceCannotOpen"));}
 }
 export const eventHeader=(e:RelayEvent)=>['rehq.relay.event.v1',e.v,e.id,e.tenantId,e.epochId,e.sequence,e.previousHash,e.senderUser,e.senderDevice,e.objectId,e.objectKind,e.recipients,e.mentions,e.createdAt,e.iv];
 async function messageKey(key:string,e:RelayEvent){const raw=unbase64(key);try{return await hkdf(raw,uuidBytes(e.id),['rehq.relay.payload.v1',e.tenantId,e.epochId]);}finally{raw.fill(0);}}
@@ -73,6 +74,6 @@ export async function verifyEvent(value:unknown,epoch:Epoch,head:{sequence:strin
  if(!await verifySignature(sender.signing,[eventHeader(e),e.ciphertext],e.signature)||e.hash!==await sha([eventHeader(e),e.ciphertext,e.signature]))fail();return e;
 }
 export async function decryptEvent(e:RelayEvent,key:string){let plain:Uint8Array|undefined;try{
- try{plain=new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv:bytes(unbase64(e.iv)),additionalData:bytes(canonical(eventHeader(e)))},await messageKey(key,e),bytes(unbase64(e.ciphertext))));}catch{throw new RelayError('DECRYPT','This signed item could not be decrypted. No business operation was applied.');}
- try{return ContentSchema.parse(JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(plain)));}catch{throw new RelayError('CONTENT','An authenticated but invalid shared operation was rejected.');}
+ try{plain=new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv:bytes(unbase64(e.iv)),additionalData:bytes(canonical(eventHeader(e)))},await messageKey(key,e),bytes(unbase64(e.ciphertext))));}catch{throw new RelayError('DECRYPT',msg("relay.crypto.thisSignedItemCould"));}
+ try{return ContentSchema.parse(JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(plain)));}catch{throw new RelayError('CONTENT',msg("relay.crypto.anAuthenticatedButInvalid"));}
  }finally{plain?.fill(0);}}

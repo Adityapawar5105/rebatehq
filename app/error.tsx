@@ -1,2 +1,3 @@
 "use client";
-export default function ErrorPage({reset}:{error:Error&{digest?:string};reset:()=>void}){return <main className="app-content"><section className="app-card"><h1>We couldn't load this page</h1><p className="muted">Your data was not changed. Try again, or contact your workspace owner if this keeps happening.</p><button className="primary" onClick={reset}>Try again</button></section></main>}
+import { t, useLocale } from "@/lib/i18n";
+export default function ErrorPage({reset}:{error:Error&{digest?:string};reset:()=>void}){useLocale();return <main className="app-content"><section className="app-card"><h1>{t("page.error.weCouldnTLoad")}</h1><p className="muted">{t("page.error.yourDataWasNot")}</p><button className="primary" onClick={reset}>{t("page.error.tryAgain")}</button></section></main>}

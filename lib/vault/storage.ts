@@ -2,6 +2,7 @@
 declare global { interface FileSystemDirectoryHandle { entries(): AsyncIterableIterator<[string, FileSystemHandle]>; } }
 import { digest, encrypt, type Key } from "./crypto";
 import { VaultError, type Scope, type StorageStatus } from "./protocol";
+import { msg } from "../i18n/core";
 export type Head = { format: 1; current: string; previous: string | null; sequence: string; savedAt: string };
 const validName = (name: unknown): name is string => typeof name === "string" && /^snapshot-[0-9a-f-]{36}\.enc$/.test(name);
 const VAULTS_DIR = "rebatehq-vaults", LEGACY_VAULTS_DIR = "margindesk-vaults";
@@ -23,7 +24,7 @@ export class VaultStorage {
   activeHead: Head | null = null;
   constructor(public directory: FileSystemDirectoryHandle, public scope: string) {}
   static async open(scope: Scope) {
-    if (!/^[a-zA-Z0-9-]{1,80}$/.test(scope.userId) || !/^[a-zA-Z0-9-]{1,80}$/.test(scope.tenantId)) throw new VaultError("SCOPE", "A signed-in workspace is required.");
+    if (!/^[a-zA-Z0-9-]{1,80}$/.test(scope.userId) || !/^[a-zA-Z0-9-]{1,80}$/.test(scope.tenantId)) throw new VaultError("SCOPE", msg("vault.storage.aSignedInWorkspace"));
     const name = await digest(JSON.stringify([scope.userId, scope.tenantId]));
     return new VaultStorage(await openVaultDirectory(await navigator.storage.getDirectory(), name), name);
   }
@@ -34,7 +35,7 @@ export class VaultStorage {
       const head: Head = JSON.parse(await file.text());
       if (head.format !== 1 || !validName(head.current) || (head.previous !== null && !validName(head.previous)) || !/^\d{1,18}$/.test(head.sequence) || typeof head.savedAt !== "string") throw new Error("head");
       return head;
-    } catch (e) { if (e instanceof DOMException && e.name === "NotFoundError") return null; throw new VaultError("MANIFEST", "The vault pointer is damaged. Try the retained recovery generation."); }
+    } catch (e) { if (e instanceof DOMException && e.name === "NotFoundError") return null; throw new VaultError("MANIFEST", msg("vault.storage.theVaultPointerIs")); }
   }
   async candidates() {
     let head: Head | null = null, backup: Head | null = null;

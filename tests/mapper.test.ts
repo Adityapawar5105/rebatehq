@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { detectProfile, detectRole, lineIdFor, mappingProblems, needsConfirmation, suggestMapping, toMapping, type MappedField } from "../lib/studio/mapper";
+import { detectProfile, detectRole, lineIdFor, mappingProblems as problemRefs, needsConfirmation, suggestMapping, toMapping, type MappedField } from "../lib/studio/mapper";
+import { plainText } from "../lib/i18n/core";
+// Mapping problems are message references (chunk 7U); compare their English text.
+const mappingProblems = (...a: Parameters<typeof problemRefs>) => problemRefs(...a).map(plainText);
 import { cleanDate, cleanId, cleanNumber, lineTotal } from "../lib/studio/clean";
 import { detectDateFormat, normalizeHeader } from "../lib/studio/formats";
 import { generatePlayground, tierDiscountBp } from "../lib/studio/playground";

@@ -1,3 +1,4 @@
+import { plainText } from "../../lib/i18n/core";
 import { backupConfig, storeBackupConfig } from "../../lib/vault/backup";
 import { dispatch } from "../../lib/vault/dispatch";
 // Test-only worker, bundled under test-results and intercepted by Playwright.
@@ -328,7 +329,7 @@ async function mapper() {
   const report = (await service.studioPlan(signal(), noop)).report!, rep = report.files[0];
   // 20 good + 2 blank customers + 1 cancellation + 2 duplicates = 25 rows.
   assert(rep.rowsRead === "25" && report.loaded === "20" && report.rejected === "5", `Retail-like counts wrong: ${rep.rowsRead}/${report.loaded}/${report.rejected}`);
-  const notes = rep.cleaned.map(c => `${c.field}:${c.note}`);
+  const notes = rep.cleaned.map(c => `${c.field}:${plainText(c.note)}`); // notes are message references (7U)
   assert(notes.includes("sale_date:dropped the time of day") && notes.includes("sale_date:expanded two-digit years") && notes.some(n => n.startsWith("list_amount:removed currency")), `Cleanup notes missing: ${notes.join(" | ")}`);
   await service.studioCommit(true, noop);
   const line = (await q("SELECT invoice_id, product_id, sale_date::VARCHAR AS d, quantity::VARCHAR AS qty, list_cents::VARCHAR AS list, discount_cents::VARCHAR AS disc, cost_cents IS NULL AS no_cost FROM sales_lines WHERE source_row=2"))[0];

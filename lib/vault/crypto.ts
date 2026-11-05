@@ -1,4 +1,5 @@
 import { VaultError } from "./protocol";
+import { msg } from "../i18n/core";
 export const ITERATIONS = 600_000, CHUNK_BYTES = 1024 * 1024;
 const MAGIC = new TextEncoder().encode("MDVAULT1");
 export const buffer = (value: Uint8Array) => new Uint8Array(value).buffer;
@@ -9,8 +10,8 @@ const unb64 = (value: string) => Uint8Array.from(atob(value), c => c.charCodeAt(
 export type Key = { key: CryptoKey; salt: string };
 export type Envelope = { format: 1; bytes: number; chunkBytes: number; iterations: number; salt: string; iv: string; scope: string; sequence: string };
 export async function deriveKey(passphrase: string, salt = b64(crypto.getRandomValues(new Uint8Array(16)))): Promise<Key> {
-  if (typeof passphrase !== "string" || passphrase.length < 12 || passphrase.length > 256) throw new VaultError("PASSPHRASE", "Use a passphrase of 12–256 characters.");
-  const raw = unb64(salt); if (raw.length !== 16) throw new VaultError("FORMAT", "Invalid vault key settings.");
+  if (typeof passphrase !== "string" || passphrase.length < 12 || passphrase.length > 256) throw new VaultError("PASSPHRASE", msg("vault.crypto.useAPassphraseOf"));
+  const raw = unb64(salt); if (raw.length !== 16) throw new VaultError("FORMAT", msg("vault.crypto.invalidVaultKeySettings"));
   const material = await crypto.subtle.importKey("raw", new TextEncoder().encode(passphrase), "PBKDF2", false, ["deriveKey"]);
   const key = await crypto.subtle.deriveKey({ name: "PBKDF2", salt: buffer(raw), iterations: ITERATIONS, hash: "SHA-256" }, material, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
   return { key, salt };
@@ -58,5 +59,5 @@ export async function decrypt(source: Blob, passphrase: string, scope: string) {
       bytes.set(new Uint8Array(plain), out); at += length + 16; out += length;
     }
     return { bytes, key, sequence: meta.sequence };
-  } catch { bytes?.fill(0); throw new VaultError("UNLOCK_FAILED", "Wrong passphrase or damaged vault. No data was opened."); }
+  } catch { bytes?.fill(0); throw new VaultError("UNLOCK_FAILED", msg("vault.crypto.wrongPassphraseOrDamaged")); }
 }

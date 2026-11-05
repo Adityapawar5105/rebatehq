@@ -3,6 +3,7 @@
 // ERP profiles are built from public documentation and are UNVERIFIED until a real
 // export from that ERP has been tested; the user always sees and confirms the mapping.
 import { FILE_HINTS, ROLES, ROLE_FIELDS, normalizeHeader, type Role } from "./formats";
+import { msg } from "../i18n/core";
 
 export type ErpProfile = "generic" | "netsuite" | "p21" | "infor" | "bc" | "quickbooks";
 /** column: value from a column; unit: unit price/cost x quantity; zero: not in file, use 0;
@@ -109,16 +110,16 @@ export const isPercentHeader = (header: string) => /%|\bpct\b|percent|prozent|po
 type ProfileField = { column?: string[]; unit?: string[] };
 /** ERP-specific header names (normalized). Source: public documentation; unverified. markers: extra names that identify the ERP's export. */
 export const PROFILES: Record<ErpProfile, { label: string; note: string; fields: Record<string, ProfileField>; lineNo: string[]; markers?: string[] }> = {
-  generic: { label: "Generic export", note: "Common distributor header names.", fields: {}, lineNo: [] },
-  netsuite: { label: "Oracle NetSuite (saved search)", note: "Unverified: from NetSuite saved-search column labels in public documentation.", lineNo: n("line", "line id"), markers: n("internal id", "est gross profit"),
+  generic: { label: msg("mapper.genericExport"), note: msg("mapper.commonDistributorHeaderNames"), fields: {}, lineNo: [] },
+  netsuite: { label: "Oracle NetSuite (saved search)", note: msg("mapper.unverifiedFromNetsuiteSaved"), lineNo: n("line", "line id"), markers: n("internal id", "est gross profit"),
     fields: { invoice_id: { column: n("document number") }, sale_date: { column: n("date") }, customer_id: { column: n("customer", "name") }, product_id: { column: n("item") }, quantity: { column: n("quantity") }, list_amount: { column: n("amount"), unit: n("item rate", "rate") }, cost_amount: { column: n("est extended cost"), unit: n("est unit cost") } } },
-  p21: { label: "Epicor Prophet 21", note: "Unverified: from P21 invoice report field names in public documentation.", lineNo: n("line no", "line number"),
+  p21: { label: "Epicor Prophet 21", note: msg("mapper.unverifiedFromP21Invoice"), lineNo: n("line no", "line number"),
     fields: { invoice_id: { column: n("invoice no") }, line_id: { column: n("invoice line uid") }, product_id: { column: n("item id") }, customer_id: { column: n("customer id") }, quantity: { column: n("qty shipped") }, list_amount: { column: n("extended price"), unit: n("unit price") }, cost_amount: { column: n("extended cost"), unit: n("cost", "unit cost") }, sale_date: { column: n("invoice date") } } },
-  infor: { label: "Infor CloudSuite Distribution (SX.e/CSD)", note: "Unverified: from SX.e order-entry field names in public documentation.", lineNo: n("lineno", "line no"),
+  infor: { label: "Infor CloudSuite Distribution (SX.e/CSD)", note: msg("mapper.unverifiedFromSxE"), lineNo: n("lineno", "line no"),
     fields: { invoice_id: { column: n("orderno", "invoice no", "invno") }, product_id: { column: n("shipprod", "prod") }, customer_id: { column: n("custno") }, quantity: { column: n("qtyship") }, list_amount: { column: n("netamt"), unit: n("price") }, cost_amount: { unit: n("prodcost") }, sale_date: { column: n("invoicedt") } } },
-  bc: { label: "Microsoft Dynamics 365 Business Central", note: "Unverified: from Business Central sales-line field captions in public documentation.", lineNo: n("line no"),
+  bc: { label: "Microsoft Dynamics 365 Business Central", note: msg("mapper.unverifiedFromBusinessCentral"), lineNo: n("line no"),
     fields: { invoice_id: { column: n("document no") }, product_id: { column: n("no", "item no") }, customer_id: { column: n("sell to customer no", "bill to customer no") }, quantity: { column: n("quantity") }, list_amount: { unit: n("unit price", "unit price excl vat") }, discount_amount: { column: n("line discount amount") }, cost_amount: { unit: n("unit cost lcy", "unit cost") }, sale_date: { column: n("posting date") }, line_type: { column: n("type") } } },
-  quickbooks: { label: "QuickBooks Enterprise (Sales by Item Detail)", note: "Unverified: from the Sales by Item Detail report columns in public documentation. The item may come from the report's section headings.", lineNo: [], markers: n("balance", "memo"),
+  quickbooks: { label: "QuickBooks Enterprise (Sales by Item Detail)", note: msg("mapper.unverifiedFromTheSales"), lineNo: [], markers: n("balance", "memo"),
     fields: { invoice_id: { column: n("num") }, sale_date: { column: n("date") }, customer_id: { column: n("name") }, product_id: { column: n("item") }, quantity: { column: n("qty") }, list_amount: { column: n("amount"), unit: n("sales price") } } },
 };
 export const PROFILE_IDS = Object.keys(PROFILES) as ErpProfile[];
@@ -146,17 +147,17 @@ function candidates(role: Role, headers: string[], profile: ErpProfile) {
       if (!key) return;
       // "Discount %" normalizes like "Discount": read it as a percent of list, never as an amount.
       if (field === "discount_amount" && isPercentHeader(headers[index])) {
-        if (alt[field]?.includes("percent") && (g?.column.some(s => key.includes(s)) || key.includes("discount") || key.includes("rabatt"))) out.push({ field, index, kind: "percent", score: 0.85, reason: "Discount % of list; check it" });
+        if (alt[field]?.includes("percent") && (g?.column.some(s => key.includes(s)) || key.includes("discount") || key.includes("rabatt"))) out.push({ field, index, kind: "percent", score: 0.85, reason: msg("mapper.discountOfListCheck") });
         return;
       }
-      if (LIST_KEY_FIELD[role] === field && LIST_KEY.includes(key)) { out.push({ field, index, kind: "column", score: 0.75, reason: "The list's key column; check it" }); return; }
-      if (key === normalizeHeader(field)) { out.push({ field, index, kind: "column", score: 1, reason: "Exact column name" }); return; }
-      if (p?.column?.includes(key)) out.push({ field, index, kind: "column", score: 0.95, reason: `${PROFILES[profile].label} column name` });
-      if (p?.unit?.includes(key) && alt[field]?.includes("unit")) out.push({ field, index, kind: "unit", score: 0.9, reason: `${PROFILES[profile].label} unit value x quantity` });
-      if (g?.column.includes(key)) out.push({ field, index, kind: "column", score: 0.9, reason: "Common header name" });
-      if (g?.unit?.includes(key) && alt[field]?.includes("unit")) out.push({ field, index, kind: "unit", score: 0.85, reason: "Unit value x quantity" });
+      if (LIST_KEY_FIELD[role] === field && LIST_KEY.includes(key)) { out.push({ field, index, kind: "column", score: 0.75, reason: msg("mapper.theListSKey") }); return; }
+      if (key === normalizeHeader(field)) { out.push({ field, index, kind: "column", score: 1, reason: msg("mapper.exactColumnName") }); return; }
+      if (p?.column?.includes(key)) out.push({ field, index, kind: "column", score: 0.95, reason: msg("mapper.columnName", { label: PROFILES[profile].label }) });
+      if (p?.unit?.includes(key) && alt[field]?.includes("unit")) out.push({ field, index, kind: "unit", score: 0.9, reason: msg("mapper.unitValueXQuantity2", { label: PROFILES[profile].label }) });
+      if (g?.column.includes(key)) out.push({ field, index, kind: "column", score: 0.9, reason: msg("mapper.commonHeaderName") });
+      if (g?.unit?.includes(key) && alt[field]?.includes("unit")) out.push({ field, index, kind: "unit", score: 0.85, reason: msg("mapper.unitValueXQuantity") });
       // Fuzzy: the header contains a known name of 5+ letters (e.g. "Net Sales Amount").
-      else if (g && !g.column.includes(key) && g.column.some(s => s.length >= 5 && key.includes(s))) out.push({ field, index, kind: "column", score: 0.6, reason: "Partial header match; check it" });
+      else if (g && !g.column.includes(key) && g.column.some(s => s.length >= 5 && key.includes(s))) out.push({ field, index, kind: "column", score: 0.6, reason: msg("mapper.partialHeaderMatchCheck") });
     });
   }
   return out;
@@ -175,16 +176,16 @@ export function suggestMapping(role: Role, headers: string[], profile: ErpProfil
   // No customer ID column: the customer name is the key (it may also be the list's name column).
   if ((role === "sales_history" || role === "customer_list") && !result.has("customer_id")) {
     const at = keys.findIndex(k => CUSTOMER_NAME.includes(k));
-    if (at >= 0) result.set("customer_id", { field: "customer_id", source: { kind: "column", index: at }, confidence: 0.7, reason: "The customer name is used as the customer ID; check it" });
+    if (at >= 0) result.set("customer_id", { field: "customer_id", source: { kind: "column", index: at }, confidence: 0.7, reason: msg("mapper.theCustomerNameIs") });
   }
   const lineNo = keys.findIndex((k, i) => !used.has(i) && ([...LINE_NO, ...PROFILES[profile].lineNo]).includes(k));
   for (const f of fields) {
     if (result.has(f.name)) continue;
     const options = alt[f.name] ?? [];
-    if (options.includes("generate") && result.has("invoice_id")) result.set(f.name, { field: f.name, source: { kind: "generate", lineNo: lineNo >= 0 ? lineNo : null }, confidence: 0.8, reason: lineNo >= 0 ? "Generated from invoice number and line number" : "Generated from invoice number and line order" });
-    else if (options.includes("zero")) result.set(f.name, { field: f.name, source: { kind: "zero" }, confidence: 0.8, reason: "Not in file: 0 will be used" });
-    else if (options.includes("none") || !f.required) result.set(f.name, { field: f.name, source: { kind: "none" }, confidence: f.required ? 0 : 1, reason: f.required ? "Not found" : "Not in file" });
-    else result.set(f.name, { field: f.name, source: { kind: "none" }, confidence: 0, reason: "Not found" });
+    if (options.includes("generate") && result.has("invoice_id")) result.set(f.name, { field: f.name, source: { kind: "generate", lineNo: lineNo >= 0 ? lineNo : null }, confidence: 0.8, reason: lineNo >= 0 ? msg("mapper.generatedFromInvoiceNumber2") : msg("mapper.generatedFromInvoiceNumber") });
+    else if (options.includes("zero")) result.set(f.name, { field: f.name, source: { kind: "zero" }, confidence: 0.8, reason: msg("mapper.notInFile0") });
+    else if (options.includes("none") || !f.required) result.set(f.name, { field: f.name, source: { kind: "none" }, confidence: f.required ? 0 : 1, reason: f.required ? msg("mapper.notFound2") : msg("mapper.notInFile") });
+    else result.set(f.name, { field: f.name, source: { kind: "none" }, confidence: 0, reason: msg("mapper.notFound") });
   }
   return fields.map(f => result.get(f.name)!);
 }
@@ -198,11 +199,11 @@ export function mappingProblems(role: Role, mapping: Mapping) {
     if (s.kind !== "column" && s.kind !== "none" && !alt[f.name]?.includes(s.kind)) problems.push(f.name);
     else if (f.required && s.kind === "none") problems.push(f.name);
   }
-  if (role === "sales_history" && (mapping.line_id?.kind === "generate") && mapping.invoice_id?.kind !== "column") problems.push("invoice_id (needed to generate line IDs)");
-  if ((mapping.list_amount?.kind === "unit" || mapping.cost_amount?.kind === "unit" || mapping.cost_amount?.kind === "item_cost") && mapping.quantity?.kind !== "column") problems.push("quantity (needed for unit x quantity)");
-  if (role === "sales_history" && Object.values(mapping).some(s => s.kind === "header") && mapping.invoice_id?.kind !== "column") problems.push("invoice_id (needed to join the order header file)");
+  if (role === "sales_history" && (mapping.line_id?.kind === "generate") && mapping.invoice_id?.kind !== "column") problems.push(msg("mapper.invoiceIdNeededTo2"));
+  if ((mapping.list_amount?.kind === "unit" || mapping.cost_amount?.kind === "unit" || mapping.cost_amount?.kind === "item_cost") && mapping.quantity?.kind !== "column") problems.push(msg("mapper.quantityNeededForUnit"));
+  if (role === "sales_history" && Object.values(mapping).some(s => s.kind === "header") && mapping.invoice_id?.kind !== "column") problems.push(msg("mapper.invoiceIdNeededTo"));
   const share = mapping.discount_amount?.kind;
-  if ((share === "percent" || share === "fraction") && mapping.list_amount?.kind !== "column" && mapping.list_amount?.kind !== "unit") problems.push("list_amount (needed for a discount % of list)");
+  if ((share === "percent" || share === "fraction") && mapping.list_amount?.kind !== "column" && mapping.list_amount?.kind !== "unit") problems.push(msg("mapper.listAmountNeededFor"));
   if (role === "price_list" && mapping.product_id?.kind !== "column" && mapping.category?.kind !== "column") problems.push("product_id or category");
   return problems;
 }

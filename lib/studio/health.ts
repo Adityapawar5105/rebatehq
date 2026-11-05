@@ -1,6 +1,7 @@
 // Data health score: equal-weight mean of the components that apply, each with a
 // visible formula and an improvement step. Statistics only; money stays exact elsewhere.
 import type { Engine } from "../vault/engine";
+import { msg } from "../i18n/core";
 export type HealthComponent = { key: string; label: string; score: number | null; detail: string; step: string };
 export type Health = { score: number | null; formula: string; components: HealthComponent[]; linesBelowCost: string; openFixLater: string };
 const pct = (num: bigint, den: bigint) => den === BigInt(0) ? null : Math.round(Number(num * BigInt(1000) / den) / 10);
@@ -20,16 +21,16 @@ SELECT (SELECT count(*) FROM sales_lines)::VARCHAR AS lines,
   const n = (k: string) => BigInt(String(f[k]));
   const lines = n("lines"), products = n("products"), customers = n("customers");
   const components: HealthComponent[] = [
-    { key: "cost", label: "Lines with a known cost", score: pct(n("costed"), lines), detail: `${n("costed")} of ${lines} invoice lines`, step: "Map a cost column, or load an item master or vendor cost sheet. Margins cannot be trusted without cost." },
-    { key: "unique", label: "Unique product IDs", score: products ? pct(products - n("dup_products"), products) : null, detail: `${n("dup_products")} of ${products} products differ only by case or spaces`, step: "Merge look-alike product IDs (item master cleanup arrives in the next phase)." },
-    { key: "prices", label: "Consistent prices", score: pct(n("comparable") - n("outliers"), n("comparable")), detail: `${n("outliers")} of ${n("comparable")} lines are priced above 5x or below 1/5 of the product's median unit price`, step: "Check those lines for unit-of-measure or keying errors." },
-    { key: "complete", label: "Import completeness", score: pct(lines, lines + n("open_rows")), detail: `${n("open_rows")} rejected rows are waiting in Fix Later`, step: "Work through Fix Later: correct, then re-check and load, or dismiss." },
-    { key: "customers", label: "Customers with a pricing tier", score: pct(n("tiered"), customers), detail: `${n("tiered")} of ${customers} customers`, step: "Load a customer list with a tier column." },
+    { key: "cost", label: msg("health.linesWithAKnown"), score: pct(n("costed"), lines), detail: msg("health.ofInvoiceLines", { value: n("costed"), lines }), step: msg("health.mapACostColumn") },
+    { key: "unique", label: msg("health.uniqueProductIds"), score: products ? pct(products - n("dup_products"), products) : null, detail: msg("health.ofProductsDifferOnly", { value: n("dup_products"), products }), step: msg("health.mergeLookAlikeProduct") },
+    { key: "prices", label: msg("health.consistentPrices"), score: pct(n("comparable") - n("outliers"), n("comparable")), detail: msg("health.ofLinesArePriced", { value: n("outliers"), value2: n("comparable") }), step: msg("health.checkThoseLinesFor") },
+    { key: "complete", label: msg("health.importCompleteness"), score: pct(lines, lines + n("open_rows")), detail: msg("health.rejectedRowsAreWaiting", { value: n("open_rows") }), step: msg("health.workThroughFixLater") },
+    { key: "customers", label: msg("health.customersWithAPricing"), score: pct(n("tiered"), customers), detail: msg("health.ofCustomers", { value: n("tiered"), customers }), step: msg("health.loadACustomerList") },
   ];
   const scored = components.filter(c => c.score !== null);
   return {
     score: scored.length ? Math.round(scored.reduce((s, c) => s + c.score!, 0) / scored.length) : null,
-    formula: "Health = average of the components that apply (each 0-100%, equal weight).",
+    formula: msg("health.healthAverageOfThe"),
     components, linesBelowCost: String(n("below_cost")), openFixLater: String(n("open_rows")),
   };
 }

@@ -6,6 +6,7 @@ import type { Engine } from "../vault/engine";
 import { sqlText as Q } from "../spike/exact";
 import { VaultError } from "../vault/protocol";
 import { CANONICAL_UNITS, canonicalUnit } from "./uom";
+import { msg } from "../i18n/core";
 export type FixKind = "merge_duplicates" | "normalize_uom" | "set_category";
 export const MAX_MERGE_LINES = 250_000;
 const GROUP_LIMIT = 100, MEMBER_LIMIT = 5000;
@@ -73,36 +74,36 @@ const BUMP = "UPDATE vault_meta SET pricing_revision=pricing_revision+1 WHERE id
 /** Plan one fix. `key` names a group from the latest scan; the plan is recomputed from the vault, never from the client's list. */
 export async function plan(e: Engine, kind: FixKind, key: string, target: string | null, actor: string, at: string): Promise<Plan> {
   const id = crypto.randomUUID();
-  if (typeof key !== "string" || key.length > 200) return bad("Choose a group from the list.");
+  if (typeof key !== "string" || key.length > 200) return bad(msg("itemfix.chooseAGroupFrom"));
   if (kind === "normalize_uom") {
     const to = target ?? canonicalUnit(key);
-    if (!to || !CANONICAL_UNITS.includes(to)) return bad("Choose the unit to use. An unknown unit is never guessed.");
-    if (to === key) return bad("That unit is already spelled that way.");
+    if (!to || !CANONICAL_UNITS.includes(to)) return bad(msg("itemfix.chooseTheUnitTo"));
+    if (to === key) return bad(msg("itemfix.thatUnitIsAlready"));
     const n = Number((await rows(e, `SELECT count(*) AS n FROM products WHERE uom = ${Q(key)}`))[0].n);
-    if (!n) return bad("No products use that unit any more. Scan again.");
-    const summary = `Spell unit "${key || "(blank)"}" as ${to} on ${n} product${n === 1 ? "" : "s"}`;
+    if (!n) return bad(msg("itemfix.noProductsUseThat"));
+    const summary = msg("itemfix.spellUnit", { unit: key || msg("itemfix.blank"), to, count: n });
     return { fixId: id, kind, summary, cells: n, finishSql: "", sql: `${header(id, kind, summary, n, at, actor)}
 ${journal(id, [`SELECT 1 AS o, 'products' AS t, product_id AS k1, CAST(NULL AS VARCHAR) AS k2, 'uom' AS c, uom AS b, ${Q(to)} AS a FROM products WHERE uom = ${Q(key)}`])}
 UPDATE products SET uom = ${Q(to)} WHERE uom = ${Q(key)}; ${BUMP}` };
   }
   if (kind === "set_category") {
     const found = (await scan(e)).categories.find(c => c.key === key);
-    if (!found) return bad("No uncategorised products with that ID prefix remain. Scan again.");
+    if (!found) return bad(msg("itemfix.noUncategorisedProductsWith"));
     const category = (target ?? found!.suggestion ?? "").trim();
-    if (!category) return bad("Choose a category: there is not enough evidence to suggest one.");
-    if (category.length > 160 || /[\x00-\x1f]/.test(category)) return bad("Use a category of 1-160 characters without control characters.");
-    const n = Number(found!.products), summary = `Set category "${category}" on ${n} product${n === 1 ? "" : "s"} with ID prefix ${key}`;
+    if (!category) return bad(msg("itemfix.chooseACategoryThere"));
+    if (category.length > 160 || /[\x00-\x1f]/.test(category)) return bad(msg("itemfix.useACategoryOf"));
+    const n = Number(found!.products), summary = msg("itemfix.setCategory", { category, count: n, prefix: key });
     const where = `category = '' AND ${PREFIX.replaceAll("p.", "")} = ${Q(key)}`;
     return { fixId: id, kind, summary, cells: n, finishSql: "", sql: `${header(id, kind, summary, n, at, actor)}
 ${journal(id, [`SELECT 1 AS o, 'products' AS t, product_id AS k1, CAST(NULL AS VARCHAR) AS k2, 'category' AS c, category AS b, ${Q(category)} AS a FROM products WHERE ${where}`])}
 UPDATE products SET category = ${Q(category)} WHERE ${where}; ${BUMP}` };
   }
-  if (kind !== "merge_duplicates") return bad("Unsupported fix.");
+  if (kind !== "merge_duplicates") return bad(msg("itemfix.unsupportedFix"));
   const group = (await duplicateGroups(e, key)).groups[0];
-  if (!group || group.members.length < 2) return bad("That group no longer exists. Scan again.");
+  if (!group || group.members.length < 2) return bad(msg("itemfix.thatGroupNoLonger"));
   const canon = group.canonical, dups = group.members.map(m => m.product).filter(p => p !== canon), list = dups.map(Q).join(","), canonQ = Q(canon);
   const moved = Number((await rows(e, `SELECT count(*) AS n FROM sales_lines WHERE product_id IN (${list})`))[0].n);
-  if (moved > MAX_MERGE_LINES) return bad(`This merge would move ${moved} invoice lines; the limit is ${MAX_MERGE_LINES}. Narrow the duplicates first.`);
+  if (moved > MAX_MERGE_LINES) return bad(msg("itemfix.thisMergeWouldMove", { moved, maxmergelines: MAX_MERGE_LINES }));
   const vendor = Number((await rows(e, `SELECT count(*) AS n FROM vendor_costs WHERE product_id IN (${list})`))[0].n), price = Number((await rows(e, `SELECT count(*) AS n FROM price_matrix WHERE product_id IN (${list})`))[0].n);
   // Fill the canonical product's empty fields from the duplicates (largest first), keeping what it already has.
   const have = (await rows(e, `SELECT description, category, current_cost::VARCHAR AS current_cost, list_price::VARCHAR AS list_price FROM products WHERE product_id = ${canonQ}`))[0];
@@ -123,7 +124,7 @@ UPDATE products SET category = ${Q(category)} WHERE ${where}; ${BUMP}` };
     `SELECT 5, 'price_matrix', id, CAST(NULL AS VARCHAR), 'product_id', product_id, ${canonQ} FROM price_matrix WHERE product_id IN (${list})`,
   ];
   const cells = moved + vendor + price + dups.length + fills.length;
-  const summary = `Merge ${dups.length} look-alike product ID${dups.length === 1 ? "" : "s"} (${dups.join(", ")}) into ${canon}: ${moved} invoice line${moved === 1 ? "" : "s"} moved`;
+  const summary = msg("itemfix.merge", { count: dups.length, ids: dups.join(", "), canon, moved: msg("itemfix.linesMoved", { count: moved }) });
   // DuckDB refuses to delete a product row in the same transaction that re-pointed its invoice lines,
   // so the duplicates are removed in a second step (finishSql). Re-running the merge finishes it.
   return { fixId: id, kind, summary, cells, sql: `${header(id, kind, summary, cells, at, actor)}
@@ -140,8 +141,8 @@ export type UndoPlan = { kind: FixKind; summary: string; restored: number; skipp
 /** Undo one fix: restore only the cells that still hold the value the fix wrote; later changes are left alone and counted. */
 export async function undoPlan(e: Engine, fixId: string, actor: string, at: string): Promise<UndoPlan> {
   const fix = (await rows(e, `SELECT kind, summary, cells, undone_at FROM cleanup_fixes WHERE id = ${Q(fixId)}`))[0];
-  if (!fix) return bad("That fix is not in this vault.");
-  if (fix.undone_at !== null) return bad("That fix was already undone.");
+  if (!fix) return bad(msg("itemfix.thatFixIsNot"));
+  if (fix.undone_at !== null) return bad(msg("itemfix.thatFixWasAlready"));
   const id = Q(fixId), kind = fix.kind as FixKind, mark = `UPDATE cleanup_fixes SET undone_at = ${Q(at)}, undone_by = ${Q(actor)} WHERE id = ${id}; ${BUMP}`;
   const count = async (sql: string) => Number((await rows(e, sql))[0].n);
   if (kind !== "merge_duplicates") {

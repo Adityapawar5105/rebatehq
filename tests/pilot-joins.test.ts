@@ -5,7 +5,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import * as XLSX from "xlsx";
 import type { Settings } from "../lib/studio/formats";
-import { detectRole, mappingProblems, needsConfirmation, suggestMapping, type MappedField } from "../lib/studio/mapper";
+import { detectRole, mappingProblems as problemRefs, needsConfirmation, suggestMapping, type MappedField } from "../lib/studio/mapper";
+import { plainText } from "../lib/i18n/core";
+// Mapping problems are message references (chunk 7U); compare their English text.
+const mappingProblems = (...a: Parameters<typeof problemRefs>) => problemRefs(...a).map(plainText);
 import { Studio } from "../lib/studio/studio";
 import { createStage, fillItemCost, joinHeaders, markUnjoined, resetStage, spreadFreight, validate, type StagedFile } from "../lib/studio/load";
 import { sheetGrid, MAX_SHEET_ROWS } from "../lib/studio/sheets";

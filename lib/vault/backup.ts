@@ -1,7 +1,8 @@
 import { VaultError } from './protocol';
+import { msg } from "../i18n/core";
 export type BackupConfig = { directory: FileSystemDirectoryHandle | null; hours: number; last: string | null; error: boolean };
 const defaults = (): BackupConfig => ({directory:null,hours:24,last:null,error:false});
-async function db() { return new Promise<IDBDatabase>((resolve,reject)=>{const r=indexedDB.open('rebatehq-backup-handles',1);r.onupgradeneeded=()=>r.result.createObjectStore('handles');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(new Error('Backup settings unavailable.'));}); }
+async function db() { return new Promise<IDBDatabase>((resolve,reject)=>{const r=indexedDB.open('rebatehq-backup-handles',1);r.onupgradeneeded=()=>r.result.createObjectStore('handles');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(new Error(msg("vault.backup.backupSettingsUnavailable")));}); }
 /** Settings saved before the RebateHQ rename sit in the legacy database. Opening a missing database would create it, so abort the upgrade to detect that. */
 async function legacyBackupConfig(scope: string): Promise<BackupConfig | null> {
   return new Promise(resolve=>{let missing=false;const r=indexedDB.open('margindesk-backup-handles',1);
@@ -23,5 +24,5 @@ export async function writeBackup(source: Blob, directory: FileSystemDirectoryHa
   // createWritable.close atomically replaces the file. Keep an earlier backup too.
   try {const old=await (await directory.getFileHandle('rebatehq-backup.enc')).getFile();const previous=await (await directory.getFileHandle('rebatehq-backup.previous.enc',{create:true})).createWritable();await old.stream().pipeTo(previous);} catch(e){if(!(e instanceof DOMException&&e.name==='NotFoundError'))throw e;}
   const stream=await (await directory.getFileHandle('rebatehq-backup.enc',{create:true})).createWritable();
-  try {await source.stream().pipeTo(stream);} catch{throw new VaultError('BACKUP','Backup could not be written. Re-select the folder and retry; the vault and previous backup are retained.');}
+  try {await source.stream().pipeTo(stream);} catch{throw new VaultError('BACKUP',msg("vault.backup.backupCouldNotBe"));}
 }

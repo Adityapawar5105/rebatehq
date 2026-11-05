@@ -10,13 +10,14 @@ import { appendAudit } from "../vault/audit";
 import { ROLE_FIELDS, StudioError } from "../studio/formats";
 import { CODES, capUsage, createStage, issueMessage, resetStage, validate, type StagedFile } from "../studio/load";
 import { CAPS, type Tier } from "../vault/protocol";
+import { msg } from "../i18n/core";
 export const CREDIT_CODE = "quantity:negative";
 const CANONICAL = { sheet: null, headerRow: 0, headerDepth: 1 as const, delimiter: "," as const, encoding: "utf-8" as const, decimal: "dot" as const, dateFormat: "YYYY-MM-DD" as const };
 const SIGNED = new Set(["quantity", "list_amount", "discount_amount", "freight_amount", "rebate_amount", "cost_amount"]);
 export async function loadCredits(engine: Engine, sourceId: string, tier: Tier) {
   const s = sqlText(sourceId), src = (await engine.conn.query(`SELECT name, role FROM source_files WHERE id=${s}`)).toArray()[0];
-  if (!src) throw new StudioError("That file is no longer in the vault.");
-  if (src.role !== "sales_history") throw new StudioError("Only sales history rows can load as returns or credits.");
+  if (!src) throw new StudioError(msg("credits.thatFileIsNo"));
+  if (src.role !== "sales_history") throw new StudioError(msg("credits.onlySalesHistoryRows"));
   const fields = ROLE_FIELDS.sales_history, name = String(src.name);
   const file: StagedFile = { ord: 0, role: "sales_history", name, bytes: 0, fingerprint: "", alignment: fields.map((f, index) => ({ field: f.name, index })), settings: CANONICAL, keyed: true, headers: fields.map(f => f.name), colOffset: 0 };
   await resetStage(engine); await createStage(engine, "sales_history");
@@ -32,7 +33,7 @@ export async function loadCredits(engine: Engine, sourceId: string, tier: Tier) 
   const ok = String(counts.ok), bad = String(counts.bad);
   if (ok === "0") { await resetStage(engine); return { loaded: "0", stillRejected: bad }; }
   const usage = await capUsage(engine, new Set(["sales_history"]), null), cap = CAPS[tier];
-  if (usage.lines > BigInt(cap.lines) || usage.products > BigInt(cap.products)) { await resetStage(engine); throw new StudioError(`Loading these credits would exceed your ${tier} limit of ${cap.lines.toLocaleString("en-US")} invoice lines or ${cap.products.toLocaleString("en-US")} products.`); }
+  if (usage.lines > BigInt(cap.lines) || usage.products > BigInt(cap.products)) { await resetStage(engine); throw new StudioError(msg("credits.loadingTheseCreditsWould", { tier, lines: cap.lines, products: cap.products })); }
   const codes = [...CODES("sales_history"), "credit:sign"];
   const messages = codes.map(code => `(0,${sqlText(code)},${sqlText(code.includes(":") ? code.split(":")[0] : "")},${sqlText(code === "credit:sign" ? CREDIT_SIGN_MESSAGE : issueMessage(code, CANONICAL))})`).join(",");
   const valid = "(SELECT * FROM ty_sales_history WHERE err IS NULL)";
@@ -53,4 +54,4 @@ UPDATE import_batches SET rows_loaded=rows_loaded+${ok}, rows_rejected=greatest(
   finally { await resetStage(engine).catch(() => undefined); await engine.conn.query("DROP TABLE IF EXISTS temp.credit_sign").catch(() => undefined); }
   return { loaded: ok, stillRejected: bad };
 }
-export const CREDIT_SIGN_MESSAGE = "A return with a positive amount: the quantity is negative but an amount is above zero. Correct the sign, then load the group as credits.";
+export const CREDIT_SIGN_MESSAGE = msg("credits.aReturnWithA");

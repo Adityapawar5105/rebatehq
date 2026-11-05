@@ -1,2 +1,3 @@
 import Link from "next/link";
-export default function NotFound(){return <main className="app-content"><section className="app-card"><h1>Page not found</h1><p className="muted">This page may have moved or your access may have changed.</p><Link href="/dashboard">Return to dashboard</Link></section></main>}
+import { serverT } from "@/lib/i18n/server";
+export default async function NotFound(){const t=await serverT();return <main className="app-content"><section className="app-card"><h1>{t("page.notFound.pageNotFound")}</h1><p className="muted">{t("page.notFound.thisPageMayHave")}</p><Link href="/dashboard">{t("page.notFound.returnToDashboard")}</Link></section></main>}

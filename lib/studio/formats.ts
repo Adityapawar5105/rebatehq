@@ -1,3 +1,4 @@
+import { msg } from "../i18n/core";
 // Import Studio shared types, canonical role columns and header/role detection.
 // Pure functions: no DOM, DuckDB or Node APIs, so they run in the worker and in unit tests.
 export type Role = "sales_history" | "item_master" | "customer_list" | "vendor_cost" | "rebate_agreement" | "price_list" | "order_header";
@@ -11,8 +12,8 @@ export class StudioError extends Error {}
 
 export const ROLES: Role[] = ["sales_history", "item_master", "customer_list", "vendor_cost", "price_list", "rebate_agreement", "order_header"];
 export const ROLE_LABELS: Record<Role, string> = {
-  sales_history: "Sales history", item_master: "Item master", customer_list: "Customer list",
-  vendor_cost: "Vendor cost sheet", rebate_agreement: "Rebate agreement", price_list: "Price list", order_header: "Order headers (joined to lines)",
+  sales_history: msg("filetype.salesHistory"), item_master: msg("filetype.itemMaster"), customer_list: msg("filetype.customerList"),
+  vendor_cost: msg("filetype.vendorCostSheet"), rebate_agreement: msg("filetype.rebateAgreement"), price_list: msg("filetype.priceList"), order_header: msg("filetype.orderHeadersJoinedTo"),
 };
 export const DATE_FORMATS: DateFormat[] = ["YYYY-MM-DD", "MM/DD/YYYY", "DD/MM/YYYY", "DD.MM.YYYY", "DD-MM-YYYY"];
 export const DELIMITERS: Delimiter[] = [",", ";", "\t", "|"];

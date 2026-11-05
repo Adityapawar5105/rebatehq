@@ -4,12 +4,13 @@ import { dispatch } from "./dispatch";
 import { StudioError } from "../studio/formats";
 import { VaultError, type Request, type Response } from "./protocol";
 import {RelayError} from '../relay/protocol';
+import { msg } from "../i18n/core";
 const scope = self as unknown as DedicatedWorkerGlobalScope;
 const post = (value: Response) => scope.postMessage(value);
 let queue = Promise.resolve(), abort = new AbortController();
 const service = new VaultService(() => {
   abort.abort(); void service.engine?.conn.cancelSent();
-  queue = queue.then(async () => { const saved = await service.autoLock(); post({ event: "locked", reason: saved ? "Locked after 10 minutes of inactivity." : "Auto-locked. The last unsaved change could not be saved; the previous encrypted snapshot is safe." }); });
+  queue = queue.then(async () => { const saved = await service.autoLock(); post({ event: "locked", reason: saved ? msg("vault.worker.lockedAfter10Minutes") : msg("vault.worker.autoLockedTheLast") }); });
 });
 const progress = (stage: string, done: string, total: string) => post({ event: "progress", stage, done, total });
 function cancellable() { return abort.signal; }
@@ -27,7 +28,7 @@ scope.onmessage = event => {
     // Only our own fixed messages cross the boundary; engine errors can embed cell values.
     const own = error instanceof VaultError || error instanceof StudioError || error instanceof RelayError;
     const cancelled = abort.signal.aborted && !own;
-    post({ id: request.id, error: { code: error instanceof VaultError || error instanceof RelayError ? error.code : cancelled ? "CANCELLED" : own ? "STUDIO" : "LOCAL", message: own ? error.message : cancelled ? request.action.startsWith('relay') ? "Sharing cancelled. Sync to check whether a pending item arrived; your encrypted save is retained." : "Import cancelled. No rows were committed." : "The local operation failed. No source values were logged. Keep this tab open if a save is pending." } });
+    post({ id: request.id, error: { code: error instanceof VaultError || error instanceof RelayError ? error.code : cancelled ? "CANCELLED" : own ? "STUDIO" : "LOCAL", message: own ? error.message : cancelled ? request.action.startsWith('relay') ? msg("vault.worker.sharingCancelledSyncTo") : msg("vault.worker.importCancelledNoRows") : msg("vault.worker.theLocalOperationFailed") } });
   });
 };
 

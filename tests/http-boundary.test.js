@@ -16,7 +16,10 @@ test('every API is classified; retired handlers stop before any request or data 
 test('reachable API import graphs contain no business-table writes',async()=>{
  const {CONTROL_API_PATHS,CONTROL_TABLES}=await import('../config/http-boundary.mjs');const writes=/\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM|TRUNCATE(?:\s+TABLE)?)\s+(?:public\.)?([a-z_][a-z0-9_]*)/gi;
  for(const route of CONTROL_API_PATHS){const start=`app/api/${route}/route.ts`;assert.ok(fs.existsSync(start),'Missing registered route '+route);const seen=new Set();
- function visit(file){if(seen.has(file))return;seen.add(file);const text=fs.readFileSync(file,'utf8');for(const m of text.matchAll(writes))assert.ok(CONTROL_TABLES.includes(m[1]),`${route} reaches a write to ${m[1]} in ${file}`);
+ // Language catalogs (chunk 7U) hold only message text, where words such as "update the app" are prose, not SQL.
+ // They must stay data-only: no imports except types, so they cannot reach other code.
+ const catalog=f=>/lib[\\/]i18n[\\/]locales[\\/]/.test(f);
+ function visit(file){if(seen.has(file))return;seen.add(file);const text=fs.readFileSync(file,'utf8');if(catalog(file)){assert.ok(![...text.matchAll(/^import\s+(?!type\b)/gm)].length,`${file} must stay data-only`);for(const m of text.matchAll(/from\s+["'](\.[^"']+)["']/g)){const base=path.resolve(path.dirname(file),m[1]);if(fs.existsSync(base+'.ts'))visit(base+'.ts');}return;}for(const m of text.matchAll(writes))assert.ok(CONTROL_TABLES.includes(m[1]),`${route} reaches a write to ${m[1]} in ${file}`);
  for(const m of text.matchAll(/from\s+["'](@\/[^"']+|\.[^"']+)["']/g)){const base=m[1].startsWith('@/')?m[1].slice(2):path.resolve(path.dirname(file),m[1]);for(const ext of ['.ts','.tsx','.mjs'])if(fs.existsSync(base+ext)){visit(base+ext);break;}}}
  visit(start);}
 });

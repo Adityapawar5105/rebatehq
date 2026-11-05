@@ -9,10 +9,11 @@ import type { FixGroup, FixRow } from "@/lib/studio/fixlater";
 import type { Health } from "@/lib/studio/health";
 import type { ReconSummary } from "@/lib/margin/aggregate";
 import { PLAYGROUND_PREFIX, type PlaygroundManifest } from "@/lib/studio/playground";
+import { fmt, msg, say, t, type MessageKey } from "@/lib/i18n";
 import styles from "./vault.module.css";
 type Props = { client: VaultClient; status: VaultStatus; busy: boolean; operation: (work: () => Promise<void>) => Promise<void>; onStatus: (status: VaultStatus) => void; setMessage: (message: string) => void };
 const ACCEPT = ".csv,.tsv,.txt,.xlsx,.xlsm,.xls,.xlsb,.ods,.json,.xml";
-const DELIMITER_LABELS: Record<string, string> = { ",": "Comma", ";": "Semicolon", "\t": "Tab", "|": "Pipe" };
+const DELIMITER_LABELS: Record<string, MessageKey> = { ",": "studio.comma", ";": "studio.semicolon", "\t": "studio.tab", "|": "studio.pipe" };
 const directory = { webkitdirectory: "", directory: "" } as Record<string, string>;
 function save(blob: Blob, name: string) {
   const url = URL.createObjectURL(blob), a = document.createElement("a");
@@ -31,7 +32,10 @@ async function droppedFiles(entries: FileSystemEntry[]) {
   for (const entry of entries) await walk(entry);
   return out;
 }
-const statusText = (f: FileView) => f.loadable ? "Ready to load" : f.role && !f.missing.length ? "Convert only" : "Needs attention";
+const RECON_LEVEL: Record<ReconSummary["open"][number]["level"], MessageKey> = { invoice: "studio.level.invoice", customer_month: "studio.level.customerMonth", total: "studio.level.total" };
+// The Playground's planted leaks are fixed test data (tests/fixtures/playground-manifest.json); only their display text is translated.
+const PLANTED: Record<string, MessageKey> = { L1: "studio.planted.L1", L2: "studio.planted.L2", L3: "studio.planted.L3", L4: "studio.planted.L4", L5: "studio.planted.L5" };
+const statusText = (f: FileView) => f.loadable ? t("studio.readyToLoad") : f.role && !f.missing.length ? t("studio.convertOnly") : t("studio.needsAttention");
 
 export function ImportStudio({ client, status, busy, operation, onStatus, setMessage }: Props) {
   const [studio, setStudio] = useState<StudioState | null>(null), [sources, setSources] = useState<SourceView[]>([]);
@@ -47,11 +51,11 @@ export function ImportStudio({ client, status, busy, operation, onStatus, setMes
   const shared = { client, busy, operation, onStatus, setMessage, version, bump };
   async function add(files: File[], replaces: string | null = null) {
     const supported = files.filter(f => kindOf(f.name)), skipped = files.length - supported.length;
-    if (!supported.length) { await operation(async () => { throw new Error("None of these files is a supported business data format (CSV, TSV, TXT, XLSX, XLSM, XLS, XLSB, ODS, JSON or XML)."); }); return; }
+    if (!supported.length) { await operation(async () => { throw new Error(msg("studio.noneOfTheseFiles")); }); return; }
     await operation(async () => {
       const next = await client.call("studioAdd", { files: supported, replaces });
       setStudio(next); setAck(false); setOpen(next.files.at(-1)?.id ?? null);
-      setMessage(`${supported.length} file(s) added for review. Nothing is uploaded.${skipped ? ` ${skipped} unsupported file(s) were ignored.` : ""}`);
+      setMessage(msg("studio.filesAdded", { count: supported.length }) + (skipped ? " " + msg("studio.filesIgnored", { count: skipped }) : ""));
     });
   }
   const update = (id: string, settings: Partial<Settings>, role?: Role | null) => operation(async () => { setStudio(await client.call("studioUpdate", { id, settings, ...(role !== undefined ? { role } : {}) })); setAck(false); });
@@ -59,84 +63,84 @@ export function ImportStudio({ client, status, busy, operation, onStatus, setMes
   const canCommit = !!report && report.loaded !== "0" && report.capOk && (report.rejected === "0" || ack);
   return <>
     <section className={styles.card}>
-      <h2>Import Studio</h2>
-      <p>Drop the files you have: sales history, item master, customer list, vendor cost sheets, price lists or rebate agreements. They are converted to clean CSV in this browser and loaded into your encrypted vault. Nothing is uploaded.</p>
+      <h2>{t("studio.importStudio")}</h2>
+      <p>{t("studio.dropTheFilesYou")}</p>
       <div className={styles.drop} data-over={over || undefined} onDragOver={event => { event.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)}
         onDrop={event => { event.preventDefault(); setOver(false); if (busy) return; const entries = [...event.dataTransfer.items].map(i => i.webkitGetAsEntry?.()).filter((e): e is FileSystemEntry => !!e); void (entries.length ? droppedFiles(entries) : Promise.resolve([...event.dataTransfer.files])).then(list => add(list)); }}>
-        <p><strong>Drop files or a whole folder here</strong></p>
+        <p><strong>{t("studio.dropFilesOrA")}</strong></p>
         <div className={styles.row} style={{ justifyContent: "center" }}>
-          <label>Choose files<input data-testid="studio-files" type="file" multiple accept={ACCEPT} disabled={busy} onChange={event => { const list = [...(event.target.files ?? [])]; event.target.value = ""; void add(list); }}/></label>
-          <label>Choose a folder<input data-testid="studio-folder" type="file" {...directory} disabled={busy} onChange={event => { const list = [...(event.target.files ?? [])]; event.target.value = ""; void add(list); }}/></label>
+          <label>{t("studio.chooseFiles")}<input data-testid="studio-files" type="file" multiple accept={ACCEPT} disabled={busy} onChange={event => { const list = [...(event.target.files ?? [])]; event.target.value = ""; void add(list); }}/></label>
+          <label>{t("studio.chooseAFolder")}<input data-testid="studio-folder" type="file" {...directory} disabled={busy} onChange={event => { const list = [...(event.target.files ?? [])]; event.target.value = ""; void add(list); }}/></label>
         </div>
-        <p className={styles.muted}>CSV, TSV, TXT, XLSX, XLSM, XLS, XLSB, ODS, JSON and XML. Formulas are never calculated and macros never run. Spreadsheets up to 300,000 rows; use CSV for larger exports.</p>
+        <p className={styles.muted}>{t("studio.csvTsvTxtXlsx")}</p>
       </div>
     </section>
     {files.length > 0 && <section className={styles.card} aria-labelledby="batch-heading">
-      <h2 id="batch-heading">Files in this batch</h2>
-      {files.some(f => f.replaces) && <p className={styles.warning}>This batch replaces an imported file. Its rows are removed and the new file's rows loaded in one step.</p>}
+      <h2 id="batch-heading">{t("studio.filesInThisBatch")}</h2>
+      {files.some(f => f.replaces) && <p className={styles.warning}>{t("studio.thisBatchReplacesAn")}</p>}
       <div className={styles.tableWrap}><table className={styles.table}>
-        <thead><tr><th scope="col">File</th><th scope="col">Contains</th><th scope="col">Status</th><th scope="col">Rows (about)</th><th scope="col">Actions</th></tr></thead>
+        <thead><tr><th scope="col">{t("studio.file4")}</th><th scope="col">{t("studio.contains")}</th><th scope="col">{t("studio.status")}</th><th scope="col">{t("studio.rowsAbout")}</th><th scope="col">{t("studio.actions3")}</th></tr></thead>
         <tbody>{files.map(f => <tr key={f.id}>
-          <td className={styles.wrap}><strong>{f.name}</strong><br/><span className={styles.small}>{f.kind.toUpperCase()} · {Number(f.bytes).toLocaleString("en-US")} bytes</span></td>
-          <td><select aria-label={`Role for ${f.name}`} value={f.role ?? ""} disabled={busy} onChange={event => void update(f.id, {}, (event.target.value || null) as Role | null)}><option value="">Choose…</option>{ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}</select>
-            {f.role && <span className={styles.small}>Header match {Math.round(f.roleConfidence * 100)}%</span>}</td>
+          <td className={styles.wrap}><strong translate="no">{f.name}</strong><br/><span className={styles.small}>{t("studio.fileKindBytes", { kind: f.kind.toUpperCase(), bytes: Number(f.bytes) })}</span></td>
+          <td><select aria-label={t("studio.roleFor", { name: f.name })} value={f.role ?? ""} disabled={busy} onChange={event => void update(f.id, {}, (event.target.value || null) as Role | null)}><option value="">{t("studio.choose")}</option>{ROLES.map(r => <option key={r} value={r}>{say(ROLE_LABELS[r])}</option>)}</select>
+            {f.role && <span className={styles.small}>{t("studio.headerMatch", { match: fmt.percent(Math.round(f.roleConfidence * 100)) })}</span>}</td>
           <td><span className={`${styles.pill} ${f.loadable ? styles.ok : styles.bad}`}>{statusText(f)}</span></td>
-          <td>{Number(f.estimatedRows).toLocaleString("en-US")}</td>
+          <td>{fmt.int(f.estimatedRows)}</td>
           <td><div className={styles.row}>
-            <button className={styles.linkish} aria-expanded={open === f.id} onClick={() => setOpen(open === f.id ? null : f.id)}>{open === f.id ? "Hide preview" : "Preview and fix"}</button>
-            <button className={styles.linkish} aria-label={`Download ${f.name} as CSV`} disabled={busy} onClick={() => void operation(async () => { const out = await client.call("studioDownload", { id: f.id }); save(out.blob, out.name); setMessage(`Converted ${f.name} to ${out.name}.`); })}>Download CSV</button>
-            <button className={styles.linkish} aria-label={`Remove ${f.name} from batch`} disabled={busy} onClick={() => void operation(async () => { setStudio(await client.call("studioDrop", { id: f.id })); })}>Remove</button>
+            <button className={styles.linkish} aria-expanded={open === f.id} onClick={() => setOpen(open === f.id ? null : f.id)}>{open === f.id ? t("studio.hidePreview") : t("studio.previewAndFix2")}</button>
+            <button className={styles.linkish} aria-label={t("studio.downloadAsCsv", { name: f.name })} disabled={busy} onClick={() => void operation(async () => { const out = await client.call("studioDownload", { id: f.id }); save(out.blob, out.name); setMessage(msg("studio.convertedTo", { name: f.name, name2: out.name })); })}>{t("studio.downloadCsv")}</button>
+            <button className={styles.linkish} aria-label={t("studio.removeFromBatch", { name: f.name })} disabled={busy} onClick={() => void operation(async () => { setStudio(await client.call("studioDrop", { id: f.id })); })}>{t("studio.remove2")}</button>
           </div></td>
         </tr>)}</tbody>
       </table></div>
       <div className={styles.row}>
-        <button className={styles.primary} disabled={busy} onClick={() => void operation(async () => { const next = await client.call("studioPlan", {}); setStudio(next); setAck(false); setMessage("Batch reviewed. Check the report before importing."); })}>Review import</button>
-        <button disabled={busy} onClick={() => void operation(async () => { const out = await client.call("studioZip", {}); save(out.blob, out.name); setMessage(`Downloaded ${files.length} converted CSV file(s) as ${out.name}.`); })}>Download all as ZIP</button>
-        <button disabled={busy} onClick={() => void operation(async () => { setStudio(await client.call("studioClear", {})); setOpen(null); })}>Clear batch</button>
+        <button className={styles.primary} disabled={busy} onClick={() => void operation(async () => { const next = await client.call("studioPlan", {}); setStudio(next); setAck(false); setMessage(msg("studio.batchReviewedCheckThe")); })}>{t("studio.reviewImport")}</button>
+        <button disabled={busy} onClick={() => void operation(async () => { const out = await client.call("studioZip", {}); save(out.blob, out.name); setMessage(msg("studio.downloadedConvertedCsvFile", { count: files.length, name: out.name })); })}>{t("studio.downloadAllAsZip")}</button>
+        <button disabled={busy} onClick={() => void operation(async () => { setStudio(await client.call("studioClear", {})); setOpen(null); })}>{t("studio.clearBatch")}</button>
       </div>
     </section>}
     {current && <FilePanel file={current} busy={busy} studio={studio!} recipeName={recipeName} setRecipeName={setRecipeName} update={update}
       patch={data => operation(async () => { setStudio(await client.call("studioUpdate", { id: current.id, ...data })); setAck(false); })}
       apply={recipeId => operation(async () => { setStudio(await client.call("recipeApply", { id: current.id, recipeId })); })}
-      saveRecipe={() => operation(async () => { setStudio(await client.call("recipeSave", { id: current.id, name: recipeName })); setMessage(`Recipe "${recipeName.trim()}" saved in your vault.`); setRecipeName(""); })}/>}
+      saveRecipe={() => operation(async () => { setStudio(await client.call("recipeSave", { id: current.id, name: recipeName })); setMessage(msg("studio.recipeSavedInYour", { recipeName: recipeName.trim() })); setRecipeName(""); })}/>}
     {report && <section className={styles.card} aria-labelledby="report-heading">
-      <h2 id="report-heading">Batch report</h2>
-      <p><strong>{Number(report.loaded).toLocaleString("en-US")}</strong> rows ready to load · <strong>{Number(report.rejected).toLocaleString("en-US")}</strong> rows rejected</p>
-      {!report.capOk && <p role="alert" className={styles.error}>⚠ {report.capMessage}</p>}
-      {report.warnings.map(w => <p key={w} className={styles.warning}>⚠ {w}</p>)}
+      <h2 id="report-heading">{t("studio.batchReport")}</h2>
+      <p><strong>{fmt.int(report.loaded)}</strong>{" "}{t("studio.rowsReadyToLoad")}{" "}<strong>{fmt.int(report.rejected)}</strong>{" "}{t("studio.rowsRejected")}</p>
+      {!report.capOk && <p role="alert" className={styles.error}>{t("common.warningMark", { text: say(report.capMessage) })}</p>}
+      {report.warnings.map(w => <p key={w} className={styles.warning}>{t("common.warningMark", { text: say(w) })}</p>)}
       <div className={styles.tableWrap}><table className={styles.table}>
-        <thead><tr><th scope="col">File</th><th scope="col">Role</th><th scope="col">Rows read</th><th scope="col">Loaded</th><th scope="col">Rejected</th><th scope="col">Skipped</th><th scope="col">Issues</th><th scope="col">Dates</th></tr></thead>
-        <tbody>{report.files.map(r => <tr key={r.id}><td className={styles.wrap}>{r.name}</td><td>{ROLE_LABELS[r.role]}</td><td>{r.rowsRead}</td><td>{r.rowsLoaded}</td><td>{r.rowsRejected}</td><td>{r.rowsSkipped}</td><td>{r.issueCount}</td><td>{r.dateRange ? `${r.dateRange.from} to ${r.dateRange.to}` : "—"}</td></tr>)}</tbody>
+        <thead><tr><th scope="col">{t("studio.file3")}</th><th scope="col">{t("studio.role2")}</th><th scope="col">{t("studio.rowsRead")}</th><th scope="col">{t("studio.loaded2")}</th><th scope="col">{t("studio.rejected2")}</th><th scope="col">{t("studio.skipped")}</th><th scope="col">{t("studio.issues")}</th><th scope="col">{t("studio.dates")}</th></tr></thead>
+        <tbody>{report.files.map(r => <tr key={r.id}><td className={styles.wrap} translate="no">{r.name}</td><td>{say(ROLE_LABELS[r.role])}</td><td>{fmt.int(r.rowsRead)}</td><td>{fmt.int(r.rowsLoaded)}</td><td>{fmt.int(r.rowsRejected)}</td><td>{fmt.int(r.rowsSkipped)}</td><td>{fmt.int(r.issueCount)}</td><td>{r.dateRange ? t("studio.to2", { from: fmt.date(r.dateRange.from), to: fmt.date(r.dateRange.to) }) : "—"}</td></tr>)}</tbody>
       </table></div>
-      <p className={styles.muted}>Skipped rows are blank, total, subtotal or page/footer lines. Rejected rows stay out of the vault and wait in Fix Later below, where you can correct them and load them later.</p>
-      {report.files.filter(r => r.cleaned.length).map(r => <p key={r.id} className={styles.small}><strong>Cleaned in {r.name}:</strong> {r.cleaned.map(c => `${c.field}: ${c.note} (${Number(c.count).toLocaleString("en-US")})`).join(" · ")}</p>)}
+      <p className={styles.muted}>{t("studio.skippedRowsAreBlank")}</p>
+      {report.files.filter(r => r.cleaned.length).map(r => <p key={r.id} className={styles.small}><strong>{t("studio.cleanedIn", { name: r.name })}</strong> {r.cleaned.map(c => t("studio.cleanedNote", { field: c.field, note: say(c.note), count: Number(c.count) })).join(" · ")}</p>)}
       {report.files.filter(r => r.issues.length).map(r => <details key={r.id} open={report.files.length === 1}>
-        <summary>Issues in {r.name} ({r.issueCount})</summary>
-        <ul className={styles.small}>{r.issues.map((i, n) => <li key={n}>Row {i.row}{i.column ? `, column ${i.column}` : ""}: {i.message}</li>)}</ul>
-        {Number(r.issueCount) > r.issues.length && <p className={styles.small}>Showing the first {r.issues.length}. All are saved with the import.</p>}
+        <summary>{t("studio.issuesIn", { name: r.name, count: Number(r.issueCount) })}</summary>
+        <ul className={styles.small}>{r.issues.map((i, n) => <li key={n}>{t(i.column ? "studio.issueAtCell" : "studio.issueAtRow", { row: Number(i.row), column: i.column, message: say(i.message) })}</li>)}</ul>
+        {Number(r.issueCount) > r.issues.length && <p className={styles.small}>{t("studio.showingTheFirstAll", { count: r.issues.length })}</p>}
       </details>)}
-      {report.rejected !== "0" && report.loaded !== "0" && <label className={styles.row}><input type="checkbox" style={{ width: "auto" }} checked={ack} onChange={event => setAck(event.target.checked)}/> Load the {Number(report.loaded).toLocaleString("en-US")} valid rows; the {Number(report.rejected).toLocaleString("en-US")} rejected rows will not be loaded.</label>}
-      {report.loaded === "0" && <p role="alert" className={styles.error}>⚠ No valid rows to load. Fix the issues listed and review again.</p>}
+      {report.rejected !== "0" && report.loaded !== "0" && <label className={styles.row}><input type="checkbox" style={{ width: "auto" }} checked={ack} onChange={event => setAck(event.target.checked)}/>{" "}{t("studio.ackRejected", { loaded: fmt.int(report.loaded), rejected: fmt.int(report.rejected) })}</label>}
+      {report.loaded === "0" && <p role="alert" className={styles.error}>{t("studio.noValidRowsTo")}</p>}
       <button className={styles.primary} disabled={busy || !canCommit || status.dirty} onClick={() => void operation(async () => {
         const out = await client.call("studioCommit", { acknowledge: ack }); onStatus(out.status); setStudio(out.studio); setAck(false); setOpen(null); await refreshSources(); bump();
-        setMessage(`Imported ${Number(out.result.loaded).toLocaleString("en-US")} rows from ${out.result.files} file(s); audited and saved as an encrypted snapshot.${out.result.cleanup ? "" : " Some unused products or customers could not be tidied up; they are harmless."}`);
-      })}>Confirm and import locally</button>
+        setMessage(msg("studio.imported", { rows: fmt.int(out.result.loaded), count: Number(out.result.files) }) + (out.result.cleanup ? "" : " " + msg("studio.cleanupHarmless")));
+      })}>{t("studio.confirmAndImportLocally")}</button>
     </section>}
     <FixLater {...shared} onSources={refreshSources}/>
     <Reconciliation {...shared}/>
     <HealthCard {...shared}/>
     <Playground {...shared} sources={sources} onSources={refreshSources}/>
     <section className={styles.card} aria-labelledby="sources-heading">
-      <h2 id="sources-heading">Imported files</h2>
-      {!sources.length ? <p className={styles.muted}>No files imported yet.</p> : <div className={styles.tableWrap}><table className={styles.table}>
-        <thead><tr><th scope="col">File</th><th scope="col">Role</th><th scope="col">Loaded</th><th scope="col">Rejected</th><th scope="col">Open issues</th><th scope="col">Imported</th><th scope="col">Actions</th></tr></thead>
+      <h2 id="sources-heading">{t("studio.importedFiles")}</h2>
+      {!sources.length ? <p className={styles.muted}>{t("studio.noFilesImportedYet")}</p> : <div className={styles.tableWrap}><table className={styles.table}>
+        <thead><tr><th scope="col">{t("studio.file2")}</th><th scope="col">{t("studio.role")}</th><th scope="col">{t("studio.loaded")}</th><th scope="col">{t("studio.rejected")}</th><th scope="col">{t("studio.openIssues")}</th><th scope="col">{t("studio.imported2")}</th><th scope="col">{t("studio.actions2")}</th></tr></thead>
         <tbody>{sources.map(s => <tr key={s.id}>
-          <td className={styles.wrap}>{s.name}</td><td>{ROLE_LABELS[s.role as Role] ?? s.role}</td><td>{s.rowsLoaded}</td><td>{s.rowsRejected}</td><td>{s.issues}</td><td>{s.importedAt.slice(0, 16).replace("T", " ")}</td>
+          <td className={styles.wrap} translate="no">{s.name}</td><td>{ROLE_LABELS[s.role as Role] ? say(ROLE_LABELS[s.role as Role]) : s.role}</td><td>{fmt.int(s.rowsLoaded)}</td><td>{fmt.int(s.rowsRejected)}</td><td>{fmt.int(s.issues)}</td><td>{fmt.dateTime(s.importedAt)}</td>
           <td><div className={styles.row}>
-            <label className={styles.linkish}>Replace…<input type="file" aria-label={`Replace ${s.name}`} accept={ACCEPT} disabled={busy} style={{ display: "none" }} onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void add([file], s.id); }}/></label>
+            <label className={styles.linkish}>{t("studio.replace2")}<input type="file" aria-label={t("studio.replace", { name: s.name })} accept={ACCEPT} disabled={busy} style={{ display: "none" }} onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void add([file], s.id); }}/></label>
             {removing === s.id
-              ? <><button className={styles.linkish} disabled={busy} onClick={() => void operation(async () => { const out = await client.call("sourceRemove", { id: s.id }); onStatus(out.status); setRemoving(null); await refreshSources(); bump(); setMessage(`Removed ${s.name} and exactly its rows; audited and saved.`); })}>Confirm remove</button><button className={styles.linkish} onClick={() => setRemoving(null)}>Keep</button></>
-              : <button className={styles.linkish} aria-label={`Remove imported ${s.name}`} disabled={busy} onClick={() => setRemoving(s.id)}>Remove</button>}
+              ? <><button className={styles.linkish} disabled={busy} onClick={() => void operation(async () => { const out = await client.call("sourceRemove", { id: s.id }); onStatus(out.status); setRemoving(null); await refreshSources(); bump(); setMessage(msg("studio.removedAndExactlyIts", { name: s.name })); })}>{t("studio.confirmRemove")}</button><button className={styles.linkish} onClick={() => setRemoving(null)}>{t("studio.keep")}</button></>
+              : <button className={styles.linkish} aria-label={t("studio.removeImported", { name: s.name })} disabled={busy} onClick={() => setRemoving(s.id)}>{t("studio.remove")}</button>}
           </div></td>
         </tr>)}</tbody>
       </table></div>}
@@ -159,67 +163,67 @@ function MappingEditor({ file, busy, patch }: { file: FileView; busy: boolean; p
   const erp = file.erpOptions.find(o => o.id === file.erp);
   const columns = file.headers.map((h, i) => ({ i, label: `${file.columnLabels[i] && !file.fixedLayout ? file.columnLabels[i] + " · " : ""}${h}` }));
   return <div>
-    <h3>Column mapping</h3>
+    <h3>{t("studio.columnMapping")}</h3>
     <div className={styles.grid}>
-      <label>ERP profile<select value={file.erp} disabled={busy} onChange={e => void patch({ erp: e.target.value as ErpProfile })}>{file.erpOptions.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}</select></label>
+      <label>{t("studio.erpProfile")}<select value={file.erp} disabled={busy} onChange={e => void patch({ erp: e.target.value as ErpProfile })}>{file.erpOptions.map(o => <option key={o.id} value={o.id}>{say(o.label)}</option>)}</select></label>
     </div>
-    {erp && <p className={styles.small}>{erp.note}</p>}
-    <div className={styles.tableWrap}><table className={styles.table} aria-label={`Column mapping for ${file.name}`}>
-      <thead><tr><th scope="col">RebateHQ field</th><th scope="col">Comes from</th><th scope="col">Match</th><th scope="col">Why</th></tr></thead>
+    {erp && <p className={styles.small}>{say(erp.note)}</p>}
+    <div className={styles.tableWrap}><table className={styles.table} aria-label={t("studio.columnMappingFor", { name: file.name })}>
+      <thead><tr><th scope="col">{t("studio.rebatehqField")}</th><th scope="col">{t("studio.comesFrom")}</th><th scope="col">{t("studio.match")}</th><th scope="col">{t("studio.why")}</th></tr></thead>
       <tbody>{file.fields.map(m => <tr key={m.field}>
-        <td>{m.field}{m.required ? " (required)" : ""}</td>
-        <td><select aria-label={`Source for ${m.field}`} value={sourceValue(m.source)} disabled={busy} onChange={e => void patch({ field: { name: m.field, source: parseSource(e.target.value) } })}>
-          {(!m.required || m.source.kind === "none") && <option value="none">{m.options.includes("none") ? "Not in file: leave unknown" : m.required ? "Choose a column…" : "Not in file"}</option>}
-          {m.options.includes("zero") && <option value="zero">Not in file: use 0</option>}
-          {m.options.includes("header") && <option value="header">From the order header file (matched by invoice number{m.field === "freight_amount" ? ", spread over the lines" : ""})</option>}
-          {m.options.includes("item_cost") && <option value="item_cost">Not in file: quantity × the item list&apos;s current cost</option>}
-          {m.options.includes("generate") && <option value={m.source.kind === "generate" ? sourceValue(m.source) : "generate:"}>Generate from invoice number{m.source.kind === "generate" && m.source.lineNo !== null ? " and line number" : ""}</option>}
+        <td><span translate="no">{m.field}</span>{m.required ? t("studio.required") : ""}</td>
+        <td><select aria-label={t("studio.sourceFor", { field: m.field })} value={sourceValue(m.source)} disabled={busy} onChange={e => void patch({ field: { name: m.field, source: parseSource(e.target.value) } })}>
+          {(!m.required || m.source.kind === "none") && <option value="none">{m.options.includes("none") ? t("studio.notInFileLeave") : m.required ? t("studio.chooseAColumn") : t("studio.notInFile")}</option>}
+          {m.options.includes("zero") && <option value="zero">{t("studio.notInFileUse")}</option>}
+          {m.options.includes("header") && <option value="header">{t(m.field === "freight_amount" ? "studio.fromHeaderSpread" : "studio.fromHeader")}</option>}
+          {m.options.includes("item_cost") && <option value="item_cost">{t("studio.notInFileQuantity")}</option>}
+          {m.options.includes("generate") && <option value={m.source.kind === "generate" ? sourceValue(m.source) : "generate:"}>{t(m.source.kind === "generate" && m.source.lineNo !== null ? "studio.generateFromInvoiceAndLine" : "studio.generateFromInvoiceNumber")}</option>}
           {columns.map(c => <option key={`c${c.i}`} value={`column:${c.i}`}>{c.label}</option>)}
-          {m.options.includes("unit") && columns.map(c => <option key={`u${c.i}`} value={`unit:${c.i}`}>{c.label} × quantity</option>)}
-          {m.options.includes("percent") && columns.map(c => <option key={`p${c.i}`} value={`percent:${c.i}`}>{c.label} as % of list (30 = 30%)</option>)}
-          {m.options.includes("fraction") && columns.map(c => <option key={`f${c.i}`} value={`fraction:${c.i}`}>{c.label} as share of list (0.3 = 30%)</option>)}
+          {m.options.includes("unit") && columns.map(c => <option key={`u${c.i}`} value={`unit:${c.i}`}>{t("studio.quantity", { label: c.label })}</option>)}
+          {m.options.includes("percent") && columns.map(c => <option key={`p${c.i}`} value={`percent:${c.i}`}>{t("studio.asOfList30", { label: c.label })}</option>)}
+          {m.options.includes("fraction") && columns.map(c => <option key={`f${c.i}`} value={`fraction:${c.i}`}>{t("studio.asShareOfList", { label: c.label })}</option>)}
         </select></td>
-        <td><span className={`${styles.pill} ${m.confidence >= 0.9 ? styles.ok : styles.bad}`}>{m.source.kind === "none" && m.required ? "Missing" : `${Math.round(m.confidence * 100)}%`}</span></td>
-        <td className={styles.wrap}>{m.reason}</td>
+        <td><span className={`${styles.pill} ${m.confidence >= 0.9 ? styles.ok : styles.bad}`}>{m.source.kind === "none" && m.required ? t("studio.missing") : fmt.percent(Math.round(m.confidence * 100))}</span></td>
+        <td className={styles.wrap}>{say(m.reason)}</td>
       </tr>)}</tbody>
     </table></div>
-    {file.needsConfirmation && <label className={styles.row}><input type="checkbox" style={{ width: "auto" }} checked={confirmed} disabled={busy || file.missing.length > 0} onChange={e => { setConfirmed(e.target.checked); void patch({ confirmed: e.target.checked }); }}/> I checked this mapping{file.missing.length ? ` (map ${file.missing.join(", ")} first)` : ""}</label>}
+    {file.needsConfirmation && <label className={styles.row}><input type="checkbox" style={{ width: "auto" }} checked={confirmed} disabled={busy || file.missing.length > 0} onChange={e => { setConfirmed(e.target.checked); void patch({ confirmed: e.target.checked }); }}/>{" "}{t("studio.iCheckedThisMapping")}{file.missing.length ? t("studio.mapFirst", { missing: file.missing.join(", ") }) : ""}</label>}
   </div>;
 }
 function FilePanel({ file, busy, studio, recipeName, setRecipeName, update, patch, apply, saveRecipe }: { file: FileView; busy: boolean; studio: StudioState; recipeName: string; setRecipeName: (v: string) => void; update: (id: string, settings: Partial<Settings>, role?: Role | null) => Promise<void>; patch: (data: Patch) => Promise<void>; apply: (recipeId: string) => Promise<void>; saveRecipe: () => Promise<void> }) {
   const s = file.settings, set = (patch: Partial<Settings>) => void update(file.id, patch);
   const width = Math.max(0, ...file.preview.map(r => r.cells.length));
   return <section className={styles.card} aria-labelledby="panel-heading">
-    <h2 id="panel-heading">Preview and fix: {file.name}</h2>
-    {file.reason && <p className={styles.warning}>⚠ {file.reason}</p>}
-    {file.recipe && <p className={styles.notice}>A saved recipe matches these headers: <strong>{file.recipe.name}</strong>. <button disabled={busy} onClick={() => void apply(file.recipe!.id)}>Apply recipe</button></p>}
-    {file.notices.map(n => <p key={n} className={styles.notice}>{n}</p>)}
+    <h2 id="panel-heading">{t("studio.previewAndFix", { name: file.name })}</h2>
+    {file.reason && <p className={styles.warning}>{t("common.warningMark", { text: say(file.reason) })}</p>}
+    {file.recipe && <p className={styles.notice}>{t("studio.aSavedRecipeMatches")}{" "}<strong translate="no">{file.recipe.name}</strong>{t("roles.sentenceEnd")} <button disabled={busy} onClick={() => void apply(file.recipe!.id)}>{t("studio.applyRecipe")}</button></p>}
+    {file.notices.map(n => <p key={n} className={styles.notice}>{say(n)}</p>)}
     <div className={styles.grid}>
-      {file.sheets.length > 1 && <label>Sheet<select value={s.sheet ?? ""} disabled={busy} onChange={e => set({ sheet: e.target.value })}>{file.sheets.map(n => <option key={n}>{n}</option>)}</select></label>}
-      {!file.fixedLayout && <label>Header row<select value={s.headerRow} disabled={busy} onChange={e => set({ headerRow: Number(e.target.value) })}><option value={-1}>No header row</option>{file.headerRowOptions.map(o => <option key={o.index} value={o.index}>Row {o.row}</option>)}</select></label>}
-      {!file.fixedLayout && <label>Header rows<select value={s.headerDepth} disabled={busy} onChange={e => set({ headerDepth: Number(e.target.value) as 1 | 2 | 3 })}><option value={1}>1 row</option><option value={2}>2 rows</option><option value={3}>3 rows</option></select></label>}
-      {file.textFormat && <label>Delimiter<select value={s.delimiter} disabled={busy} onChange={e => set({ delimiter: e.target.value as Settings["delimiter"] })}>{Object.entries(DELIMITER_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>}
-      {file.textFormat && <label>Encoding<select value={s.encoding} disabled={busy} onChange={e => set({ encoding: e.target.value as Settings["encoding"] })}><option value="utf-8">UTF-8</option><option value="windows-1252">Windows-1252 (Western)</option><option value="utf-16le">UTF-16 LE</option><option value="utf-16be">UTF-16 BE</option></select></label>}
-      <label>Decimal symbol<select value={s.decimal} disabled={busy} onChange={e => set({ decimal: e.target.value as Settings["decimal"] })}><option value="dot">Dot (12.50)</option><option value="comma">Comma (12,50)</option></select></label>
-      <label>Date format<select value={s.dateFormat} disabled={busy} onChange={e => set({ dateFormat: e.target.value as Settings["dateFormat"] })}>{DATE_FORMATS.map(d => <option key={d}>{d}</option>)}</select></label>
+      {file.sheets.length > 1 && <label>{t("studio.sheet")}<select value={s.sheet ?? ""} disabled={busy} onChange={e => set({ sheet: e.target.value })}>{file.sheets.map(n => <option key={n} translate="no">{n}</option>)}</select></label>}
+      {!file.fixedLayout && <label>{t("studio.headerRow")}<select value={s.headerRow} disabled={busy} onChange={e => set({ headerRow: Number(e.target.value) })}><option value={-1}>{t("studio.noHeaderRow")}</option>{file.headerRowOptions.map(o => <option key={o.index} value={o.index}>{t("studio.row3", { row: Number(o.row) })}</option>)}</select></label>}
+      {!file.fixedLayout && <label>{t("studio.headerRows")}<select value={s.headerDepth} disabled={busy} onChange={e => set({ headerDepth: Number(e.target.value) as 1 | 2 | 3 })}><option value={1}>{t("studio.1Row")}</option><option value={2}>{t("studio.2Rows")}</option><option value={3}>{t("studio.3Rows")}</option></select></label>}
+      {file.textFormat && <label>{t("studio.delimiter")}<select value={s.delimiter} disabled={busy} onChange={e => set({ delimiter: e.target.value as Settings["delimiter"] })}>{Object.entries(DELIMITER_LABELS).map(([v, l]) => <option key={v} value={v}>{t(l)}</option>)}</select></label>}
+      {file.textFormat && <label>{t("studio.encoding")}<select value={s.encoding} disabled={busy} onChange={e => set({ encoding: e.target.value as Settings["encoding"] })}><option value="utf-8">UTF-8</option><option value="windows-1252">{t("studio.windows1252Western")}</option><option value="utf-16le">UTF-16 LE</option><option value="utf-16be">UTF-16 BE</option></select></label>}
+      <label>{t("studio.decimalSymbol")}<select value={s.decimal} disabled={busy} onChange={e => set({ decimal: e.target.value as Settings["decimal"] })}><option value="dot">{t("studio.dot1250")}</option><option value="comma">{t("studio.comma1250")}</option></select></label>
+      <label>{t("studio.dateFormat")}<select value={s.dateFormat} disabled={busy} onChange={e => set({ dateFormat: e.target.value as Settings["dateFormat"] })}>{DATE_FORMATS.map(d => <option key={d}>{d}</option>)}</select></label>
     </div>
     {file.role === "sales_history" && <div className={styles.grid}>
-      <label>Import dates from<input type="date" value={file.range.from ?? ""} disabled={busy} onChange={e => void patch({ range: { from: e.target.value || null, to: file.range.to } })}/></label>
-      <label>to<input type="date" value={file.range.to ?? ""} disabled={busy} onChange={e => void patch({ range: { from: file.range.from, to: e.target.value || null } })}/></label>
+      <label>{t("studio.importDatesFrom")}<input type="date" value={file.range.from ?? ""} disabled={busy} onChange={e => void patch({ range: { from: e.target.value || null, to: file.range.to } })}/></label>
+      <label>{t("studio.to")}<input type="date" value={file.range.to ?? ""} disabled={busy} onChange={e => void patch({ range: { from: file.range.from, to: e.target.value || null } })}/></label>
     </div>}
-    {file.role === "sales_history" && <p className={styles.small}>Leave the dates empty to import the whole file. A shorter range keeps a large export within your plan&apos;s line limit.</p>}
+    {file.role === "sales_history" && <p className={styles.small}>{t("studio.leaveTheDatesEmpty")}</p>}
     {file.fields.length > 0 && <MappingEditor file={file} busy={busy} patch={patch}/>}
-    {file.ignored.length > 0 && <p className={styles.small}><strong>Columns not used:</strong> {file.ignored.join(", ")}</p>}
-    <div className={styles.tableWrap}><table className={styles.table} aria-label={`First rows of ${file.name}`}>
-      <thead><tr><th scope="col">Row</th>{Array.from({ length: width }, (_, i) => <th key={i} scope="col">{file.columnLabels[i] ?? ""}</th>)}</tr></thead>
-      <tbody>{file.preview.map(r => <tr key={r.row} data-header={r.row === file.headerRowNumber || undefined}><td>{r.row}{r.row === file.headerRowNumber ? " (header)" : ""}</td>{Array.from({ length: width }, (_, i) => <td key={i}>{r.cells[i] ?? ""}</td>)}</tr>)}</tbody>
+    {file.ignored.length > 0 && <p className={styles.small}><strong>{t("studio.columnsNotUsed")}</strong> <span translate="no">{file.ignored.join(", ")}</span></p>}
+    <div className={styles.tableWrap}><table className={styles.table} aria-label={t("studio.firstRowsOf", { name: file.name })}>
+      <thead><tr><th scope="col">{t("studio.row2")}</th>{Array.from({ length: width }, (_, i) => <th key={i} scope="col" translate="no">{file.columnLabels[i] ?? ""}</th>)}</tr></thead>
+      <tbody>{file.preview.map(r => <tr key={r.row} data-header={r.row === file.headerRowNumber || undefined}><td>{fmt.int(r.row)}{r.row === file.headerRowNumber ? t("studio.header") : ""}</td>{Array.from({ length: width }, (_, i) => <td key={i} translate="no">{r.cells[i] ?? ""}</td>)}</tr>)}</tbody>
     </table></div>
-    {file.issues.length > 0 && <details><summary>Cells that need attention ({file.issues.length})</summary><ul className={styles.small}>{file.issues.map((i, n) => <li key={n}>Row {i.row}, column {i.column}: {i.message}</li>)}</ul></details>}
+    {file.issues.length > 0 && <details><summary>{t("studio.cellsThatNeedAttention", { count: file.issues.length })}</summary><ul className={styles.small}>{file.issues.map((i, n) => <li key={n}>{t("studio.rowColumn", { row: Number(i.row), column: i.column, message: say(i.message) })}</li>)}</ul></details>}
     <div className={styles.row}>
-      <label>Recipe name (ERP or supplier)<input value={recipeName} maxLength={80} onChange={e => setRecipeName(e.target.value)} disabled={busy}/></label>
-      <button disabled={busy || !recipeName.trim()} onClick={() => void saveRecipe()}>Save as recipe</button>
+      <label>{t("studio.recipeNameErpOr")}<input value={recipeName} maxLength={80} onChange={e => setRecipeName(e.target.value)} disabled={busy}/></label>
+      <button disabled={busy || !recipeName.trim()} onClick={() => void saveRecipe()}>{t("studio.saveAsRecipe")}</button>
     </div>
-    {studio.recipes.length > 0 && <p className={styles.small}>Saved recipes: {studio.recipes.map(r => r.name).join(", ")}</p>}
+    {studio.recipes.length > 0 && <p className={styles.small}>{t("studio.savedRecipes", { value: fmt.list(studio.recipes.map(r => r.name)) })}</p>}
   </section>;
 }
 
@@ -230,29 +234,29 @@ function FixLater({ client, busy, operation, onStatus, setMessage, version, bump
   useEffect(() => { let active = true; void client.call("fixGroups", {}).then(g => { if (active) setGroups(g); }).catch(() => undefined); return () => { active = false; }; }, [client, version]);
   const key = (g: FixGroup) => `${g.sourceId}|${g.code}`;
   async function show(g: FixGroup) { if (open === key(g)) { setOpen(null); return; } setRows(await client.call("fixRows", { sourceId: g.sourceId, code: g.code })); setOpen(key(g)); }
-  if (!groups.length) return <section className={styles.card} aria-labelledby="fix-heading"><h2 id="fix-heading">Fix Later</h2><p className={styles.muted}>No rejected rows are waiting.</p></section>;
+  if (!groups.length) return <section className={styles.card} aria-labelledby="fix-heading"><h2 id="fix-heading">{t("studio.fixLater2")}</h2><p className={styles.muted}>{t("studio.noRejectedRowsAre")}</p></section>;
   return <section className={styles.card} aria-labelledby="fix-heading">
-    <h2 id="fix-heading">Fix Later</h2>
-    <p className={styles.muted}>Rejected rows wait here with their original file and row. Correct a group, then re-check it: only that group is checked and loaded. Nothing is changed automatically.</p>
+    <h2 id="fix-heading">{t("studio.fixLater")}</h2>
+    <p className={styles.muted}>{t("studio.rejectedRowsWaitHere")}</p>
     <div className={styles.tableWrap}><table className={styles.table}>
-      <thead><tr><th scope="col">File</th><th scope="col">Problem</th><th scope="col">Rows</th><th scope="col">Actions</th></tr></thead>
+      <thead><tr><th scope="col">{t("studio.file")}</th><th scope="col">{t("studio.problem")}</th><th scope="col">{t("studio.rows")}</th><th scope="col">{t("studio.actions")}</th></tr></thead>
       <tbody>{groups.map(g => <tr key={key(g)}>
-        <td className={styles.wrap}>{g.sourceName}</td><td className={styles.wrap}>{g.message}</td><td>{Number(g.count).toLocaleString("en-US")}</td>
+        <td className={styles.wrap} translate="no">{g.sourceName}</td><td className={styles.wrap}>{say(g.message)}</td><td>{fmt.int(g.count)}</td>
         <td><div className={styles.row}>
-          <button className={styles.linkish} aria-expanded={open === key(g)} onClick={() => void operation(() => show(g))}>{open === key(g) ? "Hide rows" : "Show rows"}</button>
-          {g.fixable && g.field && <><input aria-label={`New ${g.field} for all rows in this group`} placeholder={`New ${g.field}`} style={{ width: 160 }} value={value[key(g)] ?? ""} onChange={e => setValue({ ...value, [key(g)]: e.target.value })}/>
-            <button className={styles.linkish} aria-label={`Set ${g.field} for all rows`} disabled={busy || !(value[key(g)] ?? "").trim()} onClick={() => void operation(async () => { setGroups(await client.call("fixSet", { sourceId: g.sourceId, code: g.code, field: g.field!, value: value[key(g)] })); setMessage(`Set ${g.field} on ${Number(g.count).toLocaleString("en-US")} rows. Re-check the group to load them.`); })}>Set for all</button></>}
-          {g.fixable && <button className={styles.linkish} aria-label={g.code === "duplicate_row" ? `Load duplicate rows of ${g.sourceName} anyway` : `Re-check and load ${g.field ?? g.code} rows`} disabled={busy} onClick={() => void operation(async () => { const out = await client.call("fixRecheck", { sourceId: g.sourceId, code: g.code }); onStatus(out.status); setGroups(out.groups); setOpen(null); await onSources(); bump(); setMessage(`Re-checked: ${Number(out.loaded).toLocaleString("en-US")} rows loaded, ${Number(out.stillRejected).toLocaleString("en-US")} still need attention.`); })}>{g.code === "duplicate_row" ? "Load anyway" : "Re-check and load"}</button>}
-          {g.credits && <button className={styles.linkish} aria-label={`Load negative-quantity rows of ${g.sourceName} as returns and credits`} disabled={busy} onClick={() => void operation(async () => { const out = await client.call("creditsLoad", { sourceId: g.sourceId }); onStatus(out.status); setGroups(out.groups); setOpen(null); await onSources(); bump(); setMessage(`Loaded ${Number(out.loaded).toLocaleString("en-US")} returns/credits as credit lines; ${Number(out.stillRejected).toLocaleString("en-US")} still need attention.`); })}>Load as returns and credits</button>}
-          <button className={styles.linkish} aria-label={`Dismiss ${g.field ?? g.code} rows`} disabled={busy} onClick={() => void operation(async () => { const out = await client.call("fixDismiss", { sourceId: g.sourceId, code: g.code }); onStatus(out.status); setGroups(out.groups); setOpen(null); bump(); setMessage(`Dismissed ${Number(g.count).toLocaleString("en-US")} rows; they will not be loaded.`); })}>Dismiss all</button>
+          <button className={styles.linkish} aria-expanded={open === key(g)} onClick={() => void operation(() => show(g))}>{open === key(g) ? t("studio.hideRows") : t("studio.showRows")}</button>
+          {g.fixable && g.field && <><input aria-label={t("studio.newForAllRows", { field: g.field })} placeholder={t("studio.new", { field: g.field })} style={{ width: 160 }} value={value[key(g)] ?? ""} onChange={e => setValue({ ...value, [key(g)]: e.target.value })}/>
+            <button className={styles.linkish} aria-label={t("studio.setForAllRows", { field: g.field })} disabled={busy || !(value[key(g)] ?? "").trim()} onClick={() => void operation(async () => { setGroups(await client.call("fixSet", { sourceId: g.sourceId, code: g.code, field: g.field!, value: value[key(g)] })); setMessage(msg("studio.setOnRowsRe", { field: g.field, count: Number(g.count) })); })}>{t("studio.setForAll")}</button></>}
+          {g.fixable && <button className={styles.linkish} aria-label={g.code === "duplicate_row" ? t("studio.loadDuplicateRowsOf", { sourceName: g.sourceName }) : t("studio.reCheckAndLoad2", { value: g.field ?? g.code })} disabled={busy} onClick={() => void operation(async () => { const out = await client.call("fixRecheck", { sourceId: g.sourceId, code: g.code }); onStatus(out.status); setGroups(out.groups); setOpen(null); await onSources(); bump(); setMessage(msg("studio.reCheckedRowsLoaded", { loaded: Number(out.loaded), still: Number(out.stillRejected) })); })}>{g.code === "duplicate_row" ? t("studio.loadAnyway") : t("studio.reCheckAndLoad")}</button>}
+          {g.credits && <button className={styles.linkish} aria-label={t("studio.loadNegativeQuantityRows", { sourceName: g.sourceName })} disabled={busy} onClick={() => void operation(async () => { const out = await client.call("creditsLoad", { sourceId: g.sourceId }); onStatus(out.status); setGroups(out.groups); setOpen(null); await onSources(); bump(); setMessage(msg("studio.loadedReturnsCreditsAs", { loaded: Number(out.loaded), still: Number(out.stillRejected) })); })}>{t("studio.loadAsReturnsAnd")}</button>}
+          <button className={styles.linkish} aria-label={t("studio.dismissRows", { value: g.field ?? g.code })} disabled={busy} onClick={() => void operation(async () => { const out = await client.call("fixDismiss", { sourceId: g.sourceId, code: g.code }); onStatus(out.status); setGroups(out.groups); setOpen(null); bump(); setMessage(msg("studio.dismissedRowsTheyWill", { count: Number(g.count) })); })}>{t("studio.dismissAll")}</button>
         </div></td>
       </tr>)}</tbody>
     </table></div>
-    {open && rows.length > 0 && <div className={styles.tableWrap}><table className={styles.table} aria-label="Rejected rows">
-      <thead><tr><th scope="col">Row</th>{rows[0].values.map(v => <th key={v.field} scope="col">{v.field}</th>)}</tr></thead>
-      <tbody>{rows.map(r => <tr key={r.sourceRow}><td>{r.sourceRow}</td>{r.values.map(v => <td key={v.field}>{v.value}</td>)}</tr>)}</tbody>
+    {open && rows.length > 0 && <div className={styles.tableWrap}><table className={styles.table} aria-label={t("studio.rejectedRows")}>
+      <thead><tr><th scope="col">{t("studio.row")}</th>{rows[0].values.map(v => <th key={v.field} scope="col" translate="no">{v.field}</th>)}</tr></thead>
+      <tbody>{rows.map(r => <tr key={r.sourceRow}><td>{fmt.int(r.sourceRow)}</td>{r.values.map(v => <td key={v.field} translate="no">{v.value}</td>)}</tr>)}</tbody>
     </table></div>}
-    {open && <p className={styles.small}>Showing the first {rows.length} rows of this group.</p>}
+    {open && <p className={styles.small}>{t("studio.showingTheFirstRows", { count: rows.length })}</p>}
   </section>;
 }
 /** Reconciliation (4D): waterfall totals vs imported lines per invoice, customer x month and in total. Differences are listed, never adjusted. */
@@ -261,14 +265,14 @@ function Reconciliation({ client, busy, operation, onStatus, setMessage, version
   useEffect(() => { let active = true; void client.call("reconcile", {}).then(r => { if (active) setRecon(r); }).catch(() => undefined); return () => { active = false; }; }, [client, version]);
   if (!recon || recon.lines === "0") return null;
   return <section className={styles.card} aria-labelledby="recon-heading">
-    <h2 id="recon-heading">Reconciliation</h2>
-    {recon.reconciled ? <p role="status" data-testid="recon-ok">✓ The margin waterfall matches the imported lines to the cent for {Number(recon.invoices).toLocaleString("en-US")} invoices, {Number(recon.customerMonths).toLocaleString("en-US")} customer-months and in total.{recon.accepted !== "0" ? ` ${recon.accepted} accepted difference(s) are kept on record.` : ""}</p>
-      : <><p className={styles.warning}>⚠ {recon.open.length} difference(s) between the waterfall and the imported lines. Nothing was adjusted. Rebuild the totals from the lines, fix the source file, or accept a difference to keep it on record.</p>
-        <div className={styles.tableWrap}><table className={styles.table} aria-label="Reconciliation differences"><thead><tr><th scope="col">Level</th><th scope="col">Difference</th><th scope="col">Imported</th><th scope="col">Waterfall</th><th scope="col">First source row</th><th scope="col"></th></tr></thead>
-          <tbody>{recon.open.map(i => <tr key={i.id}><td>{i.level.replace("_", " x ")}</td><td className={styles.wrap}>{i.message}</td><td>{i.imported ?? "none"}</td><td>{i.waterfall ?? "none"}</td><td>{i.sourceRow ?? ""}</td>
-            <td><button className={styles.linkish} disabled={busy} aria-label={`Accept difference ${i.scopeKey} ${i.component}`} onClick={() => void operation(async () => { const out = await client.call("reconAccept", { id: i.id }); onStatus(out.status); setRecon(out.recon); bump(); setMessage("Difference accepted and recorded in the audit log."); })}>Accept</button></td></tr>)}</tbody></table></div>
-        <button disabled={busy} onClick={() => void operation(async () => { const out = await client.call("reconAccept", { id: null }); onStatus(out.status); setRecon(out.recon); bump(); setMessage("All open differences accepted and recorded in the audit log."); })}>Accept all differences</button>{" "}
-        <button disabled={busy} onClick={() => void operation(async () => { const out = await client.call("reconRebuild", {}); onStatus(out.status); setRecon(out.recon); bump(); setMessage(out.recon.reconciled ? "Margin totals rebuilt from the imported lines; everything reconciles." : "Totals rebuilt; some differences remain."); })}>Rebuild totals from the imported lines</button></>}
+    <h2 id="recon-heading">{t("studio.reconciliation")}</h2>
+    {recon.reconciled ? <p role="status" data-testid="recon-ok">{t("studio.reconciled", { invoices: fmt.int(recon.invoices), months: fmt.int(recon.customerMonths) })}{recon.accepted !== "0" ? " " + t("studio.acceptedDifferenceSAre", { count: Number(recon.accepted) }) : ""}</p>
+      : <><p className={styles.warning}>{t("studio.differenceSBetweenThe", { count: recon.open.length })}</p>
+        <div className={styles.tableWrap}><table className={styles.table} aria-label={t("studio.reconciliationDifferences")}><thead><tr><th scope="col">{t("studio.level")}</th><th scope="col">{t("studio.difference")}</th><th scope="col">{t("studio.imported")}</th><th scope="col">{t("studio.waterfall")}</th><th scope="col">{t("studio.firstSourceRow")}</th><th scope="col"><span className={styles.srOnly}>{t("margin.col.actions")}</span></th></tr></thead>
+          <tbody>{recon.open.map(i => <tr key={i.id}><td>{t(RECON_LEVEL[i.level])}</td><td className={styles.wrap}>{say(i.message)}</td><td>{i.imported === null ? t("common.none") : fmt.money(i.imported)}</td><td>{i.waterfall === null ? t("common.none") : fmt.money(i.waterfall)}</td><td>{i.sourceRow ? fmt.int(i.sourceRow) : ""}</td>
+            <td><button className={styles.linkish} disabled={busy} aria-label={t("studio.acceptDifference", { scopeKey: i.scopeKey, component: i.component })} onClick={() => void operation(async () => { const out = await client.call("reconAccept", { id: i.id }); onStatus(out.status); setRecon(out.recon); bump(); setMessage(msg("studio.differenceAcceptedAndRecorded")); })}>{t("studio.accept")}</button></td></tr>)}</tbody></table></div>
+        <button disabled={busy} onClick={() => void operation(async () => { const out = await client.call("reconAccept", { id: null }); onStatus(out.status); setRecon(out.recon); bump(); setMessage(msg("studio.allOpenDifferencesAccepted")); })}>{t("studio.acceptAllDifferences")}</button>{" "}
+        <button disabled={busy} onClick={() => void operation(async () => { const out = await client.call("reconRebuild", {}); onStatus(out.status); setRecon(out.recon); bump(); setMessage(msg(out.recon.reconciled ? "studio.marginTotalsRebuiltFrom" : "studio.totalsRebuiltSomeDifferences")); })}>{t("studio.rebuildTotalsFromThe")}</button></>}
   </section>;
 }
 /** Data health: equal-weight components with their formula and the next step for each. */
@@ -277,13 +281,13 @@ function HealthCard({ client, version }: Shared) {
   useEffect(() => { let active = true; void client.call("health", {}).then(h => { if (active) setHealth(h); }).catch(() => undefined); return () => { active = false; }; }, [client, version]);
   if (!health) return null;
   return <section className={styles.card} aria-labelledby="health-heading">
-    <h2 id="health-heading">Data health{health.score === null ? "" : `: ${health.score}%`}</h2>
-    <p className={styles.small}>{health.formula}</p>
+    <h2 id="health-heading">{health.score === null ? t("studio.dataHealth") : t("studio.dataHealthScore", { score: fmt.percent(health.score) })}</h2>
+    <p className={styles.small}>{say(health.formula)}</p>
     <div className={styles.tableWrap}><table className={styles.table}>
-      <thead><tr><th scope="col">Check</th><th scope="col">Score</th><th scope="col">What we found</th><th scope="col">Next step</th></tr></thead>
-      <tbody>{health.components.map(c => <tr key={c.key}><td>{c.label}</td><td>{c.score === null ? "n/a" : `${c.score}%`}</td><td className={styles.wrap}>{c.detail}</td><td className={styles.wrap}>{c.step}</td></tr>)}</tbody>
+      <thead><tr><th scope="col">{t("studio.check")}</th><th scope="col">{t("studio.score")}</th><th scope="col">{t("studio.whatWeFound")}</th><th scope="col">{t("studio.nextStep")}</th></tr></thead>
+      <tbody>{health.components.map(c => <tr key={c.key}><td>{say(c.label)}</td><td>{c.score === null ? t("common.notApplicable") : fmt.percent(c.score)}</td><td className={styles.wrap}>{say(c.detail)}</td><td className={styles.wrap}>{say(c.step)}</td></tr>)}</tbody>
     </table></div>
-    <p className={styles.small}>{Number(health.linesBelowCost).toLocaleString("en-US")} lines with a known cost sold below that cost · {Number(health.openFixLater).toLocaleString("en-US")} rows waiting in Fix Later.</p>
+    <p className={styles.small}>{t("studio.healthFooter", { below: fmt.int(health.linesBelowCost), waiting: fmt.int(health.openFixLater) })}</p>
   </section>;
 }
 /** Playground: fictional sample data with planted leaks, only in a vault without real files. */
@@ -292,10 +296,10 @@ function Playground({ client, busy, operation, onStatus, setMessage, bump, sourc
   const loaded = sources.some(s => s.name.startsWith(PLAYGROUND_PREFIX)), real = sources.some(s => !s.name.startsWith(PLAYGROUND_PREFIX));
   if (real && !loaded) return null;
   return <section className={styles.card} aria-labelledby="playground-heading">
-    <h2 id="playground-heading">Playground</h2>
-    <p>A fictional Industrial Valve &amp; Pipe Distributor: 5,000 SKUs, 50 customer tiers, 400 customers and 24 months of invoices with planted margin leaks. It is invented data and is kept out of your own files.</p>
-    {!loaded ? <button className={styles.primary} disabled={busy} onClick={() => void operation(async () => { const out = await client.call("playgroundLoad", {}); onStatus(out.status); setManifest(out.manifest); await onSources(); bump(); setMessage(`Playground loaded: ${out.manifest.lines.toLocaleString("en-US")} invoice lines with ${out.manifest.leaks.length} planted leaks.`); })}>Load the Playground</button>
-      : <button disabled={busy} onClick={() => void operation(async () => { const out = await client.call("playgroundRemove", {}); onStatus(out.status); setManifest(null); await onSources(); bump(); setMessage(`Removed ${out.removed} Playground files and exactly their rows.`); })}>Remove Playground data</button>}
-    {manifest && <ul className={styles.small}>{manifest.leaks.map(l => <li key={l.id}>{l.id} · {l.description} ({l.lines.toLocaleString("en-US")} lines, ${Number(l.dollars).toLocaleString("en-US", { minimumFractionDigits: 2 })})</li>)}</ul>}
+    <h2 id="playground-heading">{t("studio.playground")}</h2>
+    <p>{t("studio.aFictionalIndustrialValve")}</p>
+    {!loaded ? <button className={styles.primary} disabled={busy} onClick={() => void operation(async () => { const out = await client.call("playgroundLoad", {}); onStatus(out.status); setManifest(out.manifest); await onSources(); bump(); setMessage(msg("studio.playgroundLoadedInvoiceLines", { lines: out.manifest.lines, count: out.manifest.leaks.length })); })}>{t("studio.loadThePlayground")}</button>
+      : <button disabled={busy} onClick={() => void operation(async () => { const out = await client.call("playgroundRemove", {}); onStatus(out.status); setManifest(null); await onSources(); bump(); setMessage(msg("studio.removedPlaygroundFilesAnd", { count: Number(out.removed) })); })}>{t("studio.removePlaygroundData")}</button>}
+    {manifest && <ul className={styles.small}>{manifest.leaks.map(l => <li key={l.id}>{t("studio.plantedLeak", { id: l.id, description: l.id in PLANTED ? t(PLANTED[l.id]) : l.description, count: l.lines, dollars: fmt.currency(String(Math.round(Number(l.dollars) * 100))) })}</li>)}</ul>}
   </section>;
 }

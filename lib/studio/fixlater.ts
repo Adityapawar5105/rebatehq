@@ -9,11 +9,12 @@ import { ROLE_FIELDS, LOADABLE, StudioError, type Role } from "./formats";
 import { cleanDate, cleanId, cleanNumber } from "./clean";
 import { CODES, capUsage, commitSql, createStage, issueMessage, resetStage, validate, type StagedFile } from "./load";
 import { CAPS, type Tier } from "../vault/protocol";
+import { msg } from "../i18n/core";
 /** credits: the group can load as returns/credits (negative-quantity sales rows, chunk 4D). */
 export type FixGroup = { sourceId: string; sourceName: string; role: Role; code: string; field: string | null; message: string; count: string; fixable: boolean; credits: boolean };
 export type FixRow = { sourceRow: string; code: string; values: { field: string; value: string }[] };
 const CANONICAL = { sheet: null, headerRow: 0, headerDepth: 1 as const, delimiter: "," as const, encoding: "utf-8" as const, decimal: "dot" as const, dateFormat: "YYYY-MM-DD" as const };
-const slot = (role: Role, field: string) => { const i = ROLE_FIELDS[role].findIndex(f => f.name === field); if (i < 0) throw new StudioError("Unknown field for this file type."); return `v${i}`; };
+const slot = (role: Role, field: string) => { const i = ROLE_FIELDS[role].findIndex(f => f.name === field); if (i < 0) throw new StudioError(msg("fixlater.unknownFieldForThis2")); return `v${i}`; };
 const fieldOf = (code: string) => code.includes(":") ? code.split(":")[0] : null;
 export async function fixGroups(engine: Engine): Promise<FixGroup[]> {
   const rows = (await engine.conn.query(`SELECT r.source_id, s.name, r.role, r.code, count(*)::VARCHAR AS n FROM rejected_rows r JOIN source_files s ON s.id=r.source_id
@@ -21,7 +22,7 @@ WHERE r.status='open' GROUP BY r.source_id, s.name, r.role, r.code ORDER BY coun
   return rows.map(r => {
     const role = String(r.role) as Role, code = String(r.code);
     return { sourceId: String(r.source_id), sourceName: String(r.name), role, code, field: code === "credit:sign" ? null : fieldOf(code), count: String(r.n), credits: role === "sales_history" && code === "quantity:negative",
-      message: code === "structure" ? "The row's layout was broken (extra values or an oversized cell). It can only be dismissed; fix the file and import it again." : issueMessage(code, CANONICAL),
+      message: code === "structure" ? msg("fixlater.theRowSLayout") : issueMessage(code, CANONICAL),
       fixable: code !== "structure" && LOADABLE.includes(role) };
   });
 }
@@ -32,15 +33,15 @@ export async function fixRows(engine: Engine, sourceId: string, code: string, of
 }
 async function roleOf(engine: Engine, sourceId: string) {
   const role = (await engine.conn.query(`SELECT role FROM source_files WHERE id=${sqlText(sourceId)}`)).toArray()[0]?.role;
-  if (!role) throw new StudioError("That file is no longer in the vault.");
+  if (!role) throw new StudioError(msg("fixlater.thatFileIsNo"));
   return String(role) as Role;
 }
 /** Canonical form of a correction typed by the user (dot decimals, ISO dates). */
 export function correction(role: Role, field: string, value: string) {
   const type = ROLE_FIELDS[role].find(f => f.name === field)?.type;
-  if (!type) throw new StudioError("Unknown field for this file type.");
+  if (!type) throw new StudioError(msg("fixlater.unknownFieldForThis"));
   const v = value.trim();
-  if (v.length > 500) throw new StudioError("Keep corrections under 500 characters.");
+  if (v.length > 500) throw new StudioError(msg("fixlater.keepCorrectionsUnder500"));
   return type === "date" ? cleanDate(v, "YYYY-MM-DD").value : type === "amount" || type.startsWith("quantity") ? cleanNumber(v, "dot").value : type === "id" || type === "line_id" ? cleanId(v).value : v;
 }
 /** Set one field on all open rows of a group (or the listed rows). Returns the SQL to run in a transaction. */
@@ -63,8 +64,8 @@ UPDATE rejected_rows SET status='dismissed' WHERE source_id=${sqlText(sourceId)}
  */
 export async function recheck(engine: Engine, sourceId: string, code: string, tier: Tier) {
   const role = await roleOf(engine, sourceId);
-  if (!LOADABLE.includes(role)) throw new StudioError("Rows of this file type cannot be loaded yet.");
-  if (code === "structure") throw new StudioError("Rows with a broken layout can only be dismissed.");
+  if (!LOADABLE.includes(role)) throw new StudioError(msg("fixlater.rowsOfThisFile"));
+  if (code === "structure") throw new StudioError(msg("fixlater.rowsWithABroken"));
   const fields = ROLE_FIELDS[role], s = sqlText(sourceId), name = String((await engine.conn.query(`SELECT name FROM source_files WHERE id=${s}`)).toArray()[0].name);
   const file: StagedFile = { ord: 0, role, name, bytes: 0, fingerprint: "", alignment: fields.map((f, index) => ({ field: f.name, index })), settings: CANONICAL, keyed: true, headers: fields.map(f => f.name), colOffset: 0 };
   await resetStage(engine); await createStage(engine, role);
@@ -74,7 +75,7 @@ export async function recheck(engine: Engine, sourceId: string, code: string, ti
   const ok = String(counts.ok), bad = String(counts.bad);
   if (ok === "0") { await resetStage(engine); return { loaded: "0", stillRejected: bad }; }
   const usage = await capUsage(engine, new Set([role]), null), cap = CAPS[tier];
-  if (!fitsLicenceCapacity(tier,usage.products,usage.lines)) { await resetStage(engine); throw new StudioError(`Loading these rows would exceed your ${tier} limit of ${cap.lines.toLocaleString("en-US")} invoice lines or ${cap.products.toLocaleString("en-US")} products. Upgrade your workspace licence or filter the file.`); }
+  if (!fitsLicenceCapacity(tier,usage.products,usage.lines)) { await resetStage(engine); throw new StudioError(msg("fixlater.loadingTheseRowsWould", { tier, lines: cap.lines, products: cap.products })); }
   const messages = CODES(role).map(code => `(0,${sqlText(code)},${sqlText(code.includes(":") ? code.split(":")[0] : "")},${sqlText(issueMessage(code, CANONICAL))})`).join(",");
   await engine.conn.query("BEGIN");
   try {

@@ -3,15 +3,17 @@
 // the UI only mirrors the result. Money here is never computed; this module is policy.
 import type { Action } from "../vault/protocol";
 import { ROLE_IDS } from "../vault/schema";
+import { msg } from "../i18n/core";
 export type RoleId = typeof ROLE_IDS[number];
 export const ROLES: Array<{ id: RoleId; label: string; summary: string }> = [
-  { id: "owner", label: "Owner / CFO", summary: "Watches margin health and the ROI tracker; manages roles and backups." },
-  { id: "pricing_owner", label: "Pricing Owner", summary: "Accountable for pricing: everything, including approving price changes." },
-  { id: "pricing_manager", label: "Pricing Manager", summary: "Imports data, cleans the item master, builds rules, simulates and exports." },
-  { id: "sales_manager", label: "Sales Manager", summary: "Reviews margins and customer profitability (read-only)." },
-  { id: "sales_rep", label: "Sales Rep", summary: "Checks price floors. Never sees cost unless the owner allows it." },
-  { id: "accountant", label: "Accountant", summary: "Reconciliation, cost and the audit log (read-only on pricing)." },
-  { id: "admin", label: "Admin / IT", summary: "Team roles, backups and the audit log. No cost or pricing data." },
+  // Labels are message references (English text plus key); the UI shows them with say().
+  { id: "owner", label: msg("role.owner"), summary: msg("role.owner.summary") },
+  { id: "pricing_owner", label: msg("role.pricing_owner"), summary: msg("role.pricing_owner.summary") },
+  { id: "pricing_manager", label: msg("role.pricing_manager"), summary: msg("role.pricing_manager.summary") },
+  { id: "sales_manager", label: msg("role.sales_manager"), summary: msg("role.sales_manager.summary") },
+  { id: "sales_rep", label: msg("role.sales_rep"), summary: msg("role.sales_rep.summary") },
+  { id: "accountant", label: msg("role.accountant"), summary: msg("role.accountant.summary") },
+  { id: "admin", label: msg("role.admin"), summary: msg("role.admin.summary") },
 ];
 export const ROLE_LABEL = Object.fromEntries(ROLES.map(r => [r.id, r.label])) as Record<RoleId, string>;
 export const isRole = (value: unknown): value is RoleId => typeof value === "string" && (ROLE_IDS as readonly string[]).includes(value);
@@ -51,7 +53,7 @@ export const intersect = (a: Cap[], b: Cap[]) => a.filter(c => b.includes(c));
 export const ACTION_CAP: Record<Action, Cap | null> = {
   relayView:"collaborate",relayRegister:"collaborate",relayJoin:"collaborate",relayRotate:"collaborate",relaySync:"collaborate",relayShare:"collaborate",relayRequest:"collaborate",relayDecide:"collaborate",relayComment:"collaborate",relayRetry:"collaborate",relayDiscard:"collaborate",
   capacityUpgrade: "roles", licenceSet: null, init: null, create: null, unlock: null, lock: null, touch: null, cancel: null, save: null, storage: null,
-  status: null, home: "view", checklist: "view", checklistMark: "roles", roleList: "view",
+  status: null, search: "view", home: "view", checklist: "view", checklistMark: "roles", roleList: "view",
   // Previewing a role can only remove capabilities (see accessFor), so anyone may use it, which also lets an Owner leave a preview.
   roleSet: "roles", roleRemove: "roles", accessSet: "roles", rolePreview: "view",
   pricingState: "guards", pricingOwner: "roles", guardSet: "pricing", ruleSave: "pricing", ruleSimulate: "pricing", rulePreview: "pricing", ruleApprove: "approve", priceExport: "export",

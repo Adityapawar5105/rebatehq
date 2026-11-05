@@ -1,8 +1,9 @@
 import { admin,levelsFor,RelayError,type Content,type Epoch,type RelayEvent,type ShareInput } from './protocol';
+import { msg } from "../i18n/core";
 export type Applied = {event:RelayEvent;content:Content|null};
 export type Approval = {id:string;hash:string;requester:string;approvers:string[];decisions:{userId:string;decision:'approve'|'reject';level:string}[];status:'pending'|'approved'|'rejected'};
 export type Shared = {id:string;kind:RelayEvent['objectKind'];subject:ShareInput;author:string;hash:string;epochId:string;requiredLevels:1|2;approval:Approval|null;comments:{id:string;author:string;text:string;mentions:string[]}[];sequence:string};
-function reject():never{throw new RelayError('CONTENT','An invalid shared operation was rejected. It did not change an approval.');}
+function reject():never{throw new RelayError('CONTENT',msg("relay.state.anInvalidSharedOperation"));}
 export function fold(entries:Applied[],epochs:Epoch[]){
  const objects=new Map<string,Shared>(),rejected:string[]=[];
  for(const {event:e,content:c} of entries){

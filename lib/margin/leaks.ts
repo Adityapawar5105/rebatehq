@@ -9,10 +9,11 @@ import { sqlText } from "../spike/exact";
 import { atRateSql, discountBpSql, POCKET, MARGIN } from "./sql";
 import { bpText, rha } from "./decimal";
 import { lineFromCents } from "./engine";
+import { msg } from "../i18n/core";
 
 export type LeakType = "below_floor" | "discount_outlier" | "unrecovered_freight" | "negative_margin" | "below_lower_tier" | "below_cost";
-export const LEAK_LABELS: Record<LeakType, string> = { below_floor: "Below tier floor", discount_outlier: "Discount outlier vs tier peers", unrecovered_freight: "Unrecovered freight",
-  negative_margin: "Negative margin", below_lower_tier: "Billed at a better tier", below_cost: "Price below cost" };
+export const LEAK_LABELS: Record<LeakType, string> = { below_floor: msg("leak.belowTierFloor"), discount_outlier: msg("leak.discountOutlierVsTier"), unrecovered_freight: msg("leak.unrecoveredFreight"),
+  negative_margin: msg("leak.negativeMargin"), below_lower_tier: msg("leak.billedAtABetter"), below_cost: msg("leak.priceBelowCost") };
 /** Rule thresholds. Without configured guardrails (chunk 4E) a tier's floor is its peer rate. */
 export const RULES = {
   /** A line is over-discounted when it is at least this many basis points above its tier's peer rate. */
@@ -81,7 +82,7 @@ INSERT INTO lf_keys SELECT DISTINCT hash(finding),finding,'below_floor' FROM lf_
 INSERT INTO lf_hits SELECT hash(finding),sid,line_id,leak,NULL FROM lf_guard WHERE leak>0;
 DELETE FROM lf_keys WHERE h NOT IN (SELECT DISTINCT h FROM lf_hits);`);
   const keys = (await q(engine, "SELECT count(*) AS n, count(DISTINCT h) AS d FROM lf_keys"))[0];
-  if (String(keys.n) !== String(keys.d)) throw new Error("Leak finding keys collided; no findings were recorded.");
+  if (String(keys.n) !== String(keys.d)) throw new Error(msg("leak.leakFindingKeysCollided"));
   // Narrow join on sales_lines (product and customer only), so the hash table is built on the hits.
   const groups = await q(engine, `WITH g AS (SELECT h, count(*)::VARCHAR AS n, sum(leak)::VARCHAR AS cents, sum(leak) AS c, any_value(basis_bp)::VARCHAR AS basis FROM lf_hits GROUP BY h),
  pc AS (SELECT h.h, count(DISTINCT s.product_id)::VARCHAR AS products, count(DISTINCT s.customer_id)::VARCHAR AS customers FROM lf_hits h JOIN lf_src x ON x.sid = h.sid JOIN sales_lines s ON s.source_id = x.source_id AND s.line_id = h.line_id GROUP BY h.h)
@@ -104,24 +105,24 @@ function describe(id: string, g: Record<string, unknown>, shift: Map<string, Rec
   const bp = (v: unknown) => bpText(BigInt(S(v) || "0"));
   switch (type) {
     case "below_lower_tier": { const s = shift.get(a)!;
-      return { ...base, scope: { customer: a, tier: S(s.tier), billedAs: b! }, title: `${a} (tier ${S(s.tier)}) is billed at tier ${b}'s discount`,
-        formula: `Leak per line = discount - list x ${S(s.tier)} peer rate (${bp(s.tier_bp)}), rounded to the cent.`, detail: `${base.lines} lines, ${bp(s.modal_bp)} typical discount = tier ${b}'s peer rate (${bp(tiers.get(b!))}).` }; }
+      return { ...base, scope: { customer: a, tier: S(s.tier), billedAs: b! }, title: msg("leak.tierIsBilledAt", { a, tier: S(s.tier), b }),
+        formula: msg("leak.leakPerLineDiscount3", { tier: S(s.tier), tierbp: bp(s.tier_bp) }), detail: msg("leak.linesTypicalDiscountTier", { lines: base.lines, modalbp: bp(s.modal_bp), b, value: bp(tiers.get(b!)) }) }; }
     case "discount_outlier": { const s = shift.get(a), tier = S(s?.tier), lines = b === "lines";
-      return { ...base, scope: { customer: a, ...(lines ? { pattern: "scattered lines" } : {}) }, title: lines ? `${a}: lines discounted far above tier peers` : `${a} is discounted far above its tier's peers`,
-        formula: `Leak per line = discount - list x the tier's peer rate${s ? ` (${tier}: ${bp(s.tier_bp)})` : ""}, rounded to the cent.`, detail: s ? `Typical discount ${bp(s.modal_bp)}, which matches no better tier's rate.` : `Lines at least ${RULES.scatteredBp / 100} points above the tier's peer rate.` }; }
+      return { ...base, scope: { customer: a, ...(lines ? { pattern: "scattered lines" } : {}) }, title: lines ? msg("leak.linesDiscountedFarAbove", { a }) : msg("leak.isDiscountedFarAbove", { a }),
+        formula: (s ? msg("leak.leakPerLineTierRate", { tier, rate: bp(s.tier_bp) }) : msg("leak.leakPerLineDiscount2", {})), detail: s ? msg("leak.typicalDiscountWhichMatches", { modalbp: bp(s.modal_bp) }) : msg("leak.linesAtLeastPoints", { value: RULES.scatteredBp / 100 }) }; }
     case "below_floor":
-      return { ...base, scope: { customer: a, category: b! }, title: `${a}: ${b} lines priced below the tier floor`, formula: g.basis === null ? 'Leak per line = max(configured unit floor × quantity − billed net, 0), rounded half away from zero to cents.' : `Leak per line = discount - list x the tier floor rate (${bp(g.basis)}), rounded to the cent.`,
-        detail: `Configured unit floors take precedence; without them, the tier's floor is its peer rate. ${base.lines} ${b} lines are over-discounted while the customer's other categories are not.` };
+      return { ...base, scope: { customer: a, category: b! }, title: msg("leak.linesPricedBelowThe", { a, b }), formula: g.basis === null ? msg("leak.leakPerLineMax") : msg("leak.leakPerLineDiscount", { basis: bp(g.basis) }),
+        detail: msg("leak.configuredUnitFloorsTake", { lines: base.lines, b }) };
     case "unrecovered_freight":
-      return { ...base, scope: { rule: `freight > ${RULES.freightShareBp / 100}% of list` }, title: "Freight not billed back on small lines", formula: `Leak per line = freight, on lines where freight is more than ${RULES.freightShareBp / 100}% of list.`,
-        detail: `${S(g.customers)} customers, ${S(g.products)} products.` };
+      return { ...base, scope: { rule: `freight > ${RULES.freightShareBp / 100}% of list` }, title: msg("leak.freightNotBilledBack"), formula: msg("leak.leakPerLineFreight", { value: RULES.freightShareBp / 100 }),
+        detail: msg("leak.customersProducts", { customers: S(g.customers), products: S(g.products) }) };
     case "below_cost":
-      return { ...base, scope: { rule: "net price below cost" }, title: "Lines priced below cost", formula: "Leak per line = cost - pocket, where net price (list - discount) is below cost.", detail: `${S(g.products)} products, ${S(g.customers)} customers. Lines with unknown cost are not checked.` };
+      return { ...base, scope: { rule: "net price below cost" }, title: msg("leak.linesPricedBelowCost"), formula: msg("leak.leakPerLineCost3"), detail: msg("leak.productsCustomersLinesWith", { products: S(g.products), customers: S(g.customers) }) };
     case "negative_margin":
       return a === "cost_rise"
-        ? { ...base, scope: { rule: "vendor cost rise not passed on" }, title: `Vendor cost rises not passed on (${S(g.products)} products)`, formula: "Leak per line = cost - pocket, on lines sold at a loss on or after the product's vendor cost increase.",
-            detail: `Vendor cost files show increases on ${S(rise.n)} products effective ${S(rise.a)}${S(rise.a) !== S(rise.b) ? ` to ${S(rise.b)}` : ""}. Lines with unknown cost are not checked.` }
-        : { ...base, scope: { rule: "other loss-making lines" }, title: "Other lines sold at a loss", formula: "Leak per line = cost - pocket, where pocket (list - discount - rebate - freight) is below cost.", detail: `${S(g.products)} products, ${S(g.customers)} customers.` };
+        ? { ...base, scope: { rule: "vendor cost rise not passed on" }, title: msg("leak.vendorCostRisesNot", { products: S(g.products) }), formula: msg("leak.leakPerLineCost2"),
+            detail: msg(S(rise.a) !== S(rise.b) ? "leak.vendorCostFilesShowRange" : "leak.vendorCostFilesShow", { n: S(rise.n), a: S(rise.a), b: S(rise.b) }) }
+        : { ...base, scope: { rule: "other loss-making lines" }, title: msg("leak.otherLinesSoldAt"), formula: msg("leak.leakPerLineCost"), detail: msg("leak.productsCustomers", { products: S(g.products), customers: S(g.customers) }) };
   }
 }
 export type LeakRow = { sourceFile: string; sourceRow: string; lineId: string; invoice: string; date: string; product: string; category: string; customer: string; tier: string;

@@ -26,16 +26,18 @@ import { basisSql, costBasis, type BasisId } from "../cost/basis";
 import * as setup from "../setup/checklist";
 import * as roles from "../roles/store";
 import { isRole, type Cap, type RoleId } from "../roles/access";
-import type { Access, CleanupApplied, CleanupMergedAll, CleanupUndone, HomeData, RoleList } from "./protocol";
+import type { Access, CleanupApplied, CleanupMergedAll, CleanupUndone, HomeData, RoleList, SearchHit } from "./protocol";
+import { isLocale } from "../i18n/core";
 import {RelaySession,emptyRelay,type RelayState} from '../relay/session';
 import {relayHttp} from '../relay/http';
 import {RelayError} from '../relay/protocol';
 import {minorUnits} from '../spike/exact';
+import { msg } from "../i18n/core";
 export class VaultService {
   async relay(request:Extract<import('./protocol').Request,{action:`relay${string}`}>,signal:AbortSignal){
-    this.licence.assert();if(this.licence.tier==='starter')throw new VaultError('LICENCE','Workspace sharing requires Professional or Scale. Your local data is safe.');
+    this.licence.assert();if(this.licence.tier==='starter')throw new VaultError('LICENCE',msg("vault.workspaceSharingRequiresProfessional"));
     const deviceId=this.licence.claims?.device??'';
-    if(!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(deviceId))throw new VaultError('LICENCE','Reconnect to verify this approved device before sharing.');
+    if(!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(deviceId))throw new VaultError('LICENCE',msg("vault.reconnectToVerifyThis"));
     const rows=(await this.requireEngine().conn.query('SELECT payload FROM relay_state WHERE id=1')).toArray();
     const state:RelayState=rows.length?JSON.parse(String(rows[0].payload)):emptyRelay();
     const session=new RelaySession({...this.identity,deviceId},state,relayHttp(deviceId,signal),async(value,stage)=>{
@@ -44,7 +46,7 @@ export class VaultService {
     switch(request.action){
       case 'relayView':return session.view();case 'relayRegister':return session.register();case 'relayJoin':return session.join(request.data.fingerprint);
       case 'relayRotate':return session.rotate(request.data.confirmations);case 'relaySync':return session.sync();
-      case 'relayShare':{const {amount,...input}=request.data.input;let amountMinor:string;try{amountMinor=minorUnits(amount).toString();}catch{throw new RelayError('CONTENT','Enter a non-negative amount with at most two decimal places.');}return session.share({...input,amountMinor});}
+      case 'relayShare':{const {amount,...input}=request.data.input;let amountMinor:string;try{amountMinor=minorUnits(amount).toString();}catch{throw new RelayError('CONTENT',msg("vault.enterANonNegative"));}return session.share({...input,amountMinor});}
       case 'relayRequest':return session.request(request.data.id,request.data.approvers);case 'relayDecide':return session.decide(request.data.id,request.data.decision);
       case 'relayComment':return session.comment(request.data.id,request.data.text,request.data.mentions);case 'relayRetry':return session.retry();case 'relayDiscard':return session.discard();
     }
@@ -74,8 +76,8 @@ export class VaultService {
   // autoWarm: start the copy-on-write in the background right after unlock.
   constructor(private onIdle: () => void, private idleMs = AUTO_LOCK_MS, private leaseWaitMs = LEASE_WAIT_MS, private autoWarm = true) {}
   async init(scope: Scope) {
-    if (this.storage) throw new VaultError("STATE", "Workspace is already selected. Reload to switch workspace.");
-    if (!navigator.storage?.getDirectory || !navigator.locks) throw new VaultError("BROWSER", "Use a current Chrome or Edge browser with local storage and Web Locks enabled.");
+    if (this.storage) throw new VaultError("STATE", msg("vault.workspaceIsAlreadySelected"));
+    if (!navigator.storage?.getDirectory || !navigator.locks) throw new VaultError("BROWSER", msg("vault.useACurrentChrome"));
     this.identity = { ...scope }; this.storage = await VaultStorage.open(scope); return this.status();
   }
   private async lease() {
@@ -86,7 +88,7 @@ export class VaultService {
     await new Promise<void>((resolve, reject) => {
       navigator.locks.request(`rebatehq-vault-${this.storage.scope}`, { signal }, async () => {
         await new Promise<void>(release => { this.releaseLease = release; resolve(); });
-      }).catch(error => reject(signal.aborted ? new VaultError("OTHER_TAB", "This vault is open in another tab. Lock or close that tab first.") : error));
+      }).catch(error => reject(signal.aborted ? new VaultError("OTHER_TAB", msg("vault.thisVaultIsOpen")) : error));
     });
   }
   touch() {
@@ -97,8 +99,8 @@ export class VaultService {
   /** `ownerName` names the Pricing Owner at setup (the worker requires it; direct harness calls may omit it). */
   async create(passphrase: string, tier: Tier, ownerName?: string) {
     this.licence.assert(); tier=this.licence.effective(tier);
-    if (this.engine || await this.storage.exists()) throw new VaultError("EXISTS", "A vault already exists. Unlock it instead of replacing it.");
-    if (!["starter", "professional", "scale"].includes(tier)) throw new VaultError("TIER", "Choose a supported plan.");
+    if (this.engine || await this.storage.exists()) throw new VaultError("EXISTS", msg("vault.aVaultAlreadyExists"));
+    if (!["starter", "professional", "scale"].includes(tier)) throw new VaultError("TIER", msg("vault.chooseASupportedPlan"));
     const owner = ownerName === undefined ? undefined : pricing.label(ownerName);
     await this.lease();
     try {
@@ -110,7 +112,7 @@ export class VaultService {
       await this.migrate(); this.dirty = true; await this.save();
       if (owner !== undefined) await this.setupOwner(owner);
       this.touch(); return this.status();
-    } catch (error) { await this.dispose(); if (error instanceof VaultError && error.code === "SAVE") throw new VaultError("SAVE", "Initial vault setup could not be saved. Free storage and retry; no existing vault was replaced."); throw error; }
+    } catch (error) { await this.dispose(); if (error instanceof VaultError && error.code === "SAVE") throw new VaultError("SAVE", msg("vault.initialVaultSetupCould")); throw error; }
   }
   /** The person creating the vault is its first Owner and names themselves Pricing Owner (required at setup). */
   private async setupOwner(name: string) {
@@ -130,11 +132,11 @@ export class VaultService {
     catch (error) { await engine.conn.query("ROLLBACK"); throw error; }
   }
   async unlock(passphrase: string) {
-    if (this.engine) throw new VaultError("STATE", "The vault is already unlocked.");
+    if (this.engine) throw new VaultError("STATE", msg("vault.theVaultIsAlready"));
     await this.lease();
     try {
       const candidates = await this.storage.candidates();
-      if (!candidates.length) throw new VaultError("RECOVERY", "No valid vault pointer was found. Keep the existing files and recover from your encrypted backup.");
+      if (!candidates.length) throw new VaultError("RECOVERY", msg("vault.noValidVaultPointer"));
       let decoded: Awaited<ReturnType<typeof decrypt>> | null = null, chosen = candidates[0];
       for (const candidate of candidates) {
         try {
@@ -144,21 +146,21 @@ export class VaultService {
         } catch { /* Try only retained, committed pointers; never orphan files. */ }
       }
       passphrase = "";
-      if (!decoded) throw new VaultError("UNLOCK_FAILED", "Wrong passphrase or damaged vault. No data was opened.");
+      if (!decoded) throw new VaultError("UNLOCK_FAILED", msg("vault.wrongPassphraseOrDamaged"));
       this.key = decoded.key; this.generation = decoded.sequence;
       this.engine = await openMemory(decoded.bytes); // one engine; registered RAM buffer only
       this.storage.activeHead = { format: 1, current: chosen.name, previous: null, sequence: decoded.sequence, savedAt: chosen.savedAt || "" };
       const rows = (await this.engine.conn.query("SELECT scope,tier FROM vault_meta WHERE id=1")).toArray();
       if (rows.length !== 1 || rows[0].scope !== this.storage.scope || !["starter", "professional", "scale"].includes(String(rows[0].tier))) throw new Error("metadata");
       this.tier = this.licence.effective(rows[0].tier as Tier);
-      const audit = await verifyAudit(this.engine); if (!audit.valid) throw new VaultError("AUDIT", "The vault audit chain failed verification. No changes were saved.");
+      const audit = await verifyAudit(this.engine); if (!audit.valid) throw new VaultError("AUDIT", msg("vault.theVaultAuditChain"));
       this.recovered = chosen.recovered; this.lastSaved = chosen.savedAt;
       await this.migrate(); if (this.dirty) await this.save();
       if (this.autoWarm) startWarmup(this.engine);
       this.touch(); return this.status();
-    } catch (error) { await this.dispose(); if (error instanceof VaultError && error.code === "SAVE") throw new VaultError("SAVE", "The schema upgrade could not be saved. Your original encrypted vault is retained. Free storage and unlock again."); throw error instanceof VaultError ? error : new VaultError("UNLOCK_FAILED", "Wrong passphrase, damaged vault or unsupported schema. No data was opened."); }
+    } catch (error) { await this.dispose(); if (error instanceof VaultError && error.code === "SAVE") throw new VaultError("SAVE", msg("vault.theSchemaUpgradeCould")); throw error instanceof VaultError ? error : new VaultError("UNLOCK_FAILED", msg("vault.wrongPassphraseDamagedVault")); }
   }
-  private requireEngine() { if (!this.engine) throw new VaultError("LOCKED", "Unlock your vault first."); return this.engine; }
+  private requireEngine() { if (!this.engine) throw new VaultError("LOCKED", msg("vault.unlockYourVaultFirst")); return this.engine; }
   async save() {
     const engine = this.requireEngine();
     if (!this.dirty) return this.status();
@@ -167,7 +169,7 @@ export class VaultService {
       const sequence = (BigInt(this.generation) + BigInt(1)).toString();
       const head = await this.storage.publish(bytes, this.key!, sequence);
       this.generation = sequence; this.lastSaved = head.savedAt; this.dirty = false;
-    } catch { throw new VaultError("SAVE", "The change is in memory but could not be saved. Free disk space and retry Save. Do not close this tab. Your previous encrypted snapshot is safe."); }
+    } catch { throw new VaultError("SAVE", msg("vault.theChangeIsIn")); }
     finally { if (bytes.byteLength) bytes.fill(0); }
     return this.status();
   }
@@ -177,8 +179,8 @@ export class VaultService {
   private async writable(progress?: Progress) {
     this.licence.assert();
     const engine = this.requireEngine();
-    if (this.dirty) throw new VaultError("SAVE", "Save the pending change first.");
-    if (!engine.writable) { progress?.(engine.warming ? "Finishing preparing the vault for edits" : "Preparing the vault for edits in worker memory", "0", "1"); await makeWritable(engine); }
+    if (this.dirty) throw new VaultError("SAVE", msg("vault.saveThePendingChange"));
+    if (!engine.writable) { progress?.(engine.warming ? msg("vault.finishingPreparingTheVault") : msg("vault.preparingTheVaultFor"), "0", "1"); await makeWritable(engine); }
     return engine;
   }
   private async recipes() { return loadRecipes(this.requireEngine()); }
@@ -192,11 +194,11 @@ export class VaultService {
   async studioPlan(signal: AbortSignal, progress: Progress) { await this.studio.plan(this.requireEngine(), this.tier, signal, progress); return this.studioState(); }
   async studioCommit(acknowledge: boolean, progress: Progress) {
     const engine = await this.writable(progress);
-    progress("Loading rows into the vault", "0", "1");
+    progress(msg("vault.loadingRowsIntoThe"), "0", "1");
     const result = await this.studio.commit(engine, acknowledge);
-    this.dirty = true; progress("Updating margin totals", "0", "1"); await this.derived(engine);
-    progress("Saving encrypted snapshot", "0", "1"); await this.save();
-    progress("Saved", "1", "1"); this.touch();
+    this.dirty = true; progress(msg("vault.updatingMarginTotals2"), "0", "1"); await this.derived(engine);
+    progress(msg("vault.savingEncryptedSnapshot"), "0", "1"); await this.save();
+    progress(msg("vault.saved"), "1", "1"); this.touch();
     return { status: await this.status(), studio: await this.studioState(), result };
   }
   async studioDownload(id: string, signal: AbortSignal) { this.requireEngine(); return this.studio.download(id, signal); }
@@ -210,7 +212,7 @@ export class VaultService {
   }
   async recipeApply(id: string, recipeId: string) {
     const recipe = (await this.recipes()).find(r => r.id === recipeId);
-    if (!recipe) throw new VaultError("RECIPE", "That recipe no longer exists.");
+    if (!recipe) throw new VaultError("RECIPE", msg("vault.thatRecipeNoLonger"));
     this.studio.apply(id, recipe); return this.studioState();
   }
   async sources() { return listSources(this.requireEngine()); }
@@ -246,15 +248,15 @@ export class VaultService {
   /** Load the fictional Playground through the normal import path, into a vault with no other data. */
   async playgroundLoad(progress: Progress) {
     const engine = await this.writable(progress), existing = await listSources(engine);
-    if (existing.some(s => !s.name.startsWith(PLAYGROUND_PREFIX))) throw new VaultError("PLAYGROUND", "The Playground loads only into a vault without your own files, so sample and real data never mix.");
-    if (existing.length) throw new VaultError("PLAYGROUND", "The Playground is already loaded.");
+    if (existing.some(s => !s.name.startsWith(PLAYGROUND_PREFIX))) throw new VaultError("PLAYGROUND", msg("vault.thePlaygroundLoadsOnly"));
+    if (existing.length) throw new VaultError("PLAYGROUND", msg("vault.thePlaygroundIsAlready"));
     const { files, manifest } = generatePlayground();
     this.studio.clear();
     await this.studio.add(files.map(f => new File([f.text], f.name, { type: "text/csv" })), []);
     await this.studio.plan(engine, this.tier, new AbortController().signal, progress);
-    progress("Loading Playground rows", "0", "1");
+    progress(msg("vault.loadingPlaygroundRows"), "0", "1");
     await this.studio.commit(engine, true);
-    this.dirty = true; progress("Updating margin totals", "0", "1"); await this.derived(engine); await this.save(); this.touch();
+    this.dirty = true; progress(msg("vault.updatingMarginTotals"), "0", "1"); await this.derived(engine); await this.save(); this.touch();
     return { status: await this.status(), manifest };
   }
   async playgroundRemove() {
@@ -308,15 +310,27 @@ export class VaultService {
   }
   async leakRows(id: string, offset = 0) { await this.leakResult(); return leakRows(this.requireEngine(), id, offset); }
   async roi() { return roiSummary(this.requireEngine()); }
-  /** Build the Margin Leak Report PDF in this worker (no upload); the export is audited. */
-  async leakReport() {
+  /** Command palette search over product and customer IDs and names. No cost or price column is read. */
+  async search(query: string): Promise<SearchHit[]> {
+    const e = this.requireEngine();
+    if (typeof query !== "string" || query.length > 80 || /[\x00-\x1f]/.test(query)) throw new VaultError("SEARCH", msg("vault.searchInvalid"));
+    const q = query.trim(); if (q.length < 2) return [];
+    // ILIKE with an explicit escape character, so % and _ typed by the user match literally.
+    const like = sqlText("%" + q.replace(/[!%_]/g, c => "!" + c) + "%");
+    const products = (await e.conn.query(`SELECT product_id AS id, description AS label, category AS detail FROM products WHERE product_id ILIKE ${like} ESCAPE '!' OR description ILIKE ${like} ESCAPE '!' ORDER BY product_id LIMIT 8`)).toArray();
+    const customers = (await e.conn.query(`SELECT customer_id AS id, name AS label, tier AS detail FROM customers WHERE customer_id ILIKE ${like} ESCAPE '!' OR name ILIKE ${like} ESCAPE '!' ORDER BY customer_id LIMIT 8`)).toArray();
+    const hit = (kind: SearchHit["kind"]) => (r: Record<string, unknown>): SearchHit => ({ kind, id: String(r.id), label: String(r.label ?? ""), detail: String(r.detail ?? "") });
+    return [...products.map(hit("product")), ...customers.map(hit("customer"))];
+  }
+  /** Build the Margin Leak Report PDF in this worker (no upload), in the user's language; the export is audited. */
+  async leakReport(locale?: string) {
     const view = await this.leaks(), engine = this.requireEngine(), result = view.result;
     const evidence: Record<string, Awaited<ReturnType<typeof leakRows>>["rows"]> = {};
     for (const f of result.findings.slice(0, 6)) evidence[f.id] = (await leakRows(engine, f.id, 0)).rows.slice(0, 5);
     const meta = (await engine.conn.query("SELECT count(*)::VARCHAR AS n, strftime(min(sale_date), '%Y-%m-%d') AS a, strftime(max(sale_date), '%Y-%m-%d') AS b FROM sales_lines")).toArray()[0];
     const sources = (await listSources(engine)).filter(s => s.role === "sales_history").map(s => s.name);
     const generatedAt = new Date().toISOString();
-    const bytes = leakReport({ generatedAt, sample: view.sample, lines: String(meta.n), from: meta.a === null ? null : String(meta.a), to: meta.b === null ? null : String(meta.b), sources, waterfall: await waterfall(engine), leaks: result, roi: view.roi, evidence });
+    const bytes = leakReport({ locale: isLocale(locale) ? locale : "en", generatedAt, sample: view.sample, lines: String(meta.n), from: meta.a === null ? null : String(meta.a), to: meta.b === null ? null : String(meta.b), sources, waterfall: await waterfall(engine), leaks: result, roi: view.roi, evidence });
     const w = await this.writable();
     await w.conn.query("BEGIN");
     try { await appendAudit(w, "report.leak_pdf", { findings: String(result.findings.length), bytes: String(bytes.byteLength), sample: String(view.sample) }); await w.conn.query("COMMIT"); }
@@ -373,7 +387,7 @@ export class VaultService {
   async guard(cap: Cap | null) {
     if (!cap || !this.engine) return;
     const a = await this.access();
-    if (!a.caps.includes(cap)) throw new VaultError("FORBIDDEN", `${a.roleLabel} cannot do this. Ask an Owner or Pricing Owner.`);
+    if (!a.caps.includes(cap)) throw new VaultError("FORBIDDEN", msg("vault.cannotDoThisAsk", { roleLabel: a.roleLabel }));
   }
   /** A vault from before roles existed has none; whoever unlocks it becomes its Owner, once. */
   private async seedRoles() {
@@ -403,7 +417,7 @@ export class VaultService {
     return view;
   }
   async checklistMark(step: setup.Step) {
-    if (!setup.STEP_INFO[step]?.manual) throw new VaultError("SETUP", "Only the team step is marked by hand; the others are detected from your data.");
+    if (!setup.STEP_INFO[step]?.manual) throw new VaultError("SETUP", msg("vault.onlyTheTeamStep"));
     await this.write("setup.marked", { step }, async w => { await w.conn.query(setup.saveSql([step], "manual", new Date().toISOString())); });
     return this.checklist();
   }
@@ -430,7 +444,7 @@ export class VaultService {
   }
   /** Preview another role's view. It only ever removes capabilities from your own, and resets on lock. */
   async rolePreview(role: RoleId | null) {
-    if (role !== null && !isRole(role)) throw new VaultError("ROLES", "Choose one of the seven roles.");
+    if (role !== null && !isRole(role)) throw new VaultError("ROLES", msg("vault.chooseOneOfThe"));
     this.requireEngine(); this.viewAs = role; this.accessCache = null; return this.roleList();
   }
   async costBasis() { return costBasis(this.requireEngine()); }
@@ -481,7 +495,7 @@ export class VaultService {
         const groups = (await cleanup.scan(e)).duplicates.filter(g => g.confidence === "certain" && !tried.has(g.key));
         if (!groups.length) break;
         for (const g of groups) {
-          tried.add(g.key); progress?.("Merging duplicate SKUs", String(ids.length + skipped), String(ids.length + skipped + groups.length));
+          tried.add(g.key); progress?.(msg("vault.mergingDuplicateSkus"), String(ids.length + skipped), String(ids.length + skipped + groups.length));
           try { const fix = await this.applyFix(e, "merge_duplicates", g.key, null); ids.push(fix.id); merged = true; if (!fix.finished) unfinished++; }
           catch (error) { if (error instanceof VaultError) skipped++; else throw error; } // for example a group over the line limit: leave it for a manual merge
         }
@@ -491,20 +505,20 @@ export class VaultService {
   }
   /** Undo several fixes (newest first) with one rebuild and one save. */
   async cleanupUndoMany(ids: string[]): Promise<CleanupUndone> {
-    if (!Array.isArray(ids) || ids.length > 5000 || ids.some(i => typeof i !== "string" || i.length > 64)) throw new VaultError("CLEANUP", "Choose the fixes to undo from the history.");
+    if (!Array.isArray(ids) || ids.length > 5000 || ids.some(i => typeof i !== "string" || i.length > 64)) throw new VaultError("CLEANUP", msg("vault.chooseTheFixesTo"));
     const e = await this.writable(); let restored = 0, skipped = 0, merged = false, count = 0;
     try { for (const id of [...ids].reverse()) { const p = await this.undoFix(e, id); restored += p.restored; skipped += p.skipped; count++; merged ||= p.kind === "merge_duplicates"; } }
     finally { if (count) await this.afterFixes(e, merged); }
-    return { summary: `${count} fix${count === 1 ? "" : "es"}`, restored: String(restored), skipped: String(skipped), status: await this.status(), scan: await cleanup.scan(e), history: await cleanup.history(e) };
+    return { summary: msg("vault.fixCount", { count }), restored: String(restored), skipped: String(skipped), status: await this.status(), scan: await cleanup.scan(e), history: await cleanup.history(e) };
   }  /** Guardrails and price floors are visible to every role; rules, simulations and their costs only to roles that edit pricing. */
   async pricingState(){const state=await pricing.pricingState(this.requireEngine());if((await this.access()).caps.includes('pricing'))return state;return {...state,rules:[],runs:[]};}
   /** Pricing changes need a named Pricing Owner (required at setup). */
-  private async requireOwnerNamed(){if(!(await pricing.pricingState(this.requireEngine())).owner)throw new VaultError('OWNER','Name a Pricing Owner on Home before changing prices. Every price change is approved by that person.');}
+  private async requireOwnerNamed(){if(!(await pricing.pricingState(this.requireEngine())).owner)throw new VaultError('OWNER',msg("vault.nameAPricingOwner"));}
   async pricingOwner(name:string, userId:string, backupDays=7){
     name=pricing.label(name);userId=pricing.label(userId);
-    if(!Number.isInteger(backupDays)||backupDays<1||backupDays>90)throw new VaultError('PRICING','Choose a backup reminder from 1 to 90 days.');
+    if(!Number.isInteger(backupDays)||backupDays<1||backupDays>90)throw new VaultError('PRICING',msg("vault.chooseABackupReminder"));
     await this.seedRoles();
-    await this.pricingWrite('pricing.owner_set',async e=>{if((await pricing.pricingState(e)).owner)await pricing.owner(e,this.identity.userId);else if(userId!==this.identity.userId)throw new VaultError('PRICING','First name yourself as Pricing Owner.');await e.conn.query(`DELETE FROM pricing_settings WHERE id=1;INSERT INTO pricing_settings VALUES(1,${sqlText(userId)},${sqlText(name)},${backupDays});UPDATE vault_meta SET pricing_revision=pricing_revision+1 WHERE id=1`);});
+    await this.pricingWrite('pricing.owner_set',async e=>{if((await pricing.pricingState(e)).owner)await pricing.owner(e,this.identity.userId);else if(userId!==this.identity.userId)throw new VaultError('PRICING',msg("vault.firstNameYourselfAs"));await e.conn.query(`DELETE FROM pricing_settings WHERE id=1;INSERT INTO pricing_settings VALUES(1,${sqlText(userId)},${sqlText(name)},${backupDays});UPDATE vault_meta SET pricing_revision=pricing_revision+1 WHERE id=1`);});
     this.accessCache=null;
     return this.pricingState();
   }
@@ -521,9 +535,9 @@ export class VaultService {
     await this.pricingWrite('pricing.exported',async e=>{await e.conn.query(`UPDATE rule_runs SET status='exported' WHERE id=${sqlText(id)}`);});return file;
   }
   async backupStatus(){const c=await backupConfig(this.storage.scope);const settings=this.engine?(await this.pricingState()).owner:null;return {configured:!!c.directory,hours:c.hours,last:c.last,error:c.error,reminder:!c.last||Date.now()-Date.parse(c.last)>(settings?.backupDays??7)*86400000};}
-  async backupConfigure(directory:FileSystemDirectoryHandle|null,hours:number){this.requireEngine();if(!Number.isInteger(hours)||hours<1||hours>168)throw new VaultError('BACKUP','Choose a backup interval from 1 to 168 hours.');const old=await backupConfig(this.storage.scope);await storeBackupConfig(this.storage.scope,{...old,directory,hours});return this.backupStatus();}
+  async backupConfigure(directory:FileSystemDirectoryHandle|null,hours:number){this.requireEngine();if(!Number.isInteger(hours)||hours<1||hours>168)throw new VaultError('BACKUP',msg("vault.chooseABackupInterval"));const old=await backupConfig(this.storage.scope);await storeBackupConfig(this.storage.scope,{...old,directory,hours});return this.backupStatus();}
   async backupNow(){
-    const c=await backupConfig(this.storage.scope);if(!c.directory)throw new VaultError('BACKUP','Choose a backup folder first, or download an encrypted export.');
+    const c=await backupConfig(this.storage.scope);if(!c.directory)throw new VaultError('BACKUP',msg("vault.chooseABackupFolder"));
     try {if(this.licence.writable)await this.pricingWrite('backup.folder_export',async()=>{});const h=await this.storage.readHead();await writeBackup(await this.storage.file(h!.current),c.directory);await storeBackupConfig(this.storage.scope,{...c,last:new Date().toISOString(),error:false});}
     catch(error){await storeBackupConfig(this.storage.scope,{...c,error:true});throw error;}
     return this.backupStatus();
@@ -531,14 +545,14 @@ export class VaultService {
   async backupDue(){if(!this.engine||this.dirty)return;const c=await backupConfig(this.storage.scope);if(c.directory&&(!c.last||Date.now()-Date.parse(c.last)>=c.hours*3600000))await this.backupNow();}
   async backupExport(){if(this.licence.writable)await this.pricingWrite('backup.file_export',async()=>{});const h=await this.storage.readHead();return {name:'rebatehq-vault.enc',blob:await this.storage.file(h!.current)};}
   async backupRestore(file:Blob,passphrase:string){
-    if(this.engine||await this.storage.exists())throw new VaultError('BACKUP','Restore into an empty local vault in the same signed-in workspace. Existing data is never replaced.');
-    if(file.size>600*1024*1024)throw new VaultError('BACKUP','This backup exceeds the restore size limit.');
+    if(this.engine||await this.storage.exists())throw new VaultError('BACKUP',msg("vault.restoreIntoAnEmpty"));
+    if(file.size>600*1024*1024)throw new VaultError('BACKUP',msg("vault.thisBackupExceedsThe"));
     await this.lease();let bytes:Uint8Array|undefined;
     try {const value=await decrypt(file,passphrase,this.storage.scope);passphrase='';bytes=value.bytes;this.engine=await openMemory(bytes);this.key=value.key;
       const meta=(await this.engine.conn.query('SELECT scope,tier FROM vault_meta WHERE id=1')).toArray()[0];if(meta.scope!==this.storage.scope||!['starter','professional','scale'].includes(meta.tier))throw new Error('metadata');
       if(!(await verifyAudit(this.engine)).valid)throw new Error('audit');this.tier=this.licence.effective(meta.tier as Tier);await this.migrate();await makeWritable(this.engine);
       await this.engine.conn.query('BEGIN');await appendAudit(this.engine,'backup.restored',{});await this.engine.conn.query('COMMIT');this.dirty=true;this.generation=value.sequence;await this.save();this.touch();return this.status();
-    }catch(error){await this.dispose();throw error instanceof VaultError?error:new VaultError('BACKUP','Wrong passphrase, workspace or damaged backup. Nothing was restored.');}
+    }catch(error){await this.dispose();throw error instanceof VaultError?error:new VaultError('BACKUP',msg("vault.wrongPassphraseWorkspaceOr"));}
   }
 
   async verify() { return verifyAudit(this.requireEngine()); }

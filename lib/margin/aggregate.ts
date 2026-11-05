@@ -5,6 +5,7 @@
 import type { Engine } from "../vault/engine";
 import { sqlText } from "../spike/exact";
 import { POCKET } from "./sql";
+import { msg } from "../i18n/core";
 
 /** Rebuild the pre-aggregate from sales_lines (inside the caller's transaction or alone). */
 export const REBUILD_SQL = `DELETE FROM agg_cpm;
@@ -27,7 +28,7 @@ const lineSide = `count(*) AS lines, sum(list_cents) AS list, sum(discount_cents
 const aggSide = `sum(lines) AS lines, sum(list_cents) AS list, sum(discount_cents) AS discount, sum(rebate_cents) AS rebate, sum(freight_cents) AS freight, sum(cost_cents) AS cost, sum(costed_lines) AS costed_lines, sum(costed_pocket_cents) AS costed_pocket`;
 export type ReconIssue = { id: string; level: "invoice" | "customer_month" | "total"; scopeKey: string; component: string; imported: string | null; waterfall: string | null; sourceId: string | null; sourceRow: string | null; message: string; status: "open" | "accepted" };
 export type ReconSummary = { checkedAt: string; invoices: string; customerMonths: string; lines: string; open: ReconIssue[]; accepted: string; reconciled: boolean };
-const LABEL: Record<string, string> = { lines: "line count", list: "list", discount: "discounts", rebate: "rebates", freight: "freight", cost: "known cost", costed_lines: "lines with known cost", costed_pocket: "pocket of lines with known cost" };
+const LABEL: Record<string, string> = { lines: msg("recon.lineCount"), list: "list", discount: "discounts", rebate: "rebates", freight: "freight", cost: msg("recon.knownCost"), costed_lines: msg("recon.linesWithKnownCost"), costed_pocket: msg("recon.pocketOfLinesWith") };
 async function idFor(parts: string[]) {
   const bytes = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(parts.join("\u0001"))));
   return "rc-" + [...bytes.slice(0, 12)].map(b => b.toString(16).padStart(2, "0")).join("");
@@ -46,21 +47,21 @@ SELECT coalesce(l.customer_id, a.customer_id) AS c, coalesce(l.m, a.m)::VARCHAR 
 FROM l FULL OUTER JOIN a ON l.customer_id = a.customer_id AND l.m = a.m
 WHERE ${COMPONENTS.map(k => `l.${k} IS DISTINCT FROM a.${k}`).join(" OR ")} ORDER BY 1, 2 LIMIT ${limit}`);
   for (const r of cm) for (const k of COMPONENTS) if (r[`l_${k}`] !== r[`a_${k}`]) found.push({ level: "customer_month", scopeKey: `${r.c}|${String(r.m).slice(0, 7)}`, component: k, imported: r[`l_${k}`] as string | null, waterfall: r[`a_${k}`] as string | null,
-    sourceId: (r.sid as string) ?? null, sourceRow: (r.srow as string) ?? null, message: `Customer ${r.c}, ${String(r.m).slice(0, 7)}: the waterfall's ${LABEL[k]} differs from the imported lines.` });
+    sourceId: (r.sid as string) ?? null, sourceRow: (r.srow as string) ?? null, message: msg("recon.customerTheWaterfallS", { c: String(r.c), month: String(r.m).slice(0, 7), part: LABEL[k] }) });
   const total = (await q(`SELECT ${COMPONENTS.map(k => `coalesce(l.${k},0)::VARCHAR AS l_${k}, coalesce(a.${k},0)::VARCHAR AS a_${k}`).join(", ")} FROM (SELECT ${lineSide} FROM sales_lines) l, (SELECT ${aggSide} FROM agg_cpm) a`))[0];
-  for (const k of COMPONENTS) if ((total[`l_${k}`] ?? "0") !== (total[`a_${k}`] ?? "0")) found.push({ level: "total", scopeKey: "all", component: k, imported: total[`l_${k}`] as string | null, waterfall: total[`a_${k}`] as string | null, sourceId: null, sourceRow: null, message: `The waterfall's total ${LABEL[k]} differs from the imported lines.` });
+  for (const k of COMPONENTS) if ((total[`l_${k}`] ?? "0") !== (total[`a_${k}`] ?? "0")) found.push({ level: "total", scopeKey: "all", component: k, imported: total[`l_${k}`] as string | null, waterfall: total[`a_${k}`] as string | null, sourceId: null, sourceRow: null, message: msg("recon.theWaterfallSTotal", { value: LABEL[k] }) });
   // The rollups must equal the imported lines too (they serve customer-only and product-only views).
   for (const r of ROLLUPS) {
     const t = (await q(`SELECT ${COMPONENTS.map(k => `coalesce(a.${k},0)::VARCHAR AS a_${k}`).join(", ")} FROM (SELECT ${aggSide} FROM ${r}) a`))[0];
     for (const k of COMPONENTS) if ((total[`l_${k}`] ?? "0") !== (t[`a_${k}`] ?? "0")) found.push({ level: "total", scopeKey: r, component: k, imported: total[`l_${k}`] as string | null, waterfall: t[`a_${k}`] as string | null, sourceId: null, sourceRow: null,
-      message: `The ${r === "agg_cm" ? "customer x month" : "product"} totals' ${LABEL[k]} differ from the imported lines.` });
+      message: msg(r === "agg_cm" ? "recon.customerMonthTotalsDiffer" : "recon.productTotalsDiffer", { part: LABEL[k] }) });
   }
   // min/max per invoice (not count DISTINCT) keeps this inside the memory guardrail at 2M lines; counts are taken only for the split invoices.
   const split = await q(`WITH s AS (SELECT invoice_id FROM sales_lines WHERE invoice_id IS NOT NULL GROUP BY invoice_id HAVING min(customer_id) <> max(customer_id) OR min(sale_date) < max(sale_date) AND date_trunc('month', min(sale_date)) <> date_trunc('month', max(sale_date)) ORDER BY invoice_id LIMIT ${limit})
 SELECT l.invoice_id, count(DISTINCT l.customer_id)::VARCHAR AS customers, count(DISTINCT date_trunc('month', l.sale_date))::VARCHAR AS months, min(l.source_id) AS sid, min(l.source_row)::VARCHAR AS srow, sum(l.list_cents)::VARCHAR AS list
 FROM sales_lines l JOIN s USING (invoice_id) GROUP BY l.invoice_id ORDER BY l.invoice_id`);
   for (const r of split) found.push({ level: "invoice", scopeKey: String(r.invoice_id), component: r.customers !== "1" ? "customer" : "month", imported: r.list as string, waterfall: null, sourceId: r.sid as string, sourceRow: r.srow as string,
-    message: r.customers !== "1" ? `Invoice ${r.invoice_id} has lines for ${r.customers} customers, so its total cannot reconcile to one customer.` : `Invoice ${r.invoice_id} has lines in ${r.months} months, so its total cannot reconcile to one month.` });
+    message: r.customers !== "1" ? msg("recon.invoiceHasLinesFor", { invoice: String(r.invoice_id), customers: String(r.customers) }) : msg("recon.invoiceHasLinesIn", { invoice: String(r.invoice_id), months: String(r.months) }) });
   const counts = (await q(`SELECT (SELECT count(*) FROM (SELECT invoice_id FROM sales_lines WHERE invoice_id IS NOT NULL GROUP BY invoice_id))::VARCHAR AS invoices, (SELECT count(*) FROM (SELECT DISTINCT customer_id, date_trunc('month', sale_date) FROM sales_lines))::VARCHAR AS cms, (SELECT count(*) FROM sales_lines)::VARCHAR AS lines`))[0];
   return { found, invoices: String(counts.invoices), customerMonths: String(counts.cms), lines: String(counts.lines) };
 }

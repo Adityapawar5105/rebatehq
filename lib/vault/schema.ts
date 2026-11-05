@@ -1,3 +1,4 @@
+import { msg } from "../i18n/core";
 export const SCHEMA_VERSION = 9;
 const V1_TABLES = ["vault_meta", "products", "customers", "price_matrix", "price_guardrails", "source_files", "import_batches", "sales_lines", "vendor_costs", "cost_basis_settings", "rules", "rule_runs", "price_versions", "roi_ledger", "audit_log", "import_issues", "converter_recipes"] as const;
 const V4_TABLES = [...V1_TABLES, "rejected_rows"] as const;
@@ -117,7 +118,7 @@ CREATE INDEX sales_lines_product_date ON sales_lines(product_id,sale_date);`;
 export const V9_SQL = `CREATE TABLE relay_state(id INTEGER PRIMARY KEY CHECK(id=1), payload VARCHAR NOT NULL);`;
 const STEPS = [V1_SQL, V2_SQL, V3_SQL, V4_SQL, V5_SQL, V6_SQL, V7_SQL, V8_SQL, V9_SQL];
 function checkVersion(version: number) {
-  if (!Number.isInteger(version) || version < 1 || version > SCHEMA_VERSION) throw new Error("Unsupported vault schema version; update the app before opening this vault.");
+  if (!Number.isInteger(version) || version < 1 || version > SCHEMA_VERSION) throw new Error(msg("vault.schema.unsupportedVaultSchemaVersion"));
 }
 /** Full schema DDL as it existed at `version`, in migration order. */
 export function schemaSql(version: number) { checkVersion(version); return STEPS.slice(0, version).join("\n"); }

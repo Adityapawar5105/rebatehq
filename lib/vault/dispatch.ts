@@ -5,9 +5,10 @@ import { ACTION_CAP } from "../roles/access";
 import { storageStatus } from "./storage";
 import { VaultError, type Request } from "./protocol";
 import type { VaultService } from "./service";
+import { msg } from "../i18n/core";
 export type Hooks = { signal: () => AbortSignal; progress: (stage: string, done: string, total: string) => void; unlocked?: () => void };
 export async function dispatch(service: VaultService, request: Request, hooks: Hooks): Promise<unknown> {
-  if (!(request.action in ACTION_CAP)) throw new VaultError("PROTOCOL", "Unsupported local command.");
+  if (!(request.action in ACTION_CAP)) throw new VaultError("PROTOCOL", msg("vault.dispatch.unsupportedLocalCommand2"));
   await service.guard(ACTION_CAP[request.action]);
   service.licenceGuard(request.action);
   const { progress } = hooks;
@@ -47,7 +48,7 @@ export async function dispatch(service: VaultService, request: Request, hooks: H
     case "init": return service.init(request.data.scope);
     case "create": {
       // A vault always starts with a named Pricing Owner; the worker refuses to create one without.
-      if (typeof request.data.ownerName !== "string" || !request.data.ownerName.trim()) throw new VaultError("OWNER", "Name the Pricing Owner before creating the vault. That person approves every price change.");
+      if (typeof request.data.ownerName !== "string" || !request.data.ownerName.trim()) throw new VaultError("OWNER", msg("vault.dispatch.nameThePricingOwner"));
       return service.create(request.data.passphrase, request.data.tier, request.data.ownerName);
     }
     case "unlock": { const result = await service.unlock(request.data.passphrase); hooks.unlocked?.(); return result; }
@@ -85,11 +86,12 @@ export async function dispatch(service: VaultService, request: Request, hooks: H
     case "marginMath": return service.marginMath(request.data.metric, request.data.filters, request.data.offset ?? 0);
     case "leaks": return service.leaks();
     case "leakRows": return service.leakRows(request.data.id, request.data.offset ?? 0);
-    case "leakReport": return service.leakReport();
+    case "leakReport": return service.leakReport(request.data.locale);
+    case "search": return service.search(request.data.text);
     case "roi": return service.roi();
     case "reconcile": return service.reconcile();
     case "reconAccept": return service.reconAccept(request.data.id ?? null);
     case "reconRebuild": return service.reconRebuild();
-    default: throw new VaultError("PROTOCOL", "Unsupported local command.");
+    default: throw new VaultError("PROTOCOL", msg("vault.dispatch.unsupportedLocalCommand"));
   }
 }
