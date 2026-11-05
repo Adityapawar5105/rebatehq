@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { readFile, writeFile, mkdir, mkdtemp, readdir } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
+import { Script } from "node:vm";
 import { build } from "esbuild";
 import { chromium } from "@playwright/test";
 import { signInLocal } from "./vault-test-auth.mjs";
@@ -124,7 +125,16 @@ try {
   dataPlaneActive = true;
   for(const name of ['vault-ram-worker.js','duckdb-eh.wasm']) {
     const pattern='**/spike/'+name;
-    await context.route(pattern,r=>r.fulfill({status:200,contentType:name.endsWith('.wasm')?'application/wasm':'text/javascript',body:'tampered engine bytes'}));
+    await context.route(pattern,async r=>{
+      const original=await r.fetch();assert.equal(original.status(),200);
+      const bytes=await original.body(),wasm=name.endsWith('.wasm');
+      // Semantically neutral mutations: without integrity enforcement these
+      // assets still execute normally, so a parser error cannot pass this probe.
+      const changed=Buffer.concat([bytes,wasm?Buffer.from([0,1,0]):Buffer.from('\n/* synthetic integrity mutation */\n')]);
+      if(wasm)assert.ok(WebAssembly.validate(changed),'Tampered WASM must remain valid');
+      else new Script(changed.toString('utf8'));
+      await r.fulfill({status:200,contentType:wasm?'application/wasm':'text/javascript',body:changed});
+    });
     try { results.checks['rejectTampered-'+name]=await worker('assetRejection'); }
     finally { await context.unroute(pattern); }
   }

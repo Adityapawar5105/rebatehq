@@ -97,3 +97,9 @@ Documentation closeout validation: `node --test tests/brand-name.test.js`
 passed 2 tests; `pnpm check:migrations-lock` passed (10 applied / 0 pending);
 `git diff --check` passed; `git diff adb6265 --name-only -- supabase/migrations migrations.lock`
 was empty. No locked migration or hash changed.
+
+A final probe-strengthening follow-up appends an executable-neutral JS comment or
+a valid WASM custom section to the original engine asset. Node parses the JS and
+WebAssembly.validate confirms the modified WASM is valid, so a parser error cannot
+make the negative probe pass. CI #75 used malformed tamper bytes; runtime integrity
+code is unchanged. The final follow-up reruns the full browser/privacy gate.
