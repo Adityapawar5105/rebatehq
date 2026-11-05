@@ -1,6 +1,6 @@
 # Chunk 7A verification — ciphertext-only collaboration relay
 
-5 November 2026. **Local evidence; pending RebateHQ CI and a user-run Restore Drill.** The new migration `20261105130000_chunk7a_ciphertext_relay.sql` stays *pending* in `migrations.lock` until both pass, then it is locked in a follow-up change. Design: [RELAY_DESIGN.md](./RELAY_DESIGN.md).
+5 November 2026. **CI-verified in [CI #82](https://github.com/Adityapawar5105/rebatehq/actions/runs/42034048481) on `a65c395`; pending the user-run Restore Drill.** The new migration `20261105130000_chunk7a_ciphertext_relay.sql` stays *pending* in `migrations.lock` until both pass, then it is locked in a follow-up change. Design: [RELAY_DESIGN.md](./RELAY_DESIGN.md).
 
 Built by Codex from `CODEX_PROMPT_7A.md`. Codex hit its usage limit before committing. Claude Code then checked the uncommitted work, reran the checks below and committed it. The concurrent blueprint v2.3 draft (BLUEPRINT.md, BLUEPRINT_EXECUTION_PLAN.md, AGENTS.md) is a separate change and is **not** part of this commit.
 
@@ -52,10 +52,14 @@ Built by Codex from `CODEX_PROMPT_7A.md`. Codex hit its usage limit before commi
   - **Tests:** `tests/proxy-origin.test.ts`.
   - **Production build check:** a same-origin POST to a `0.0.0.0`-bound server now reaches the route, and a cross-site POST still gets 403.
   - Recorded as SECURITY_REVIEW.md R15.
+- **CI #81** (`e95d53b`) got past the origin check, but the owner saw 0 device fingerprints where 3 were expected. On open, the sharing panel showed its dialog one render before it marked itself busy, and on reopen it briefly kept the previous view. The test's status-text wait could therefore pass before loading started, and over real HTTP the count ran too early. Fixed in `a65c395`:
+  - The panel now resets its state and marks itself busy in the same click that opens it, and exposes `aria-busy` on the dialog.
+  - The test waits for `aria-busy="false"`; the exact count of 3 is unchanged.
+  - Failures now log each page's scrubbed panel state.
+- **[CI #82](https://github.com/Adityapawar5105/rebatehq/actions/runs/42034048481)** (`a65c395`) **passed:** 78 JS and 131 TS tests, pgTAP `1..152` twice, the authenticated vault privacy gate (`"auth": true`), and the relay round trip, "11 checks passed (chromium, real authenticated local Supabase)".
 
 ## Not verified yet
 
-- **CI:** the real-Postgres pgTAP suite, the authenticated relay browser gate and the authenticated privacy gate.
 - **The user-run Restore Drill** with the encrypted relay seed.
 - **The customer-track gate** ("ask pilots before 7A") was not met; no pilot exists. The user chose to proceed (ASSUMPTIONS.md).
 - **No hosted deployment;** `RELAY_ENABLED` is off by default.
