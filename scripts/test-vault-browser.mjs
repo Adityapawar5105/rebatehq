@@ -23,8 +23,12 @@ async function checkBundleKeys(dir){for(const item of await readdir(dir,{withFil
 await checkBundleKeys('public/spike');await checkBundleKeys('.next/static');
 
 await mkdir("test-results", { recursive: true });
-await build({ entryPoints: ["tests/browser/vault-worker.ts"], outfile: "test-results/vault-tests.js", bundle: true, platform: "browser", format: "esm", minify: true,define:{"process.env.NEXT_PUBLIC_LICENCE_VERIFY_KEY":JSON.stringify(fixturePublic),"process.env.TEST_LICENCE_PRIVATE_KEY":JSON.stringify(fixturePrivate)} });
+const assetPins=JSON.parse(await readFile('public/spike/assets.json','utf8')).pins;
+assert.ok(assetPins?.['duckdb-eh.wasm']&&assetPins?.['vault-ram-worker.js'],'Engine asset integrity pins must exist');
+await build({ entryPoints: ["tests/browser/vault-worker.ts"], outfile: "test-results/vault-tests.js", bundle: true, platform: "browser", format: "esm", minify: true,define:{__DUCKDB_ASSET_PINS__:JSON.stringify(assetPins),"process.env.NEXT_PUBLIC_LICENCE_VERIFY_KEY":JSON.stringify(fixturePublic),"process.env.TEST_LICENCE_PRIVATE_KEY":JSON.stringify(fixturePrivate)} });
 const testCode = await readFile("test-results/vault-tests.js", "utf8");
+const productionWorkerCsp=(await fetch(base+'/spike/vault-worker.js')).headers.get('content-security-policy');
+assert.ok(productionWorkerCsp?.includes("connect-src 'self' blob:")&&!productionWorkerCsp.includes("'unsafe-eval'"),'Production worker must support verified WASM blobs under CSP');
 const profile = await mkdtemp(path.join(os.tmpdir(), "rebatehq-vault-"));
 const browserOptions = { ...(channel === "chromium" ? {} : { channel }), headless: true, viewport: { width: 1365, height: 900 } };
 let context = await chromium.launchPersistentContext(profile, browserOptions);
@@ -35,7 +39,7 @@ if(!auth)await context.route('**/api/licence?device=*',async r=>{
  const key=createPrivateKey({key:Buffer.from(process.env.LICENCE_SIGNING_KEY,'base64'),format:'der',type:'pkcs8'});
  await r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({payload,signature:sign(null,Buffer.from(payload),key).toString('base64')})});
 });
-await context.route("**/spike/vault-tests.js", r => r.fulfill({ status: 200, contentType: "application/javascript", headers: { "Cross-Origin-Embedder-Policy": "require-corp", "Cross-Origin-Resource-Policy": "same-origin" }, body: testCode }));
+await context.route("**/spike/vault-tests.js", r => r.fulfill({ status: 200, contentType: "application/javascript", headers: { "Content-Security-Policy":productionWorkerCsp, "Cross-Origin-Embedder-Policy": "require-corp", "Cross-Origin-Resource-Policy": "same-origin" }, body: testCode }));
 context.on("request", r => {
   headerChecks.push(r.allHeaders().then(headers => {
     const text = [r.url(), JSON.stringify(headers), r.postDataBuffer()?.toString("utf8") || ""].join("\n");
@@ -114,9 +118,16 @@ try {
     results.checks.retiredRoutesOff={routes:RETIRED_API_PATHS.length,noData:true};
   }
   const response = await page.goto(base + route); assert.equal(response.status(), 200); assert.equal(response.headers()["cross-origin-embedder-policy"], "require-corp"); assert.ok(!response.headers()["content-security-policy"].includes("'unsafe-eval'"));
+  assert.match(response.headers()["content-security-policy"], /connect-src 'self';/, 'Page fetch policy must remain self-only; Blob fetch is worker-only');
   await ready();
   await page.getByTestId("licence-status").filter({hasText:"Licensed: scale"}).waitFor();results.checks.signedLicence=true;
   dataPlaneActive = true;
+  for(const name of ['vault-ram-worker.js','duckdb-eh.wasm']) {
+    const pattern='**/spike/'+name;
+    await context.route(pattern,r=>r.fulfill({status:200,contentType:name.endsWith('.wasm')?'application/wasm':'text/javascript',body:'tampered engine bytes'}));
+    try { results.checks['rejectTampered-'+name]=await worker('assetRejection'); }
+    finally { await context.unroute(pattern); }
+  }
   if (makeFixture) {
     const raw = await worker("fixture");
     await mkdir("tests/fixtures/vault", { recursive: true }); await writeFile("tests/fixtures/vault/v1.enc", Buffer.from(Object.values(raw)));

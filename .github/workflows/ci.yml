@@ -19,6 +19,8 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Reject high and critical dependency advisories
+        run: pnpm audit --audit-level high
       - name: Generate disposable signing keys (masked)
         run: node scripts/control-plane-keys.mjs --ci-env
       - name: Verify applied migration hashes

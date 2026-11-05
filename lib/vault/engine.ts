@@ -1,16 +1,23 @@
 import * as duckdb from "@duckdb/duckdb-wasm";
 import { schemaSql, tablesFor, upgradeSql } from "./schema";
+import { verifiedAssetUrl } from "./asset-integrity";
 // `warming` is the background copy-on-write started after unlock (true = copied);
 // `warmDone` turns true when it settles (`warmReady` when it succeeded), before the
 // main connection switches over.
 export type Engine = { db: duckdb.AsyncDuckDB; conn: duckdb.AsyncDuckDBConnection; worker: Worker; writable: boolean; warming: Promise<boolean> | null; warmDone: boolean; warmReady: boolean };
 export const MEMORY_PATH = "opfs://vault-ram.duckdb";
 export async function openMemory(bytes?: Uint8Array): Promise<Engine> {
-  const worker = new Worker(new URL("/spike/vault-ram-worker.js", self.location.origin));
+  const workerUrl = await verifiedAssetUrl("vault-ram-worker.js");
+  let wasmUrl: string;
+  try { wasmUrl = await verifiedAssetUrl("duckdb-eh.wasm"); }
+  catch (error) { URL.revokeObjectURL(workerUrl); throw error; }
+  let worker: Worker;
+  try { worker = new Worker(workerUrl); }
+  catch (error) { URL.revokeObjectURL(workerUrl); URL.revokeObjectURL(wasmUrl); throw error; }
   // The child wrapper's configured sync filesystem is RAM-only, not real OPFS.
   const db = new duckdb.AsyncDuckDB(new duckdb.VoidLogger(), worker);
   try {
-    await db.instantiate(new URL("/spike/duckdb-eh.wasm", self.location.origin).href);
+    await db.instantiate(wasmUrl);
     await db.open({ path: MEMORY_PATH, accessMode: duckdb.DuckDBAccessMode.READ_WRITE, maximumThreads: 1, opfs: { fileHandling: "manual" }, query: { castBigIntToDouble: false, castDecimalToDouble: false } });
     const conn = await db.connect();
     await conn.query("SET autoinstall_known_extensions=false; SET autoload_known_extensions=false; SET memory_limit='512MB'; SET temp_directory=''");
@@ -25,6 +32,7 @@ export async function openMemory(bytes?: Uint8Array): Promise<Engine> {
     }
     return { db, conn, worker, writable: !bytes, warming: null, warmDone: false, warmReady: false };
   } catch (error) { try { await db.terminate(); } finally { worker.terminate(); } throw error; }
+  finally { URL.revokeObjectURL(workerUrl); URL.revokeObjectURL(wasmUrl); }
 }
 // Copy the authenticated read-only snapshot into the writable RAM catalog on
 // `conn`. Lazy copy-on-write within the SAME instance: unlock stays fast, and FK

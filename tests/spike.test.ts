@@ -67,6 +67,6 @@ test("snapshot rejects wrong keys, tampering, truncation, reordering and unsuppo
 test("spike boundary has no business-data API imports and uses only self-hosted workers",()=>{
  const page=readFileSync("app/lab/spike/SpikeClient.tsx","utf8"),worker=readFileSync("lib/spike/worker.ts","utf8"),db=readFileSync("lib/spike/db.ts","utf8");
  assert.ok(!/fetch\s*\(|\/api\//.test(page));assert.ok(!/from ["'](?:pg|.*supabase|@\/lib\/db|\.\.\/db)["']/.test(worker));
- assert.ok(db.includes('new URL("/spike/"'));assert.ok(!db.includes("getJsDelivrBundles"));assert.ok(db.includes("VoidLogger"));
+ assert.ok(db.includes('verifiedAssetUrl(`duckdb-'));assert.ok(readFileSync("lib/vault/asset-integrity.ts","utf8").includes('new URL("/spike/"'));assert.ok(!db.includes("getJsDelivrBundles"));assert.ok(db.includes("VoidLogger"));
  const dependency=JSON.parse(readFileSync("package.json","utf8")).dependencies["@duckdb/duckdb-wasm"];assert.equal(dependency,"1.32.0");
 });

@@ -125,7 +125,7 @@ test("local data paths contain no business API, raw SQL protocol, or real OPFS w
   assert.ok(!/fetch\(|XMLHttpRequest|sendBeacon|WebSocket|console\.|importScripts/.test(studio), "Import Studio must not make network calls or log");
   const margin = ["decimal", "engine", "sql", "aggregate", "views", "leaks", "roi", "pdf", "report", "credits"].map(f => readFileSync(`lib/margin/${f}.ts`, "utf8")).join("\n");
   assert.ok(!/fetch\(|XMLHttpRequest|sendBeacon|WebSocket|console\.|importScripts|navigator\.|Math\.random|parseFloat/.test(margin), "The margin engine must not make network calls, log, or use floats for parsing");
-  assert.ok(!/sql:|query:/.test(protocol)); assert.ok(engine.includes('new URL("/spike/vault-ram-worker.js"'));
+  assert.ok(!/sql:|query:/.test(protocol)); assert.ok(engine.includes('verifiedAssetUrl("vault-ram-worker.js")'));
   const workflow = readFileSync(".github/workflows/ci.yml", "utf8"); assert.ok(workflow.includes("pnpm test:vault:privacy")); assert.ok(!workflow.includes("continue-on-error"));
   assert.ok(!readFileSync("scripts/vault-test-auth.mjs", "utf8").includes("setSession("));
   assert.ok(readFileSync("app/lab/vault/page.tsx", "utf8").includes('process.env.VAULT_LAB_ENABLED !== "true"'));

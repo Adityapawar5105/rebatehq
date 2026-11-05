@@ -1,5 +1,33 @@
 # Chunk 4B assumptions — 4B CI-verified (CI #44, c382f7d)
 
+## Current chunk 6B — 5 November 2026
+
+- Security review only; no Phase 7/8 work. Blueprint unchanged. All 10 locked
+  migrations and migrations.lock remain unchanged; no new SQL or schema migration.
+- Review assumes an updated supported browser and trusted OS, deployment and
+  app code. It does not promise protection from extensions, an unlocked-device
+  attacker, a keyholder rewriting a whole vault, or a malicious release.
+- Runtime engine pins are embedded at build time. Self-hosted WASM and child
+  workers are verified before use; the first-party app bundle/pins still trust
+  the origin. Only `/spike/` worker responses add `blob:` to connect-src so the
+  verified in-memory WASM can load. Page connect-src stays self-only.
+- Existing passing evidence: CI #73 / Restore #18, 113 fresh / 116 restored
+  checks, 20 server tenant tables. New integrity/logging/audit-gate changes are
+  unverified in CI until the 6B record links a passing run.
+- One moderate UUID advisory is retained for review (ExcelJS calls the unaffected
+  v4 path). No high/critical advisory in the 5 Nov audit. The CI high/critical
+  audit gate fails closed; it cannot prove absence of unknown vulnerabilities.
+- Local roles are worker-enforced UI capabilities, not cryptographic separation
+  between holders of the same full vault/passphrase. Revocation is read-only
+  authority with offline grace, not a wipe or loss of decryption access.
+- No hosted Supabase project, prospect ERP export, independent security review,
+  production key-rotation drill or physical recovery test is assumed to exist.
+  Future relay is not built. See SECURITY_REVIEW.md for owners/dates and
+  EXTERNAL_SECURITY_REVIEW.md for the independent review acceptance checklist.
+- Security whitepaper is intentionally limited to linked passing tests. Local
+  Chrome/Edge harnesses are headless automation, not headed/manual checks.
+
+
 Latest scope: **5B CI-verified** in [RebateHQ CI #65](https://github.com/Adityapawar5105/rebatehq/actions/runs/41883249192) on `38911ee` and [Restore Drill #16](https://github.com/Adityapawar5105/rebatehq/actions/runs/41886437905) (local target). The 5B section at the end supersedes the older open-item descriptions where implemented; local measurements in it remain local evidence.
 
 **Chunk 4B — CI-verified in [MarginDesk CI #44](https://github.com/Adityapawar5105/rebatehq/actions/runs/41660146540), 3 November 2026, commit `c382f7d`.** The GitHub job API confirms step 18, "Required authenticated local-vault privacy gate", completed successfully (not skipped). Its log records `pnpm test:vault:privacy --browser=chromium`, `auth: true`, `status: passed`: **one authenticated harness with 14 named checks**, not a Playwright test-runner count. The separate unit suite passed **67 JavaScript + 56 TypeScript = 123 tests**.

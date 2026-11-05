@@ -16,8 +16,12 @@ for(const name of names){
  else await copyFile(path.join(dist,name),path.join(output,name));
  files[name]=createHash("sha256").update(await readFile(path.join(output,name))).digest("hex");
 }
-await build({entryPoints:[path.join(root,"lib/spike/worker.ts")],outfile:path.join(output,"spike-worker.js"),bundle:true,format:"esm",platform:"browser",target:"es2022",minify:true,legalComments:"eof",banner:{js:silence},define:{"process.env.NODE_ENV":'"production"',"process.env.NEXT_PUBLIC_LICENCE_VERIFY_KEY":JSON.stringify(process.env.NEXT_PUBLIC_LICENCE_VERIFY_KEY||"")}});
 await writeFile(path.join(output,"vault-ram-worker.js"),silence+await readFile(path.join(root,"lib/vault/ram-filesystem.js"),"utf8")+"\n"+await readFile(path.join(output,"duckdb-browser-eh.worker.js"),"utf8"));
-await build({entryPoints:[path.join(root,"lib/vault/worker.ts")],outfile:path.join(output,"vault-worker.js"),bundle:true,format:"esm",platform:"browser",target:"es2022",minify:true,legalComments:"eof",banner:{js:silence},define:{"process.env.NODE_ENV":'"production"',"process.env.NEXT_PUBLIC_LICENCE_VERIFY_KEY":JSON.stringify(process.env.NEXT_PUBLIC_LICENCE_VERIFY_KEY||"")}});
-await writeFile(path.join(output,"assets.json"),JSON.stringify({duckdbWasm:"1.32.0",files},null,2)+"\n");
-console.log("Built local spike worker and seven pinned DuckDB assets (no CDN).");
+files["vault-ram-worker.js"]=createHash("sha256").update(await readFile(path.join(output,"vault-ram-worker.js"))).digest("hex");
+const pins={};
+for(const name of Object.keys(files))pins[name]={integrity:"sha256-"+Buffer.from(files[name],"hex").toString("base64"),bytes:(await readFile(path.join(output,name))).length};
+for(const [entry,out] of [["lib/spike/worker.ts","spike-worker.js"],["lib/vault/worker.ts","vault-worker.js"]]){
+ await build({entryPoints:[path.join(root,entry)],outfile:path.join(output,out),bundle:true,format:"esm",platform:"browser",target:"es2022",minify:true,legalComments:"eof",banner:{js:silence},define:{__DUCKDB_ASSET_PINS__:JSON.stringify(pins),"process.env.NODE_ENV":'"production"',"process.env.NEXT_PUBLIC_LICENCE_VERIFY_KEY":JSON.stringify(process.env.NEXT_PUBLIC_LICENCE_VERIFY_KEY||"")}});
+}
+await writeFile(path.join(output,"assets.json"),JSON.stringify({duckdbWasm:"1.32.0",files,pins},null,2)+"\n");
+console.log("Built local workers with embedded integrity pins for seven DuckDB assets and the RAM wrapper (no CDN).");

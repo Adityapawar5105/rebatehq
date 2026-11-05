@@ -1,5 +1,20 @@
 # RebateHQ security verification
 
+## Chunk 6B — security review (5 November 2026)
+
+Review and remaining-risk register: [SECURITY_REVIEW.md](./SECURITY_REVIEW.md).
+Customer-facing, evidence-limited page: [SECURITY_WHITEPAPER.md](./SECURITY_WHITEPAPER.md).
+Independent review: [EXTERNAL_SECURITY_REVIEW.md](./EXTERNAL_SECURITY_REVIEW.md),
+not performed. No discovered high/critical finding in this first-party review;
+this is not a certification. Engine asset integrity and fixed-field auth logging
+are fixed in code, **unverified in CI** pending the 6B run. The dependency audit
+has zero high/critical and one moderate UUID advisory on an unused v3/v5/v6 path;
+CI now rejects high/critical advisories. No SQL, migration, DB grant or locked
+hash changed. Existing CI #73 / Restore #18 remain the control-plane baseline
+(113 fresh / 116 restore checks). This section supersedes earlier historical
+open-item descriptions only where linked evidence demonstrates closure.
+
+
 ## Chunk 5B — CI-verified and Restore Drill passed (4 November 2026)
 
 **5B CI-verified** in [RebateHQ CI #65](https://github.com/Adityapawar5105/rebatehq/actions/runs/41883249192) on `38911ee` (CI #63 on `8867b96` and CI #64 on `1dd9451` also passed), and [Restore Drill #16](https://github.com/Adityapawar5105/rebatehq/actions/runs/41886437905) passed on the same commit, local target. Migration `20261104160022_chunk5b_control_plane.sql` is now locked with its hash unchanged; nine applied migrations. CI ran **188 pgTAP checks twice**, **42 public tenant tables**, plus an owner-only private issuer table and a nontransactional login-budget sequence, and the authenticated privacy gate passed **33 named checks**. See [CHUNK_5B_VERIFICATION.md](./CHUNK_5B_VERIFICATION.md). No 6A work or table retirement is authorized.

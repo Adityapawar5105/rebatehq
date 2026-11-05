@@ -799,6 +799,13 @@ INSERT INTO vendor_costs(id,vendor,product_id,cost,effective_date,source_file) S
 self.onmessage = async event => {
   try {
     const { action } = event.data;
+    if (action === "assetRejection") {
+      let opened = false;
+      try { const engine = await openMemory(); opened = true; await closeMemory(engine); }
+      catch { /* Both native Fetch SRI and our byte check must fail closed. */ }
+      assert(!opened, "Tampered engine asset was executed");
+      self.postMessage({ result: { tamperedAssetRejected: true } }); return;
+    }
     const result = action === "phase5aBenchmark" ? await phase5aBenchmark() : action === "phase5a" ? await phase5a() : action === "pricing" ? await pricingFlow() : action === "legacyStorage" ? await legacyStorage() : action === "pricingBenchmark" ? await pricingBenchmark() : action === "fixture" ? await fixture() : action === "v1" ? await testFixture(event.data.bytes) : action === "seed" ? await seed(event.data.rows) : action === "firstChange" ? await firstChange(event.data.rows) : action === "integrity" ? await integrity() : action === "studio" ? await studio() : action === "mapper" ? await mapper() : action === "playground" ? await playground() : action === "margin" ? await margin() : action === "marginBenchmark" ? await marginBenchmark(event.data.rows) : action === "studioBenchmark" ? await studioBenchmark(event.data.rows) : action === "warmup" ? await warmup() : action === "cipherOnly" ? await cipherOnly() : await storageStatus();
     self.postMessage({ result });
   } catch (e) { self.postMessage({ error: e instanceof Error ? e.message : "test worker failed" }); }
