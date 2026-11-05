@@ -216,4 +216,24 @@ Same machine, production build, headless Chrome 156 (Edge within 7% on these fil
 | UCI Online Retail II, 2 CSVs, 1,067,371 rows read, 12-month range | 9,196 ms | 5,980 ms | 290 ms | 1,340 ms |
 | AdventureWorks, 3 headerless files, 62,162 rows | 1,189 ms | 834 ms | 531 ms | 347 ms |
 
-**Capacity finding.** The real two-sheet Online Retail II batch (1,067,371 rows of wide text) exhausted the 512 MB DuckDB budget while staging. A batch now stops at the tier's line cap before staging, with the cap message. Scale stays at its provisional 1M lines. The manual 8 GB checklist in `SPIKE_RESULTS.md` is still pending.
+**Capacity finding.** The real two-sheet Online Retail II batch (1,067,371 rows of wide text) exhausted the 512 MB DuckDB budget while staging. A batch now stops at the tier's line cap before staging, with the cap message. Scale stays at its provisional 1M lines.
+
+| 6A follow-up file | Convert + check | Commit + save | Leak finder |
+|---|---:|---:|---:|
+| UCI Online Retail II XLSX, one sheet streamed (525,461 / 541,910 rows) | 11,214 / 10,329 ms | 6,644 / 6,138 ms | 338 / 322 ms |
+| Northwind lines + order headers + lists (3,153 rows) | 357 ms | 357 ms | — |
+
+## Chunk 6A — 8 GB benchmark rerun (5 Nov 2026, local only)
+
+`benchmark:vault` (`--full`) in headless Chrome 156.0.8078.80 / Edge 156.0.4314.58 on the same laptop. Full checklist in [SPIKE_RESULTS.md](./SPIKE_RESULTS.md).
+
+| Measurement | Chrome | Edge | Compared with |
+|---|---:|---:|---|
+| Navigation to unlocked, 1M / 2M lines (target < 3 s) | 2,774 / 3,280 ms | 2,788 / 3,324 ms | 4D: 2,752 / 3,255 ms |
+| 1M-line CSV through Import Studio: convert + check / commit + save | 10,639 / 9,309 ms | 11,189 / 9,724 ms | 4D: 10.7 / 9.2 s |
+| Background warm-up, 1M / 2M | 7,996 / 15,975 ms | 7,977 / 15,806 ms | 4D: 8,089 / 15,649 ms |
+| First change after warm-up, 1M / 2M (target < 2 s at 1M) | 784 / 1,601 ms | 818 / 1,632 ms | 4D: 726 / 1,518 ms |
+| 2M leak finder | 11.9 s | 11.4 s | 4D: 8.3 s; pre-6A build: 11.5 s |
+| 100k CSV import in the gate | 2,909 ms | 2,958 ms | 6A: 2,894 / 2,974 ms |
+
+The 1M Import Studio benchmark first ran out of memory in both browsers. Its duplicate check now counts 64-bit key hashes before running the exact window on repeating keys only; after that fix it passed with the figures above. Reads during warm-up vary from 16 ms to several seconds depending on when they land (the pre-6A build behaves the same); no target applies.

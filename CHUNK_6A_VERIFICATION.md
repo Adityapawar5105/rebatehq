@@ -1,6 +1,6 @@
 # Chunk 6A verification — pilot hardening with real files
 
-5 November 2026. **The first 6A pass is CI-verified** in [RebateHQ CI #68](https://github.com/Adityapawar5105/rebatehq/actions/runs/41905416129) on `50263a5` (unit suite, build and the authenticated privacy gate). **The follow-up below (the four parked gaps, the near-quota check and the 8 GB benchmarks) is local evidence until CI passes on its commit.** No control-plane (Supabase) migration was added, so no Restore Drill is needed. The local vault schema moved to v8.
+5 November 2026. **The first 6A pass is CI-verified** in [RebateHQ CI #68](https://github.com/Adityapawar5105/rebatehq/actions/runs/41905416129) on `50263a5` (unit suite, build and the authenticated privacy gate). **The follow-up below** (the four parked gaps and the near-quota check) passed [CI #69](https://github.com/Adityapawar5105/rebatehq/actions/runs/41960988113) on `549b7fa`. **The 8 GB rerun and the 1M memory fix it led to are local evidence until CI passes on their commit.** No control-plane (Supabase) migration was added, so no Restore Drill is needed. The local vault schema moved to v8.
 
 ## What was tested
 
@@ -17,8 +17,8 @@ See [PILOT_FILES.md](./PILOT_FILES.md) for the per-file record. In short:
 | Criterion | Status |
 |---|---|
 | Every real file imports to a Leak Report without manual code edits | **Met.** The first pass had two exceptions (Northwind order lines; the Online Retail II workbook). The follow-up closes both: Northwind loads with its order header file, and each workbook sheet streams to a Leak Report |
-| Each failure has a regression fixture | **Met.** 13 failures in `tests/pilot-shapes.test.ts` (11 tests), plus 4 follow-up gaps in `tests/pilot-joins.test.ts` (6 tests), plus the updated mapper and vault tests |
-| Capacity table updated with measured numbers | **Partly.** Real-file timings are in PILOT_FILES.md and VAULT_RESULTS.md. The manual 8 GB laptop checklist (task 4) is **yours to run** in Chrome and Edge; `SPIKE_RESULTS.md` still shows it as pending |
+| Each failure has a regression fixture | **Met.** 13 failures in `tests/pilot-shapes.test.ts` (11 tests), plus 4 follow-up gaps and the 1M memory fix in `tests/pilot-joins.test.ts` (7 tests), plus the updated mapper and vault tests |
+| Capacity table updated with measured numbers | **Met.** Real-file timings are in PILOT_FILES.md and VAULT_RESULTS.md. The 8 GB checklist was rerun on this laptop in Chrome and Edge (headless, automated) and `SPIKE_RESULTS.md` now holds the numbers. No tier change is proposed: every blueprint target is met at 1M lines and 2M startup still misses 3 s |
 
 ## Edge cases (task 3)
 
@@ -61,16 +61,26 @@ Built at the user's request (blueprint section 22, item 17); details in [PILOT_F
 |---|---|
 | `tsc --noEmit` | Passed |
 | `node --test tests/*.test.js` | 75 passed |
-| `tsx --test tests/*.test.ts` | 145 passed (139 + 6 in `pilot-joins.test.ts`) |
+| `tsx --test tests/*.test.ts` | 145 passed at `549b7fa` (139 + 6 in `pilot-joins.test.ts`); 146 with the duplicate-rule test added after the 8 GB rerun |
 | Browser gate, production build, disposable keys | Chrome 156.0.8078.80 and Edge 156.0.4314.58: **32 named checks** each (31 + `nearQuota`); 100k CSV import 2,939 ms / 2,892 ms |
 | Pilot runner, 5 follow-up scenarios plus 2 CSV cross-checks | Installed Chrome and Edge: identical totals and leaks |
+
+## 8 GB rerun (task 4, local evidence)
+
+Run on this laptop by `benchmark:spike` and `benchmark:vault` (`--full`), headless, in Chrome 156.0.8078.80 and Edge 156.0.4314.58. Figures are in [SPIKE_RESULTS.md](./SPIKE_RESULTS.md) and [VAULT_RESULTS.md](./VAULT_RESULTS.md).
+
+- **Targets.** 1M startup 2.77 / 2.79 s (pass), 2M startup 3.28 / 3.32 s (miss, as before), first change after warm-up at 1M 0.78 / 0.82 s (pass). The 2M analytical queries take 3–155 ms.
+- **Failure found and fixed.** The 1M-line Import Studio benchmark ran out of the 512 MB DuckDB budget in both browsers, in the duplicate check (a window over every staged row). A 64-bit hash count now finds the repeating keys first, so the exact check runs on those rows only. The 1M import then took 10.6 / 11.2 s to review and 9.3 / 9.7 s to commit. A unit test pins the unchanged duplicate rules.
+- **No blueprint target, recorded.** The 2M leak finder takes about 11.5 s (8.3 s in 4D; the pre-6A build is the same, so not a 6A change). Reads during warm-up wait 16 ms to several seconds depending on timing (also unchanged by 6A).
+- **Not run.** A headed visual pass and the real Supabase magic-link sign-in (no hosted project exists).
+- The full runs pass 36 named checks in each browser (the 32 gate checks plus the benchmark checks).
 
 ## Unverified / not done
 
 - **CI:** the unit suite, build and authenticated privacy gate on the 6A commit.
 - **Real prospect exports** for NetSuite, Prophet 21, Infor CSD, Business Central and QuickBooks.
-- **The manual 8 GB checklist** (task 4).
-- **CI on the follow-up commit.**
+- **A headed visual pass and real Supabase sign-in** on the 8 GB laptop.
+- **CI on the commit with the 8 GB results and the 1M memory fix.**
 - **A real full disk** (the quota was simulated per origin).
 - **Parked:** credits on item-list cost files keep an unknown cost; freight of orders whose lines all failed is not reloaded from Fix Later. See [PARKING_LOT.md](./PARKING_LOT.md).
 - **Not started:** 6R table retirement and 6B.

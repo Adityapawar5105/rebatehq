@@ -118,6 +118,25 @@ test("6A: German, French, Spanish and Dutch headers map without a recipe", () =>
   for (const h of [es, nl]) { const s = show(suggestMapping("sales_history", h), h); for (const f of ["invoice_id", "sale_date", "customer_id", "product_id", "quantity"]) assert.ok(String(s[f]).startsWith("column:"), `${h.join("|")}: ${f}`); assert.ok(String(s.list_amount).startsWith("unit:")); }
 });
 
+test("6A: duplicate rules are unchanged by the repeat pre-filter that keeps 1M-row reviews in memory (DuckDB)", async () => {
+  const c = await duckdbConnection();
+  for (const table of [...tablesFor(8)].reverse()) c.query(`DROP TABLE IF EXISTS ${table}`);
+  c.query(schemaSql(8));
+  const engine = { conn: c } as unknown as Engine;
+  await resetStage(engine); await createStage(engine, "sales_history"); await createStage(engine, "price_list");
+  // Same line ID: an exact copy (duplicate_row) and a changed copy (duplicate_key); other lines untouched.
+  c.query(`INSERT INTO st_sales_history VALUES (0,2,'7','I','P','C','2026-01-05','1','10.00','0','0','0',NULL,NULL),(0,3,'8','I','P','C','2026-01-05','1','10.00','0','0','0',NULL,NULL),
+(0,4,'7','I','P','C','2026-01-05','1','10.00','0','0','0',NULL,NULL),(1,2,'7','I','P','C','2026-01-05','2','10.00','0','0','0',NULL,NULL),(1,3,'9','I','P','C','2026-01-05','1','10.00','0','0','0',NULL,NULL)`);
+  await validate(engine, "sales_history", [staged(0, "sales_history"), staged(1, "sales_history")], null);
+  assert.deepEqual(q(c, "SELECT file_ord::VARCHAR || ':' || src_row::VARCHAR AS at, err FROM ty_sales_history ORDER BY file_ord, src_row").map(r => `${r.at}=${r.err}`), ["0:2=null", "0:3=null", "0:4=duplicate_row", "1:2=duplicate_key", "1:3=null"]);
+  // Price keys with NULL parts still group NULL with NULL, as before.
+  c.query(`INSERT INTO st_price_list VALUES (0,2,'P',NULL,NULL,'T1',NULL,'5.00','2026-01-01',NULL),(0,3,'P',NULL,NULL,'T1',NULL,'5.00','2026-01-01',NULL),(0,4,'P',NULL,NULL,'T2',NULL,'5.00','2026-01-01',NULL)`);
+  await validate(engine, "price_list", [staged(0, "price_list")], null);
+  assert.deepEqual(q(c, "SELECT err FROM ty_price_list ORDER BY src_row").map(r => r.err), [null, "duplicate_row", null]);
+  assert.equal(q(c, "SELECT count(*)::VARCHAR AS n FROM duckdb_tables() WHERE table_name='studio_repeats'")[0].n, "0", "the helper table is dropped");
+  await resetStage(engine);
+});
+
 /** Build an XLSX workbook in memory with SheetJS (cell types, styles and formulas as Excel writes them). */
 function workbook(rows: (string | number | boolean | Date | null)[][], formula = false, bookSST = false) {
   const ws = XLSX.utils.aoa_to_sheet(rows, { cellDates: true });

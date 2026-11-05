@@ -166,28 +166,39 @@ Other passing checks:
   256 MiB CSV. XLSX/conversion demos are 8 MiB/10k rows/one sheet. This is not the
   full Import Studio, mapper, real ERP validation or production vault.
 
-## Manual 8 GB laptop checklist
+## 8 GB laptop checklist
 
 Run `pnpm install --frozen-lockfile`, `pnpm build`, then in a separate terminal
 `pnpm start --hostname 127.0.0.1 --port 3100`. Open `/lab/spike`. For automated
 reproduction use `pnpm benchmark:spike --browser=chrome` and `--browser=msedge`.
 Record CPU, RAM, OS, browser version, power mode and other open applications.
 
-| Manual action | Chrome | Edge |
-|---|---|---|
-| Headed UI/assets/fonts load; request persistent storage and record result/quota | pending manual run | pending manual run |
-| Generate 200k/2M/24 months; record time and OS peak memory | pending manual run | pending manual run |
-| Compare 1M and 2M imports; use DevTools to confirm no business-data requests | pending manual run | pending manual run |
-| Full waterfall and product/customer drill timings; check integer-cent identity | pending manual run | pending manual run |
-| Run target-scope and full +4.5% simulations; base stays unchanged | pending manual run | pending manual run |
-| Close browser completely; reopen and confirm exact counts/results | pending manual run | pending manual run |
-| Combine 12 monthly CSVs + XLSX; 130 rows and 13 sources | pending manual run | pending manual run |
-| Download all three conversions; compare UTF-8 CSV and warnings | pending manual run | pending manual run |
-| Cancel streaming import; confirm no partial rows | pending manual run | pending manual run |
-| Save/open encrypted 2M snapshot; wrong passphrase rejected; record full startup | pending manual run | pending manual run |
-| Real configured Supabase magic-link flow, including callback | pending manual run | pending manual run |
-| Near-quota, power-loss/kill, multi-tab and backup recovery | pending manual run | pending manual run |
+**Rerun on 5 November 2026 (chunk 6A, task 4), same laptop.** Ryzen 5 5600H, 7,887,220,736 bytes usable RAM, Windows 11 Home 10.0.26200, power plan "HP Recommended", on mains, ordinary background applications open. Chrome 156.0.8078.80 and Edge 156.0.4314.58, **headless**, driven by `benchmark:spike`, `benchmark:vault` and the browser gate on a production build. A person watching a headed window was not part of this run. Raw results: `test-results/spike-*-full.json` and `test-results/vault-*.json` (git-ignored).
 
+| Checklist item | Chrome | Edge |
+|---|---|---|
+| UI, assets and system fonts load under nonce CSP and COEP; persistent storage requested | Pass (headless); `persisted()` false; quota 14.9 GB (spike profile) | Pass (headless); same |
+| Generate 200k SKUs / 2M lines / 24 months; peak browser memory | 2,530 ms; working set 1.26 GB, private 1.06 GB | 2,614 ms; 1.20 GB / 0.98 GB |
+| 1M and 2M CSV imports (native); no business-data request (network and console sensors) | 1,508 / 2,916 ms; no egress | 1,496 / 2,980 ms; no egress |
+| Waterfall, product and customer drill on 2M (median of 7); integer-cent identity | 21.3 / 7.0 / 6.2 ms; exact | 22.4 / 7.4 / 9.5 ms; exact |
+| +4.5% simulation, target scope (500k lines) and all 2M; base unchanged | 69 / 262 ms; unchanged | 71 / 271 ms; unchanged |
+| Close the browser completely, reopen: exact counts and totals | Pass | Pass |
+| Combine 12 monthly CSVs + 1 XLSX: 130 rows, 13 sources | Pass, 248 ms | Pass, 283 ms |
+| Three conversions to UTF-8 CSV, exact | Pass, 33 ms | Pass, 35 ms |
+| Cancel a streaming import: no partial rows | Pass (spike and production vault) | Pass |
+| Encrypted 2M snapshot save / open; wrong passphrase rejected; navigation to open | 374 / 1,131 ms; rejected; 2,820 ms | 379 / 1,242 ms; rejected; 2,849 ms |
+| **Production vault:** navigation to unlocked, 1M / 2M lines, after a whole-browser restart (target < 3 s) | **2,774 ms pass / 3,280 ms miss** | **2,788 ms pass / 3,324 ms miss** |
+| Production vault: 1M-line CSV through Import Studio (convert + check / commit + encrypted save) | 10,639 / 9,309 ms | 11,189 / 9,724 ms |
+| Production vault: first change after background warm-up, 1M / 2M (target < 2 s at 1M) | 784 / 1,601 ms | 818 / 1,632 ms |
+| Production vault: 2M waterfall / product drill / customer drill / leak finder | 3.2 / 155 / 12.7 ms / 11.9 s | 3.6 / 154 / 13.4 ms / 11.4 s |
+| Near quota (simulated per origin), killed tab, second tab, backup restore | Pass: `nearQuota`, `killedTabRecovery`, `integrity`, encrypted backup | Pass |
+| Real configured Supabase magic-link sign-in, including callback | **Not run**: no hosted Supabase project exists | **Not run** |
+
+**Found and fixed during the rerun.** The 1M-line Import Studio benchmark ran out of the 512 MB DuckDB budget in both browsers. The cause was the duplicate check, a window over every staged row (with md5 strings) on top of about 300 MiB of staged and typed rows. A 64-bit hash count now finds the keys that repeat, and the exact check runs on those rows only (unit test in `tests/pilot-joins.test.ts`). The 1M import then passed. The last recorded full run (4D) did not hit the limit; which later change pushed the old query over it was not bisected.
+
+**Measured, no blueprint target.** Reading the vault while warm-up runs took 16 ms to 4.4 s at 1M (up to 8.9 s at 2M). The wait depends on whether the read lands behind a long warm-up statement, and the pre-6A build shows the same range. The 2M leak finder takes about 11.5 s; it was 8.3 s in 4D and is the same before and after 6A, so it slowed between 4D and 5B. Both are recorded in `PARKING_LOT.md`.
+
+**Tier caps: no change proposed.** Every target the blueprint sets is met at 1M lines, and 2M startup still misses 3 s. Keep Starter 20k / 200k, Professional 100k / 1M and Scale 200k / **1M** (provisional). The 1M import peaks close to the 512 MB budget, so raising Scale above 1M would need a lower-memory staging path first.
 ## Recommendation
 
 **Functional feasibility: PASS locally in both browsers. All performance-target

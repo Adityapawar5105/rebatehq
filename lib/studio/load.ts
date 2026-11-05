@@ -100,19 +100,29 @@ export async function validate(engine: Engine, role: Exclude<Role, "rebate_agree
   const t = typed(role), outs = fields.map(f => q(output(f).name)), key = KEYS[role].map(k => q(output(fields.find(f => f.name === k)!).name));
   if (role === "price_list") await engine.conn.query(`UPDATE ${t} SET err='scope' WHERE err IS NULL AND product_id IS NULL AND category IS NULL; UPDATE ${t} SET err='valid_to:range' WHERE err IS NULL AND valid_to IS NOT NULL AND valid_to<=valid_from`);
   const hash = `md5(concat_ws('|',${outs.map(c => `coalesce(${c}::VARCHAR,'\u0001')`).join(",")}))`;
-  await engine.conn.query(`UPDATE ${t} SET err=d.code FROM (
+  // 6A: a window over every row (1M rows with md5 strings) exhausted the 512 MB budget. A
+  // 64-bit hash count finds the few keys that repeat; the exact window runs on those rows only.
+  // A hash collision only adds rows to the exact check; it never marks a row by itself.
+  const keyed = (cols: string[]) => `hash(${cols.map(k => `coalesce(${k}::VARCHAR,'')`).join(",")})`;
+  const repeats = async (expr: string, where: string) => {
+    await engine.conn.query(`DROP TABLE IF EXISTS temp.studio_repeats; CREATE TEMP TABLE studio_repeats AS SELECT ${expr} AS k FROM ${t} WHERE ${where} GROUP BY 1 HAVING count(*)>1`);
+    return Number((await engine.conn.query("SELECT count(*)::VARCHAR AS n FROM studio_repeats")).toArray()[0].n) > 0;
+  };
+  if (await repeats(keyed(key), "err IS NULL")) await engine.conn.query(`UPDATE ${t} SET err=d.code FROM (
 SELECT file_ord, src_row, CASE WHEN h=first_h THEN 'duplicate_row' ELSE 'duplicate_key' END AS code FROM (
- SELECT file_ord, src_row, ${hash} AS h, first_value(${hash}) OVER w AS first_h, row_number() OVER w AS rn FROM ${t} WHERE err IS NULL
+ SELECT file_ord, src_row, ${hash} AS h, first_value(${hash}) OVER w AS first_h, row_number() OVER w AS rn FROM ${t} WHERE err IS NULL AND ${keyed(key)} IN (SELECT k FROM studio_repeats)
  WINDOW w AS (PARTITION BY ${key.map(k => `coalesce(${k}::VARCHAR,'')`).join(",")} ORDER BY file_ord, src_row)) WHERE rn>1) d
 WHERE ${t}.file_ord=d.file_ord AND ${t}.src_row=d.src_row`);
   // Generated line IDs differ per row, so exact copies are found on every other field.
   const generated = files.filter(f => f.role === role && f.generatedIds).map(f => f.ord);
   if (role === "sales_history" && generated.length) {
-    const rest = `md5(concat_ws('|',${outs.filter(c => c !== '"line_id"').map(c => `coalesce(${c}::VARCHAR,'\u0001')`).join(",")}))`;
-    await engine.conn.query(`UPDATE ${t} SET err='duplicate_row' FROM (
-SELECT file_ord, src_row FROM (SELECT file_ord, src_row, row_number() OVER (PARTITION BY ${rest} ORDER BY file_ord, src_row) AS rn FROM ${t} WHERE err IS NULL AND file_ord IN (${generated.join(",")})) WHERE rn>1) d
+    const others = outs.filter(c => c !== '"line_id"'), rest = `md5(concat_ws('|',${others.map(c => `coalesce(${c}::VARCHAR,'\u0001')`).join(",")}))`;
+    const scope = `err IS NULL AND file_ord IN (${generated.join(",")})`;
+    if (await repeats(keyed(others), scope)) await engine.conn.query(`UPDATE ${t} SET err='duplicate_row' FROM (
+SELECT file_ord, src_row FROM (SELECT file_ord, src_row, row_number() OVER (PARTITION BY ${rest} ORDER BY file_ord, src_row) AS rn FROM ${t} WHERE ${scope} AND ${keyed(others)} IN (SELECT k FROM studio_repeats)) WHERE rn>1) d
 WHERE ${t}.file_ord=d.file_ord AND ${t}.src_row=d.src_row`);
   }
+  await engine.conn.query("DROP TABLE IF EXISTS temp.studio_repeats");
   // Rows of the file being replaced do not count as existing.
   const other = (alias = "") => replaces ? `${alias}source_id IS DISTINCT FROM ${sqlText(replaces)}` : "true";
   const exists: Record<typeof role, string> = {
