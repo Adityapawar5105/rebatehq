@@ -1,7 +1,7 @@
-# RebateHQ Blueprint v2.2
+# RebateHQ Blueprint v2.3
 
 *Local-first pricing and margin software for wholesale distributors.*
-*Last updated: 2 Nov 2026 (v2.1 adopted 2 Nov 2026; v2.2 corrections listed in section 22)*
+*Last updated: 5 Nov 2026 (v2.1 adopted 2 Nov 2026; v2.2 and v2.3 changes listed in section 22)*
 
 ---
 
@@ -43,6 +43,9 @@
 | 11 | Privacy proof | A CI "privacy gate" browser test must pass before any "data never leaves your device" claim |
 | 12 | Licences in v1 | Issued manually by an admin for pilots; payment integration after the first paid pilots |
 | 13 | Phase 1 approval | Single level: the named Pricing Owner approves rule changes before export (two-level approvals arrive with Quote Desk in Phase 2) |
+| 14 | Languages and themes | All user-facing text goes through message keys from chunk 7U on. Shipped first: English, Spanish, French (including Canadian). Further languages (candidates: German, Dutch, Portuguese-BR, Italian, Polish, Japanese, Chinese-Simplified, up to ten in total) are added when a pilot asks. No right-to-left languages in v1. Light, dark and high-contrast themes |
+| 15 | Mobile | The field-rep PWA moves from Scale to **Professional** as an online-first thin client (floor-price snapshot, Price Check, quote capture). The offline cache stays in Scale. **Built last, as chunk 9A after Phase 3** (item 20 of section 22). Desktop stays Chrome/Edge only; iOS Safari and Android Chrome are supported for the thin client only after a verification spike at the start of 9A |
+| 16 | Rep-facing numbers | Nothing shown to reps (Price Check, scorecards, mobile snapshots) may let cost be derived: show floor/target status and compliance, never margin % or cost. Snapshots exclude cost and expire |
 
 ---
 
@@ -143,6 +146,7 @@ Goals, not promises. Benchmark on an 8 GB office laptop. "100M rows in a tab" cl
 | M10 | Alerts & Agents | Margin Drain checks, cost index triggers, dead-stock flags | 3 |
 | M11 | Deal Guidance | Explainable win-price ranges, cross-sell suggestions | 3 |
 | M12 | Collaboration Relay | Encrypted sharing, approvals, comments and @mentions, mobile sync | 2 |
+| M13 | Experience layer | Themes, languages, command palette, plain-language glossary popovers, inline-edit price grid, what-if sliders | 2 (foundations in 7U) |
 
 ### Phase 1 (MVP)
 **Data and onboarding**
@@ -174,28 +178,48 @@ Goals, not promises. Benchmark on an 8 GB office laptop. "100M rows in a tab" cl
 - **Comments and @mentions** on price changes and quotes via the encrypted relay
 - **Price list versioning with rollback**
 - **Price exceptions report** (below floor or below contract price)
-- **Price increase planner** (by segment, with revenue impact preview)
+- **Price increase planner** (by segment, with revenue impact preview) and an increase-letter template (moved up from Phase 3)
 - **Contract price expiry tracker**
 - **Competitor price log** (manual entries compared with your price in the margin view)
 - **ROI tracker (v2):** leaks found vs dollars recovered
 - **Monthly Pricing Review Pack:** auto-generated agenda and report for the pricing owner
 - **Weekly digest PDF**
-- **Mobile field-rep quoting PWA** with encrypted price-book snapshot (Scale tier)
+
+**Phase 2 additions (v2.3)**
+- **Experience layer (chunk 7U, before Quote Desk):** theme tokens with light, dark and high-contrast themes; message-key i18n (English, Spanish, French) with `Intl` number, date and currency formatting, pseudo-locale CI test and a translated finance glossary; command palette (`Ctrl/Cmd+K`) for navigation, SKU and customer search and commands (no free-text language parsing); plain-language glossary popovers beside "show the math"; accessibility pass
+- **Price Check:** a fast SKU-plus-customer lookup showing price, start/target/floor status and a green/amber/red signal. It reads guardrails and the price book; the quote itself is still entered in the ERP. Works with a USB barcode scanner (keyboard input)
+- **Customer credit signal:** green/amber/red from imported AR aging, DSO or credit utilisation, next to the customer in Quote Desk, with a soft warning on deep discounts to slow payers
+- **Rebate progress:** customer and supplier attainment ("$12,400 to the next tier"), using sales history and the new Purchases role; part of the rebate engine (7D)
+- **Cost-to-serve leaks:** small orders and free-delivery orders that lose money after freight, added to the leak finder using the freight already in the waterfall. No zone, weight-break or fuel-surcharge rating engine
+- **Inline-edit price grid:** spreadsheet-style editing with Excel paste. Every edit writes to a draft changeset that passes guardrails, preview, approval and audit; it never edits live prices
+- **What-if sliders** in the rule builder: approximate live impact while dragging, exact result on release
+- **Price-change landed check:** re-import the next ERP export and diff it against the last exported price file to show which changes did not take effect
+- **Purchase price variance:** the same SKU bought at different prices or from different vendors
+- **Rep compliance scorecard:** floor/target compliance and "margin protected" points, never margin % or cost; team view by default, individual view opt-in, no leaderboard by default
+- **Folder re-import:** re-run saved converter recipes against a remembered folder (Chrome/Edge File System Access, permission re-prompted each session)
 
 ### Phase 3
 - Explainable deal guidance (shows the why) and cross-sell suggestions ("customers like X also buy Y")
 - Margin Drain agents (local background checks)
-- Cost index triggers (user-uploaded or public data first)
+- Cost index triggers (user-uploaded or public data first), including an import-cost currency buffer rule (rates entered by the user or taken from the control plane's public index feed, never fetched from the browser directly)
 - Dead-stock clearance optimiser (idle 90+ days, floored at replacement cost)
 - Win/loss log
 - Opt-in anonymous benchmarks (aggregates only, explicit consent)
 - Offline PWA mode, audit and compliance pack
-- Templates: price increase letters, vendor negotiation sheets, rebate agreements
+- Templates: vendor negotiation sheets, rebate agreements (increase letters moved to Phase 2)
+
+### Final phase (after Phase 3; chunk 9A)
+- **Mobile field-rep PWA** (Professional tier; offline cache in Scale): online-first thin client with an encrypted, cost-free, expiring floor-price snapshot, Price Check and quote capture (decision 15). Built last, once every desktop feature is done. It starts with an iOS Safari / Android Chrome verification spike (storage eviction, memory, install behaviour) whose results decide the scope, and it reuses the relay (7A), Price Check (7B), device revocation (5B) and Phase 3 offline PWA mode (8C). Until then Quote Desk is responsive in a desktop browser but is not a supported phone product
 
 ### Deferred or dropped
 - Customer self-serve portal (conflicts with zero-storage)
 - Licensed live commodity feeds (cost; start with uploads)
 - Salesforce/HubSpot connectors (after pilots ask)
+- Freight rating engine (zones, weight breaks, fuel surcharges): actual freight per order is used instead; revisit only if pilots lack freight data
+- Rep leaderboards and points that rank individuals by default (scorecards are team-level first)
+- Free-text natural-language commands in the command palette
+- Right-to-left languages in v1
+- Live exchange-rate fetching from the browser
 - Server-side ingestion (scheduled Google Sheets fetch, email-in, SFTP, stored connector credentials) built in repo chunk 3C: dropped, because the server would handle business data. Could return later only as browser-side or local-folder ingestion
 
 ### 6A. Import Studio: multiple files and in-browser converter
@@ -204,7 +228,7 @@ Goals, not promises. Benchmark on an 8 GB office laptop. "100M rows in a tab" cl
 
 **Multi-file support**
 - Drag and drop many files or a whole folder (Chrome/Edge)
-- **Role tagging:** auto-detect or tag each file as Sales history, Item master, Customer list, Vendor cost sheet, Rebate agreement or Price list
+- **Role tagging:** auto-detect or tag each file as Sales history, Item master, Customer list, Vendor cost sheet, Rebate agreement or Price list. Phase 2 adds **Purchases (PO receipts)** for supplier rebate progress and **AR aging / credit limits** for the credit signal; like rebate agreements, they load with the module that uses them
 - **Combine:** merge files of the same role (e.g. 24 monthly invoice exports) with column alignment, duplicate-row detection and overlap-date warnings
 - **Source tracking:** every row remembers its source file, so a bad file can be removed or re-imported
 - **Batch report:** per-file rows loaded, rows rejected, issues found
@@ -287,12 +311,14 @@ Home (Executive Dashboard + ROI tracker)
 ├── Data Hub: Import Studio → Map columns → Fix Later → Item cleanup → Cost basis → Health score
 ├── Margin: Waterfall • Customers (whale curve) • Products • Leaks • Margin bridge
 ├── Pricing: Matrices • Guardrails • Rules • Preview diff • Versions
-├── Quotes: New quote • Approval inbox • History
-├── Rebates & Contracts: Customer rebates • Supplier claims • Accruals • Expiring prices
+├── Quotes: New quote • Price Check • Approval inbox • History
+├── Rebates & Contracts: Customer rebates • Supplier claims • Accruals • Rebate progress • Expiring prices
 ├── Vendors: Cost sheets • Impact review
 ├── Simulator
 ├── Reports: Leak Report • Weekly digest • Monthly Review Pack • Audit pack
-└── Settings: Team • Pricing owner • Backup • Security • ERP profile • Converter recipes
+└── Settings: Team • Pricing owner • Backup • Security • ERP profile • Converter recipes • Theme • Language
+
+Global: command palette (Ctrl/Cmd+K) reaches every screen, SKU and customer
 ```
 
 ---
@@ -345,7 +371,8 @@ Success metric: **time to first leak found under 2 minutes.**
 | Security | Encryption at rest, passphrase never leaves device, relay sees ciphertext only |
 | Reliability | Autosave, versioned snapshots, restore wizard |
 | Browsers | Chrome and Edge officially |
-| Accessibility | Keyboard navigation, readable contrast, no colour-only signals |
+| Accessibility | Keyboard navigation, readable contrast, no colour-only signals; light, dark and high-contrast themes built on colour tokens |
+| Languages | No hard-coded user-facing strings from 7U on; `Intl` formatting for numbers, dates and currency; generated text (rule explanations, show-the-math, reports) built from message keys; ERP exports and audit-log entries stay language-neutral; a pseudo-locale test in CI catches untranslated or truncated text |
 | Updates | Instant web deploys, versioned data migrations |
 | Auditability | Every price change and export logged and exportable |
 | Simplicity | Sensible defaults everywhere; any workflow completable without documentation |
@@ -368,6 +395,11 @@ Success metric: **time to first leak found under 2 minutes.**
 | Building without customer input | Mapper, cleanup and rules may not match real exports; secure at least one real sample early |
 | DuckDB-Wasm cannot encrypt its OPFS file | Use encrypted snapshots with memory-only working/staging data. A plaintext OPFS working file survives crashes; deleting it on lock/close is not encryption. Native encryption can return only after encrypted read/write is proved. |
 | COEP breaks third-party resources (auth, fonts) | Spike checks Supabase sign-in and assets with COEP on; use `credentialless` or self-host if needed |
+| Mobile snapshot on a lost phone | Snapshot holds floor-price status only (no costs), expires, is bound to a revocable device (5B) and is encrypted |
+| iOS storage eviction and memory limits | Thin client only (no DuckDB on the phone); verify Safari/Chrome storage behaviour in a spike at the start of 9A; keep Chrome/Edge as the only desktop claim |
+| Translation drift and finance jargon | Glossary of fixed terms, native-speaker review before a language ships, ship only languages a pilot asks for; each new feature carries its strings in every shipped language |
+| Rep numbers leak cost | Decision 16: show compliance and floor status only; a test checks that no rep-role payload contains cost or margin % |
+| Alerts only run while the app is open | State this in the UI and in the digest; show "last checked" rather than implying a background service |
 | Verification overhead outruns product | Database-level test suites and restore drills only for control-plane changes; data-plane chunks use unit, browser e2e, privacy-gate and timing checks; stop and simplify after 3 CI-fix attempts on one chunk |
 
 ---
@@ -397,7 +429,10 @@ Success metric: **time to first leak found under 2 minutes.**
 | Quote Desk, approvals (max 2 levels), comments, competitor log | - | Yes | Yes |
 | Monthly Pricing Review Pack | - | Yes | Yes |
 | **Historical scenario simulator** | - | - | **Yes** |
-| Mobile field-rep PWA with offline cache | - | - | Yes |
+| Mobile field-rep PWA (built last, chunk 9A; online-first thin client: Price Check, floor prices, quote capture) | - | Yes | Yes, plus offline cache |
+| Price Check, customer credit signal, rebate progress, rep compliance scorecard | - | Yes | Yes |
+| Themes, languages, command palette, glossary popovers | Yes | Yes | Yes |
+| Inline-edit price grid, what-if sliders, price-change landed check | Basic grid | Yes | Yes |
 | Custom ERP export formats | - | - | Yes |
 | Support | Email, community | Email, standard response | Priority, converter recipe mapping help |
 
@@ -457,8 +492,9 @@ Roughly **$0-50/month** early on; cost barely grows with customers.
 | Pilot hardening | 6A, 6R | 2-3 | Test on 3-5 real ERP files, backup/restore, edge cases, 8 GB laptop benchmarks; retire the first 22 legacy business tables (6R: the 21 planned plus `plan_feature`) |
 | Security + whitepaper | 6B | 1-2 | Review before charging |
 | **Sellable v1** | | **~10-13 from 2 Nov 2026** | First paid pilot (target window 11 Jan - 1 Feb 2027) |
-| 2 | 7A-7F | +6-8 (realistic 8-10) | Relay, Quote Desk, bridge, rebates (customer and supplier), vendor review, simulator, comments, approvals, versioning, mobile PWA |
+| 2 | 7A, 7U, 7B-7F | +6-8 (realistic 8-10, plus roughly 1 for 7U, an estimate) | Relay, UX foundations (7U), Quote Desk, bridge, rebates (customer and supplier), vendor review, simulator, comments, approvals, versioning |
 | 3 | 8A-8D, 8R | +5-6 (realistic 5-7) | Guidance, agents, indices, dead-stock engine, cross-sell; retire the remaining 12 legacy business tables (8R) |
+| Final | 9A | After Phase 3 (not yet estimated) | Mobile field-rep PWA (Professional; offline cache in Scale), starting with the iOS/Android verification spike |
 
 Estimates assume one full-time founder with an AI coding agent. The critical path is real ERP files and pilot feedback, not code. Chunk-level prompts live in `BLUEPRINT_EXECUTION_PLAN.md`.
 
@@ -573,3 +609,11 @@ Corrections after reviewing the repository and build history against v2.1. Produ
     - Wave-2 quote rows keep customer and product IDs that no longer reference a server table until 8R. The foreign keys from `quote` and `quote_line` to customer, product and unit tables are dropped.
     - The legacy quote API routes are retired with wave 1 (fixed 410 responses), because they priced quotes from the dropped product, price-list and cost tables. Quote Desk comes back locally in 7B. The quote tables themselves stay fully tested until 8R.
     - Scope, tiers and prices are unchanged.
+19. **5 Nov 2026 — v2.3: experience layer and Phase 2 additions (decisions 14-16; sections 6, 6A, 9, 12-14, 17).** Drafted at the user's request after reviewing an outside feature list and the user's request for about ten languages. Nothing here is built yet.
+    - **New chunk 7U (UX foundations)** is inserted after 7A and before 7B, so themes, i18n and the command palette exist before Quote Desk and the later screens. Retrofitting them after every screen exists is the more expensive path. Items that belong to one module ship with it: Price Check and credit signal with 7B, the inline-edit grid, what-if sliders, cost-to-serve leaks, landed check and increase letters with 7C, rebate progress with 7D, purchase price variance with 7E, scorecards, folder re-import and mobile with 7F.
+    - **Tier change:** the mobile field-rep PWA moves from Scale to Professional as an online-first thin client; the offline cache stays in Scale. This conflicts with locked decision 5 (Chrome and Edge only) for phones, so decision 15 limits it to the thin client and requires a verification spike (see item 20: now at the start of 9A, not before 7F). To be validated in the first 10 conversations with the other tier limits.
+    - **Languages:** infrastructure first, English/Spanish/French shipped, others on pilot demand, no right-to-left in v1 (decision 14). Section 6A mapper synonyms already cover English, German, French, Spanish and Dutch headers.
+    - **Narrowed on purpose:** no freight rating engine (actual freight is used), no default leaderboards, no free-text palette commands, no live FX fetch from the browser; rep-facing numbers never reveal cost (decision 16). The import-cost currency buffer joins the Phase 3 cost-index triggers.
+    - **New import roles** for Phase 2: Purchases (PO receipts) and AR aging / credit limits.
+    - Prices ($299 / $599 / $999) are unchanged; whether the Professional tier can carry mobile support cost is a question for the pilots.
+20. **5 Nov 2026 — mobile PWA moved to the very end (decision 15; sections 6, 14, 17).** At the user's instruction, the mobile field-rep PWA is no longer part of 7F. It becomes chunk **9A**, built after Phase 3 and 8R, once every desktop feature is done. The Professional/Scale tier placement and the thin-client scope are unchanged, and the iOS/Android verification spike now opens 9A. Until 9A ships, the tier table row is a plan, not an available feature. Item 19's mention of mobile with 7F is superseded by this item.

@@ -57,8 +57,9 @@
 | **4** | Phase 1 core | 4.0 housekeeping · 4A spike · 4B shell + vault · 4C-1 Import Studio converter · 4C-2 mapper/parser/Fix Later/Playground · 4D margin intelligence (pocket-margin engine, reconciliation, show-me-the-math) · 4E pricing, export, backup |
 | **5** | Phase 1b + control plane | 5A cleanup, cost basis, checklist, ROI v1, roles · 5B licences/tiers, retire server business-data paths, carried security items |
 | **6** | Pilot hardening + security | 6A real files, 8 GB laptop benchmarks · 6R legacy table retirement, wave 1 · 6B security review + whitepaper → **sellable v1** |
-| **7** | Phase 2 | 7A relay · 7B Quote Desk · 7C bridge/versions/exceptions · 7D rebates · 7E vendor review + simulator · 7F packs/digest/PWA/converters |
+| **7** | Phase 2 | 7A relay · **7U UX foundations (v2.3)** · 7B Quote Desk · 7C bridge/versions/exceptions · 7D rebates · 7E vendor review + simulator · 7F packs/digest/converters |
 | **8** | Phase 3 | guidance, agents, indices, dead stock, cross-sell, offline, templates · 8R legacy table retirement, wave 2 |
+| **9** | Final | 9A mobile field-rep PWA, built last |
 
 6R and 8R were added on 5 Nov 2026, when the user approved the revised `RETIREMENT_PROPOSAL.md` (blueprint section 22, item 15). 6R adds roughly 2–4 working days before 6B; the sellable-v1 window is unchanged but has less slack.
 
@@ -93,13 +94,14 @@ That is ~10–13 weeks to the first paid pilot and ~23–30 weeks to the full bl
 ### Standard preamble (paste first in every prompt)
 
 ```
-Read AGENTS.md, BLUEPRINT.md, BLUEPRINT_EXECUTION_PLAN.md and ARCHITECTURE_TRANSITION.md before doing anything. BLUEPRINT.md v2.2 governs. If this chunk shows the blueprint is wrong, you may correct it, but add an entry to BLUEPRINT.md section 22 and list the change in your final summary.
+Read AGENTS.md, BLUEPRINT.md, BLUEPRINT_EXECUTION_PLAN.md and ARCHITECTURE_TRANSITION.md before doing anything. BLUEPRINT.md v2.3 governs. If this chunk shows the blueprint is wrong, you may correct it, but add an entry to BLUEPRINT.md section 22 and list the change in your final summary.
 Hard rules:
 - Customer prices, costs, invoices, rules, simulations and margins stay in the browser (DuckDB-Wasm in a Web Worker, OPFS). Never send them to any server, API route, log or analytics. Supabase is only for identity, licences/seats, public index data, app updates and a ciphertext-only relay.
 - Keep every locked migration and migrations.lock unchanged; add new migrations only. Follow MIGRATION_RULES.md.
 - Keep the margin-engine golden cases passing (e.g. SO-8102 negative margin).
 - Money is integer minor units or fixed decimals, never JS floats in stored or reconciled values.
 - Never evaluate workbook formulas or run macros.
+- From chunk 7U on: no hard-coded user-facing strings (use message keys and `Intl` formatting), colours only through theme tokens, and anything shown to a rep must not reveal cost or margin % (blueprint decisions 14 and 16).
 - Heavy work runs in a Web Worker; the UI thread only draws. Stream imports in chunks.
 - Record assumptions in ASSUMPTIONS.md. Local checks are not CI evidence; performance numbers are "measured on <machine/browser>" or "target".
 - Do only this chunk. Do not start the next one.
@@ -411,19 +413,24 @@ CI step "<step name>" fails on commit <sha> with: <paste the error and ~30 lines
 Run each with the preamble and the same "Done when / close-out" pattern. The order matters because Quote Desk approvals depend on the relay.
 
 - **7A Collaboration relay:** end-to-end encrypted workspace key sharing, a ciphertext-only server store (new migration), sharing and approvals (max two levels, preset thresholds), comments and @mentions. Test: the server DB contains no plaintext business values.
-- **7B Quote Desk:** margin thermometer, start/target/floor guidance, "request exception" soft warnings, approvals via 7A, mobile-friendly. Port reusable logic from the legacy server quote code.
-- **7C Pricing ops:** "Why did margin change?" price/volume/mix/cost bridge, price list versioning with rollback, price exceptions report, price increase planner, contract expiry tracker, competitor price log.
-- **7D Rebates:** customer rebate engine (accruals, tier progress, reminders; port the Chunk 2B tier math and rebate-engine.js) and a supplier rebate / ship-and-debit claim tracker.
-- **7E Vendor and simulator:** vendor price review (new supplier sheet vs current costs, affected quotes; reuse the 3B diff/conflict ideas) and the historical scenario simulator (Scale tier only).
-- **7F Reporting and reach:** Monthly Pricing Review Pack, weekly digest PDF, ROI v2 (found vs recovered from rule_runs), mobile field-rep PWA with an encrypted price-book snapshot (Scale), and Phase 2 converters (fixed-width, Parquet, text-PDF tables with preview).
+- **7U UX foundations (added in v2.3, after 7A, before 7B):** theme tokens with light, dark and high-contrast themes; message-key i18n extracted from all existing screens, English/Spanish/French shipped, `Intl` formatting, pseudo-locale CI test, finance glossary; command palette (navigation, SKU and customer search, commands; no free text); glossary popovers; accessibility pass. Done when no hard-coded UI strings remain (checked by a test), every theme passes contrast checks, the privacy gate still passes, and a language switch changes every screen and generated text. Estimated ~1 week; a plan estimate, not a measurement.
+- **7B Quote Desk:** margin thermometer, start/target/floor guidance, "request exception" soft warnings, approvals via 7A, mobile-friendly. Port reusable logic from the legacy server quote code. Adds **Price Check** (SKU plus customer lookup with a green/amber/red floor signal) and the **customer credit signal** (new AR aging import role). Reps never see cost or margin %.
+- **7C Pricing ops:** "Why did margin change?" price/volume/mix/cost bridge, price list versioning with rollback, price exceptions report, price increase planner with the increase-letter template, contract expiry tracker, competitor price log. Adds the **inline-edit price grid** (Excel paste; edits go to a draft changeset, never live prices), **what-if sliders**, **cost-to-serve leaks** (small and free-delivery orders) and the **price-change landed check**.
+- **7D Rebates:** customer rebate engine (accruals, tier progress, reminders; port the Chunk 2B tier math and rebate-engine.js) and a supplier rebate / ship-and-debit claim tracker. Adds **rebate progress** for customers and suppliers (new Purchases import role).
+- **7E Vendor and simulator:** vendor price review (new supplier sheet vs current costs, affected quotes; reuse the 3B diff/conflict ideas), purchase price variance, and the historical scenario simulator (Scale tier only).
+- **7F Reporting and reach:** Monthly Pricing Review Pack, weekly digest PDF, ROI v2 (found vs recovered from rule_runs), rep compliance scorecard, folder re-import, and Phase 2 converters (fixed-width, Parquet, text-PDF tables with preview). The mobile PWA is no longer here: it moved to 9A (blueprint section 22, item 20).
 
 ## 10. Prompts: repo Phase 8 (Blueprint Phase 3), outline
 
 - **8A:** explainable deal guidance and cross-sell basket analysis.
 - **8B:** Margin Drain agents (local background checks), cost index triggers (uploads first), dead-stock optimiser (idle 90+ days, floored at replacement cost).
-- **8C:** win/loss log, offline PWA mode, audit and compliance pack, and templates (increase letters, vendor negotiation sheets, rebate agreements).
+- **8C:** win/loss log, offline PWA mode, audit and compliance pack, and templates (vendor negotiation sheets, rebate agreements; increase letters moved to 7C).
 - **8D (only with explicit consent design):** opt-in anonymous benchmarks.
 - **8R Legacy table retirement, wave 2:** after 7A, 7B, 7D and 8B, drop the 12 wave-2 tables in `RETIREMENT_PROPOSAL.md` (quotes, approvals, rebates, supplier credits, alerts, FX) the same way as 6R: precondition check, one new migration, CI and a user-run Restore Drill.
+
+## 10A. Final chunk (after Phase 3)
+
+- **9A Mobile field-rep PWA (moved here on 5 Nov 2026, blueprint section 22, item 20):** start with an iOS Safari / Android Chrome verification spike (storage eviction, memory, install behaviour) whose results decide scope. Then build the online-first thin client: encrypted, cost-free, expiring floor-price snapshot bound to a revocable device (5B), Price Check from 7B, quote capture through the relay (7A). Professional gets the thin client; Scale adds the offline cache (builds on 8C). Reps never see cost or margin % (decision 16). Run only on an explicit user prompt, after 8R.
 
 ---
 
