@@ -128,5 +128,5 @@
 - **Edge** was not run locally for the browser gate this time.
 - **Legacy pages** (`app/legacy/**`, behind the default-off flag, retired in 8R) were not translated.
 
-## Open question for the owner
-Blueprint decision 16 says nothing shown to a sales rep may reveal cost or margin %. Chunk 5A's Settings toggle "Let Sales Reps see cost and margin (off by default)" lets an Owner override that. 7U does not change it; it needs a decision.
+## Decision recorded after 7U
+Blueprint decision 16 says nothing shown to a sales rep may reveal cost or margin %. Chunk 5A's toggle "Let Sales Reps see cost and margin (off by default)" contradicts it. On 6 Nov 2026 the user agreed to remove it at the start of 7B (blueprint section 22, item 21); 7U leaves it unchanged.
