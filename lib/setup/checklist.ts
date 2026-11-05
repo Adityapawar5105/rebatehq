@@ -24,7 +24,7 @@ const REAL = `name NOT LIKE ${Q(PLAYGROUND_PREFIX + "%")}`;
 export async function detect(e: Engine): Promise<Record<Step, boolean>> {
   const r = (await e.conn.query(`SELECT
  EXISTS(SELECT 1 FROM source_files WHERE role = 'sales_history' AND ${REAL}) AS imported,
- EXISTS(SELECT 1 FROM source_files WHERE role IN ('item_master','customer_list','vendor_cost') AND ${REAL}) OR EXISTS(SELECT 1 FROM converter_recipes) AS mapped,
+ EXISTS(SELECT 1 FROM source_files WHERE role IN ('item_master','customer_list','vendor_cost') AND id NOT IN (SELECT source_id FROM source_kinds) AND ${REAL}) OR EXISTS(SELECT 1 FROM converter_recipes) AS mapped,
  (SELECT count(*) FROM rejected_rows WHERE status = 'open') AS open_rows,
  EXISTS(SELECT 1 FROM audit_log WHERE action LIKE 'fixlater.%' OR action LIKE 'cleanup.applied%') AS fixed,
  EXISTS(SELECT 1 FROM roi_ledger WHERE NOT coalesce(sample, false)) OR EXISTS(SELECT 1 FROM audit_log WHERE action = 'report.leak_pdf' AND details LIKE '%"sample":"false"%') AS reported,

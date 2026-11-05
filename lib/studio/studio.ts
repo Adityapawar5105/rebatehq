@@ -421,7 +421,7 @@ export class Studio {
     if (headerFile && !load.some(e => e.role === "sales_history" && Object.values(this.mappingOf(e)).some(s => s.kind === "header")))
       warnings.push(msg("import.theOrderHeaderFile"));
     if (replaces) {
-      const role = (await engine.conn.query(`SELECT role FROM source_files WHERE id=${sqlText(replaces)}`)).toArray()[0]?.role;
+      const role = (await engine.conn.query(`SELECT coalesce(k.kind, s.role) AS role FROM source_files s LEFT JOIN source_kinds k ON k.source_id=s.id WHERE s.id=${sqlText(replaces)}`)).toArray()[0]?.role;
       if (!role) throw new StudioError(msg("import.theFileBeingReplaced"));
       if (role !== load[0].role) throw new StudioError(msg("import.theReplacementMustAlso", { value: ROLE_LABELS[role as Role] ?? role }));
     }
@@ -470,7 +470,7 @@ export class Studio {
       }
       progress(msg("import.checkingValuesDuplicatesAnd"), "0", "1");
       // Headers and item lists first: sales lines take customer, date and freight from the one and cost from the other.
-      const sequence = (["order_header", "item_master", "customer_list", "vendor_cost", "price_list", "sales_history"] as const).filter(r => roles.has(r));
+      const sequence = (["order_header", "item_master", "customer_list", "ar_aging", "vendor_cost", "price_list", "sales_history"] as const).filter(r => roles.has(r));
       for (const role of sequence) {
         signal.throwIfAborted();
         if (role === "sales_history") {
@@ -527,7 +527,7 @@ export class Studio {
       const usage = await capUsage(engine, roles, replaces), cap = CAPS[tier];
       const capOk = fitsLicenceCapacity(tier,usage.products,usage.lines);
       this.report = { files: reports.sort((a, b) => load.findIndex(e => e.id === a.id) - load.findIndex(e => e.id === b.id)), warnings, loaded: loaded.toString(), rejected: rejected.toString(), capOk,
-        capMessage: capOk ? null : msg("import.thisImportExceedsYour", { tier, lines: cap.lines, products: cap.products, lines2: usage.lines.toString(), products2: usage.products.toString() }), replaces };
+        capMessage: capOk ? null : msg("import.thisImportExceedsYour", { tier: tierRef(tier), lines: cap.lines, products: cap.products, lines2: usage.lines.toString(), products2: usage.products.toString() }), replaces };
       this.staged = { files, stats, entries: load, replaces, roles };
       return this.report;
     } catch (error) { await resetStage(engine).catch(() => undefined); throw error; }
@@ -551,7 +551,7 @@ export class Studio {
 CREATE TEMP TABLE studio_messages AS SELECT * FROM (VALUES ${messages}) v(file_ord, code, column_name, message)`);
       for (const [i, f] of kept.entries()) {
         const r = report.files.find(x => x.id === staged.entries[f.ord].id)!;
-        await engine.conn.query(`INSERT INTO source_files VALUES (${sqlText(sources[i])},${sqlText(f.name)},${sqlText(f.role)},${f.bytes},${sqlText(now)});
+        await engine.conn.query(`INSERT INTO source_files VALUES (${sqlText(sources[i])},${sqlText(f.name)},${sqlText(f.role === "ar_aging" ? "customer_list" : f.role)},${f.bytes},${sqlText(now)});${f.role === "ar_aging" ? `INSERT INTO source_kinds VALUES (${sqlText(sources[i])},'ar_aging');` : ""}
 INSERT INTO import_batches(id,source_id,rows_loaded,rows_rejected,imported_at,content_sha256,fingerprint,rows_skipped) VALUES (${sqlText(id())},${sqlText(sources[i])},${r.rowsLoaded},${r.rowsRejected},${sqlText(now)},NULL,${sqlText(f.fingerprint)},${r.rowsSkipped})`);
       }
       await engine.conn.query(commitSql(new Set([...staged.roles].filter(r => r !== "order_header"))));
@@ -589,8 +589,8 @@ export async function removeSource(engine: Engine, source: string) {
   catch { await engine.conn.query("ROLLBACK").catch(() => undefined); return false; }
 }
 export async function listSources(engine: Engine): Promise<SourceView[]> {
-  return (await engine.conn.query(`SELECT s.id, s.name, s.role, s.imported_at, coalesce(b.rows_loaded,0)::VARCHAR AS loaded, coalesce(b.rows_rejected,0)::VARCHAR AS rejected,
-(SELECT count(*) FROM import_issues i WHERE i.source_id=s.id)::VARCHAR AS issues FROM source_files s LEFT JOIN import_batches b ON b.source_id=s.id ORDER BY s.imported_at DESC, s.name`)).toArray()
+  return (await engine.conn.query(`SELECT s.id, s.name, coalesce(k.kind, s.role) AS role, s.imported_at, coalesce(b.rows_loaded,0)::VARCHAR AS loaded, coalesce(b.rows_rejected,0)::VARCHAR AS rejected,
+(SELECT count(*) FROM import_issues i WHERE i.source_id=s.id)::VARCHAR AS issues FROM source_files s LEFT JOIN source_kinds k ON k.source_id=s.id LEFT JOIN import_batches b ON b.source_id=s.id ORDER BY s.imported_at DESC, s.name`)).toArray()
     .map(r => ({ id: String(r.id), name: String(r.name), role: String(r.role), importedAt: String(r.imported_at), rowsLoaded: String(r.loaded), rowsRejected: String(r.rejected), issues: String(r.issues) }));
 }
 export async function loadRecipes(engine: Engine): Promise<Recipe[]> {

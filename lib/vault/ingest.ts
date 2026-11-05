@@ -8,7 +8,7 @@ import { CAPS, MAX_CSV_BYTES, VaultError, type Tier, type ImportEstimate } from 
 import { CSV_FIELDS, sqlText } from "../spike/exact";
 import { nativeInsertSql } from "../spike/imports";
 import { appendAudit } from "./audit";
-import { msg } from "../i18n/core";
+import { msg, tierRef } from "../i18n/core";
 export type Progress = (stage: string, done: string, total: string) => void;
 export function estimateImport(file: Pick<File, "name" | "size">, tier: Tier): ImportEstimate {
   if (!/\.csv$/i.test(file.name) || file.name.length > 200 || file.size < 1 || file.size > MAX_CSV_BYTES) throw new VaultError("FILE", msg("ingest.chooseANonEmpty"));
@@ -37,7 +37,7 @@ export async function ingest(engine: Engine, file: File, tier: Tier, signal: Abo
     }
     const combined = (await engine.conn.query(`SELECT (SELECT count(*) FROM sales_lines)+(SELECT count(*) FROM import_stage) AS lines,
 (SELECT count(DISTINCT product_id) FROM (SELECT product_id FROM products UNION ALL SELECT product_id::VARCHAR FROM import_stage)) AS products`)).toArray()[0];
-    if (!fitsLicenceCapacity(tier,BigInt(combined.products),BigInt(combined.lines))) throw new VaultError("CAP", msg("ingest.thisImportExceedsYour", { tier, lines: CAPS[tier].lines, products: CAPS[tier].products }));
+    if (!fitsLicenceCapacity(tier,BigInt(combined.products),BigInt(combined.lines))) throw new VaultError("CAP", msg("ingest.thisImportExceedsYour", { tier: tierRef(tier), lines: CAPS[tier].lines, products: CAPS[tier].products }));
     signal.throwIfAborted();
     // Existing products are preserved. Rows from this file supply missing IDs;
     // no current cost or master price is guessed from invoice line amounts.

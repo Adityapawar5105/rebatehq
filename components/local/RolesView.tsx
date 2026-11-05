@@ -29,7 +29,7 @@ export function RolesView({ client, busy, operation, refresh }: { client: VaultC
         <label>{t("roles.role")}<select value={form.role} onChange={e => setForm({ ...form, role: e.target.value as RoleId })}>{ROLES.map(r => <option key={r.id} value={r.id}>{say(r.label)}</option>)}</select></label>
         <button className={styles.primary} disabled={busy || !form.name.trim() || !form.userId.trim()}>{t("roles.assignRole")}</button>
       </form>
-      <label><input type="checkbox" checked={list.repSeesCost} disabled={busy} onChange={e => run(() => client.call("accessSet", { repSeesCost: e.target.checked }), msg(e.target.checked ? "roles.salesRepsCanNow" : "roles.salesRepsNoLonger"))} />{" "}{t("roles.letSalesRepsSee")}</label>
+      <p className={styles.muted} data-testid="reps-never-see-cost">{t("roles.repsNeverSeeCost")}</p>
     </> : <p className={styles.muted}>{t("roles.onlyAnOwnerOr")}</p>}
     <h3>{t("roles.previewAnotherRole")}</h3>
     <p className={styles.small}>{t("roles.seeTheAppAs")}</p>

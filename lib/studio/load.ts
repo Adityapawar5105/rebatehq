@@ -69,6 +69,7 @@ export const CODES = (role: Role) => [...ROLE_FIELDS[role].flatMap(f => [`${f.na
 const KEYS: Record<Exclude<Role, "rebate_agreement">, string[]> = {
   sales_history: ["line_id"], item_master: ["product_id"], customer_list: ["customer_id"], order_header: ["invoice_id"],
   vendor_cost: ["vendor", "product_id", "effective_date"], price_list: ["product_id", "category", "customer_id", "tier", "qty_break", "valid_from"],
+  ar_aging: ["customer_id"],
 };
 export async function resetStage(engine: Engine) {
   for (const role of Object.keys(KEYS) as Role[]) await engine.conn.query(`DROP TABLE IF EXISTS temp.${stage(role)}; DROP TABLE IF EXISTS temp.${typed(role)}`);
@@ -133,6 +134,8 @@ WHERE ${t}.file_ord=d.file_ord AND ${t}.src_row=d.src_row`);
     vendor_cost: `EXISTS (SELECT 1 FROM vendor_costs v WHERE v.vendor=${t}.vendor AND v.product_id=${t}.product_id AND v.effective_date=${t}.effective_date AND ${other("v.")})`,
     price_list: `EXISTS (SELECT 1 FROM price_matrix p WHERE p.product_id IS NOT DISTINCT FROM ${t}.product_id AND p.category IS NOT DISTINCT FROM ${t}.category AND p.customer_id IS NOT DISTINCT FROM ${t}.customer_id AND p.tier IS NOT DISTINCT FROM ${t}.tier AND p.qty_break=coalesce(${t}.qty_break,0) AND p.valid_from=${t}.valid_from AND ${other("p.")})`,
     order_header: "false", // headers are never stored, so nothing can already exist
+    // One AR aging profile per customer: a newer aging report replaces the old file (Replace…).
+    ar_aging: `customer_id IN (SELECT customer_id FROM credit_profiles WHERE ${other()})`,
   };
   await engine.conn.query(`UPDATE ${t} SET err='exists' WHERE err IS NULL AND ${exists[role]}`);
 }
@@ -242,8 +245,8 @@ export function removeChildrenSql(source: string) {
   const s = sqlText(source);
   return `CREATE TEMP TABLE IF NOT EXISTS studio_affected(kind VARCHAR, id VARCHAR);
 INSERT INTO studio_affected SELECT DISTINCT 'p', product_id FROM sales_lines WHERE source_id=${s} UNION SELECT 'p', product_id FROM products WHERE source_id=${s}
- UNION SELECT DISTINCT 'c', customer_id FROM sales_lines WHERE source_id=${s} UNION SELECT 'c', customer_id FROM customers WHERE source_id=${s};
-DELETE FROM sales_lines WHERE source_id=${s}; DELETE FROM vendor_costs WHERE source_id=${s}; DELETE FROM price_matrix WHERE source_id=${s};
+ UNION SELECT DISTINCT 'c', customer_id FROM sales_lines WHERE source_id=${s} UNION SELECT 'c', customer_id FROM customers WHERE source_id=${s} UNION SELECT 'c', customer_id FROM credit_profiles WHERE source_id=${s};
+DELETE FROM sales_lines WHERE source_id=${s}; DELETE FROM vendor_costs WHERE source_id=${s}; DELETE FROM price_matrix WHERE source_id=${s}; DELETE FROM credit_profiles WHERE source_id=${s}; DELETE FROM source_kinds WHERE source_id=${s};
 UPDATE products SET ${PRODUCT_RESET} WHERE source_id=${s}; UPDATE customers SET ${CUSTOMER_RESET} WHERE source_id=${s};
 DELETE FROM import_issues WHERE source_id=${s}; DELETE FROM import_batches WHERE source_id=${s}; DELETE FROM rejected_rows WHERE source_id=${s};`;
 }
@@ -267,6 +270,8 @@ INSERT INTO products(product_id,description,category,uom,current_cost,list_price
 INSERT INTO customers(customer_id,name,tier,branch,region,payment_terms,source_id,source_row) SELECT customer_id,coalesce(name,''),coalesce(tier,''),coalesce(branch,''),coalesce(region,''),coalesce(payment_terms,''),source_id,src_row FROM ${v("customer_list")} WHERE customer_id NOT IN (SELECT customer_id FROM customers);`);
   if (roles.has("vendor_cost")) out.push(`INSERT INTO vendor_costs(id,vendor,product_id,cost,effective_date,source_file,source_id,source_row) SELECT gen_random_uuid()::VARCHAR,vendor,product_id,cost,effective_date,(SELECT name FROM studio_files f WHERE f.file_ord=t.file_ord),source_id,src_row FROM ${v("vendor_cost")} t;`);
   if (roles.has("price_list")) out.push(`INSERT INTO price_matrix(id,product_id,category,customer_id,tier,qty_break,price,valid_from,valid_to,source_id,source_row) SELECT gen_random_uuid()::VARCHAR,product_id,category,customer_id,tier,coalesce(qty_break,0),price,valid_from,valid_to,source_id,src_row FROM ${v("price_list")};`);
+  if (roles.has("ar_aging")) out.push(`INSERT INTO customers(customer_id) SELECT DISTINCT customer_id FROM ${v("ar_aging")} WHERE customer_id NOT IN (SELECT customer_id FROM customers);
+INSERT INTO credit_profiles(customer_id,as_of,current_cents,d1_30_cents,d31_60_cents,d61_90_cents,d90_plus_cents,credit_limit_cents,dso_days,source_id,source_row) SELECT customer_id,as_of_date,coalesce(current_cents,0),coalesce(due_1_30_cents,0),coalesce(due_31_60_cents,0),coalesce(due_61_90_cents,0),coalesce(due_over_90_cents,0),credit_limit_cents,dso_days,source_id,src_row FROM ${v("ar_aging")};`);
   for (const role of roles) out.push(`INSERT INTO import_issues(id,source_id,row_number,column_name,message,status,code) SELECT gen_random_uuid()::VARCHAR, m.source_id, t.src_row, s.column_name, s.message, 'open', t.err FROM ${typed(role)} t JOIN studio_files m USING(file_ord) JOIN studio_messages s ON s.file_ord=t.file_ord AND s.code=t.err WHERE t.err IS NOT NULL;
 ${keepRejectedSql(role)}`);
   return out.join("\n");

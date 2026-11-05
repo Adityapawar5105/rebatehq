@@ -329,10 +329,36 @@ try {
   if(!auth){await page.getByRole('button',{name:'Use licensed capacity',exact:true}).click();await page.getByRole('status').filter({hasText:'Licensed capacity applied'}).waitFor();results.checks.licensedCapacityUpgrade=true;}
   results.checks.pricingUi={owner:true,guardrails:true,rule:true,simulation:true,preview:true,approval:true,erpExportAndLog:true,folderHandleSeam:true,encryptedBackup:true};
 
+  // 7B: Price Check answers on Enter (barcode scanners send Enter), a below-floor quote asks for a
+  // reason, the Owner sees margin, the Sales Rep preview never does, and the quote fits a phone.
+  await page.getByRole('link',{name:'Quotes',exact:true}).click();
+  await page.getByTestId('check-sku').fill(priceSku);await page.getByTestId('check-customer').fill('E-CUSTOMER');await page.getByTestId('check-customer').press('Enter');
+  const checked=page.getByTestId('price-check-result');await checked.waitFor();assert.equal(await checked.getAttribute('data-zone'),'yellow','Price Check zone for a price below target');
+  await page.getByRole('meter',{name:'Price position for '+priceSku}).first().waitFor();await page.getByTestId('credit-signal').getByText('Credit: unknown').waitFor();
+  await page.getByRole('button',{name:'Quote',exact:true}).click();await page.getByTestId('quote-customer').fill('E-CUSTOMER');await page.getByTestId('quote-customer').press('Enter');
+  await page.getByTestId('quote').waitFor();await page.getByTestId('add-sku').fill(priceSku);await page.getByTestId('add-sku').press('Enter');
+  await page.getByTestId('price-1').waitFor();await page.getByTestId('price-1').fill('90.00');await page.getByRole('button',{name:'Update prices',exact:true}).click();
+  await page.locator('[data-testid="quote"] tr[data-zone="red"]').waitFor();await page.getByText('A line is below its floor price.',{exact:false}).waitFor();
+  assert.ok(await page.getByRole('button',{name:'Request exception',exact:true}).isDisabled(),'An exception can be requested without a reason');
+  await page.getByTestId('exception-reason').fill('Competitor match');await page.getByRole('button',{name:'Request exception',exact:true}).click();
+  await page.locator('[data-testid="quote"][data-status="pending"]').waitFor();await page.getByTestId('quote-margin').waitFor();
+  await page.setViewportSize({width:375,height:812});
+  const fits=await page.getByTestId('quote').evaluate(el=>el.scrollWidth<=el.clientWidth+1&&el.getBoundingClientRect().right<=window.innerWidth+1);
+  await page.setViewportSize({width:1280,height:900});assert.ok(fits,'The quote overflows a 375px phone screen');
+  await page.getByRole('link',{name:'Settings',exact:true}).click();await page.getByLabel('Preview as').selectOption('sales_rep');await page.getByTestId('preview-banner').waitFor();
+  await page.getByRole('link',{name:'Quotes',exact:true}).click();await page.getByRole('button',{name:'History',exact:true}).click();
+  await page.getByRole('heading',{name:'Quote history',exact:true}).waitFor();await page.getByRole('table').getByRole('button').first().click();
+  await page.locator('[data-testid="quote"][data-status="pending"]').waitFor();
+  assert.equal(await page.getByTestId('quote-margin').count(),0,'The Sales Rep preview shows quote margin');
+  assert.equal(await page.getByRole('columnheader',{name:'Margin',exact:true}).count(),0,'The Sales Rep preview shows a margin column');
+  assert.equal(await page.getByRole('button',{name:'Approve exception',exact:true}).count(),0,'A Sales Rep can approve an exception');
+  await page.getByRole('button',{name:'Return to my own view'}).click();await page.getByTestId('preview-banner').waitFor({state:'detached'});
+  results.checks.quotesUi={priceCheckOnEnter:true,thermometer:true,exceptionNeedsReason:true,ownerSeesMargin:true,repPreviewHidesMargin:true,phoneWidth:true};
+
   // 7U: a language switch changes every screen and the generated text. The pseudo-locale brackets
   // every message (⟦…⟧), so any visible word outside a bracket is hard-coded or untranslated text.
   // Data the test imported is marked translate="no" by the UI and skipped.
-  const sectionLinks=['#home','#data-hub','#margin','#pricing','#reports','#settings'];
+  const sectionLinks=['#home','#data-hub','#margin','#pricing','#quotes','#reports','#settings'];
   async function untranslated(){
     return page.evaluate(()=>{const out=[];const roots=[...document.querySelectorAll('header,nav,main')];
       const skip=n=>{for(let e=n.parentElement;e;e=e.parentElement){if(e.getAttribute('translate')==='no'||['SCRIPT','STYLE','CODE','OPTION'].includes(e.tagName)||e.hidden)return true;const st=getComputedStyle(e);if(st.display==='none'||st.visibility==='hidden')return true;}return false;};

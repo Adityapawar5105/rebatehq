@@ -61,6 +61,15 @@ const SYNONYMS: Record<string, { column: string[]; unit?: string[] }> = {
   valid_from: { column: n("valid from", "start date", "effective date", "from date") },
   valid_to: { column: n("valid to", "end date", "expiry date", "expiration date", "to date") },
   qty_break: { column: n("qty break", "quantity break", "min qty", "minimum quantity", "break qty") },
+  // 7B AR aging (common aged-receivables report headers).
+  as_of_date: { column: n("as of", "as of date", "aging date", "report date", "statement date") },
+  current_amount: { column: n("current", "current balance", "not due", "current amount") },
+  due_1_30_amount: { column: n("1 30", "1-30", "1 to 30", "1-30 days", "days 1-30", "30 days", "0-30", "31") },
+  due_31_60_amount: { column: n("31 60", "31-60", "31 to 60", "31-60 days", "days 31-60", "60 days") },
+  due_61_90_amount: { column: n("61 90", "61-90", "61 to 90", "61-90 days", "days 61-90", "90 days") },
+  due_over_90_amount: { column: n("over 90", "90+", "91+", "> 90", "91 and over", "over 90 days", "91-120", "120+") },
+  credit_limit_amount: { column: n("credit limit", "limit", "credit line", "approved credit") },
+  dso_days: { column: n("dso", "days sales outstanding", "avg days to pay", "average days to pay") },
 };
 // "Order ID" (Northwind, many web shops) is the invoice key of order-based exports.
 SYNONYMS.invoice_id.column.push(...n("order id", "order number", "sales order", "sales order no"));
@@ -102,7 +111,7 @@ for (const [field, names] of Object.entries(LOCALIZED)) {
 const LINE_NO = n("line no", "line number", "line", "line num", "lineno", "seq", "sequence", "position", "pos", "zeile", "zeilennr", "ligne", "linea", "línea", "regel");
 /** A master list's own key column often has a bare name ("No." in Business Central). */
 const LIST_KEY = n("no", "nr", "number", "id", "code", "key", "nummer", "numero", "numéro", "número", "codigo", "código");
-const LIST_KEY_FIELD: Partial<Record<Role, string>> = { customer_list: "customer_id", item_master: "product_id" };
+const LIST_KEY_FIELD: Partial<Record<Role, string>> = { customer_list: "customer_id", item_master: "product_id", ar_aging: "customer_id" };
 /** When no customer ID column exists, the customer's name is the key (NetSuite and QuickBooks use "Name"). */
 const CUSTOMER_NAME = n("name", "customer name", "company", "company name", "account name", "customer full name", "kundenname", "nom client", "nombre cliente", "klantnaam");
 /** A discount column holding a percent rather than an amount ("Line Discount %", "Rabatt %"). */

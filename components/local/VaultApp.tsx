@@ -5,6 +5,7 @@ import type { Scope, StorageStatus, Tier, VaultStatus } from "@/lib/vault/protoc
 import { fmt, msg, say, t, useLocale, type MessageKey } from "@/lib/i18n";
 import { Preferences } from "@/components/Preferences";
 import { PricingView } from "./PricingView";
+import { QuotesView } from "./QuotesView";
 import { BackupView } from "./BackupView";
 import { ImportStudio } from "./ImportStudio";
 import { MarginView, LeakReportButton } from "./MarginView";
@@ -18,9 +19,9 @@ import { GlossaryCard } from "./Glossary";
 import { tierName } from "./labels";
 import styles from "./vault.module.css";
 // Section ids are stable identifiers (hash links, role access lists); labels are message keys.
-export const sections = ["Home", "Data Hub", "Margin", "Pricing", "Reports", "Settings"] as const;
+export const sections = ["Home", "Data Hub", "Margin", "Pricing", "Quotes", "Reports", "Settings"] as const;
 export type Section = typeof sections[number];
-export const SECTION_LABEL: Record<Section, MessageKey> = { Home: "shell.section.home", "Data Hub": "shell.section.dataHub", Margin: "shell.section.margin", Pricing: "shell.section.pricing", Reports: "shell.section.reports", Settings: "shell.section.settings" };
+export const SECTION_LABEL: Record<Section, MessageKey> = { Home: "shell.section.home", "Data Hub": "shell.section.dataHub", Margin: "shell.section.margin", Pricing: "shell.section.pricing", Quotes: "shell.section.quotes", Reports: "shell.section.reports", Settings: "shell.section.settings" };
 export const sectionHash = (s: Section) => s.toLowerCase().replace(" ", "-");
 export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled = false }: { scope: Scope; email: string; workspace: string; lab?: boolean; legacyEnabled?: boolean }) {
   useLocale(); // re-render every screen when the language changes
@@ -109,6 +110,7 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
           </>}
           {shown === "Margin" && client.current && <MarginView client={client.current} status={status} busy={busy} operation={operation} setMessage={setMessage} onStatus={setStatus}/>}
           {shown === "Pricing" && client.current && <PricingView client={client.current} userId={scope.userId} caps={caps} busy={busy} operation={operation} refresh={async()=>setStatus(await client.current!.call("status",{}))}/>}
+          {shown === "Quotes" && client.current && <QuotesView client={client.current} userId={scope.userId} caps={caps} tier={status.licence?.tier} busy={busy} operation={operation}/>}
           {shown === "Reports" && caps.includes("cost") && client.current && <section className={styles.card}><h2>{t("shell.report.heading")}</h2><p>{t("shell.report.body")}</p><LeakReportButton client={client.current} busy={busy || status.lines === "0"} operation={operation} setMessage={setMessage} onStatus={setStatus}/></section>}
           {shown === "Reports" && caps.includes("audit") && <section className={styles.card}><h2>{t("shell.audit.heading")}</h2><p>{t("shell.audit.body", { entries: Number(status.auditEntries), version: status.schemaVersion })}</p><button className={styles.primary} disabled={busy} onClick={() => void operation(async () => { const result = await client.current!.call("verify", {}); if (!result.valid) throw new Error(msg("shell.audit.failed")); setMessage(msg("shell.audit.verified", { entries: Number(result.entries) })); })}>{t("shell.audit.button")}</button><p className={styles.muted}>{t("shell.audit.note")}</p></section>}
           {shown === "Settings" && <section className={styles.card} aria-labelledby="prefs-heading"><h2 id="prefs-heading">{t("shell.prefs.heading")}</h2><p className={styles.muted}>{t("shell.prefs.body")}</p><Preferences pseudo={lab} className={styles.row}/></section>}

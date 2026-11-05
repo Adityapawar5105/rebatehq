@@ -9,7 +9,7 @@ import { ROLE_FIELDS, LOADABLE, StudioError, type Role } from "./formats";
 import { cleanDate, cleanId, cleanNumber } from "./clean";
 import { CODES, capUsage, commitSql, createStage, issueMessage, resetStage, validate, type StagedFile } from "./load";
 import { CAPS, type Tier } from "../vault/protocol";
-import { msg } from "../i18n/core";
+import { msg, tierRef } from "../i18n/core";
 /** credits: the group can load as returns/credits (negative-quantity sales rows, chunk 4D). */
 export type FixGroup = { sourceId: string; sourceName: string; role: Role; code: string; field: string | null; message: string; count: string; fixable: boolean; credits: boolean };
 export type FixRow = { sourceRow: string; code: string; values: { field: string; value: string }[] };
@@ -32,7 +32,7 @@ export async function fixRows(engine: Engine, sourceId: string, code: string, of
   return rows.map(r => ({ sourceRow: String(r.r), code: String(r.code), values: fields.map((f, i) => ({ field: f.name, value: r[`v${i}`] === null ? "" : String(r[`v${i}`]) })) }));
 }
 async function roleOf(engine: Engine, sourceId: string) {
-  const role = (await engine.conn.query(`SELECT role FROM source_files WHERE id=${sqlText(sourceId)}`)).toArray()[0]?.role;
+  const role = (await engine.conn.query(`SELECT coalesce(k.kind, s.role) AS role FROM source_files s LEFT JOIN source_kinds k ON k.source_id=s.id WHERE s.id=${sqlText(sourceId)}`)).toArray()[0]?.role;
   if (!role) throw new StudioError(msg("fixlater.thatFileIsNo"));
   return String(role) as Role;
 }
@@ -75,7 +75,7 @@ export async function recheck(engine: Engine, sourceId: string, code: string, ti
   const ok = String(counts.ok), bad = String(counts.bad);
   if (ok === "0") { await resetStage(engine); return { loaded: "0", stillRejected: bad }; }
   const usage = await capUsage(engine, new Set([role]), null), cap = CAPS[tier];
-  if (!fitsLicenceCapacity(tier,usage.products,usage.lines)) { await resetStage(engine); throw new StudioError(msg("fixlater.loadingTheseRowsWould", { tier, lines: cap.lines, products: cap.products })); }
+  if (!fitsLicenceCapacity(tier,usage.products,usage.lines)) { await resetStage(engine); throw new StudioError(msg("fixlater.loadingTheseRowsWould", { tier: tierRef(tier), lines: cap.lines, products: cap.products })); }
   const messages = CODES(role).map(code => `(0,${sqlText(code)},${sqlText(code.includes(":") ? code.split(":")[0] : "")},${sqlText(issueMessage(code, CANONICAL))})`).join(",");
   await engine.conn.query("BEGIN");
   try {

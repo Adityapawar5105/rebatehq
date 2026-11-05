@@ -484,3 +484,24 @@ chunk. This chunk makes no blueprint changes and does not commit those edits.
 - **Kept language-neutral on purpose:** ERP exports and their change log, audit-log details, mapper header synonyms, Playground sample data and the invitation e-mail body.
 - **Not translated:** the legacy server pages behind the default-off flag (`app/legacy/**`, `app/dashboard`). They are retired in 8R.
 - **The pseudo-locale is a test tool.** It is offered in the lab harness and reachable through stored preference.
+
+## Chunk 7B — Quote Desk, Price Check, credit signal (6 November 2026, local checks only)
+
+- **Credit signal thresholds** (`CREDIT_RULES` in `lib/quotes/credit.ts`):
+  - **Red:** 10% or more of the open balance is over 90 days, utilisation is above 100% of the credit limit, there is a balance with a zero limit, or DSO is above 75 days.
+  - **Amber:** 10% or more is over 60 days, utilisation is 80% or more, or DSO is above 45 days.
+  - **Unknown:** no AR aging profile. No limit on file is not a risk by itself.
+  - These are a documented starting point, not a credit policy; pilots should confirm them.
+- **One AR aging profile per customer.** The newest imported report replaces the previous file (Replace…), and balances are not summed across files. AR balances are workspace currency, and a negative (credit) balance is rejected to Fix Later instead of being guessed.
+- **AR aging file kind is kept in `source_kinds`.** `source_files.role` keeps its v1 CHECK list because DuckDB cannot rebuild a table that other tables reference. An AR file is stored as `customer_list`, and every reader of the kind uses `coalesce(source_kinds.kind, role)`.
+- **Quote Desk and Price Check need Professional or Scale** (blueprint section 14 tier table). Starter vaults show an upgrade note, and the worker refuses the commands.
+- **Who approves a below-floor exception on one vault:** Sales Manager, Pricing Owner and Owner / CFO (new `quoteApprove` capability).
+  - Blueprint section 3 says the Sales Manager "approves discounted quotes".
+  - `quoteApprove` is separate from `approve`, which stays with the named Pricing Owner for price changes.
+  - A Pricing Manager does not approve quotes.
+  - Two-level approvals use the 7A relay presets.
+- **What counts as an exception:** only a line below its floor needs a reason and an approval. Below target is a soft warning. A line with no guardrail for its tier and category is a warning, not an exception.
+- **Line prices are snapshots.** A quote line keeps the book price, guardrail, zone and unit cost from when it was last priced. "Update prices" re-prices every line. Quote numbers are `Q-YYYY-0001` per vault and year, so the relay link matches the author as well as the number.
+- **Rep quote scope:** a role without cost and without `quoteApprove` sees only the quotes it created.
+- **Relay amount currency is USD,** as in 7U (no currency column yet). Only the quote number, title and price total go to the relay.
+- **Price Check credit:** shown only when a customer is entered; without a customer the signal is "unknown".

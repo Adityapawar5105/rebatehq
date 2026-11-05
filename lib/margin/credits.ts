@@ -10,7 +10,7 @@ import { appendAudit } from "../vault/audit";
 import { ROLE_FIELDS, StudioError } from "../studio/formats";
 import { CODES, capUsage, createStage, issueMessage, resetStage, validate, type StagedFile } from "../studio/load";
 import { CAPS, type Tier } from "../vault/protocol";
-import { msg } from "../i18n/core";
+import { msg, tierRef } from "../i18n/core";
 export const CREDIT_CODE = "quantity:negative";
 const CANONICAL = { sheet: null, headerRow: 0, headerDepth: 1 as const, delimiter: "," as const, encoding: "utf-8" as const, decimal: "dot" as const, dateFormat: "YYYY-MM-DD" as const };
 const SIGNED = new Set(["quantity", "list_amount", "discount_amount", "freight_amount", "rebate_amount", "cost_amount"]);
@@ -33,7 +33,7 @@ export async function loadCredits(engine: Engine, sourceId: string, tier: Tier) 
   const ok = String(counts.ok), bad = String(counts.bad);
   if (ok === "0") { await resetStage(engine); return { loaded: "0", stillRejected: bad }; }
   const usage = await capUsage(engine, new Set(["sales_history"]), null), cap = CAPS[tier];
-  if (usage.lines > BigInt(cap.lines) || usage.products > BigInt(cap.products)) { await resetStage(engine); throw new StudioError(msg("credits.loadingTheseCreditsWould", { tier, lines: cap.lines, products: cap.products })); }
+  if (usage.lines > BigInt(cap.lines) || usage.products > BigInt(cap.products)) { await resetStage(engine); throw new StudioError(msg("credits.loadingTheseCreditsWould", { tier: tierRef(tier), lines: cap.lines, products: cap.products })); }
   const codes = [...CODES("sales_history"), "credit:sign"];
   const messages = codes.map(code => `(0,${sqlText(code)},${sqlText(code.includes(":") ? code.split(":")[0] : "")},${sqlText(code === "credit:sign" ? CREDIT_SIGN_MESSAGE : issueMessage(code, CANONICAL))})`).join(",");
   const valid = "(SELECT * FROM ty_sales_history WHERE err IS NULL)";

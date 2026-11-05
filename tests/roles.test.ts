@@ -26,22 +26,25 @@ function serviceFor(c: Awaited<ReturnType<typeof duckdbConnection>>, userId: str
 const allowed = (caps: Cap[]) => (Object.keys(ACTION_CAP) as Array<keyof typeof ACTION_CAP>).filter(a => ACTION_CAP[a] === null || caps.includes(ACTION_CAP[a]!));
 test("every role has the capabilities the blueprint gives it; reps never get cost by default", () => {
   assert.equal(ROLES.length, 7); assert.deepEqual(ROLES.map(r => r.id), [...ROLE_IDS]);
-  const has = (role: RoleId, cap: Cap, named = false, rep = false) => capsFor(role, named, rep).includes(cap);
+  const has = (role: RoleId, cap: Cap, named = false) => capsFor(role, named).includes(cap);
   for (const role of ROLE_IDS) assert.ok(has(role, "view") && has(role, "guards"), `${role} sees counts and price floors`);
-  assert.deepEqual(capsFor("pricing_owner", false, false), CAPS_ALL); assert.ok(has("pricing_owner", "approve"));
+  assert.deepEqual(capsFor("pricing_owner", false), CAPS_ALL); assert.ok(has("pricing_owner", "approve"));
   assert.ok(!has("owner", "approve")); assert.ok(has("owner", "approve", true)); // approval belongs to the named Pricing Owner
   assert.ok(has("owner", "cost") && has("owner", "roles") && has("owner", "backup") && has("owner", "data"));
   assert.ok(has("pricing_manager", "pricing") && has("pricing_manager", "export") && has("pricing_manager", "data") && !has("pricing_manager", "approve") && !has("pricing_manager", "roles"));
   assert.ok(has("sales_manager", "cost") && !has("sales_manager", "pricing") && !has("sales_manager", "data") && !has("sales_manager", "export"));
-  assert.ok(!has("sales_rep", "cost"), "a rep never sees cost by default"); assert.ok(has("sales_rep", "cost", false, true), "unless the owner allows it");
+  assert.ok(!has("sales_rep", "cost"), "a rep never sees cost (decision 16)");
   assert.ok(!has("sales_rep", "data") && !has("sales_rep", "pricing") && !has("sales_rep", "export") && !has("sales_rep", "approve") && !has("sales_rep", "roles"));
   assert.ok(!has("admin", "collaborate"), "Admin/IT cannot receive decrypted business collaboration");
   assert.ok(!has("admin", "cost") && !has("admin", "pricing") && has("admin", "roles") && has("admin", "backup") && has("admin", "audit"));
   assert.ok(has("accountant", "cost") && has("accountant", "reconcile") && !has("accountant", "pricing") && !has("accountant", "data"));
-  assert.deepEqual(sectionsFor(capsFor("sales_rep", false, false)), ["Home", "Pricing"]);
-  assert.ok(!sectionsFor(capsFor("sales_rep", false, false)).includes("Margin"));
-  assert.deepEqual(sectionsFor(capsFor("admin", false, false)), ["Home", "Pricing", "Reports", "Settings"]); // Reports holds the audit log for Admin / IT
-  assert.deepEqual(intersect(capsFor("owner", false, false), capsFor("sales_rep", false, false)), ["view", "guards", "collaborate"]);
+  for (const role of ["owner", "pricing_owner", "pricing_manager", "sales_manager", "sales_rep"] as RoleId[]) assert.ok(has(role, "quote"), `${role} uses Quote Desk`);
+  assert.ok(!has("accountant", "quote") && !has("admin", "quote"));
+  assert.ok(has("sales_manager", "quoteApprove") && has("owner", "quoteApprove") && has("pricing_owner", "quoteApprove") && !has("pricing_manager", "quoteApprove") && !has("sales_rep", "quoteApprove") && !has("sales_manager", "approve"));
+  assert.deepEqual(sectionsFor(capsFor("sales_rep", false)), ["Home", "Pricing", "Quotes"]);
+  assert.ok(!sectionsFor(capsFor("sales_rep", false)).includes("Margin"));
+  assert.deepEqual(sectionsFor(capsFor("admin", false)), ["Home", "Pricing", "Reports", "Settings"]); // Reports holds the audit log for Admin / IT
+  assert.deepEqual(intersect(capsFor("owner", false), capsFor("sales_rep", false)), ["view", "guards", "collaborate", "quote"]);
 });
 test("every command is classified, and the dispatcher handles exactly the classified commands", () => {
   const source = readFileSync(new URL("../lib/vault/dispatch.ts", import.meta.url), "utf8");
@@ -57,7 +60,7 @@ test("the worker refuses each role exactly what its capabilities exclude, before
   const { c } = await vault();
   try {
     for (const [userId, role] of Object.entries(people)) {
-      const s = serviceFor(c, userId), caps = capsFor(role, userId === "po", false);
+      const s = serviceFor(c, userId), caps = capsFor(role, userId === "po");
       const access = await s.access();
       assert.equal(access.role, role); assert.deepEqual(access.caps, caps);
       for (const action of Object.keys(ACTION_CAP) as Array<keyof typeof ACTION_CAP>) {
@@ -68,23 +71,23 @@ test("the worker refuses each role exactly what its capabilities exclude, before
         await assert.rejects(dispatch(s as unknown as VaultService, { id: "1", action, data: {} } as unknown as Request, { signal: () => new AbortController().signal, progress: () => undefined }), (e: unknown) => e instanceof VaultError && e.code === "FORBIDDEN");
       }
     }
-    const rep = allowed(capsFor("sales_rep", false, false));
+    const rep = allowed(capsFor("sales_rep", false));
     for (const cost of ["marginWaterfall", "marginDrill", "marginMath", "leaks", "leakReport", "roi", "costBasis", "ruleSimulate", "rulePreview", "cleanupApply", "studioAdd", "priceExport", "ruleApprove", "backupNow", "roleSet"]) assert.ok(!rep.includes(cost as never), `rep cannot ${cost}`);
     assert.ok(rep.includes("pricingState") && rep.includes("home") && rep.includes("status"));
   } finally { c.close(); }
 });
-test("the owner's switch gives reps cost, and nothing else; a preview can only remove capabilities", async () => {
-  const { c } = await vault(true);
+test("7B: a stored 5A 'reps may see cost' switch is ignored; a preview can only remove capabilities", async () => {
+  const { c } = await vault(true); // an older vault that still stores the switch "on"
   try {
     const rep = await serviceFor(c, "rep").access();
-    assert.ok(rep.caps.includes("cost") && rep.repSeesCost); assert.ok(!rep.caps.includes("data") && !rep.caps.includes("pricing"));
-    c.query("UPDATE access_settings SET rep_sees_cost=false");
+    assert.ok(!rep.caps.includes("cost"), "a Sales Rep must never get cost (decision 16)"); assert.ok(!rep.caps.includes("data") && !rep.caps.includes("pricing"));
+    assert.ok(!("repSeesCost" in rep), "the switch is no longer part of the access state");
     const s = serviceFor(c, "owner1"); assert.ok((await s.access()).caps.includes("cost"));
     s.viewAs = "sales_rep"; s.accessCache = null; const view = await s.access();
-    assert.equal(view.role, "sales_rep"); assert.equal(view.viewAs, "sales_rep"); assert.deepEqual(view.caps, ["view", "guards", "collaborate"]);
+    assert.equal(view.role, "sales_rep"); assert.equal(view.viewAs, "sales_rep"); assert.deepEqual(view.caps, ["view", "guards", "collaborate", "quote"]);
     await assert.rejects(s.guard("cost"), /cannot do this/); await s.guard(ACTION_CAP.rolePreview); // leaving a preview is always allowed
     const rep2 = serviceFor(c, "rep"); rep2.viewAs = "owner"; rep2.accessCache = null; // a rep "previewing" Owner gains nothing
-    assert.deepEqual((await rep2.access()).caps, ["view", "guards", "collaborate"]);
+    assert.deepEqual((await rep2.access()).caps, ["view", "guards", "collaborate", "quote"]);
   } finally { c.close(); }
 });
 test("an unassigned person is a Sales Rep; a vault with no roles at all belongs to whoever opens it", async () => {

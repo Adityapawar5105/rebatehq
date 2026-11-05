@@ -8,9 +8,9 @@ import { PLAYGROUND_PREFIX } from "../lib/studio/playground";
 import type { Engine } from "../lib/vault/engine";
 async function fresh() {
   const c = await duckdbConnection();
-  for (const table of [...tablesFor(7)].reverse()) c.query(`DROP TABLE IF EXISTS ${table}`);
-  c.query(schemaSql(7));
-  c.query("INSERT INTO vault_meta VALUES(1,7,'starter','unit','tip',0,0); INSERT INTO audit_log VALUES(1,'a','2025-01-01T09:00:00.000Z','vault.created','{}','0','h')");
+  for (const table of [...tablesFor(10)].reverse()) c.query(`DROP TABLE IF EXISTS ${table}`);
+  c.query(schemaSql(10));
+  c.query("INSERT INTO vault_meta VALUES(1,10,'starter','unit','tip',0,0); INSERT INTO audit_log VALUES(1,'a','2025-01-01T09:00:00.000Z','vault.created','{}','0','h')");
   return { c, e: { conn: c } as unknown as Engine };
 }
 const audit = (c: Awaited<ReturnType<typeof duckdbConnection>>, n: number, action: string, details = "{}") => c.query(`INSERT INTO audit_log VALUES(${n},'id${n}','2025-01-02T09:00:00.000Z','${action}','${details}','p','h${n}')`);

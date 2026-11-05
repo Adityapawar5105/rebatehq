@@ -12,19 +12,18 @@ const rows = async (e: Engine, sql: string): Promise<Record<string, any>[]> => (
 const bad = (text: string): never => { throw new VaultError("ROLES", text); };
 export const cleanName = (value: string) => { if (typeof value !== "string" || !value.trim() || value.length > 160 || /[\x00-\x1f]/.test(value)) return bad(msg("err.roles.useANameOf")); return value.trim(); };
 export const cleanId = (value: string) => { if (typeof value !== "string" || !/^[A-Za-z0-9._:@+-]{1,160}$/.test(value)) return bad(msg("err.roles.useThePersonS")); return value; };
-export async function repSeesCost(e: Engine) { return !!(await rows(e, "SELECT rep_sees_cost FROM access_settings WHERE id=1"))[0]?.rep_sees_cost; }
 /** Compute what this signed-in person may do. `viewAs` can only remove capabilities, never add them. */
 export async function accessFor(e: Engine, userId: string, viewAs: RoleId | null): Promise<Access> {
   const mine = (await rows(e, `SELECT role FROM role_assignments WHERE user_id=${Q(userId)}`))[0];
   const empty = Number((await rows(e, "SELECT count(*) AS n FROM role_assignments"))[0].n) === 0;
   const owner = (await rows(e, "SELECT owner_id FROM pricing_settings WHERE id=1"))[0]?.owner_id ?? null;
   // A vault that has no roles yet (created before roles existed) belongs to whoever unlocks it: they are its Owner.
-  const role: RoleId = mine && isRole(mine.role) ? mine.role : empty ? "owner" : "sales_rep", assigned = !!mine || empty, seesCost = await repSeesCost(e);
+  const role: RoleId = mine && isRole(mine.role) ? mine.role : empty ? "owner" : "sales_rep", assigned = !!mine || empty;
   const named = owner !== null && owner === userId;
-  let caps = capsFor(role, named, seesCost);
-  if (viewAs && viewAs !== role) caps = intersect(caps, capsFor(viewAs, false, seesCost));
+  let caps = capsFor(role, named);
+  if (viewAs && viewAs !== role) caps = intersect(caps, capsFor(viewAs, false));
   const shown = viewAs ?? role;
-  return { role: shown, roleLabel: named && !viewAs && role !== "pricing_owner" ? msg("role.withNamedOwner", { role: ROLE_LABEL[shown] }) : ROLE_LABEL[shown], assigned, viewAs, caps, sections: sectionsFor(caps), ownerNamed: owner !== null, repSeesCost: seesCost };
+  return { role: shown, roleLabel: named && !viewAs && role !== "pricing_owner" ? msg("role.withNamedOwner", { role: ROLE_LABEL[shown] }) : ROLE_LABEL[shown], assigned, viewAs, caps, sections: sectionsFor(caps), ownerNamed: owner !== null };
 }
 export async function people(e: Engine, userId: string): Promise<Person[]> {
   return (await rows(e, "SELECT user_id, display_name, role, assigned_at FROM role_assignments ORDER BY display_name, user_id LIMIT 500"))
@@ -56,4 +55,3 @@ export async function removeSql(e: Engine, actor: { userId: string }, userId: st
   if (current.role === "owner" && Number((await rows(e, "SELECT count(*) AS n FROM role_assignments WHERE role='owner'"))[0].n) <= 1) bad(msg("err.roles.aVaultNeedsAt"));
   return `DELETE FROM role_assignments WHERE user_id=${Q(userId)};`;
 }
-export const accessSql = (repSeesCost: boolean) => `DELETE FROM access_settings WHERE id=1; INSERT INTO access_settings VALUES(1,${repSeesCost ? "true" : "false"});`;

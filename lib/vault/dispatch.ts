@@ -20,7 +20,6 @@ export async function dispatch(service: VaultService, request: Request, hooks: H
     case "roleList": return service.roleList();
     case "roleSet": return service.roleSet(request.data.userId, request.data.name, request.data.role);
     case "roleRemove": return service.roleRemove(request.data.userId);
-    case "accessSet": return service.accessSet(request.data.repSeesCost);
     case "rolePreview": return service.rolePreview(request.data.role);
     case "cleanupScan": return service.cleanupScan();
     case "cleanupHistory": return service.cleanupHistory();
@@ -88,6 +87,15 @@ export async function dispatch(service: VaultService, request: Request, hooks: H
     case "leakRows": return service.leakRows(request.data.id, request.data.offset ?? 0);
     case "leakReport": return service.leakReport(request.data.locale);
     case "search": return service.search(request.data.text);
+    case "priceCheck": return service.priceCheck(request.data.productId, request.data.customerId, request.data.quantity);
+    case "quoteCreate": return service.quoteCreate(request.data.customerId);
+    case "quoteLines": return service.quoteLines(request.data.id, request.data.lines);
+    case "quoteSubmit": return service.quoteSubmit(request.data.id, request.data.reason);
+    case "quoteDecide": return service.quoteDecide(request.data.id, request.data.decision, request.data.note);
+    case "quoteGet": return service.quoteGet(request.data.id);
+    case "quoteList": return service.quoteList(!!request.data.pendingOnly);
+    case "quoteShare": return service.quoteShare(request.data.id, request.data.preset, hooks.signal());
+    case "quoteRelaySync": return service.quoteRelaySync(request.data.id, hooks.signal());
     case "roi": return service.roi();
     case "reconcile": return service.reconcile();
     case "reconAccept": return service.reconAccept(request.data.id ?? null);

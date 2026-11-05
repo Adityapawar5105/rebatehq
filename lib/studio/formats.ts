@@ -1,7 +1,7 @@
 import { msg } from "../i18n/core";
 // Import Studio shared types, canonical role columns and header/role detection.
 // Pure functions: no DOM, DuckDB or Node APIs, so they run in the worker and in unit tests.
-export type Role = "sales_history" | "item_master" | "customer_list" | "vendor_cost" | "rebate_agreement" | "price_list" | "order_header";
+export type Role = "sales_history" | "item_master" | "customer_list" | "vendor_cost" | "rebate_agreement" | "price_list" | "order_header" | "ar_aging";
 export type Kind = "csv" | "tsv" | "txt" | "xlsx" | "xlsm" | "xls" | "xlsb" | "ods" | "json" | "xml";
 export type Encoding = "utf-8" | "utf-16le" | "utf-16be" | "windows-1252";
 export type Delimiter = "," | ";" | "\t" | "|";
@@ -10,10 +10,10 @@ export type Settings = { sheet: string | null; headerRow: number; headerDepth: 1
 export type StudioIssue = { row: number; column: string; message: string };
 export class StudioError extends Error {}
 
-export const ROLES: Role[] = ["sales_history", "item_master", "customer_list", "vendor_cost", "price_list", "rebate_agreement", "order_header"];
+export const ROLES: Role[] = ["sales_history", "item_master", "customer_list", "vendor_cost", "price_list", "rebate_agreement", "order_header", "ar_aging"];
 export const ROLE_LABELS: Record<Role, string> = {
   sales_history: msg("filetype.salesHistory"), item_master: msg("filetype.itemMaster"), customer_list: msg("filetype.customerList"),
-  vendor_cost: msg("filetype.vendorCostSheet"), rebate_agreement: msg("filetype.rebateAgreement"), price_list: msg("filetype.priceList"), order_header: msg("filetype.orderHeadersJoinedTo"),
+  vendor_cost: msg("filetype.vendorCostSheet"), rebate_agreement: msg("filetype.rebateAgreement"), price_list: msg("filetype.priceList"), order_header: msg("filetype.orderHeadersJoinedTo"), ar_aging: msg("filetype.arAging"),
 };
 export const DATE_FORMATS: DateFormat[] = ["YYYY-MM-DD", "MM/DD/YYYY", "DD/MM/YYYY", "DD.MM.YYYY", "DD-MM-YYYY"];
 export const DELIMITERS: Delimiter[] = [",", ";", "\t", "|"];
@@ -36,15 +36,18 @@ export const ROLE_FIELDS: Record<Role, Field[]> = {
   rebate_agreement: [f("program_id", "text", true, 100), f("party", "text", true, 200), f("rate_percent", "quantity0", true), f("threshold_amount", "amount"), f("period_start", "date", true), f("period_end", "date", true)],
   // 6A: an order-header export (customer, date, freight per invoice) joined to a lines file by invoice number. Never stored on its own.
   order_header: [f("invoice_id", "text", true, 64), f("customer_id", "id", true), f("sale_date", "date", true), f("freight_amount", "amount")],
+  // 7B: accounts-receivable aging per customer, for the Quote Desk credit signal. Balances are line totals in the
+  // workspace currency; a credit (negative) balance is rejected to Fix Later rather than guessed.
+  ar_aging: [f("customer_id", "id", true), f("as_of_date", "date"), f("current_amount", "amount"), f("due_1_30_amount", "amount"), f("due_31_60_amount", "amount"), f("due_61_90_amount", "amount"), f("due_over_90_amount", "amount"), f("credit_limit_amount", "amount"), f("dso_days", "quantity0")],
 };
 /** Roles whose rows load into the vault in Phase 1. Rebate agreements load in Phase 2. */
-export const LOADABLE: Role[] = ["sales_history", "item_master", "customer_list", "vendor_cost", "price_list"];
+export const LOADABLE: Role[] = ["sales_history", "item_master", "customer_list", "vendor_cost", "price_list", "ar_aging"];
 /** Roles a batch can use: the loadable ones plus order headers, which fill in sales lines and are not stored themselves. */
 export const USABLE: Role[] = [...LOADABLE, "order_header"];
 export const FILE_HINTS: Array<[Role, RegExp]> = [
   ["sales_history", /sales|invoice|history|orders?/i], ["item_master", /item|product|catalog|sku/i],
   ["customer_list", /customer|account|client/i], ["vendor_cost", /vendor|supplier|cost/i],
-  ["rebate_agreement", /rebate|program|agreement/i], ["price_list", /price|matrix|tariff/i], ["order_header", /head(er)?s?\b|^orders?\.\w+$/i],
+  ["rebate_agreement", /rebate|program|agreement/i], ["price_list", /price|matrix|tariff/i], ["order_header", /head(er)?s?\b|^orders?\.\w+$/i], ["ar_aging", /aging|ageing|receivable|\bar[\s_-]|overdue|credit/i],
 ];
 
 export function normalizeHeader(value: string) { return value.normalize("NFKC").toLowerCase().replace(/[^a-z0-9]+/g, ""); }

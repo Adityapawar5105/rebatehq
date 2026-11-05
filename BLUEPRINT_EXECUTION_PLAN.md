@@ -303,7 +303,7 @@ TASKS
 2. Cost basis selector: last, average or replacement cost per product group. Margins are shown under each basis side by side.
 3. Guided 7-day setup checklist: import, map, fix, first report, first rule, first export, invite the team. Progress is stored locally.
 4. ROI tracker v1: complete it and show it on Home.
-5. Roles: a named Pricing Owner is required at setup. Role-based views for Owner/CFO, Pricing Owner, Pricing Manager, Sales Manager, Sales Rep, Accountant and Admin. Reps never see cost unless the owner allows it, and this is enforced in the worker's queries, not only hidden in the UI.
+5. Roles: a named Pricing Owner is required at setup. Role-based views for Owner/CFO, Pricing Owner, Pricing Manager, Sales Manager, Sales Rep, Accountant and Admin. Reps never see cost unless the owner allows it, and this is enforced in the worker's queries, not only hidden in the UI. (The owner switch was removed in 7B, decision 16: reps never see cost or margin.)
 
 DONE WHEN
 Tests cover each cleanup fix and its undo, cost-basis margins against hand-calculated fixtures, rep cost hiding at the query layer, and the checklist flow. The privacy gate passes.

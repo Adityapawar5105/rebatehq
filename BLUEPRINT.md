@@ -61,7 +61,7 @@
 | **Accountant** | Rebate accruals, supplier claims, cost updates | Rebates, vendor costs |
 | **Admin / IT** | Seats, backup, security | Settings, audit log |
 
-Role-based views: reps never see cost data unless the owner allows it. In small firms one person may hold several roles.
+Role-based views: reps never see cost or margin (decision 16); a person who needs margins gets the Sales Manager role. In small firms one person may hold several roles.
 
 ---
 
@@ -618,3 +618,4 @@ Corrections after reviewing the repository and build history against v2.1. Produ
     - Prices ($299 / $599 / $999) are unchanged; whether the Professional tier can carry mobile support cost is a question for the pilots.
 20. **5 Nov 2026 — mobile PWA moved to the very end (decision 15; sections 6, 14, 17).** At the user's instruction, the mobile field-rep PWA is no longer part of 7F. It becomes chunk **9A**, built after Phase 3 and 8R, once every desktop feature is done. The Professional/Scale tier placement and the thin-client scope are unchanged, and the iOS/Android verification spike now opens 9A. Until 9A ships, the tier table row is a plan, not an available feature. Item 19's mention of mobile with 7F is superseded by this item.
 21. **6 Nov 2026 — the rep cost toggle is removed in 7B (decision 16).** Chunk 5A added an Owner setting, "Let Sales Reps see cost and margin (off by default)", which contradicts decision 16. At the user's request ("do as you think it would be best"), it is removed at the start of 7B, before Price Check (the first screen built for reps). A stored "on" value in an existing vault is ignored, so no vault schema change is needed. An owner who wants one person to see margins gives that person the Sales Manager role (read-only margins, per person, audited). 7B also adds the decision 16 test: no Sales Rep payload contains cost or margin %.
+22. **6 Nov 2026 — section 3 wording follows item 21.** The roles section still said reps see cost "unless the owner allows it". It now says reps never see cost or margin, and a person who needs margins gets the Sales Manager role. No feature or tier changes.

@@ -61,7 +61,7 @@ async function testFixture(bytes: Uint8Array) {
   await closeMemory(probe);
   const service = new VaultService(() => undefined); await service.init(fixtureScope);
   const result = await service.unlock(secret);
-  assert(result.schemaVersion === "9" && result.lines === "1", "V1 snapshot did not upgrade with its row intact");
+  assert(result.schemaVersion === "10" && result.lines === "1", "V1 snapshot did not upgrade with its row intact");
   const agg = (await service.engine!.conn.query("SELECT count(*)::VARCHAR AS n, sum(list_cents)::VARCHAR AS l, max(line_kind) AS k FROM agg_cpm")).toArray()[0];
   assert(agg.n === "1" && agg.l === "1250" && agg.k === "sale", "V1 upgrade must build the margin pre-aggregate from existing lines");
   assert((await service.marginWaterfall()).margin === "375", "Upgraded v1 line waterfall wrong");
@@ -404,7 +404,7 @@ async function margin() {
   const service = new VaultService(() => undefined); await service.init(scope); await service.create(secret, "professional");
   const result: Record<string, unknown> = {};
   const out = await service.playgroundLoad(noop), manifest = out.manifest;
-  assert((await service.status()).schemaVersion === "9", "New vaults must be schema v9");
+  assert((await service.status()).schemaVersion === "10", "New vaults must be schema v10");
   // 1. The waterfall equals the imported lines recomputed one by one with the JS engine.
   const raw = await rowsOf(service, "SELECT invoice_id, customer_id, strftime(sale_date, '%Y-%m') AS m, list_cents::VARCHAR AS l, discount_cents::VARCHAR AS d, rebate_cents::VARCHAR AS r, freight_cents::VARCHAR AS f, cost_cents::VARCHAR AS c, line_kind AS k FROM sales_lines");
   let list = Z, discount = Z, rebate = Z, freight = Z, pocket = Z, costedPocket = Z, cost = Z, marginJs = Z;
@@ -703,7 +703,7 @@ async function phase5a() {
   let refusedNoOwner=false;try{await call(service,'create',{passphrase:secret,tier:'professional',ownerName:'  '});}catch(e){refusedNoOwner=(e as Error).message.includes('Pricing Owner');}
   assert(refusedNoOwner&&!(await service.status()).exists,'A vault was created without a named Pricing Owner');
   const created=await call(service,'create',{passphrase:secret,tier:'professional',ownerName:'Synthetic Pricing Owner'});
-  assert(created.schemaVersion==='9'&&created.access.role==='owner'&&created.access.ownerNamed&&created.access.caps.includes('approve'),'The creator is not the Owner and named Pricing Owner');
+  assert(created.schemaVersion==='10'&&created.access.role==='owner'&&created.access.ownerNamed&&created.access.caps.includes('approve'),'The creator is not the Owner and named Pricing Owner');
   assert((await call(service,'pricingState')).owner.name==='Synthetic Pricing Owner','Pricing Owner was not stored at setup');
   // Sample data never completes setup steps; it still feeds every view.
   await service.playgroundLoad(()=>undefined);
@@ -762,14 +762,35 @@ INSERT INTO sales_lines(source_id,line_id,product_id,customer_id,sale_date,quant
   assert(!('margin' in repHome)&&!('roi' in repHome)&&repPricing.rules.length===0&&repPricing.runs.length===0,'The Sales Rep home or pricing view carries cost-derived data');
   const seen=JSON.stringify([repStatus,repHome,repPricing,await call(service,'checklist'),await call(service,'roleList')]);
   assert(!seen.includes('8123457')&&!seen.includes('"cost":"'),'A cost value reached the Sales Rep view');
-  assert(repStatus.access.sections.join()==='Home,Pricing','The Sales Rep sees more sections than Home and Pricing');
+  assert(repStatus.access.sections.join()==='Home,Pricing,Quotes','The Sales Rep sees more sections than Home, Pricing and Quotes');
   await call(service,'rolePreview',{role:null});assert((await call(service,'status')).access.role==='owner','Leaving the preview did not restore the Owner view');
-  await call(service,'accessSet',{repSeesCost:true});await call(service,'rolePreview',{role:'sales_rep'});
-  assert((await call(service,'marginWaterfall')).margin===wf.margin&&await refuses(service,'ruleSimulate',{id:'x'})&&await refuses(service,'studioAdd',{files:[]}),'The owner switch must give reps cost and nothing else');
-  await call(service,'rolePreview',{role:null});await call(service,'accessSet',{repSeesCost:false});
+  // 7B: the 5A "reps may see cost" switch is gone. A vault that still stores it "on" gives a rep nothing (decision 16).
+  await rowsOf(service,"DELETE FROM access_settings; INSERT INTO access_settings VALUES(1,true)");await call(service,'rolePreview',{role:'sales_rep'});
+  assert(await refuses(service,'marginWaterfall')&&await refuses(service,'costBasis')&&await refuses(service,'ruleSimulate',{id:'x'}),'A stored rep-cost switch still gave a Sales Rep cost');
+  let gone=false;try{await call(service,'accessSet',{repSeesCost:true});}catch{gone=true;}assert(gone,'The removed accessSet command still runs');
+  await call(service,'rolePreview',{role:null});
+  // 7B Quote Desk in the real worker. As a Sales Rep (preview): price zones and an exception request, never cost.
+  const zed=(await rowsOf(service,"SELECT category FROM products WHERE product_id='ZED-1'"))[0],cust=(await rowsOf(service,"SELECT customer_id,tier FROM customers WHERE tier<>'' ORDER BY customer_id LIMIT 1"))[0];
+  assert(zed&&cust,'The 5A fixture has no ZED-1 product or tiered customer');
+  await call(service,'guardSet',{input:{tier:String(cust.tier),category:String(zed.category),start:'30000',target:'20000',floor:'10000'}});
+  await call(service,'rolePreview',{role:'sales_rep'});
+  const check=await call(service,'priceCheck',{productId:'ZED-1',customerId:String(cust.customer_id),quantity:'2'});
+  assert(check.floorCents==='10000'&&check.credit.level==='unknown','Price Check lacks the guardrail or invents a credit signal');
+  let quote=await call(service,'quoteCreate',{customerId:String(cust.customer_id)});
+  quote=await call(service,'quoteLines',{id:quote.id,lines:[{productId:'ZED-1',quantity:'2',unitCents:'5000'}]});
+  assert(quote.needsApproval&&quote.worst==='red'&&quote.totalCents==='10000','A below-floor line was not flagged');
+  let noReason=false;try{await call(service,'quoteSubmit',{id:quote.id,reason:null});}catch(e){noReason=(e as Error).message.includes('reason');}assert(noReason,'A below-floor quote was submitted without a reason');
+  quote=await call(service,'quoteSubmit',{id:quote.id,reason:'Competitor match'});assert(quote.status==='pending','The exception request is not pending');
+  assert(await refuses(service,'quoteDecide',{id:quote.id,decision:'approve',note:null}),'A Sales Rep approved an exception');
+  const repQuotes=JSON.stringify([check,quote,await call(service,'quoteGet',{id:quote.id}),await call(service,'quoteList',{})]);
+  assert(!repQuotes.includes('8123457')&&!repQuotes.includes('16246914')&&!/"\w*(cost|margin)\w*":/i.test(repQuotes),'Quote Desk sent cost or margin to a Sales Rep');
+  await call(service,'rolePreview',{role:null});
+  const ownerQuote=await call(service,'quoteGet',{id:quote.id});assert(ownerQuote.costCents==='16246914'&&ownerQuote.marginCents!==undefined,'The Owner does not see the quote margin');
+  let selfApproved=true;try{await call(service,'quoteDecide',{id:quote.id,decision:'approve',note:null});}catch(e){selfApproved=!(e as Error).message.includes('own quote');}assert(!selfApproved,'The quote author approved their own exception');
   // Everything above is stored in the encrypted vault: lock, unlock and check.
   await call(service,'lock');service=new VaultService(()=>undefined);await service.init(scope);await call(service,'unlock',{passphrase:secret});
   assert((await call(service,'status')).access.viewAs===null,'A role preview survived a lock');
+  assert((await call(service,'quoteList',{pendingOnly:true})).length===1,'The pending quote was not stored in the encrypted vault');
   list=await call(service,'checklist');assert(list.steps.find((s:{step:string})=>s.step==='rule').done&&list.steps.find((s:{step:string})=>s.step==='team').done,'Checklist progress was not stored in the vault');
   assert((await call(service,'costBasis')).groups.find((g:{group:string})=>g.group==='Zeds').selected==='replacement','The cost basis choice was not stored');
   assert((await call(service,'roleList')).people.some((p:{userId:string})=>p.userId==='colleague-1'),'Roles were not stored');

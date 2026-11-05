@@ -27,7 +27,8 @@ import * as setup from "../setup/checklist";
 import * as roles from "../roles/store";
 import { isRole, type Cap, type RoleId } from "../roles/access";
 import type { Access, CleanupApplied, CleanupMergedAll, CleanupUndone, HomeData, RoleList, SearchHit } from "./protocol";
-import { isLocale } from "../i18n/core";
+import { isLocale, plainText } from "../i18n/core";
+import * as quotes from "../quotes/quotes";
 import {RelaySession,emptyRelay,type RelayState} from '../relay/session';
 import {relayHttp} from '../relay/http';
 import {RelayError} from '../relay/protocol';
@@ -310,6 +311,61 @@ export class VaultService {
   }
   async leakRows(id: string, offset = 0) { await this.leakResult(); return leakRows(this.requireEngine(), id, offset); }
   async roi() { return roiSummary(this.requireEngine()); }
+  // ---------------------------------------------------------------- Quote Desk and Price Check (7B)
+  private quoteTier() { if (this.licence.tier === "starter") throw new VaultError("LICENCE", msg("quote.needsProfessional")); }
+  private async quoteView(id: string) { const a = await this.access(); return quotes.view(this.requireEngine(), id, this.identity.userId, a.caps.includes("cost")); }
+  private async ownQuote(id: string) { const v = await this.quoteView(id); const a = await this.access(); if (!v.mine && !a.caps.includes("quoteApprove") && !a.caps.includes("cost")) throw new VaultError("FORBIDDEN", msg("vault.cannotDoThisAsk", { roleLabel: a.roleLabel })); return v; }
+  /** Price Check: book price, start/target/floor and the zone for one SKU and customer. Never cost (decision 16). */
+  async priceCheck(productId: string, customerId: string | null, quantity: string) { this.quoteTier(); return quotes.pricePoint(this.requireEngine(), productId, customerId, quantity || "1"); }
+  async quoteCreate(customerId: string) {
+    this.quoteTier(); const at = new Date().toISOString(), plan = await quotes.createSql(this.requireEngine(), customerId, this.identity.userId, at);
+    await this.write("quote.created", { quote_id: plan.id, actor: this.identity.userId }, async w => { await w.conn.query(plan.sql); });
+    return this.quoteView(plan.id);
+  }
+  async quoteLines(id: string, lines: quotes.LineInput[]) {
+    this.quoteTier(); const sql = await quotes.linesSql(this.requireEngine(), id, lines, this.identity.userId, new Date().toISOString());
+    await this.write("quote.lines", { quote_id: id, lines: String(lines.length) }, async w => { await w.conn.query(sql); });
+    return this.quoteView(id);
+  }
+  async quoteSubmit(id: string, reason: string | null) {
+    this.quoteTier(); const plan = await quotes.submitSql(this.requireEngine(), id, reason, this.identity.userId, new Date().toISOString());
+    await this.write("quote.submitted", { quote_id: id, status: plan.status }, async w => { await w.conn.query(plan.sql); });
+    return this.quoteView(id);
+  }
+  async quoteDecide(id: string, decision: "approve" | "reject", note: string | null) {
+    this.quoteTier(); const sql = await quotes.decideSql(this.requireEngine(), id, decision, note, this.identity.userId, new Date().toISOString());
+    await this.write("quote.decided", { quote_id: id, decision }, async w => { await w.conn.query(sql); });
+    return this.quoteView(id);
+  }
+  async quoteGet(id: string) { this.quoteTier(); return this.ownQuote(id); }
+  async quoteList(pendingOnly: boolean) {
+    this.quoteTier(); const a = await this.access();
+    return quotes.list(this.requireEngine(), { pendingOnly, userId: this.identity.userId, mineOnly: !a.caps.includes("quoteApprove") && !a.caps.includes("cost") });
+  }
+  /** Share an exception through the encrypted 7A inbox: the reference is the quote number and its price total, never cost. */
+  async quoteShare(id: string, preset: "standard" | "conservative", signal: AbortSignal) {
+    this.quoteTier(); await this.guard("collaborate"); const v = await this.ownQuote(id);
+    if (v.status !== "pending") throw new VaultError("QUOTE", msg("quote.notPending"));
+    const cents = BigInt(v.totalCents), amount = `${cents / BigInt(100)}.${(cents % BigInt(100)).toString().padStart(2, "0")}`;
+    const shared = await this.relay({ id: "quote", action: "relayShare", data: { input: { objectKind: "quote", title: plainText(msg("quote.shareTitle", { number: v.number })), reference: v.number, amount, currency: "USD", preset: preset === "conservative" ? "conservative" : "standard" } } } as never, signal) as { objects?: { id: string; author: string; subject: { reference: string } }[] };
+    // Quote numbers are per vault, so match this author's newest object with the number.
+    const object = shared.objects?.filter(o => o.subject.reference === v.number && o.author === this.identity.userId).pop();
+    if (!object) throw new VaultError("QUOTE", msg("quote.shareFailed"));
+    const sql = await quotes.linkSql(this.requireEngine(), id, object.id, new Date().toISOString());
+    await this.write("quote.linked", { quote_id: id }, async w => { await w.conn.query(sql); });
+    return this.quoteView(id);
+  }
+  /** Apply a signed 7A decision (verified by the relay session) to the local quote. */
+  async quoteRelaySync(id: string, signal: AbortSignal) {
+    this.quoteTier(); await this.guard("collaborate"); const v = await this.ownQuote(id);
+    if (!v.relayObject || v.status !== "pending") return v;
+    const view = await this.relay({ id: "quote", action: "relaySync", data: {} } as never, signal) as { objects?: { id: string; approval?: { status: string } }[] };
+    const status = view.objects?.find(o => o.id === v.relayObject)?.approval?.status;
+    if (status !== "approved" && status !== "rejected") return v;
+    const sql = await quotes.decideSql(this.requireEngine(), id, status === "approved" ? "approve" : "reject", null, this.identity.userId, new Date().toISOString(), "relay:" + v.relayObject);
+    await this.write("quote.decided", { quote_id: id, decision: status, via: "relay" }, async w => { await w.conn.query(sql); });
+    return this.quoteView(id);
+  }
   /** Command palette search over product and customer IDs and names. No cost or price column is read. */
   async search(query: string): Promise<SearchHit[]> {
     const e = this.requireEngine();
@@ -425,7 +481,7 @@ export class VaultService {
   async roleList(): Promise<RoleList> {
     await this.seedRoles();
     const e = this.requireEngine(), you = await this.access(), canManage = you.caps.includes("roles"), all = await roles.people(e, this.identity.userId);
-    return { people: canManage ? all : all.filter(p => p.you), you, repSeesCost: you.repSeesCost, pricingOwner: (await pricing.pricingState(e)).owner?.name ?? null, canManage };
+    return { people: canManage ? all : all.filter(p => p.you), you, pricingOwner: (await pricing.pricingState(e)).owner?.name ?? null, canManage };
   }
   async roleSet(userId: string, name: string, role: RoleId) {
     await this.seedRoles();
@@ -436,10 +492,6 @@ export class VaultService {
   async roleRemove(userId: string) {
     const sql = await roles.removeSql(this.requireEngine(), { userId: this.identity.userId }, userId);
     await this.write("roles.removed", { actor: this.identity.userId, user: userId }, async w => { await w.conn.query(sql); });
-    this.accessCache = null; return this.roleList();
-  }
-  async accessSet(repSeesCost: boolean) {
-    await this.write("access.rep_cost", { actor: this.identity.userId, allowed: String(!!repSeesCost) }, async w => { await w.conn.query(roles.accessSql(!!repSeesCost)); });
     this.accessCache = null; return this.roleList();
   }
   /** Preview another role's view. It only ever removes capabilities from your own, and resets on lock. */

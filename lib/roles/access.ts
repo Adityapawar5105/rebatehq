@@ -22,25 +22,32 @@ export const isRole = (value: unknown): value is RoleId => typeof value === "str
  * cost: cost, margin, leaks and the ROI total. data: imports, Fix Later, item cleanup, cost basis choice.
  * pricing: guardrails, rules, simulations. approve: approve a price change. export: ERP files.
  * reconcile: reconciliation. audit: verify the audit chain. roles: team roles. backup: backups.
+ * quote (7B): Quote Desk and Price Check. A quote shows price, start/target/floor and the zone; its cost and
+ * margin need "cost" as well, so a Sales Rep quotes without ever receiving cost (decision 16).
+ * quoteApprove (7B): decide a below-floor quote exception (Sales Manager, Pricing Owner, Owner / CFO). It is
+ * separate from "approve", which approves price changes and belongs to the named Pricing Owner only.
  */
-export type Cap = "view" | "guards" | "cost" | "data" | "pricing" | "approve" | "export" | "reconcile" | "audit" | "roles" | "backup" | "collaborate";
-export const CAPS_ALL: Cap[] = ["view", "guards", "cost", "data", "pricing", "approve", "export", "reconcile", "audit", "roles", "backup", "collaborate"];
+export type Cap = "view" | "guards" | "cost" | "data" | "pricing" | "approve" | "export" | "reconcile" | "audit" | "roles" | "backup" | "collaborate" | "quote" | "quoteApprove";
+export const CAPS_ALL: Cap[] = ["view", "guards", "cost", "data", "pricing", "approve", "export", "reconcile", "audit", "roles", "backup", "collaborate", "quote", "quoteApprove"];
 const PRICING_OWNER: Cap[] = CAPS_ALL;
 const BASE: Cap[] = ["view", "guards", "collaborate"];
 const BY_ROLE: Record<RoleId, Cap[]> = {
   owner: CAPS_ALL.filter(c => c !== "approve"), // approval belongs to the named Pricing Owner
   pricing_owner: PRICING_OWNER,
-  pricing_manager: [...BASE, "cost", "data", "pricing", "export", "reconcile", "audit"],
-  sales_manager: [...BASE, "cost"],
-  sales_rep: BASE,
+  pricing_manager: [...BASE, "cost", "data", "pricing", "export", "reconcile", "audit", "quote"],
+  sales_manager: [...BASE, "cost", "quote", "quoteApprove"],
+  sales_rep: [...BASE, "quote"],
   accountant: [...BASE, "cost", "reconcile", "audit"],
   admin: ["view", "guards", "roles", "backup", "audit"],
 };
-/** Capabilities of one person: their role, plus everything a Pricing Owner may do when they are the named owner. */
-export function capsFor(role: RoleId, namedOwner: boolean, repSeesCost: boolean): Cap[] {
+/**
+ * Capabilities of one person: their role, plus everything a Pricing Owner may do when they are the named owner.
+ * A Sales Rep never gets "cost" (blueprint decision 16). The 5A owner switch that allowed it was removed in 7B;
+ * a vault that still stores it "on" is ignored. Someone trusted with margins gets the Sales Manager role instead.
+ */
+export function capsFor(role: RoleId, namedOwner: boolean): Cap[] {
   const set = new Set<Cap>(BY_ROLE[role]);
   if (namedOwner) for (const c of PRICING_OWNER) set.add(c);
-  if (role === "sales_rep" && repSeesCost) set.add("cost");
   return CAPS_ALL.filter(c => set.has(c));
 }
 /** The owner previews another role without elevating: only capabilities both hold remain. */
@@ -55,7 +62,7 @@ export const ACTION_CAP: Record<Action, Cap | null> = {
   capacityUpgrade: "roles", licenceSet: null, init: null, create: null, unlock: null, lock: null, touch: null, cancel: null, save: null, storage: null,
   status: null, search: "view", home: "view", checklist: "view", checklistMark: "roles", roleList: "view",
   // Previewing a role can only remove capabilities (see accessFor), so anyone may use it, which also lets an Owner leave a preview.
-  roleSet: "roles", roleRemove: "roles", accessSet: "roles", rolePreview: "view",
+  roleSet: "roles", roleRemove: "roles", rolePreview: "view",
   pricingState: "guards", pricingOwner: "roles", guardSet: "pricing", ruleSave: "pricing", ruleSimulate: "pricing", rulePreview: "pricing", ruleApprove: "approve", priceExport: "export",
   backupStatus: "backup", backupConfigure: "backup", backupNow: "backup", backupExport: "backup", backupRestore: null,
   verify: "audit",
@@ -66,9 +73,11 @@ export const ACTION_CAP: Record<Action, Cap | null> = {
   cleanupScan: "data", cleanupApply: "data", cleanupUndo: "data", cleanupMergeAll: "data", cleanupUndoMany: "data", cleanupHistory: "data", costBasis: "cost", costBasisSet: "data",
   marginWaterfall: "cost", marginDrill: "cost", marginWhale: "cost", marginMath: "cost", leaks: "cost", leakRows: "cost", leakReport: "cost", roi: "cost",
   reconcile: "reconcile", reconAccept: "reconcile", reconRebuild: "reconcile",
+  // 7B. Cost and margin inside a quote view also need "cost" (checked in the service, not here).
+  priceCheck: "quote", quoteCreate: "quote", quoteLines: "quote", quoteSubmit: "quote", quoteGet: "quote", quoteList: "quote", quoteShare: "quote", quoteRelaySync: "quote", quoteDecide: "quoteApprove",
 };
 /** Sections of the app a role can open (the worker still checks every command). */
 export function sectionsFor(caps: Cap[]): string[] {
   const has = (c: Cap) => caps.includes(c);
-  return ["Home", ...(has("data") ? ["Data Hub"] : []), ...(has("cost") ? ["Margin"] : []), ...(has("guards") ? ["Pricing"] : []), ...(has("cost") || has("reconcile") || has("audit") ? ["Reports"] : []), ...(has("roles") || has("backup") || has("audit") ? ["Settings"] : [])];
+  return ["Home", ...(has("data") ? ["Data Hub"] : []), ...(has("cost") ? ["Margin"] : []), ...(has("guards") ? ["Pricing"] : []), ...(has("quote") ? ["Quotes"] : []), ...(has("cost") || has("reconcile") || has("audit") ? ["Reports"] : []), ...(has("roles") || has("backup") || has("audit") ? ["Settings"] : [])];
 }

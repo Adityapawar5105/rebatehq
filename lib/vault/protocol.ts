@@ -16,10 +16,11 @@ import type { FixKind, FixView, Scan } from "../cleanup/item-master";
 import type { BasisId, CostBasisView } from "../cost/basis";
 import type { RelayView } from '../relay/session';
 import type { ShareInput } from '../relay/protocol';
+import type { LineInput, PricePoint, QuoteSummary, QuoteView } from "../quotes/quotes";
 export type Tier = "starter" | "professional" | "scale";
 export type Scope = { userId: string; tenantId: string };
 /** What the signed-in person may do in this vault. Computed in the worker; the UI only mirrors it. */
-export type Access = { role: RoleId; roleLabel: string; assigned: boolean; viewAs: RoleId | null; caps: Cap[]; sections: string[]; ownerNamed: boolean; repSeesCost: boolean };
+export type Access = { role: RoleId; roleLabel: string; assigned: boolean; viewAs: RoleId | null; caps: Cap[]; sections: string[]; ownerNamed: boolean };
 export type VaultStatus = {
   licence?: {writable:boolean;tier:Tier;offline:boolean;until:string|null;reason:string};
   state: "locked" | "unlocked"; exists: boolean; dirty: boolean; recovered: boolean;
@@ -32,7 +33,7 @@ export type VaultStatus = {
   access?: Access;
 };
 export type Person = { userId: string; name: string; role: RoleId; roleLabel: string; assignedAt: string; you: boolean };
-export type RoleList = { people: Person[]; you: Access; repSeesCost: boolean; pricingOwner: string | null; canManage: boolean };
+export type RoleList = { people: Person[]; you: Access; pricingOwner: string | null; canManage: boolean };
 export type HomeData = {
   access: Access; checklist: Checklist; pricingOwner: string | null; guardrails: string;
   roi?: RoiSummary; margin?: { netPocket: string; margin: string; rate: string; uncostedLines: string; lines: string };
@@ -52,7 +53,6 @@ export type Commands = {
   roleList: Record<string, never>;
   roleSet: { userId: string; name: string; role: RoleId };
   roleRemove: { userId: string };
-  accessSet: { repSeesCost: boolean };
   rolePreview: { role: RoleId | null };
   cleanupScan: Record<string, never>;
   cleanupHistory: Record<string, never>;
@@ -118,6 +118,10 @@ export type Commands = {
   leakRows: { id: string; offset?: number };
   leakReport: { locale?: string };
   search: { text: string };
+  priceCheck: { productId: string; customerId: string | null; quantity: string };
+  quoteCreate: { customerId: string }; quoteLines: { id: string; lines: LineInput[] }; quoteSubmit: { id: string; reason: string | null };
+  quoteDecide: { id: string; decision: "approve" | "reject"; note: string | null }; quoteGet: { id: string }; quoteList: { pendingOnly?: boolean };
+  quoteShare: { id: string; preset: "standard" | "conservative" }; quoteRelaySync: { id: string };
   roi: Record<string, never>;
   reconcile: Record<string, never>;
   reconAccept: { id: string | null };
@@ -130,7 +134,8 @@ export type Results = {
   capacityUpgrade: VaultStatus;
   licenceSet: VaultStatus;
   search: SearchHit[];
-  home: HomeData; checklist: Checklist; checklistMark: Checklist; roleList: RoleList; roleSet: RoleList; roleRemove: RoleList; accessSet: RoleList; rolePreview: RoleList;
+  priceCheck: PricePoint; quoteCreate: QuoteView; quoteLines: QuoteView; quoteSubmit: QuoteView; quoteDecide: QuoteView; quoteGet: QuoteView; quoteList: QuoteSummary[]; quoteShare: QuoteView; quoteRelaySync: QuoteView;
+  home: HomeData; checklist: Checklist; checklistMark: Checklist; roleList: RoleList; roleSet: RoleList; roleRemove: RoleList; rolePreview: RoleList;
   cleanupScan: Scan; cleanupHistory: FixView[]; cleanupApply: CleanupApplied; cleanupUndo: CleanupUndone; cleanupMergeAll: CleanupMergedAll; cleanupUndoMany: CleanupUndone;
   costBasis: CostBasisView; costBasisSet: CostBasisView;
   pricingState: Awaited<ReturnType<VaultService['pricingState']>>;

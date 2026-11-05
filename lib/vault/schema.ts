@@ -1,13 +1,14 @@
 import { msg } from "../i18n/core";
-export const SCHEMA_VERSION = 9;
+export const SCHEMA_VERSION = 10;
 const V1_TABLES = ["vault_meta", "products", "customers", "price_matrix", "price_guardrails", "source_files", "import_batches", "sales_lines", "vendor_costs", "cost_basis_settings", "rules", "rule_runs", "price_versions", "roi_ledger", "audit_log", "import_issues", "converter_recipes"] as const;
 const V4_TABLES = [...V1_TABLES, "rejected_rows"] as const;
 const V5_TABLES = [...V4_TABLES, "agg_cpm", "agg_cm", "agg_p", "recon_issues"] as const;
 const V6_TABLES = [...V5_TABLES, "pricing_settings", "rule_revisions", "rule_changes"] as const;
 const V7_TABLES = [...V6_TABLES, "role_assignments", "access_settings", "cleanup_fixes", "cleanup_changes", "setup_progress"] as const;
-export const TABLES = [...V7_TABLES, "relay_state"] as const;
+const V9_TABLES = [...V7_TABLES, "relay_state"] as const;
+export const TABLES = [...V9_TABLES, "source_kinds", "credit_profiles", "quotes", "quote_lines"] as const;
 /** Tables that exist at a schema version (in creation order, so copy-on-write inserts parents first). */
-export function tablesFor(version: number): readonly string[] { return version >= 9 ? TABLES : version >= 7 ? V7_TABLES : version >= 6 ? V6_TABLES : version >= 5 ? V5_TABLES : version >= 4 ? V4_TABLES : V1_TABLES; }
+export function tablesFor(version: number): readonly string[] { return version >= 10 ? TABLES : version >= 9 ? V9_TABLES : version >= 7 ? V7_TABLES : version >= 6 ? V6_TABLES : version >= 5 ? V5_TABLES : version >= 4 ? V4_TABLES : V1_TABLES; }
 // These are local DuckDB migrations, not Supabase migrations. V1 stays frozen
 // so the committed encrypted compatibility fixture exercises a real upgrade.
 export const V1_SQL = `
@@ -116,7 +117,14 @@ CREATE INDEX sales_lines_product_date ON sales_lines(product_id,sale_date);`;
 // Only inside the encrypted local vault: device private JWKs, epoch keys,
 // authenticated inbox and durable outbox. None of this table goes to the API.
 export const V9_SQL = `CREATE TABLE relay_state(id INTEGER PRIMARY KEY CHECK(id=1), payload VARCHAR NOT NULL);`;
-const STEPS = [V1_SQL, V2_SQL, V3_SQL, V4_SQL, V5_SQL, V6_SQL, V7_SQL, V8_SQL, V9_SQL];
+// V10 (7B). Quote Desk and the AR aging credit signal. source_files keeps its V1 role CHECK (DuckDB
+// cannot rebuild a table other tables reference), so an AR aging file is stored as 'customer_list'
+// with its real kind in source_kinds. A quote line keeps the price, guardrail and cost it was built with.
+export const V10_SQL = `CREATE TABLE source_kinds(source_id VARCHAR PRIMARY KEY, kind VARCHAR NOT NULL CHECK(kind IN ('ar_aging')));
+CREATE TABLE credit_profiles(customer_id VARCHAR PRIMARY KEY, as_of DATE, current_cents BIGINT NOT NULL CHECK(current_cents>=0), d1_30_cents BIGINT NOT NULL CHECK(d1_30_cents>=0), d31_60_cents BIGINT NOT NULL CHECK(d31_60_cents>=0), d61_90_cents BIGINT NOT NULL CHECK(d61_90_cents>=0), d90_plus_cents BIGINT NOT NULL CHECK(d90_plus_cents>=0), credit_limit_cents BIGINT CHECK(credit_limit_cents>=0), dso_days DECIMAL(18,4) CHECK(dso_days>=0), source_id VARCHAR NOT NULL, source_row BIGINT);
+CREATE TABLE quotes(id VARCHAR PRIMARY KEY, number VARCHAR NOT NULL UNIQUE, customer_id VARCHAR NOT NULL, status VARCHAR NOT NULL CHECK(status IN ('draft','submitted','pending','approved','rejected')), created_by VARCHAR NOT NULL, created_at VARCHAR NOT NULL, updated_at VARCHAR NOT NULL, valid_until DATE, exception_reason VARCHAR, decided_by VARCHAR, decided_at VARCHAR, decision_note VARCHAR, relay_object VARCHAR);
+CREATE TABLE quote_lines(quote_id VARCHAR NOT NULL, line_no INTEGER NOT NULL CHECK(line_no>0), product_id VARCHAR NOT NULL, quantity DECIMAL(18,4) NOT NULL CHECK(quantity>0), unit_price_cents BIGINT NOT NULL CHECK(unit_price_cents>=0), book_price_cents BIGINT CHECK(book_price_cents>=0), price_source VARCHAR NOT NULL CHECK(price_source IN ('customer','tier','category','list','none')), start_cents BIGINT, target_cents BIGINT, floor_cents BIGINT, guard_status VARCHAR NOT NULL CHECK(guard_status IN ('green','yellow','red','unset')), cost_cents BIGINT CHECK(cost_cents>=0), PRIMARY KEY(quote_id,line_no));`;
+const STEPS = [V1_SQL, V2_SQL, V3_SQL, V4_SQL, V5_SQL, V6_SQL, V7_SQL, V8_SQL, V9_SQL, V10_SQL];
 function checkVersion(version: number) {
   if (!Number.isInteger(version) || version < 1 || version > SCHEMA_VERSION) throw new Error(msg("vault.schema.unsupportedVaultSchemaVersion"));
 }
