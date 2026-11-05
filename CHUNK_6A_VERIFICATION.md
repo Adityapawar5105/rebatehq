@@ -1,6 +1,6 @@
 # Chunk 6A verification — pilot hardening with real files
 
-5 November 2026. **The first 6A pass is CI-verified** in [RebateHQ CI #68](https://github.com/Adityapawar5105/rebatehq/actions/runs/41905416129) on `50263a5` (unit suite, build and the authenticated privacy gate). **The follow-up below** (the four parked gaps and the near-quota check) passed [CI #69](https://github.com/Adityapawar5105/rebatehq/actions/runs/41960988113) on `549b7fa`. **The 8 GB rerun and the 1M memory fix it led to are local evidence until CI passes on their commit.** No control-plane (Supabase) migration was added, so no Restore Drill is needed. The local vault schema moved to v8.
+5 November 2026. **The first 6A pass is CI-verified** in [RebateHQ CI #68](https://github.com/Adityapawar5105/rebatehq/actions/runs/41905416129) on `50263a5` (unit suite, build and the authenticated privacy gate). **The follow-up below** (the four parked gaps and the near-quota check) passed [CI #69](https://github.com/Adityapawar5105/rebatehq/actions/runs/41960988113) on `549b7fa`. The 1M memory fix found by the 8 GB rerun passed [CI #70](https://github.com/Adityapawar5105/rebatehq/actions/runs/41965284570) on `ce9ada6` (attempt 2; attempt 1 failed only because `tests/chunk3c-restore.test.ts` exited non-zero after all its subtests passed, a PGlite teardown flake that did not reproduce in three local runs). **6A is complete and CI-verified.** Benchmark timings remain local measurements. No control-plane (Supabase) migration was added, so no Restore Drill is needed. The local vault schema moved to v8.
 
 ## What was tested
 
@@ -80,7 +80,7 @@ Run on this laptop by `benchmark:spike` and `benchmark:vault` (`--full`), headle
 - **CI:** the unit suite, build and authenticated privacy gate on the 6A commit.
 - **Real prospect exports** for NetSuite, Prophet 21, Infor CSD, Business Central and QuickBooks.
 - **A headed visual pass and real Supabase sign-in** on the 8 GB laptop.
-- **CI on the commit with the 8 GB results and the 1M memory fix.**
+- **Timings in CI:** the benchmarks run only on this laptop.
 - **A real full disk** (the quota was simulated per origin).
 - **Parked:** credits on item-list cost files keep an unknown cost; freight of orders whose lines all failed is not reloaded from Fix Later. See [PARKING_LOT.md](./PARKING_LOT.md).
 - **Not started:** 6R table retirement and 6B.
