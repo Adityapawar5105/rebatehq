@@ -372,7 +372,7 @@ export class VaultService {
       const approvers = object.approval!.decisions.filter(d => d.decision === "approve").map(d => d.userId);
       if (!approvers.length) throw new VaultError("QUOTE", msg("quote.relayNotApprover"));
       for (const userId of approvers) {
-        if (userId === v.createdBy || !(await roles.accessFor(this.requireEngine(), userId, null)).caps.includes("quoteApprove")) throw new VaultError("QUOTE", msg("quote.relayNotApprover"));
+        if (userId === v.createdBy || !(await roles.assignedCaps(this.requireEngine(), userId)).includes("quoteApprove")) throw new VaultError("QUOTE", msg("quote.relayNotApprover"));
       }
     }
     const sql = await quotes.decideSql(this.requireEngine(), id, status === "approved" ? "approve" : "reject", null, this.identity.userId, new Date().toISOString(), "relay:" + v.relayObject);

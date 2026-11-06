@@ -267,3 +267,15 @@ test("7B exception through the 7A relay: only the quote number and price total a
     await assert.rejects(call(serviceFor(c, "adm"), "quoteShare", { id, preset: "standard" }), code("FORBIDDEN"));
   } finally { c.close(); }
 });
+
+test("7B relay approvers need an explicit role: an empty roles table or an unknown person grants nothing", async () => {
+  const { assignedCaps } = await import("../lib/roles/store");
+  const { c, e } = await vault();
+  try {
+    assert.ok((await assignedCaps(e, "sm")).includes("quoteApprove")); assert.ok(!(await assignedCaps(e, "rep")).includes("quoteApprove"));
+    assert.deepEqual(await assignedCaps(e, "stranger"), []);
+    c.query("DELETE FROM role_assignments"); // a vault from before roles existed: accessFor treats the opener as Owner, this must not
+    assert.deepEqual(await assignedCaps(e, "stranger"), []); assert.deepEqual(await assignedCaps(e, "sm"), []);
+    assert.ok((await assignedCaps(e, "po")).includes("quoteApprove"), "the named Pricing Owner still counts");
+  } finally { c.close(); }
+});

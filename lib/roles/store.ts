@@ -7,7 +7,7 @@ import { sqlText as Q } from "../spike/exact";
 import { VaultError } from "../vault/protocol";
 import { msg } from "../i18n/core";
 import type { Access, Person } from "../vault/protocol";
-import { ROLE_LABEL, capsFor, intersect, isRole, sectionsFor, type RoleId } from "./access";
+import { ROLE_LABEL, capsFor, intersect, isRole, sectionsFor, type Cap, type RoleId } from "./access";
 const rows = async (e: Engine, sql: string): Promise<Record<string, any>[]> => (await e.conn.query(sql)).toArray().map(r => Object.fromEntries(Object.entries(r)));
 const bad = (text: string): never => { throw new VaultError("ROLES", text); };
 export const cleanName = (value: string) => { if (typeof value !== "string" || !value.trim() || value.length > 160 || /[\x00-\x1f]/.test(value)) return bad(msg("err.roles.useANameOf")); return value.trim(); };
@@ -24,6 +24,17 @@ export async function accessFor(e: Engine, userId: string, viewAs: RoleId | null
   if (viewAs && viewAs !== role) caps = intersect(caps, capsFor(viewAs, false));
   const shown = viewAs ?? role;
   return { role: shown, roleLabel: named && !viewAs && role !== "pricing_owner" ? msg("role.withNamedOwner", { role: ROLE_LABEL[shown] }) : ROLE_LABEL[shown], assigned, viewAs, caps, sections: sectionsFor(caps), ownerNamed: owner !== null };
+}
+/**
+ * Capabilities of someone else named in a signed relay decision (7B). Unlike accessFor, this never falls back:
+ * an approver counts only with an explicit role row in this vault, or as the named Pricing Owner. An empty roles
+ * table (a vault from before 5A) or an unknown person grants nothing.
+ */
+export async function assignedCaps(e: Engine, userId: string): Promise<Cap[]> {
+  const mine = (await rows(e, `SELECT role FROM role_assignments WHERE user_id=${Q(userId)}`))[0];
+  const named = (await rows(e, "SELECT owner_id FROM pricing_settings WHERE id=1"))[0]?.owner_id === userId;
+  if (mine && isRole(mine.role)) return capsFor(mine.role, named);
+  return named ? capsFor("pricing_owner", true) : [];
 }
 export async function people(e: Engine, userId: string): Promise<Person[]> {
   return (await rows(e, "SELECT user_id, display_name, role, assigned_at FROM role_assignments ORDER BY display_name, user_id LIMIT 500"))

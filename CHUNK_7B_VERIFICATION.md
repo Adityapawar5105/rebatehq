@@ -63,7 +63,7 @@ A follow-up commit adds the security-review fixes below and the CI time limits (
     - A relay decision is applied only when the shared subject still matches the quote (author, number
       and price total).
     - A relay approval counts only if every approver holds `quoteApprove` in this vault and isn't the
-      quote's author. A relay rejection is always applied.
+      quote's author. Approvers need an explicit role row or must be the named Pricing Owner; there is no fallback. A relay rejection is always applied.
 - **History** and **Approval inbox** tabs. A role without cost or `quoteApprove` sees only its own quotes.
 - **Audit:** `quote.created`, `quote.lines`, `quote.submitted`, `quote.decided` and `quote.linked` entries
   carry IDs, counts and codes only. No prices and no reasons are stored in the audit log.
