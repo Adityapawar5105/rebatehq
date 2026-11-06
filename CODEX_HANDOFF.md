@@ -292,6 +292,10 @@ Chunk 7C (BLUEPRINT_EXECUTION_PLAN.md section 9; blueprint sections 6 Phase 2 an
 7V components. Professional and Scale only, unless the tier table in blueprint section 14 says otherwise (the
 inline grid has a "Basic" Starter version).
 
+Size: this chunk is large. Work in two parts, each committed, pushed and green in CI before the next:
+7C-1 = items 1-5, 7C-2 = items 6-10. Stop after 7C-1 and report; the user starts 7C-2 in a new session with
+Block A and this same prompt, saying "continue with 7C-2".
+
 Scope:
 1. "Why did margin change?" bridge: month-over-month price, volume, mix and cost effects, from sales_lines and
    the 4D pocket-margin engine. The effects must add up exactly to the change in pocket margin (integer cents;
