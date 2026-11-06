@@ -1,7 +1,12 @@
 # Chunk 7B verification — Quote Desk, Price Check and the customer credit signal
 
-6 November 2026. **7B is built and checked locally; it is not CI-verified yet.** The CI run that
-verifies it will be linked here. 7B adds no Supabase migration (the 11 applied migrations and
+6 November 2026. **7B is CI-verified** in [RebateHQ CI #89](https://github.com/Adityapawar5105/rebatehq/actions/runs/42101094326)
+on `f344009`:
+- The authenticated local-vault privacy gate passed, including the new `quotesUi` check.
+- The relay gate passed 11 checks on real authenticated local Supabase.
+
+A follow-up commit adds the security-review fixes below and the CI time limits (CI #87 hung for 6 hours in
+`apt`; see the CI note at the end). Its CI run is linked once it passes. 7B adds no Supabase migration (the 11 applied migrations and
 `migrations.lock` are unchanged). The local vault schema moves from v9 to **v10**.
 
 ## What was built
@@ -52,6 +57,13 @@ verifies it will be linked here. 7B adds no Supabase migration (the 11 applied m
   - Approvers are chosen in the existing 7A inbox, which applies its one- or two-level presets.
   - "Check for a decision" reads the signed 7A decision and settles the local quote (`decided_by` =
     `relay:<object id>`).
+  - **Security-review fixes (after CI #89):**
+    - Editing a quote, or deciding it locally, clears its relay link, so an approval shared for old lines
+      can't settle a changed quote.
+    - A relay decision is applied only when the shared subject still matches the quote (author, number
+      and price total).
+    - A relay approval counts only if every approver holds `quoteApprove` in this vault and isn't the
+      quote's author. A relay rejection is always applied.
 - **History** and **Approval inbox** tabs. A role without cost or `quoteApprove` sees only its own quotes.
 - **Audit:** `quote.created`, `quote.lines`, `quote.submitted`, `quote.decided` and `quote.linked` entries
   carry IDs, counts and codes only. No prices and no reasons are stored in the audit log.
@@ -121,7 +133,7 @@ verifies it will be linked here. 7B adds no Supabase migration (the 11 applied m
 - The 7A relay gate was not rerun locally. 7B does not change the relay code.
 
 ## Not verified
-- **CI:** not run yet. The authenticated privacy gate and the real-Supabase relay gate run in CI only.
+- **CI for the follow-up commit** (security fixes and CI time limits) is pending.
 - **Real relay round trip for a quote exception.** The 7A relay gate shares references through the inbox UI,
   not from Quote Desk. Quote sharing is unit-tested against a stubbed relay, which checks what is sent, the
   author match and the decision mapping. An end-to-end check needs vault data in each relay test vault.
@@ -132,3 +144,17 @@ verifies it will be linked here. 7B adds no Supabase migration (the 11 applied m
 - **Currency:** the relay amount is labelled USD (the vault has no currency column yet, as in 7U).
 - **Competitor log** (listed beside Quote Desk in the tier table) is not part of the 7B plan entry and was not
   built.
+
+## CI note: CI #87 hung for 6 hours (not a code failure)
+[CI #87](https://github.com/Adityapawar5105/rebatehq/actions/runs/42083868801) ran on `c6ebb09`, a docs-only commit
+recording 7U. GitHub cancelled it at the 6-hour job limit.
+- **What hung:** the step log stops inside `pnpm exec playwright install --with-deps chromium`, while `apt` read
+  the Ubuntu package indexes. The `azure.archive.ubuntu.com` mirror stopped answering, and apt has no request
+  timeout by default.
+- **No test ran:** the same code passed in CI #86, and CI #88 and #89 passed afterwards.
+- **Fix** (`.github/workflows/ci.yml`, `restore-drill.yml`):
+  - The CI job has a 45-minute limit (a normal run is about 11 minutes); the Restore Drill job has 90.
+  - The browser install is its own step, limited to 20 minutes. Apt requests time out after 30 s with 3
+    retries, and each install attempt is capped at 6 minutes, with 3 attempts.
+  - The privacy gate step has a 25-minute limit.
+  - `tests/vault.test.ts` fails if these limits are removed.

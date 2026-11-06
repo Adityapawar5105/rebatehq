@@ -1227,6 +1227,8 @@ const worker = {
 } as const;
 
 const patches = {
+  "quote.relayMismatch": "The shared exception no longer matches this quote. Share the quote again.",
+  "quote.relayNotApprover": "This approval came from someone who cannot approve quotes in this vault. Ask an Owner to give the approver a role that approves quotes.",
   "shell.section.quotes": "Quotes",
   "quotes.heading": "Quote Desk",
   "quotes.needsProfessional": "Quote Desk and Price Check are part of the Professional plan.",

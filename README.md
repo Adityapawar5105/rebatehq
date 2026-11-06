@@ -66,7 +66,7 @@ RebateHQ is being moved from a browser-local prototype to a multi-tenant app for
 | 4 | Phase 1 core | 4.0, 4A, 4B, 4C-1/4C-2, 4D, 4E | Implemented; 4E CI-verified in [CI #55](https://github.com/Adityapawar5105/rebatehq/actions/runs/41814159704), `7fe3db8`; performance remains local evidence |
 | 5 | Phase 1b + control plane | 5A cleanup, cost basis, checklist, roles · 5B licences, retire server business-data paths, carried security fixes | **5A CI-verified** in [RebateHQ CI #59](https://github.com/Adityapawar5105/rebatehq/actions/runs/41854329390) on `632b24f`, [CI #60](https://github.com/Adityapawar5105/rebatehq/actions/runs/41855953059) on `7ec683e` (real-export evidence), and [CI #61](https://github.com/Adityapawar5105/rebatehq/actions/runs/41858525178) on `2fbb283` (merge-all and batch undo), 4 November 2026. See [CHUNK_5A_VERIFICATION.md](./CHUNK_5A_VERIFICATION.md). **5B CI-verified** in [CI #65](https://github.com/Adityapawar5105/rebatehq/actions/runs/41883249192) on `38911ee` and [Restore Drill #16](https://github.com/Adityapawar5105/rebatehq/actions/runs/41886437905); see [CHUNK_5B_VERIFICATION.md](./CHUNK_5B_VERIFICATION.md) |
 | 6 | Pilot hardening + security | 6A real files · 6R legacy table retirement (wave 1) · 6B security review and whitepaper → sellable v1 | 6A CI-verified (CI #68, #69, #70); see [CHUNK_6A_VERIFICATION.md](./CHUNK_6A_VERIFICATION.md). 6R CI-verified (CI #73, Restore Drill #18; 22 server tables dropped, 20 remain); see [CHUNK_6R_VERIFICATION.md](./CHUNK_6R_VERIFICATION.md). 6B CI-verified ([CI #75](https://github.com/Adityapawar5105/rebatehq/actions/runs/41989796464) on ade310e; [CI #77](https://github.com/Adityapawar5105/rebatehq/actions/runs/41992372460) on 0aae4aa); see [record](./CHUNK_6B_VERIFICATION.md) |
-| 7 | Phase 2 | 7A, 7U, 7B–7F | 7A CI-verified ([CI #82](https://github.com/Adityapawar5105/rebatehq/actions/runs/42034048481), [Restore Drill #19](https://github.com/Adityapawar5105/rebatehq/actions/runs/42043079490); migration locked). 7U CI-verified ([CI #86](https://github.com/Adityapawar5105/rebatehq/actions/runs/42061581577)). 7B built, local checks passed, CI pending; see [CHUNK_7B_VERIFICATION.md](./CHUNK_7B_VERIFICATION.md). 7C–7F not started |
+| 7 | Phase 2 | 7A, 7U, 7B–7F | 7A CI-verified ([CI #82](https://github.com/Adityapawar5105/rebatehq/actions/runs/42034048481), [Restore Drill #19](https://github.com/Adityapawar5105/rebatehq/actions/runs/42043079490); migration locked). 7U CI-verified ([CI #86](https://github.com/Adityapawar5105/rebatehq/actions/runs/42061581577)). 7B CI-verified ([CI #89](https://github.com/Adityapawar5105/rebatehq/actions/runs/42101094326)); see [CHUNK_7B_VERIFICATION.md](./CHUNK_7B_VERIFICATION.md). 7C–7F not started |
 | 8 | Phase 3 | 8A–8D | Not started |
 
 ## Local app
@@ -201,7 +201,7 @@ Keep `LEGACY_BUSINESS_ENABLED` unset/false. The retired class C/X handlers retur
 After an operator upgrades the workspace licence, an Owner/Admin can choose **Use licensed capacity** in local Settings. It updates only the encrypted vault’s capacity metadata, with a local audit entry; it neither sends rows to the server nor recreates the vault. Lower profiles stay available at setup.
 
 
-### Chunk 7B — Quote Desk, Price Check and customer credit (local checks; CI pending)
+### Chunk 7B — Quote Desk, Price Check and customer credit (CI-verified: CI #89)
 
 A new **Quotes** section (Professional and Scale) has four tabs: **Price Check**, **Quote**, **Approval inbox** and **History**.
 

@@ -222,30 +222,48 @@ test("7B AR aging import: recognised, validated, one profile per customer, and r
   } finally { c.close(); }
 });
 
-test("7B exception through the 7A relay: only the quote number and price total are shared; a signed decision settles the quote", async () => {
+test("7B exception through the 7A relay: only the quote number and price total are shared; a decision counts only from a real approver for the unchanged quote", async () => {
   const { c } = await vault();
   try {
     const rep = serviceFor(c, "rep") as unknown as Record<string, unknown>, sent: unknown[] = [];
-    let approval: { status: string } | null = null;
-    rep.relay = async (request: { action: string; data: { input?: { reference: string } } }) => {
+    let approval: { status: string; decisions: { userId: string; decision: string }[] } | null = null, amountMinor: string | null = null, nextId = 1;
+    rep.relay = async (request: { action: string; data: { input?: { reference: string; amount: string } } }) => {
       sent.push(request);
-      const subject = (sent.find(r => (r as { action: string }).action === "relayShare") as { data: { input: { reference: string } } } | undefined)?.data.input;
-      return { objects: subject ? [{ id: "obj-other", author: "rep2", subject, approval: { status: "approved" } }, { id: "obj-1", author: "rep", subject, approval }] : [] };
+      if (request.action === "relayShare") { amountMinor = String(Math.round(Number(request.data.input!.amount) * 100)); nextId++; }
+      const share = [...sent].reverse().find(r => (r as { action: string }).action === "relayShare") as { data: { input: { reference: string } } } | undefined;
+      const subject = share ? { ...share.data.input, amountMinor } : null;
+      return { objects: subject ? [{ id: "obj-other", author: "rep2", subject, approval: { status: "approved", decisions: [{ userId: "sm", decision: "approve" }] } }, { id: `obj-${nextId - 1}`, author: "rep", subject, approval }] : [] };
     };
-    const s = rep as unknown as VaultService;
+    const s = rep as unknown as VaultService, po = serviceFor(c, "po");
     const id = (await call(s, "quoteCreate", { customerId: "C1" }) as { id: string }).id;
     await call(s, "quoteLines", { id, lines: [{ productId: "P1", quantity: "3", unitCents: "7000" }] });
     await assert.rejects(call(s, "quoteShare", { id, preset: "standard" }), code("QUOTE")); // a draft is not an exception yet
     await call(s, "quoteSubmit", { id, reason: "Competitor" });
-    const shared = await call(s, "quoteShare", { id, preset: "standard" }) as Record<string, string>;
+    let shared = await call(s, "quoteShare", { id, preset: "standard" }) as Record<string, string>;
     assert.equal(shared.relayObject, "obj-1", "the rep's own shared object is linked, not another member's with the same number");
     const input = (sent[0] as { data: { input: Record<string, string> } }).data.input;
     assert.deepEqual({ ...input, title: plainText(input.title) }, { objectKind: "quote", title: `Price exception for quote ${shared.number}`, reference: shared.number, amount: "210.00", currency: "USD", preset: "standard" });
     assert.deepEqual(leaks(sent), [], "no cost or margin goes to the relay");
     assert.equal((await call(s, "quoteRelaySync", { id }) as Record<string, string>).status, "pending"); // not decided yet
-    approval = { status: "approved" };
+    // An approval from someone without quoteApprove in this vault, or from the author, is refused.
+    approval = { status: "approved", decisions: [{ userId: "rep2", decision: "approve" }] };
+    await assert.rejects(call(s, "quoteRelaySync", { id }), code("QUOTE"));
+    approval = { status: "approved", decisions: [{ userId: "rep", decision: "approve" }] };
+    await assert.rejects(call(s, "quoteRelaySync", { id }), code("QUOTE"));
+    // A stale approval: rejected locally, edited to a lower price and resubmitted. The old link is gone.
+    await call(po, "quoteDecide", { id, decision: "reject", note: null });
+    const edited = await call(s, "quoteLines", { id, lines: [{ productId: "P1", quantity: "3", unitCents: "6000" }] }) as Record<string, string | null>;
+    assert.equal(edited.relayObject, null, "editing clears the link to the old shared exception");
+    await call(s, "quoteSubmit", { id, reason: "Competitor" });
+    approval = { status: "approved", decisions: [{ userId: "sm", decision: "approve" }] };
+    assert.equal((await call(s, "quoteRelaySync", { id }) as Record<string, string>).status, "pending", "an unlinked quote ignores relay approvals");
+    shared = await call(s, "quoteShare", { id, preset: "standard" }) as Record<string, string>;
+    assert.equal(shared.relayObject, "obj-2");
+    amountMinor = "21000"; // the shared subject no longer matches the quote total (18000)
+    await assert.rejects(call(s, "quoteRelaySync", { id }), code("QUOTE"));
+    amountMinor = "18000";
     const done = await call(s, "quoteRelaySync", { id }) as Record<string, string>;
-    assert.equal(done.status, "approved"); assert.equal(done.decidedBy, "relay:obj-1");
+    assert.equal(done.status, "approved"); assert.equal(done.decidedBy, "relay:obj-2");
     await assert.rejects(call(serviceFor(c, "adm"), "quoteShare", { id, preset: "standard" }), code("FORBIDDEN"));
   } finally { c.close(); }
 });

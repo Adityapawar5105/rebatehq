@@ -113,7 +113,7 @@ export async function linesSql(e: Engine, id: string, lines: LineInput[], userId
     values.push(`(${Q(id)},${i + 1},${Q(point.productId)},${qty},${unit},${n(point.bookCents)},${Q(point.source)},${n(point.startCents)},${n(point.targetCents)},${n(point.floorCents)},${Q(guard)},${n(cost)})`);
   }
   return `DELETE FROM quote_lines WHERE quote_id=${Q(id)};${values.length ? `INSERT INTO quote_lines VALUES ${values.join(",")};` : ""}
-UPDATE quotes SET status='draft', updated_at=${Q(at)}, decided_by=NULL, decided_at=NULL, decision_note=NULL WHERE id=${Q(id)};`;
+UPDATE quotes SET status='draft', updated_at=${Q(at)}, decided_by=NULL, decided_at=NULL, decision_note=NULL, relay_object=NULL WHERE id=${Q(id)};`; // a changed quote never inherits an approval shared for its old lines
 }
 
 /** Submit: a line below its floor needs an exception reason and the Pricing Owner's approval; below target is a soft warning. */
@@ -139,7 +139,7 @@ export async function decideSql(e: Engine, id: string, decision: "approve" | "re
   if (decision !== "approve" && decision !== "reject") bad("quote.decisionInvalid");
   const text = (note ?? "").trim();
   if (text.length > 500 || /[\x00-\x08\x0b-\x1f]/.test(text)) bad("quote.reasonInvalid");
-  return `UPDATE quotes SET status=${Q(decision === "approve" ? "approved" : "rejected")}, decided_by=${Q(via ?? userId)}, decided_at=${Q(at)}, decision_note=${text ? Q(text) : "NULL"}, updated_at=${Q(at)} WHERE id=${Q(id)};`;
+  return `UPDATE quotes SET status=${Q(decision === "approve" ? "approved" : "rejected")}, decided_by=${Q(via ?? userId)}, decided_at=${Q(at)}, decision_note=${text ? Q(text) : "NULL"}, updated_at=${Q(at)}${via === null ? ", relay_object=NULL" : ""} WHERE id=${Q(id)};`;
 }
 
 export async function linkSql(e: Engine, id: string, relayObject: string, at: string) {

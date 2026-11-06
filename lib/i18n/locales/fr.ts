@@ -3,6 +3,8 @@
 import type { Catalog } from "../core";
 
 export const fr: Catalog = {
+  "quote.relayMismatch": "L'exception partagée ne correspond plus à ce devis. Partagez le devis à nouveau.",
+  "quote.relayNotApprover": "Cette approbation vient d'une personne qui ne peut pas approuver de devis dans ce coffre. Demandez à un Propriétaire de donner à l'approbateur un rôle qui approuve les devis.",
   "shell.section.quotes": "Devis",
   "quotes.heading": "Quote Desk",
   "quotes.needsProfessional": "Quote Desk et la Vérification de prix font partie du forfait Professional.",

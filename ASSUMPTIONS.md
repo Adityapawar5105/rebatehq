@@ -505,3 +505,4 @@ chunk. This chunk makes no blueprint changes and does not commit those edits.
 - **Rep quote scope:** a role without cost and without `quoteApprove` sees only the quotes it created.
 - **Relay amount currency is USD,** as in 7U (no currency column yet). Only the quote number, title and price total go to the relay.
 - **Price Check credit:** shown only when a customer is entered; without a customer the signal is "unknown".
+- **Relay decisions on a quote** (security-review follow-up): an approval from the 7A relay counts only if every approver holds `quoteApprove` in the rep's vault and isn't the quote's author. The shared number and price total must still match the quote. Editing a quote or deciding it locally clears its relay link. An approver missing from the rep's local team roles is treated as a Sales Rep, so the Owner adds them under Settings → Roles first.

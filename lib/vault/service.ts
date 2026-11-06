@@ -355,13 +355,26 @@ export class VaultService {
     await this.write("quote.linked", { quote_id: id }, async w => { await w.conn.query(sql); });
     return this.quoteView(id);
   }
-  /** Apply a signed 7A decision (verified by the relay session) to the local quote. */
+  /**
+   * Apply a signed 7A decision (verified by the relay session) to the local quote. The shared subject must still
+   * match the quote (number and price total), and an approval counts only when every approver holds quoteApprove
+   * in this vault and is not the quote's author. A rejection is always applied (it only makes the quote stricter).
+   */
   async quoteRelaySync(id: string, signal: AbortSignal) {
     this.quoteTier(); await this.guard("collaborate"); const v = await this.ownQuote(id);
-    if (!v.relayObject || v.status !== "pending") return v;
-    const view = await this.relay({ id: "quote", action: "relaySync", data: {} } as never, signal) as { objects?: { id: string; approval?: { status: string } }[] };
-    const status = view.objects?.find(o => o.id === v.relayObject)?.approval?.status;
-    if (status !== "approved" && status !== "rejected") return v;
+    if (!v.relayObject || v.status !== "pending" || !v.mine) return v;
+    const view = await this.relay({ id: "quote", action: "relaySync", data: {} } as never, signal) as { objects?: { id: string; author: string; subject: { reference: string; amountMinor: string }; approval?: { status: string; decisions: { userId: string; decision: string }[] } | null }[] };
+    const object = view.objects?.find(o => o.id === v.relayObject);
+    const status = object?.approval?.status;
+    if (!object || (status !== "approved" && status !== "rejected")) return v;
+    if (object.author !== this.identity.userId || object.subject.reference !== v.number || String(object.subject.amountMinor) !== v.totalCents) throw new VaultError("QUOTE", msg("quote.relayMismatch"));
+    if (status === "approved") {
+      const approvers = object.approval!.decisions.filter(d => d.decision === "approve").map(d => d.userId);
+      if (!approvers.length) throw new VaultError("QUOTE", msg("quote.relayNotApprover"));
+      for (const userId of approvers) {
+        if (userId === v.createdBy || !(await roles.accessFor(this.requireEngine(), userId, null)).caps.includes("quoteApprove")) throw new VaultError("QUOTE", msg("quote.relayNotApprover"));
+      }
+    }
     const sql = await quotes.decideSql(this.requireEngine(), id, status === "approved" ? "approve" : "reject", null, this.identity.userId, new Date().toISOString(), "relay:" + v.relayObject);
     await this.write("quote.decided", { quote_id: id, decision: status, via: "relay" }, async w => { await w.conn.query(sql); });
     return this.quoteView(id);

@@ -3,6 +3,8 @@
 import type { Catalog } from "../core";
 
 export const es: Catalog = {
+  "quote.relayMismatch": "La excepción compartida ya no coincide con esta cotización. Compártala de nuevo.",
+  "quote.relayNotApprover": "Esta aprobación proviene de alguien que no puede aprobar cotizaciones en este almacén. Pida a un Propietario que asigne al aprobador un rol que apruebe cotizaciones.",
   "shell.section.quotes": "Cotizaciones",
   "quotes.heading": "Quote Desk",
   "quotes.needsProfessional": "Quote Desk y la Consulta de precios forman parte del plan Professional.",
