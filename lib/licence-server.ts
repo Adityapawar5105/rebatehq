@@ -8,6 +8,17 @@ export function signLicence(claims: LicenceClaims): LicenceEnvelope {
   const payload = JSON.stringify(claims);
   return { payload, signature: sign(null, Buffer.from(payload), createPrivateKey({ key: Buffer.from(secret,'base64'), format: 'der', type: 'pkcs8' })).toString('base64') };
 }
+/** The lab harness scope (app/lab/vault). Real users and workspaces have Supabase UUIDs, so this never matches one. */
+export const LAB_SCOPE = { userId: 'synthetic-lab-user', tenantId: 'synthetic-lab-workspace' } as const;
+/**
+ * A short-lived Scale licence for the synthetic lab vault only, used when VAULT_LAB_ENABLED=true and nobody is
+ * signed in. The licence is bound to the lab user, workspace and device, so it cannot unlock a real vault.
+ */
+export function labAssertion(device: string): LicenceEnvelope {
+  if (process.env.VAULT_LAB_ENABLED !== 'true') throw Error('The lab harness is disabled.');
+  const issued = Math.floor(Date.now() / 1000);
+  return signLicence({ v: 1, sub: LAB_SCOPE.userId, workspace: LAB_SCOPE.tenantId, device, tier: 'scale', state: 'active', issued, expires: issued + ASSERTION_SECONDS, offlineUntil: issued + OFFLINE_GRACE_SECONDS, reason: '' });
+}
 export async function workspaceAssertion(db: PoolClient, ctx: AppContext, device: string) {
   const l = (await db.query("SELECT tier,status,valid_until FROM workspace_licence WHERE tenant_id=$1::uuid",[ctx.tenantId])).rows[0];
   const seat = (await db.query("SELECT 1 FROM licence_seat WHERE tenant_id=$1::uuid AND user_id=$2::uuid",[ctx.tenantId,ctx.userId])).rowCount;

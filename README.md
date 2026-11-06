@@ -71,6 +71,14 @@ RebateHQ is being moved from a browser-local prototype to a multi-tenant app for
 
 ## Local app
 
+**Running it on this machine without Supabase (lab mode).** Without a Supabase project, pages that need sign-in fail with "Supabase Auth is not configured".
+
+1. Put `VAULT_LAB_ENABLED=true` and a fresh key set from `generateKeys()` in `scripts/control-plane-keys.mjs` in a git-ignored `.env.local`.
+2. Run `node scripts/build-spike.mjs` with those variables loaded, because the vault worker embeds the licence verify key at build time.
+3. Start `next dev`.
+
+`/` then opens `/lab/vault`. That is the real local vault with a synthetic user and workspace, and a short-lived Scale licence that `/api/licence` issues only in lab mode with nobody signed in. Sign-in, workspaces and the relay need Supabase: add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (see `.env.example`).
+
 Requirements: Node.js 20.9 or newer, pnpm 10, and Docker for local Supabase database tests.
 
 ```powershell
