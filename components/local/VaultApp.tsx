@@ -61,7 +61,7 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
     const touch = () => { if (Date.now() - lastActivity > 5000) { lastActivity = Date.now(); void c.call("touch", {}).catch(() => undefined); } };
     const leaving = () => { void c.call("lock", {}).catch(() => undefined); };
     window.addEventListener("pointerdown", touch); window.addEventListener("keydown", touch); window.addEventListener("pagehide", leaving);
-    const hash = () => { const value = location.hash.slice(1); const match = sections.find(s => sectionHash(s) === value); if (match) setSection(match); };
+    const hash = () => { const raw = location.hash.slice(1); const value=raw.startsWith('pricing-')?'pricing':raw.startsWith('margin-')?'margin':raw; const match = sections.find(s => sectionHash(s) === value); if (match) setSection(match); };
     hash(); window.addEventListener("hashchange", hash);
     return () => { active = false; window.removeEventListener("pointerdown", touch); window.removeEventListener("keydown", touch); window.removeEventListener("pagehide", leaving); window.removeEventListener("hashchange", hash); c.close(); client.current = null; };
   }, [scope.userId, scope.tenantId]);
@@ -161,7 +161,7 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
             </details>
           </>}
           {shown === "Margin" && client.current && <MarginView client={client.current} status={status} busy={busy} operation={operation} setMessage={setMessage} onStatus={setStatus}/>}
-          {shown === "Pricing" && client.current && <PricingView client={client.current} userId={scope.userId} caps={caps} busy={busy} operation={operation} refresh={async()=>setStatus(await client.current!.call("status",{}))}/>}
+          {shown === "Pricing" && client.current && <PricingView tier={status.licence?.tier??'starter'} client={client.current} userId={scope.userId} caps={caps} busy={busy} operation={operation} refresh={async()=>setStatus(await client.current!.call("status",{}))}/>}
           {shown === "Quotes" && client.current && <QuotesView client={client.current} userId={scope.userId} caps={caps} tier={status.licence?.tier} busy={busy} operation={operation}/>}
           {shown === "Reports" && caps.includes("cost") && client.current && <Card headingId="report-card-heading" title={t("shell.report.heading")} description={t("shell.report.body")}><LeakReportButton client={client.current} busy={busy || status.lines === "0"} operation={operation} setMessage={setMessage} onStatus={setStatus}/></Card>}
           {shown === "Reports" && caps.includes("audit") && <Card headingId="audit-heading" title={t("shell.audit.heading")} description={t("shell.audit.body", { entries: Number(status.auditEntries), version: status.schemaVersion })}><Button variant="primary" icon="shield" disabled={busy} onClick={() => void operation(async () => { const result = await client.current!.call("verify", {}); if (!result.valid) throw new Error(msg("shell.audit.failed")); setMessage(msg("shell.audit.verified", { entries: Number(result.entries) })); })}>{t("shell.audit.button")}</Button><p className={styles.muted}>{t("shell.audit.note")}</p></Card>}

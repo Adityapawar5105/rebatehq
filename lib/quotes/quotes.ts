@@ -1,3 +1,4 @@
+import {matrixLookup} from '../pricing/book';
 // Quote Desk and Price Check (chunk 7B). Runs in the vault worker against the local DuckDB.
 // Prices are whole cents per unit; quantities are decimals; totals are exact integer cents.
 // Decision 16: the views below carry cost and margin ONLY when the caller passes withCost
@@ -56,12 +57,8 @@ export async function pricePoint(e: Engine, productId: string, customerId: strin
   const tier = String(c?.tier ?? ""), cat = String(p.category ?? "");
   // Most specific valid row wins: the customer's own price, then the tier, then a category-wide price;
   // a product row beats a category row; the highest quantity break at or below the quantity; the newest start.
-  const m = (await rows(e, `SELECT price::VARCHAR AS price, qty_break::VARCHAR AS qb, customer_id, tier, product_id FROM price_matrix
-WHERE (product_id=${Q(productId)} OR (product_id IS NULL AND category=${Q(cat)}))
- AND (customer_id IS NULL OR customer_id=${customerId === null ? "NULL" : Q(customerId)})
- AND (customer_id IS NOT NULL OR tier IS NULL OR tier='' OR tier=${Q(tier)})
- AND valid_from<=DATE ${Q(date)} AND (valid_to IS NULL OR valid_to>DATE ${Q(date)}) AND qty_break<=${quantity}
-ORDER BY (customer_id IS NOT NULL) DESC, (coalesce(tier,'')<>'') DESC, (product_id IS NOT NULL) DESC, qty_break DESC, valid_from DESC LIMIT 1`))[0];
+  const found = (await rows(e,matrixLookup({product:Q(productId),category:Q(cat),customer:customerId===null?'NULL':Q(customerId),tier:Q(tier),quantity,date:'DATE '+Q(date)})))[0];
+  const m:Record<string,unknown>|null=found?{...found,price:String(found.price),qb:String(found.qty_break)}:null;
   const source: PriceSource = m ? m.customer_id !== null ? "customer" : m.product_id === null ? "category" : "tier" : p.list !== null ? "list" : "none";
   const book = m ? String(m.price) : str(p.list);
   const g = (await rows(e, `SELECT start::VARCHAR AS s, target::VARCHAR AS t, floor::VARCHAR AS f FROM price_guardrails WHERE tier=${Q(tier)} AND category=${Q(cat)}`))[0];

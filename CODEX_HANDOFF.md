@@ -548,3 +548,24 @@ Steps:
 
 Write CHUNK_8R_VERIFICATION.md. After 8R, every chunk except 9A is done. 9A waits for the user's explicit prompt.
 ```
+
+
+## Chunk 7C-1 implementation handoff (7 November 2026; CI pending)
+
+Items 1–5 only are implemented; see CHUNK_7C_VERIFICATION.md. The local vault is
+v11 (37 tables), including price_changesets and price_changeset_rows. Part 2 is
+not started. No Supabase migration or migrations.lock change.
+
+Additional Block B pitfalls found:
+- Keep "use client" first when adding imports to a client component; tsc alone does
+  not reject a misplaced directive, but the production Next build does.
+- Shared DataTable labels must name the table as well as its scroll region.
+- Use distinct subtab hashes (pricing-planner, margin-bridge, etc.); shell #pricing
+  and #margin links must stay unique. Normalize subtab hashes in VaultApp.
+- Planner/reversal metadata must preserve matrix_tier independently of the guardrail
+  tier, or a NULL-tier customer contract can override its existing quantity breaks.
+- The local test runner binds 127.0.0.1:3100; use that exact address. On this machine
+  localhost reached a separate stale listener and returned missing build assets.
+- On an 8 GB machine, do not run the JS suite, TS suite and production build together.
+  Their embedded databases can exhaust memory. --test-concurrency=1 changes scheduling,
+  not assertions; CI retains its existing commands.

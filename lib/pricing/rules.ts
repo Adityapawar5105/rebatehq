@@ -25,7 +25,7 @@ export async function pricingState(e: Engine) {
   const settings = (await rows(e, "SELECT * FROM pricing_settings WHERE id=1"))[0];
   return { owner: settings ? { id: String(settings.owner_id), name: String(settings.owner_name), backupDays: Number(settings.backup_days) } : null,
     guards: (await rows(e, 'SELECT tier,category,start::VARCHAR AS start,target::VARCHAR AS target,floor::VARCHAR AS floor FROM price_guardrails WHERE tier IS NOT NULL ORDER BY tier,category')).map(r => r as GuardInput),
-    rules: await rows(e, "SELECT r.id,r.name,r.definition,max(v.version)::INTEGER AS version FROM rules r JOIN rule_revisions v ON v.rule_id=r.id GROUP BY r.id,r.name,r.definition ORDER BY r.name"),
+    rules: await rows(e, "SELECT r.id,r.name,r.definition,max(v.version)::INTEGER AS version FROM rules r JOIN rule_revisions v ON v.rule_id=r.id WHERE r.id NOT LIKE 'ops-%' GROUP BY r.id,r.name,r.definition ORDER BY r.name"),
     runs: await rows(e, "SELECT id,rule_id,status,affected_rows::VARCHAR AS affected,run_date FROM rule_runs ORDER BY run_date DESC LIMIT 50") };
 }
 export async function owner(e: Engine, actor: string) { const s = (await rows(e,"SELECT owner_id FROM pricing_settings WHERE id=1"))[0]; if (!s || s.owner_id !== actor) bad(msg("rules.onlyTheNamedPricing")); }
@@ -68,7 +68,7 @@ export async function preview(e: Engine, id: string, offset = 0): Promise<Previe
   const margin = (p: string,c: string|null) => lineFromCents({list:BigInt(p),cost:c===null?null:BigInt(c),discount:BigInt(0),rebate:BigInt(0),freight:BigInt(0)}).margin;
   return { id,status:r.status,explanation:r.explanation,count:c.n,impact:c.impact,red:c.red,offset,ms:0,rows:page.map(p=>({ product:p.product_id,tier:p.tier,before:p.b,after:p.a,cost:p.c,quantity:p.q,impact:p.i,guard:p.g,beforeMargin:p.c===null?null:String(margin(p.b,p.c)),afterMargin:p.c===null?null:String(margin(p.a,p.c)) })) };
 }
-export async function approveSql(e: Engine, id: string, actor: string) {
+export async function approveSql(e: Engine, id: string, actor: string, matrixOverride?:string) {
   await owner(e,actor);
   const r = (await rows(e,`SELECT r.*,m.pricing_revision AS revision,(SELECT max(version) FROM rule_revisions WHERE rule_id=r.rule_id) AS latest FROM rule_runs r CROSS JOIN vault_meta m WHERE r.id=${Q(id)}`))[0];
   if (!r || r.status!=='preview') return bad(msg("rules.onlyAnUnapprovedPreview"));
@@ -76,18 +76,20 @@ export async function approveSql(e: Engine, id: string, actor: string) {
   if (String(r.run_date).slice(0,10)!==new Date().toISOString().slice(0,10)) return bad(msg("rules.thePreviewDateChanged"));
   const p = await preview(e,id); if (p.count==='0') return bad(msg("rules.noPricesChangedAdjust")); if (p.red!=='0') return bad(msg("rules.redAProposedPrice"));
   return `INSERT INTO price_versions VALUES(${Q(crypto.randomUUID())},${Q(id)},${Q(actor)},${Q(JSON.stringify({rows:p.count,impact:p.impact,rule:r.rule_id,version:Number(r.rule_version)}))},${Q(new Date().toISOString())});
-UPDATE price_matrix SET valid_to=${today()} WHERE customer_id IS NULL AND qty_break=0 AND valid_from<${today()} AND (valid_to IS NULL OR valid_to>${today()}) AND (product_id,coalesce(tier,'')) IN (SELECT product_id,tier FROM rule_changes WHERE run_id=${Q(id)});
+${matrixOverride ?? `UPDATE price_matrix SET valid_to=${today()} WHERE customer_id IS NULL AND qty_break=0 AND valid_from<${today()} AND (valid_to IS NULL OR valid_to>${today()}) AND (product_id,coalesce(tier,'')) IN (SELECT product_id,tier FROM rule_changes WHERE run_id=${Q(id)});
 DELETE FROM price_matrix WHERE customer_id IS NULL AND qty_break=0 AND valid_from=${today()} AND (product_id,coalesce(tier,'')) IN (SELECT product_id,tier FROM rule_changes WHERE run_id=${Q(id)});
 INSERT INTO price_matrix(id,product_id,tier,price,valid_from,valid_to) SELECT ${Q(id)}||':'||row_number() OVER(ORDER BY product_id,tier),product_id,tier,after_cents,${today()},NULL FROM rule_changes WHERE run_id=${Q(id)};
+`}
 UPDATE rule_runs SET status='approved',approved_by=${Q(actor)} WHERE id=${Q(id)}; UPDATE vault_meta SET pricing_revision=pricing_revision+1 WHERE id=1;`;
 }
 export const EXPORT_LAYOUTS: Record<ErpProfile,string[]> = { generic:['product_id','tier','price','effective_from'],netsuite:['Item','Price Level','Unit Price','Effective Date'],p21:['Item ID','Pricing Library','Price','Effective Date'],infor:['Item','Price Type','Sales Price','Effective Date'],bc:['Product No.','Source No.','Unit Price','Starting Date'],quickbooks:['Item','Price Level','Custom Price','Effective Date'] };
-export async function exportPrices(e: Engine, id: string, profile: ErpProfile, format: 'csv'|'xlsx') {
+export async function exportPrices(e: Engine, id: string, profile: ErpProfile, format: 'csv'|'xlsx', customerId?:string) {
   if (!EXPORT_LAYOUTS[profile] || !['csv','xlsx'].includes(format)) return bad(msg("rules.chooseASupportedErp"));
   const run = (await rows(e,`SELECT status,run_date,approved_by FROM rule_runs WHERE id=${Q(id)}`))[0]; if (!run || !['approved','exported'].includes(run.status)) return bad(msg("rules.thePricingOwnerMust"));
+  if(customerId&&profile!=='generic')return bad(msg('ops.customerExport'));
   const data = await rows(e,`SELECT product_id,tier,before_cents::VARCHAR AS b,after_cents::VARCHAR AS a,guard_status FROM rule_changes WHERE run_id=${Q(id)} ORDER BY product_id,tier`);
   const clean = (v: unknown) => csvSafeCell(String(v));
-  const table = [EXPORT_LAYOUTS[profile],...data.map(r=>[r.product_id,r.tier,centsText(BigInt(r.a)),run.run_date.slice(0,10)].map(clean))];
+  const table = [[...EXPORT_LAYOUTS[profile],...(customerId?['customer_id']:[])],...data.map(r=>[r.product_id,r.tier,centsText(BigInt(r.a)),run.run_date.slice(0,10),...(customerId?[customerId]:[])].map(clean))];
   const csv = (t:string[][])=>t.map(r=>r.map(v=>'"'+v.replaceAll('"','""')+'"').join(',')).join('\r\n');
   let blob: Blob;
   if(format==='xlsx'){const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(table),'Prices');blob=new Blob([XLSX.write(wb,{type:'array',bookType:'xlsx'})],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});}

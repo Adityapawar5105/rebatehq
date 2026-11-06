@@ -1,3 +1,5 @@
+import type {BridgeInput} from "../margin/bridge";
+import type {PlanInput,ExceptionInput} from "../pricing/ops";
 import type { VaultService } from './service';
 import type { RuleInput, GuardInput } from '../pricing/rules';
 import type { Role, Settings } from "../studio/formats";
@@ -45,6 +47,13 @@ export type CleanupUndone = { summary: string; restored: string; skipped: string
 export type StorageStatus = { persistent: boolean; usage: string; quota: string; namedOpfsBytes: string; files: string };
 export type ImportEstimate = { bytes: string; estimatedMemoryBytes: string; maxLines: string; maxProducts: string; warning: string };
 export type Commands = {
+  marginBridge:{input?:BridgeInput};
+  priceOpsState:Record<string,never>;
+  priceExceptions:{input?:ExceptionInput};
+  priceExpiry:{days:number;asOf?:string;offset?:number};
+  pricePlan:{input:PlanInput};
+  priceRollback:{version:string};
+  priceLetter:{id:string;locale:import("../i18n/core").Locale};
   relayView:Record<string,never>;relayRegister:Record<string,never>;relayJoin:{fingerprint:string};relayRotate:{confirmations:{deviceId:string;fingerprint:string}[]};relaySync:Record<string,never>;
   relayShare:{input:Omit<ShareInput,'amountMinor'>&{amount:string}};relayRequest:{id:string;approvers:string[]};relayDecide:{id:string;decision:'approve'|'reject'};relayComment:{id:string;text:string;mentions:string[]};relayRetry:Record<string,never>;relayDiscard:Record<string,never>;
   home: Record<string, never>;
@@ -130,6 +139,13 @@ export type Commands = {
 export type LeaksView = { result: LeakResult; roi: RoiSummary; sample: boolean; recorded: number };
 export type CommitResult = { loaded: string; rejected: string; files: string; cleanup: boolean };
 export type Results = {
+  marginBridge:Awaited<ReturnType<VaultService["marginBridge"]>>;
+  priceOpsState:Awaited<ReturnType<VaultService["priceOpsState"]>>;
+  priceExceptions:Awaited<ReturnType<VaultService["priceExceptions"]>>;
+  priceExpiry:Awaited<ReturnType<VaultService["priceExpiry"]>>;
+  pricePlan:Awaited<ReturnType<VaultService["pricePlan"]>>;
+  priceRollback:Awaited<ReturnType<VaultService["priceRollback"]>>;
+  priceLetter:Awaited<ReturnType<VaultService["priceLetter"]>>;
   relayView:RelayView;relayRegister:RelayView;relayJoin:RelayView;relayRotate:RelayView;relaySync:RelayView;relayShare:RelayView;relayRequest:RelayView;relayDecide:RelayView;relayComment:RelayView;relayRetry:RelayView;relayDiscard:RelayView;
   capacityUpgrade: VaultStatus;
   licenceSet: VaultStatus;

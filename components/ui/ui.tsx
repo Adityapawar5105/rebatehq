@@ -68,7 +68,7 @@ export function Field({ label, hint, error, children, className }: { label: Reac
 }
 
 export function DataTable({ caption, children, label }: { caption?: ReactNode; label?: string; children: ReactNode }) {
-  return <div className={s.tableWrap} role={label ? "region" : undefined} aria-label={label} tabIndex={label ? 0 : undefined}><table className={s.table}>{caption && <caption>{caption}</caption>}{children}</table></div>;
+  return <div className={s.tableWrap} role={label ? "region" : undefined} aria-label={label} tabIndex={label ? 0 : undefined}><table className={s.table} aria-label={label}>{caption && <caption>{caption}</caption>}{children}</table></div>;
 }
 export const numCell = s.num;
 
@@ -90,8 +90,8 @@ export function Meter({ value, max, label, detail }: { value: number; max: numbe
 }
 
 /** Section tabs that are links (hash or route), so each view keeps its own URL. */
-export function SectionTabs({ items, current, label, onSelect }: { items: { id: string; label: ReactNode; href: string; icon?: IconName }[]; current: string; label: string; onSelect?: (id: string) => void }) {
-  return <nav className={s.tabs} aria-label={label}>{items.map(i => <a key={i.id} href={i.href} className={s.tab} aria-current={i.id === current ? "page" : undefined} onClick={() => onSelect?.(i.id)}>{i.icon && <Icon name={i.icon} size={16}/>}{i.label}</a>)}</nav>;
+export function SectionTabs({ items, current, label, onSelect }: { items: { id: string; label: ReactNode; href: string; icon?: IconName;testId?:string }[]; current: string; label: string; onSelect?: (id: string) => void }) {
+  return <nav className={s.tabs} aria-label={label}>{items.map(i => <a key={i.id} href={i.href} data-testid={i.testId} className={s.tab} aria-current={i.id === current ? "page" : undefined} onClick={() => onSelect?.(i.id)}>{i.icon && <Icon name={i.icon} size={16}/>}{i.label}</a>)}</nav>;
 }
 
 /** "On this page" bar: scrolls to a card heading without changing the section in the URL. */

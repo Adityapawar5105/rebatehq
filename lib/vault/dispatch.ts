@@ -29,6 +29,13 @@ export async function dispatch(service: VaultService, request: Request, hooks: H
     case "cleanupUndoMany": return service.cleanupUndoMany(request.data.ids);
     case "costBasis": return service.costBasis();
     case "costBasisSet": return service.costBasisSet(request.data.group, request.data.basis);
+    case "marginBridge": return service.marginBridge(request.data.input);
+    case "priceOpsState": return service.priceOpsState();
+    case "priceExceptions": return service.priceExceptions(request.data.input);
+    case "priceExpiry": return service.priceExpiry(request.data.days,request.data.asOf,request.data.offset);
+    case "pricePlan": return service.pricePlan(request.data.input);
+    case "priceRollback": return service.priceRollback(request.data.version);
+    case "priceLetter": return service.priceLetter(request.data.id,request.data.locale);
     case "pricingState": return service.pricingState();
     case "pricingOwner": return service.pricingOwner(request.data.name, request.data.userId, request.data.backupDays);
     case "guardSet": return service.guardSet(request.data.input);

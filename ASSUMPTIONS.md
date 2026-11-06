@@ -506,3 +506,71 @@ chunk. This chunk makes no blueprint changes and does not commit those edits.
 - **Relay amount currency is USD,** as in 7U (no currency column yet). Only the quote number, title and price total go to the relay.
 - **Price Check credit:** shown only when a customer is entered; without a customer the signal is "unknown".
 - **Relay decisions on a quote** (security-review follow-up): an approval from the 7A relay counts only if every approver holds `quoteApprove` in the rep's vault and isn't the quote's author. The shared number and price total must still match the quote. Editing a quote or deciding it locally clears its relay link. An approver counts only with an explicit role in the rep's vault (Settings → Roles) or as the named Pricing Owner. An unknown person, or a vault with no roles yet, grants nothing, and the "whoever opens it is Owner" fallback for pre-5A vaults never applies to relay approvers.
+
+
+## Chunk 7C-1 — pricing operations (7 November 2026; CI unverified)
+
+- Scope is items 1–5 only. No competitor log, editable grid, sliders, extra leak
+  types or landed check (7C-2) is started. The Playground manifest is unchanged.
+- All new reads/writes and text generation run in the existing vault worker.
+  No server route, Supabase SQL, migration or migrations.lock changes. Local v11
+  adds price_changesets and price_changeset_rows (37 local tables); v1–v10
+  definitions stay immutable and old encrypted snapshots migrate forward.
+- Bridge method: group by product/customer/current customer branch, for the
+  chosen month and the preceding calendar month. On costed lines, including
+  signed credits, let q be net quantity in integer ten-thousandths, p net pocket
+  cents (list minus discount, rebate and freight), and c invoice cost cents.
+  Unknown-cost lines are excluded and counted; no zero cost is assumed.
+  For cells with q0>0 and q1>0: price=RHA((p1*q0-q1*p0)/q0);
+  cost=RHA((q1*c0-c1*q0)/q0). Otherwise those two effects are zero.
+  With Q=sum(q), volume=RHA((Q1-Q0)*(p0-c0)/Q0), or zero if Q0<=0.
+  Mix=(p1-c1)-(p0-c0)-price-cost-volume. RHA is half away from zero
+  per cell. Totals and all drills sum those same rounded cells, so the identity
+  holds exactly; residual cents go to mix. Empty, new/lost and nonpositive-net
+  quantity cells need no guessed unit rate. This sequential attribution is not
+  causal inference. Units and current branch mappings are used as imported.
+- Planner uses positive sale quantities across all imported history, not an
+  annual revenue forecast; credits are excluded from its quantity baseline. The
+  observed quantities are repriced under today’s resolver: sales that still select
+  unchanged quantity breaks or a separate customer contract contribute zero uplift.
+  It changes base quantity prices only (qty_break=0), for a customer, tier or
+  category. Customer contracts retain their end date and tier specificity;
+  quantity-break schedules and other scopes are unchanged. Zero-change pairs
+  are omitted. A scope over 250,000 pairs fails rather than truncates.
+- Reversal drafts restore the selected version's before amounts on its changed
+  pairs, dated today. They are not whole-database/time-travel restores. Existing
+  4E versions retained amounts but not historical contract definitions. Later
+  conflicting prices or expired contract dates block reversal. Current guardrails,
+  data revision, date, named Pricing Owner approval, versioning and export all
+  still apply. Only the approval path changes the local price book, as in 4E.
+- Customer-specific exports use the generic layout with customer_id. Other ERP
+  layouts are refused for these drafts rather than discard customer scope.
+  All ERP layouts still require validation against a real customer's ERP.
+- Exceptions use the shared Quote Desk matrix lookup, with date validity and
+  quantity breaks, but require a customer-specific row for contract comparisons.
+  They compare exact invoiced-price/unit ratios (list minus on-invoice discount)
+  against current floor and dated contract, consistent with the existing floor
+  leak and Quote Desk. Freight and off-invoice rebates affect the margin bridge,
+  but cannot create a false invoiced-price exception;
+  gap is the higher line threshold minus pocket, counted once. Credit lines are
+  excluded. Current floors are not historical floor snapshots.
+- Expiry lists price_matrix end dates today through 30/60/90 days inclusive.
+  End dates remain exclusive for pricing, so an end date today is already inactive.
+  It never renews or changes a contract.
+- Increase letters are local UTF-8 text in the selected language, without cost,
+  prices or margins; a draft notice, not an automatic customer communication.
+- All 7C-1 features require Professional/Scale and existing cost/pricing capabilities.
+  Sales Rep has none of the new commands; decision-16 classification stays exact.
+  Translation quality, deployed behavior and hosted sign-in remain unverified.
+
+- Matrix ties use customer specificity, tier specificity, product specificity,
+  highest eligible quantity break, latest start date, then ascending stable row ID.
+  The planner and quote book use the same lookup. Bridge volume is rebased when
+  the dimension filter changes; each filtered result reconciles independently.
+
+- Bulk price resolution shares the scalar policy and stable tie-breaks, using
+  equality joins, grouped lookup inputs and RAM-only staging. The production
+  512 MiB limit is unchanged. A local 100k-line/20k-price regression covers both
+  a narrow scope and 20,002-pair tier approval/reversal. This is correctness and
+  memory-regression evidence, not a 1M/2M performance claim. Versions currently
+  show the latest 100 approved entries; older records are not deleted.

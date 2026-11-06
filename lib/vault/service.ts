@@ -1,3 +1,5 @@
+import * as ops from "../pricing/ops";
+import {bridge,type BridgeInput} from "../margin/bridge";
 import { VaultLicence, capacitySql } from "./licence";
 import type { Action } from "./protocol";
 import * as pricing from '../pricing/rules';
@@ -576,6 +578,14 @@ export class VaultService {
     finally { if (count) await this.afterFixes(e, merged); }
     return { summary: msg("vault.fixCount", { count }), restored: String(restored), skipped: String(skipped), status: await this.status(), scan: await cleanup.scan(e), history: await cleanup.history(e) };
   }  /** Guardrails and price floors are visible to every role; rules, simulations and their costs only to roles that edit pricing. */
+  private opsTier(){if(this.licence.tier==='starter')throw new VaultError('LICENCE',msg('ops.needPro'));}
+  async marginBridge(input?:BridgeInput){this.opsTier();return bridge(this.requireEngine(),input);}
+  async priceOpsState(){this.opsTier();return ops.opsState(this.requireEngine());}
+  async priceExceptions(input?:ops.ExceptionInput){this.opsTier();return ops.exceptions(this.requireEngine(),input);}
+  async priceExpiry(days:number,asOf?:string,offset?:number){this.opsTier();return ops.expiry(this.requireEngine(),days,asOf,offset);}
+  async pricePlan(input:ops.PlanInput){this.opsTier();await this.requireOwnerNamed();let run='';const details={actor:this.identity.userId,run_id:''};await this.write('pricing.plan_drafted',details,async e=>{run=await ops.planDraft(e,input,this.identity.userId);details.run_id=run;});return this.rulePreview(run);}
+  async priceRollback(version:string){this.opsTier();await this.requireOwnerNamed();let run='';const details={actor:this.identity.userId,run_id:'',version_id:version};await this.write('pricing.rollback_drafted',details,async e=>{run=await ops.rollbackDraft(e,version,this.identity.userId);details.run_id=run;});return this.rulePreview(run);}
+  async priceLetter(id:string,locale:import('../i18n/core').Locale){this.opsTier();const file=await ops.increaseLetter(this.requireEngine(),id,locale);await this.pricingWrite('pricing.letter_exported',async()=>{});return file;}
   async pricingState(){const state=await pricing.pricingState(this.requireEngine());if((await this.access()).caps.includes('pricing'))return state;return {...state,rules:[],runs:[]};}
   /** Pricing changes need a named Pricing Owner (required at setup). */
   private async requireOwnerNamed(){if(!(await pricing.pricingState(this.requireEngine())).owner)throw new VaultError('OWNER',msg("vault.nameAPricingOwner"));}
@@ -593,10 +603,11 @@ export class VaultService {
     await this.pricingWrite('pricing.simulated',async e=>{const r=await pricing.simulate(e,id);await e.conn.query(r.sql);result=r;});
     return {...await pricing.preview(this.requireEngine(),result!.id),ms:result!.ms};
   }
-  async rulePreview(id:string,offset=0){return pricing.preview(this.requireEngine(),id,offset);}
-  async ruleApprove(id:string){await this.pricingWrite('pricing.approved',async e=>{await e.conn.query(await pricing.approveSql(e,id,this.identity.userId));});await this.derived(this.requireEngine());await this.save();const config=await backupConfig(this.storage.scope);if(config.directory)await this.backupNow().catch(()=>undefined);return {preview:await this.rulePreview(id),backup:await this.backupStatus()};}
+  async rulePreview(id:string,offset=0){if(id.startsWith("ops-"))this.opsTier();return pricing.preview(this.requireEngine(),id,offset);}
+  async ruleApprove(id:string){if(id.startsWith("ops-"))this.opsTier();await this.pricingWrite('pricing.approved',async e=>{await e.conn.query(await pricing.approveSql(e,id,this.identity.userId,await ops.approvalMatrixSql(e,id)));});await this.derived(this.requireEngine());await this.save();const config=await backupConfig(this.storage.scope);if(config.directory)await this.backupNow().catch(()=>undefined);return {preview:await this.rulePreview(id),backup:await this.backupStatus()};}
   async priceExport(id:string,profile:ErpProfile,format:'csv'|'xlsx'){
-    const file=await pricing.exportPrices(this.requireEngine(),id,profile,format);
+    if(id.startsWith('ops-'))this.opsTier();
+    const file=await pricing.exportPrices(this.requireEngine(),id,profile,format,await ops.exportCustomer(this.requireEngine(),id));
     await this.pricingWrite('pricing.exported',async e=>{await e.conn.query(`UPDATE rule_runs SET status='exported' WHERE id=${sqlText(id)}`);});return file;
   }
   async backupStatus(){const c=await backupConfig(this.storage.scope);const settings=this.engine?(await this.pricingState()).owner:null;return {configured:!!c.directory,hours:c.hours,last:c.last,error:c.error,reminder:!c.last||Date.now()-Date.parse(c.last)>(settings?.backupDays??7)*86400000};}

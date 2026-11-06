@@ -17,7 +17,7 @@ const markers = [marker, numericMarker, "9876543", "98,765.43", secret];
 const fixturePair=generateKeyPairSync('ed25519');
 const fixturePublic=fixturePair.publicKey.export({format:'der',type:'spki'}).toString('base64');
 const fixturePrivate=fixturePair.privateKey.export({format:'der',type:'pkcs8'}).toString('base64');
-const failures = [], requests = [], headerChecks = [];
+const failures = [], requests = [], headerChecks = [], pageErrors=[],consoleErrors=[];
 let dataPlaneActive = false;
 // Assert the actual issuer/HMAC secret is absent from every served client asset.
 async function checkBundleKeys(dir){for(const item of await readdir(dir,{withFileTypes:true})){const file=path.join(dir,item.name);if(item.isDirectory())await checkBundleKeys(file);else if(/\.(js|json|html)$/.test(item.name)){const text=await readFile(file,'utf8');for(const value of [process.env.LICENCE_SIGNING_KEY,process.env.ACTOR_SIGNING_SECRET].filter(Boolean))assert.ok(!text.includes(value),'A server signing secret was bundled into a served client asset');}}}
@@ -51,6 +51,7 @@ context.on("request", r => {
   requests.push(new URL(r.url()).pathname);
 });
 context.on("console", m => {
+  if(m.type()==="error")consoleErrors.push(m.text());
   if (markers.some(value => m.text().includes(value))) failures.push("Private fixture value appeared in console output");
   headerChecks.push(Promise.all(m.args().map(arg => arg.jsonValue())).then(values => {
     const text = JSON.stringify(values, (_key, value) => typeof value === "bigint" ? value.toString() : value);
@@ -64,7 +65,7 @@ await configureContext();
 const throttle = Number(process.env.VAULT_TEST_CPU_THROTTLE || 0);
 async function openPage() {
   const opened = await context.newPage();
-  opened.on("pageerror", () => failures.push("Unhandled page error"));
+  opened.on("pageerror", e => {failures.push("Unhandled page error");pageErrors.push(e.message);});
   if (throttle > 1) await (await context.newCDPSession(opened)).send("Emulation.setCPUThrottlingRate", { rate: throttle });
   return opened;
 }
@@ -72,7 +73,7 @@ let page = await openPage();
 // On failure, record what the user would see. Diagnostics are scrubbed of fixture markers.
 async function diagnose() {
   const scrub = text => markers.reduce((value, m) => value.split(m).join("[marker]"), String(text));
-  const diagnostics = {};
+  const diagnostics = {pageErrors:pageErrors.map(scrub),consoleErrors:consoleErrors.map(scrub)};
   try { await page.screenshot({ path: `test-results/vault-${channel}${auth ? "-auth" : ""}-failure.png`, fullPage: true }); } catch { diagnostics.screenshot = "unavailable"; }
   try { diagnostics.alerts = (await page.getByRole("alert").allInnerTexts()).map(scrub); diagnostics.status = (await page.getByRole("status").allInnerTexts()).map(scrub); } catch { diagnostics.alerts = "unavailable"; }
   try { diagnostics.buttons = (await page.getByRole("button").allInnerTexts()).map(scrub); } catch { diagnostics.buttons = "unavailable"; }
@@ -147,6 +148,8 @@ try {
   if(process.argv.includes('--pricing-bench')){const m=await worker('pricingBenchmark',{},900000);console.log(JSON.stringify(m,null,2));await writeFile('test-results/pricing-benchmark-'+channel+'.json',JSON.stringify({browser:results.browser,machine:results.machine,...m},null,2));process.exit(0);}
   if(process.argv.includes('--phase5a-bench')){const m=await worker('phase5aBenchmark',{},900000);console.log(JSON.stringify(m,null,2));await writeFile('test-results/phase5a-benchmark-'+channel+'.json',JSON.stringify({browser:results.browser,machine:results.machine,...m},null,2));process.exit(0);}
   if(process.argv.includes('--pricing-only')){console.log(JSON.stringify(await worker('pricing',{},600000),null,2));process.exit(0);}
+  results.checks.pricingOps=await worker("pricingOps",{},180000);console.log("7C-1 worker transactions, audit and encrypted reload: PASS");
+  if(process.argv.includes("--pricing-ops-only")){console.log(JSON.stringify(results.checks.pricingOps));process.exit(0);}
   const fixture = await readFile("tests/fixtures/vault/v1.enc");
   results.checks.v1 = await worker("v1", { bytes: new Uint8Array(fixture) });
   results.checks.integrity = await worker("integrity");
@@ -302,8 +305,9 @@ try {
   // 4E: UI flow stays under the same marker sensors, including --auth in CI.
   await page.getByRole('link',{name:'Data Hub',exact:true}).click();
   if(await page.getByRole('button',{name:'Clear batch',exact:true}).isVisible())await clearBatch();
-  const priceSku=marker+'-4E';const files4E={
-    'pricing-items.csv':'product_id,description,category,uom,current_cost,list_price\n'+priceSku+',Private pricing item,Privacy category,EA,66.00,100.00\n',
+  const priceSku=marker+'-4E',expirySku=marker+'-EXP',expiryDate=new Date(Date.now()+14*86400000).toISOString().slice(0,10);const files4E={
+    'pricing-items.csv':'product_id,description,category,uom,current_cost,list_price\n'+priceSku+',Private pricing item,Privacy category,EA,66.00,100.00\n'+expirySku+',Expiry fixture,Expiry category,EA,50.00,70.00\n',
+    'pricing-contracts.csv':'product_id,customer_id,price,valid_from,valid_to\n'+expirySku+',E-CUSTOMER,70.00,2025-01-01,'+expiryDate+'\n',
     'pricing-customers.csv':'customer_id,name,tier,branch\nE-CUSTOMER,Private customer,E-TIER,East\n',
     'pricing-costs.csv':'vendor,product_id,cost,effective_date\nPrivacy Mills,'+priceSku+',60.00,2025-01-01\nPrivacy Mills,'+priceSku+',66.00,2025-02-01\n',
     'pricing-sales.csv':header+'9000001,'+priceSku+',E-CUSTOMER,2025-03-01,1,100.00,10.00,1.00,0.00,66.00\n'
@@ -328,6 +332,24 @@ try {
   await page.getByRole('link',{name:'Settings',exact:true}).click();const encrypted=page.waitForEvent('download');await page.getByRole('button',{name:'Download encrypted backup',exact:true}).click();const enc=await encrypted;assert.ok((await readFile(await enc.path())).subarray(0,8).toString()==='MDVAULT1','Backup export is not encrypted');
   if(!auth){await page.getByRole('button',{name:'Use licensed capacity',exact:true}).click();await page.getByRole('status').filter({hasText:'Licensed capacity applied'}).waitFor();results.checks.licensedCapacityUpgrade=true;}
   results.checks.pricingUi={owner:true,guardrails:true,rule:true,simulation:true,preview:true,approval:true,erpExportAndLog:true,folderHandleSeam:true,encryptedBackup:true};
+
+  // 7C-1: every operation stays under the same real authenticated privacy sensors.
+  const opsShot=async name=>{if(!auth)await page.screenshot({path:`test-results/7c-${channel}-${name}.png`,fullPage:true});};
+  const invoiceRowsBefore=await page.getByTestId('line-count').getAttribute('data-value');
+  await page.locator('nav a[href="#margin"]').click();await page.getByRole('link',{name:'Margin bridge',exact:true}).click();await page.getByTestId('bridge-delta').waitFor();
+  const bridgeValue=async k=>BigInt(await page.getByTestId('bridge-'+k).getAttribute('data-value'));
+  assert.equal(await bridgeValue('delta'),await bridgeValue('price')+await bridgeValue('volume')+await bridgeValue('mix')+await bridgeValue('cost'),'UI bridge does not reconcile');
+  await page.getByRole('combobox',{name:'Drill down',exact:true}).selectOption('branch');await page.getByRole('button',{name:'Show results',exact:true}).click();await page.getByRole('table',{name:'Drill down'}).getByRole('columnheader',{name:'Branch',exact:true}).waitFor();await opsShot('bridge');
+  await page.locator('nav a[href="#pricing"]').click();await page.getByRole('link',{name:'Increase planner',exact:true}).click();await page.getByRole('combobox',{name:'Segment value',exact:true}).selectOption('Privacy category');await page.getByLabel('Increase (%)',{exact:true}).fill('5');
+  await page.getByRole('button',{name:'Create increase preview',exact:true}).click();await page.getByTestId('ops-draft').waitFor();
+  const letterEvent=page.waitForEvent('download');await page.getByRole('button',{name:'Download draft increase letter',exact:true}).click();const letterText=await readFile(await(await letterEvent).path(),'utf8');assert.ok(letterText.includes('5')&&!letterText.includes('66.00'),'Letter leaked cost or omitted rate');await opsShot('planner');
+  await page.getByRole('button',{name:'Review draft and approval',exact:true}).click();await page.getByRole('cell',{name:'109.73',exact:true}).first().waitFor();await page.getByRole('button',{name:'Approve as Pricing Owner',exact:true}).click();await page.getByRole('heading',{name:'Export Studio',exact:true}).waitFor();
+  await page.getByRole('link',{name:'Price versions',exact:true}).click();await page.getByRole('button',{name:'Draft reversal',exact:true}).first().waitFor();await opsShot('versions');await page.getByRole('button',{name:'Draft reversal',exact:true}).first().click();await page.getByTestId('ops-draft').waitFor();await page.getByRole('button',{name:'Review draft and approval',exact:true}).click();await page.getByRole('cell',{name:'104.50',exact:true}).first().waitFor();await page.getByRole('button',{name:'Approve as Pricing Owner',exact:true}).click();await page.getByRole('heading',{name:'Export Studio',exact:true}).waitFor();
+  const reversed=[];const collect=d=>reversed.push(d);page.on('download',collect);await page.getByRole('button',{name:'Export prices and change log',exact:true}).click();await page.getByRole('status').filter({hasText:/unverified until tested on a real import/}).waitFor();page.off('download',collect);assert.equal(reversed.length,2);for(const d of reversed)assert.ok((await readFile(await d.path())).includes(Buffer.from('104.50')),'Reversal export differs');
+  await page.getByRole('link',{name:'Price exceptions',exact:true}).click();await page.getByTestId('price-exceptions').waitFor();await page.getByLabel('Product',{exact:true}).fill(priceSku);await page.getByRole('button',{name:'Show results',exact:true}).click();await page.getByRole('table',{name:'Price exceptions'}).getByRole('cell',{name:priceSku,exact:true}).first().waitFor();await opsShot('exceptions');
+  await page.getByRole('link',{name:'Contract expiry',exact:true}).click();await page.getByRole('table',{name:'Contract expiry'}).getByRole('cell',{name:expirySku,exact:true}).waitFor();await opsShot('expiry');
+  assert.equal(await page.getByTestId('line-count').getAttribute('data-value'),invoiceRowsBefore,'Pricing ops changed invoice row counts');
+  results.checks.pricingOpsUi={bridgeReconciles:true,branchDrill:true,planner:true,letter:true,ownerApproval:true,reversalDraft:true,reversalExport:true,exceptionsSourceRows:true,contractExpiry:true,invoiceRowsUnchanged:true};
 
   // 7B: Price Check answers on Enter (barcode scanners send Enter), a below-floor quote asks for a
   // reason, the Owner sees margin, the Sales Rep preview never does, and the quote fits a phone.
@@ -362,8 +384,8 @@ try {
     await page.getByTestId('theme').first().selectOption(theme);
     for(const size of [{width:1366,height:768},{width:375,height:812}]){
       await page.setViewportSize(size);
-      for(const hash of ['#home','#data-hub','#margin','#pricing','#quotes','#reports','#settings']){
-        await page.evaluate(h=>{location.hash=h;},hash);await page.waitForTimeout(300);
+      for(const hash of ['#home','#data-hub','#margin','#margin-bridge','#pricing','#pricing-planner','#pricing-versions','#pricing-exceptions','#pricing-expiry','#quotes','#reports','#settings']){
+        await page.evaluate(h=>{location.hash=h;},hash);await page.waitForTimeout(300);await page.waitForFunction(()=>!document.querySelector('main [aria-busy="true"]'),null,{timeout:60000});if(hash==='#pricing-versions'&&theme==='dark'&&size.width===375)await opsShot('versions-dark-mobile');
         if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1))overflowed.push(`${hash} ${theme} ${size.width}px`);
       }
     }
@@ -399,7 +421,12 @@ try {
   const pseudoFindings={};
   for(const hash of sectionLinks){const link=page.locator(`nav a[href="${hash}"]`);if(!await link.count())continue;await link.click();
     await page.waitForFunction(()=>!document.querySelector('main [aria-busy="true"]'),null,{timeout:60000}).catch(()=>undefined);await page.waitForTimeout(1500);
-    const left=await untranslated();if(left.length)pseudoFindings[hash]=left;}
+    const left=await untranslated();if(left.length)pseudoFindings[hash]=left;
+    if(hash==='#margin'||hash==='#pricing'){
+      const ids=hash==='#margin'?['margin-bridge']:['planner','versions','exceptions','expiry'];
+      for(const id of ids){const tab=page.getByTestId('ops-tab-'+id);if(!await tab.count())continue;await tab.click();await page.waitForTimeout(1800);const extra=await untranslated();if(extra.length)pseudoFindings[hash+'/'+id]=extra;assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Pricing ops overflow in pseudo locale');}
+    }
+  }
   assert.deepEqual(pseudoFindings,{},'Untranslated text in the pseudo-locale:\n'+JSON.stringify(pseudoFindings,null,1));
   // Switch to French with the language picker: navigation, headings and the generated PDF follow.
   await page.getByTestId('language').first().selectOption('fr');

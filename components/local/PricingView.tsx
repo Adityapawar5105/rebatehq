@@ -1,4 +1,7 @@
 "use client";
+import {SectionTabs} from "@/components/ui/ui";
+import {PricingOperations,type OpsTab} from "./PricingOps";
+
 import { useEffect,useState } from 'react';
 import type { VaultClient } from '@/lib/vault/client';
 import type { Results } from '@/lib/vault/protocol';
@@ -13,9 +16,9 @@ const GUARD_FIELD:Record<'tier'|'category'|'start'|'target'|'floor',MessageKey>=
 const RULE_FIELD:Record<'name'|'category'|'vendor'|'threshold'|'increase',MessageKey>={name:"pricing.ruleName",category:"pricing.ruleCategory",vendor:"pricing.costSourceSupplier",threshold:"pricing.costRiseThreshold",increase:"pricing.priceIncrease"};
 const RUN_STATUS:Record<string,MessageKey>={preview:"pricing.status.preview",approved:"pricing.status.approved",exported:"pricing.status.exported"};
 const runStatus=(s:string)=>s in RUN_STATUS?t(RUN_STATUS[s]):s;
-export function PricingView({client,userId,caps,busy,operation,refresh}:{client:VaultClient;userId:string;caps:Cap[];busy:boolean;operation:(f:()=>Promise<void>)=>Promise<void>;refresh:()=>Promise<void>}){
+function PricingRulesView({client,userId,caps,busy,operation,refresh,initialPreview}:{client:VaultClient;userId:string;caps:Cap[];busy:boolean;operation:(f:()=>Promise<void>)=>Promise<void>;refresh:()=>Promise<void>;initialPreview?:Preview|null;tier?:import("@/lib/vault/protocol").Tier}){
  const [state,setState]=useState<Results['pricingState']|null>(null),[owner,setOwner]=useState(''),[g,setG]=useState({tier:'T01',category:'Valves',start:'15000',target:'10000',floor:'5000'});
- const [rule,setRule]=useState({name:t("pricing.passThroughSupplierCost") as string,category:'Valves',vendor:'SteelWorks',threshold:'5',increase:'4.5'}),[ruleId,setRuleId]=useState(''),[p,setP]=useState<Preview|null>(null),[profile,setProfile]=useState<ErpProfile>('generic'),[format,setFormat]=useState<'csv'|'xlsx'>('csv'),[note,setNote]=useState('');
+ const [rule,setRule]=useState({name:t("pricing.passThroughSupplierCost") as string,category:'Valves',vendor:'SteelWorks',threshold:'5',increase:'4.5'}),[ruleId,setRuleId]=useState(''),[p,setP]=useState<Preview|null>(initialPreview??null),[profile,setProfile]=useState<ErpProfile>('generic'),[format,setFormat]=useState<'csv'|'xlsx'>('csv'),[note,setNote]=useState('');
  const load=async()=>setState(await client.call('pricingState',{}));
  useEffect(()=>{void load().catch(()=>setNote(msg("pricing.couldNotLoadPricing")));},[client]);
  const run=(work:()=>Promise<void>)=>void operation(async()=>{await work();await load();await refresh();});
@@ -37,4 +40,11 @@ export function PricingView({client,userId,caps,busy,operation,refresh}:{client:
  {p.status!=='preview'&&<><h3>{t("pricing.exportStudio")}</h3><label>{t("pricing.erpExportLayout")}<select value={profile} onChange={e=>setProfile(e.target.value as ErpProfile)}>{PROFILE_IDS.map(id=><option key={id} value={id}>{say(PROFILES[id].label)}</option>)}</select></label><p>{t("pricing.everyLayoutIsUnverified")}</p><label>{t("pricing.exportFormat")}<select value={format} onChange={e=>setFormat(e.target.value as 'csv'|'xlsx')}><option>csv</option><option>xlsx</option></select></label><button className={styles.primary} disabled={busy} onClick={()=>run(async()=>{const r=await client.call('priceExport',{id:p.id,profile,format});download(r.name,r.blob);download(r.logName,r.log);setNote(r.warning);setP(await client.call('rulePreview',{id:p.id}));})}>{t("pricing.exportPricesAndChange")}</button></>}
  </section>}
  {caps.includes('pricing')&&<section className={styles.card}><h2>{t("pricing.runHistory")}</h2>{!state?.runs.length?<p>{t("pricing.noSimulationsYet")}</p>:state.runs.map(r=><p key={r.id}>{fmt.date(r.run_date.slice(0,10))}{" "}{t("pricing.pairs", { count: Number(r.affected), status: runStatus(r.status) })}{" "}<button disabled={busy} onClick={()=>run(async()=>setP(await client.call('rulePreview',{id:r.id})))}>{t("pricing.reviewRun")}</button></p>)}</section>}</>;
+}
+export function PricingView(props:Parameters<typeof PricingRulesView>[0]){
+ const [tab,setTab]=useState<'rules'|OpsTab>('rules'),[draft,setDraft]=useState<Preview|null>(null);
+ const canOps=props.caps.includes('pricing')&&(props.tier==='professional'||props.tier==='scale'),shown=canOps?tab:'rules';
+ const tabs=[{id:'rules',label:t('ops.rules'),href:'#pricing'},...(canOps?([{id:'planner',label:t('ops.planner'),href:'#pricing'},{id:'versions',label:t('ops.versions'),href:'#pricing'},{id:'exceptions',label:t('ops.exceptions'),href:'#pricing'},{id:'expiry',label:t('ops.expiry'),href:'#pricing'}]):[])];
+ useEffect(()=>{const read=()=>{const id=location.hash.replace('#pricing-','');setTab(['planner','versions','exceptions','expiry'].includes(id)?id as OpsTab:'rules');};read();window.addEventListener('hashchange',read);return()=>window.removeEventListener('hashchange',read);},[]);
+ return <><SectionTabs items={tabs.map(v=>({...v,href:'#pricing-'+v.id,testId:'ops-tab-'+v.id}))} current={shown} label={t('ops.rules')} onSelect={id=>setTab(id as typeof tab)}/>{shown==='rules'?<PricingRulesView {...props} initialPreview={draft}/>:<PricingOperations client={props.client} tab={shown} busy={props.busy} operation={props.operation} refresh={props.refresh} onReview={p=>{setDraft(p);setTab('rules');location.hash='pricing-rules';}}/>}</>;
 }

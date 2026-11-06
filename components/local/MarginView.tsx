@@ -1,4 +1,7 @@
 "use client";
+import {MarginBridge} from "./PricingOps";
+import {SectionTabs} from "@/components/ui/ui";
+
 // Margin section (chunk 4D): waterfall, drill-down, whale curve, leaks, ROI and the
 // "show me the math" panel. Every number is computed in the vault worker; this file only draws.
 // Chunk 7U: text from message keys, amounts and counts through Intl, glossary popovers beside
@@ -36,7 +39,7 @@ function waterfallBars(w: Waterfall) {
   });
 }
 
-export function MarginView({ client, busy, operation, setMessage, onStatus, status }: Shared) {
+function WaterfallView({ client, busy, operation, setMessage, onStatus, status }: Shared) {
   const [filters, setFilters] = useState<Filters>(NONE), [w, setW] = useState<Waterfall | null>(null), [dim, setDim] = useState<Dim>("customer"), [sort, setSort] = useState<"pocket" | "margin" | "rate">("pocket");
   const [d, setD] = useState<Drill | null>(null), [whale, setWhale] = useState<Whale | null>(null), [leaks, setLeaks] = useState<LeaksView | null>(null), [target, setTarget] = useState<MathTarget>(null);
   const version = `${status.lines}|${status.generation}`;
@@ -170,4 +173,11 @@ function MathView({ client, target, onClose }: { client: VaultClient; target: No
     </table></div> : null}
     {count > 25 && <div className={ui.row}><Button size="sm" icon="chevronLeft" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - 25))}>{t("margin.previous25")}</Button><span className={styles.small}>{t("margin.rowsRange", { from: offset + 1, to: Math.min(count, offset + 25), count })}</span><Button size="sm" disabled={offset + 25 >= count} onClick={() => setOffset(offset + 25)}>{t("margin.next25")}</Button></div>}
   </section>;
+}
+
+export function MarginView(props:Shared){
+ const [tab,setTab]=useState('waterfall');
+ const canBridge=props.status.licence?.tier==='professional'||props.status.licence?.tier==='scale',shown=canBridge?tab:'waterfall';
+ useEffect(()=>{const read=()=>setTab(location.hash==='#margin-bridge'?'bridge':'waterfall');read();window.addEventListener('hashchange',read);return()=>window.removeEventListener('hashchange',read);},[]);
+ return <>{canBridge&&<SectionTabs label={t('ops.bridge')} current={shown} onSelect={setTab} items={[{id:'waterfall',label:t('margin.waterfall'),href:'#margin-waterfall'},{id:'bridge',label:t('ops.bridge'),href:'#margin-bridge',testId:'ops-tab-margin-bridge'}]}/>} {shown==='bridge'?<MarginBridge client={props.client}/>:<WaterfallView {...props}/>}</>;
 }
