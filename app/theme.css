@@ -46,3 +46,15 @@
 --chart-red:#d9806f;--chart-yellow:#d6b252;--chart-green:#68ad85;--chart-teal:#4fb3ba;--chart-track:#2a3c42;
 --shadow-color:#00000066;--backdrop:#000000b3;--toast-bg:#d4e7ec;--toast-text:#0f1a1e}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
+
+/* Design scale (chunk 7V): the same in every theme. Colours stay in the theme blocks above. */
+:root{
+--font-sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+--font-mono:ui-monospace,"Cascadia Mono","SFMono-Regular",Consolas,monospace;
+--fs-xs:12px;--fs-sm:13px;--fs-md:14px;--fs-lg:16px;--fs-xl:18px;--fs-2xl:22px;--fs-3xl:28px;
+--lh-tight:1.25;--lh-body:1.55;
+--space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-5:24px;--space-6:32px;--space-7:48px;
+--radius-sm:6px;--radius-md:8px;--radius-lg:12px;--radius-pill:999px;
+--shadow-1:0 1px 2px var(--shadow-color),0 1px 3px var(--shadow-color);--shadow-2:0 6px 18px var(--shadow-color);--shadow-3:0 18px 50px var(--shadow-color);
+--dur-fast:120ms;--dur:200ms;--ease:cubic-bezier(.2,.7,.2,1);
+--sidebar-w:248px;--sidebar-w-collapsed:72px;--header-h:60px;--content-max:1240px}

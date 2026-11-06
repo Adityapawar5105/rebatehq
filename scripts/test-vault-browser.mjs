@@ -355,6 +355,25 @@ try {
   await page.getByRole('button',{name:'Return to my own view'}).click();await page.getByTestId('preview-banner').waitFor({state:'detached'});
   results.checks.quotesUi={priceCheckOnEnter:true,thermometer:true,exceptionNeedsReason:true,ownerSeesMargin:true,repPreviewHidesMargin:true,phoneWidth:true};
 
+  // 7V: no section overflows horizontally at desktop or phone width, in light or dark; the phone menu opens
+  // the navigation drawer and closes it again.
+  const overflowed=[];
+  for(const theme of ['light','dark']){
+    await page.getByTestId('theme').first().selectOption(theme);
+    for(const size of [{width:1366,height:768},{width:375,height:812}]){
+      await page.setViewportSize(size);
+      for(const hash of ['#home','#data-hub','#margin','#pricing','#quotes','#reports','#settings']){
+        await page.evaluate(h=>{location.hash=h;},hash);await page.waitForTimeout(300);
+        if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1))overflowed.push(`${hash} ${theme} ${size.width}px`);
+      }
+    }
+  }
+  await page.getByRole('button',{name:'Open menu',exact:true}).click();await page.locator('nav a[href="#pricing"]').click();
+  await page.getByRole('heading',{level:1,name:'Pricing'}).waitFor();assert.equal(await page.getByRole('button',{name:'Close menu',exact:true}).count(),0,'The phone menu did not close after navigating');
+  await page.setViewportSize({width:1365,height:900});await page.getByTestId('theme').first().selectOption('system');
+  assert.deepEqual(overflowed,[],'Sections overflow horizontally');
+  results.checks.uiLayout={noOverflow:['1366px','375px'],themes:['light','dark'],phoneDrawer:true};
+
   // 7U: a language switch changes every screen and the generated text. The pseudo-locale brackets
   // every message (⟦…⟧), so any visible word outside a bracket is hard-coded or untranslated text.
   // Data the test imported is marked translate="no" by the UI and skipped.

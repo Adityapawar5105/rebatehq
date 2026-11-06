@@ -15,8 +15,8 @@ the next chunk. It holds what a new session needs without the earlier chat histo
 
 | Order | Chunk | Supabase migration? | Status |
 |---|---|---|---|
-| 1 | 7V-1 UI redesign: design system, shell, Home | No | Next |
-| 2 | 7V-2 UI redesign: every other screen | No | — |
+| 1 | 7V-1 UI redesign: design system, shell, Home | No | Built here (local checks green; CI and the user's review pending) |
+| 2 | 7V-2 UI redesign: every other screen | No | Next, after the user approves 7V-1 |
 | 3 | 7C Pricing ops | No | — |
 | 4 | 7D Rebates | No | — |
 | 5 | 7E Vendor review and simulator | No | — |
@@ -151,6 +151,16 @@ what remains unverified.
 - CI installs dependencies with `pnpm install --frozen-lockfile`. Don't add an npm dependency unless you can
   update `pnpm-lock.yaml` with pnpm 10 in the same change. Prefer no new dependencies. Never load fonts,
   scripts or icons from a CDN: the CSP and the privacy gate forbid external requests.
+
+**UI (from 7V-1)**
+- Build screens from `components/ui` (`ui.tsx`, `Icon.tsx`, `ui.module.css`) and the shell in
+  `components/local/shell.module.css`. Old element rules in `vault.module.css` use `:where()` (zero specificity) so
+  component classes win; don't raise their specificity again.
+- Keep the summary strip's `data-testid="line-count"` and the `licence-status` line: the gates read them on every section.
+- Header language and theme selects must stay visible at desktop width (the gates use `getByTestId('language').first()`).
+- Nav links must stay `<a href="#section">` inside the `nav` element (the gates click `nav a[href="#reports"]`).
+- `node scripts/ui-screenshots.mjs --out=test-results/x --url=<lab server>` captures every section for review;
+  against `next dev` use `localhost`, not 127.0.0.1 (Next blocks dev resources for other origins).
 
 **Security review findings to keep in mind**
 - Any decision that arrives through the relay must be checked locally: the shared subject still matches the
