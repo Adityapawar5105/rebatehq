@@ -21,3 +21,40 @@
 .creditBox{border:1px solid var(--border);border-left-width:4px;border-radius:8px;padding:10px 14px;margin:12px 0}.creditBox ul{margin:6px 0 0;padding-left:20px}.creditBox[data-tone=ok]{border-left-color:var(--ok-border)}.creditBox[data-tone=warn]{border-left-color:var(--warn-border);background:var(--warn-bg)}.creditBox[data-tone=bad]{border-left-color:var(--bad-border);background:var(--bad-bg)}
 @media(max-width:600px){.card{padding:18px}.quoteForm{grid-template-columns:1fr}.tabs button{flex:1 1 40%}}
 @media (forced-colors:active){.thermoTrack,.creditBox{border:1px solid CanvasText}.thermoTrack .thermoMark{background:CanvasText;forced-color-adjust:none}}
+
+/* 7V-2: legacy classes aligned with components/ui (tokens only). */
+.card h2{scroll-margin-top:calc(var(--header-h) + 64px);font-weight:650}.card h3{font-size:var(--fs-md);color:var(--heading);margin:var(--space-5) 0 var(--space-2)}.card p{margin:0 0 var(--space-3)}
+.card details>summary{cursor:pointer;font-weight:600;color:var(--heading);min-height:36px;display:flex;align-items:center}
+.notice,.error,.warning{border-radius:var(--radius-md);padding:var(--space-3) var(--space-4);font-size:var(--fs-sm);line-height:1.5}
+.error{background:var(--bad-bg);border:1px solid var(--bad-border);color:var(--bad-text)}
+.warning{margin:var(--space-3) 0}
+.drop{display:flex;flex-direction:column;align-items:center;gap:var(--space-2);border:2px dashed var(--border-strong);border-radius:var(--radius-lg);padding:var(--space-6) var(--space-5);background:var(--surface-2);transition:border-color var(--dur-fast) var(--ease),background var(--dur-fast) var(--ease)}
+.drop p{margin:0}
+.dropIcon{display:grid;place-items:center;width:48px;height:48px;border-radius:50%;background:var(--accent-surface);color:var(--link)}
+.tableWrap{border-radius:var(--radius-md);margin:var(--space-3) 0 var(--space-4);background:var(--surface)}
+.table{font-size:var(--fs-sm)}
+.table th,.table td{padding:var(--space-2) var(--space-4)}
+.table th{position:sticky;top:0;font-size:var(--fs-xs);font-weight:650;color:var(--text-muted);letter-spacing:.02em;z-index:1}
+.table tbody tr:hover{background:var(--surface-2)}
+.pill{display:inline-flex;align-items:center;gap:var(--space-1);padding:2px var(--space-2);border-radius:var(--radius-pill);font-size:var(--fs-xs);font-weight:650;line-height:1.5;background:var(--info-bg);color:var(--info-text);border-color:transparent;white-space:nowrap}
+.ok{background:var(--ok-bg);color:var(--ok-text);border-color:var(--ok-border)}
+.bad{background:var(--warn-bg);color:var(--warn-text);border-color:var(--warn-border)}
+.small{font-size:var(--fs-xs);line-height:1.5}
+.shell .linkish{min-height:32px;padding:4px 8px;border-radius:var(--radius-sm);font-weight:600;text-underline-offset:3px}
+.shell .linkish:hover{background:var(--accent-surface)}
+.totals{gap:var(--space-3)}
+.totals>div{background:var(--surface-2);border:1px solid var(--border-subtle);border-radius:var(--radius-md);padding:var(--space-3) var(--space-4)}
+.totals dt{font-size:var(--fs-xs);font-weight:600}
+.totals dd{margin:var(--space-1) 0 0;font-size:var(--fs-xl);font-weight:700;color:var(--heading);font-variant-numeric:tabular-nums}
+.row{gap:var(--space-2) var(--space-3)}
+.grid{gap:0 var(--space-4)}
+.guardList{list-style:none;margin:var(--space-4) 0 0;padding:0;display:flex;flex-direction:column;border:1px solid var(--border);border-radius:var(--radius-md);overflow:hidden}
+.guardList li{padding:var(--space-2) var(--space-4);border-top:1px solid var(--border-subtle);font-size:var(--fs-sm);font-variant-numeric:tabular-nums}
+.guardList li:first-child{border-top:0}
+.guardList li:nth-child(odd){background:var(--surface-2)}
+.tabs{display:inline-flex;flex-wrap:wrap;gap:var(--space-1);padding:var(--space-1);margin:0 0 var(--space-5);border-radius:var(--radius-lg);background:var(--surface-2);border:1px solid var(--border)}
+.tabs button{min-height:36px;border:0;border-radius:var(--radius-md);background:transparent;color:var(--text-muted);padding:0 var(--space-4);font-weight:600}
+.tabs button[aria-pressed=true]{background:var(--surface);color:var(--link);box-shadow:var(--shadow-1)}
+.table{overflow-wrap:normal}
+.shell td.wrap{white-space:normal;min-width:220px;overflow-wrap:anywhere}
+.card>button+button,.card>p>button+button,.card form>button+button{margin-left:var(--space-2)}

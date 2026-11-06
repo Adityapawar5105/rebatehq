@@ -82,7 +82,7 @@ export function QuotesView({ client, userId, caps, tier, busy, operation }: { cl
 
   return <>
     <p role="status">{say(note)}</p>
-    <div className={styles.tabs} role="group" aria-label={t("quotes.tabsLabel")}>{tabs.map(x => <button key={x} type="button" aria-pressed={tab === x} className={tab === x ? styles.primary : undefined} onClick={() => { setNote(""); setTab(x); }}>{t(TAB[x])}</button>)}</div>
+    <div className={styles.tabs} role="group" aria-label={t("quotes.tabsLabel")}>{tabs.map(x => <button key={x} type="button" aria-pressed={tab === x} onClick={() => { setNote(""); setTab(x); }}>{t(TAB[x])}</button>)}</div>
 
     {tab === "check" && <section className={styles.card} aria-labelledby="price-check-heading"><h2 id="price-check-heading">{t("quotes.check.heading")}</h2><p className={styles.muted}>{t("quotes.check.body")}</p>
       <form className={styles.quoteForm} onSubmit={e => { e.preventDefault(); void operation(async () => { setPoint(await client.call("priceCheck", { productId: check.productId.trim(), customerId: check.customerId.trim() || null, quantity: check.quantity.trim() || "1" })); }); }}>

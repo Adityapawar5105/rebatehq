@@ -3,6 +3,8 @@
 import type { Catalog } from "../core";
 
 export const fr: Catalog = {
+  "shell.onThisPage": "Sur cette page",
+  "shell.jumpTo": "Aller à {name}",
   "shell.sidebar": "Menu principal",
   "shell.menu": "Ouvrir le menu",
   "shell.closeMenu": "Fermer le menu",

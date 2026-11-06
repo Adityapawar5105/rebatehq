@@ -3,7 +3,7 @@
 6 November 2026. 7V was added at the user's request (blueprint section 22, item 23). It changes the UI only:
 no feature, worker, engine, vault schema, migration or privacy change. It has two parts.
 
-## 7V-1 — design system, app shell, unlock screen and Home (built; awaiting the user's review)
+## 7V-1 — design system, app shell, unlock screen and Home (built; approved by the user)
 
 ### What changed
 - **Design scale** (`app/theme.css`, a new `:root` block that is the same in every theme):
@@ -86,7 +86,9 @@ Neither set showed horizontal overflow on any section, at either width or in eit
 - Relay gate (`scripts/test-relay-browser.mjs --browser=chrome`, local PGlite transport): 11 checks passed.
 
 ### Not verified
-- CI (the authenticated privacy gate and the real-Supabase relay gate) for this commit: pending.
+- **CI:** [CI #95](https://github.com/Adityapawar5105/rebatehq/actions/runs/42264359487) passed on `108d427` in 9m 42s:
+  - the authenticated privacy gate on `/home`, including the new `uiLayout` check;
+  - the real-Supabase relay gate (11 checks).
 - The look itself: **the user's review of the screenshots is the gate for 7V-2.**
 - The signed-in `/home` page uses the same VaultApp shell, but it could not be opened here because this machine
   has no Supabase. CI's authenticated gate exercises it. The login, setup and account pages are unchanged in 7V-1;
@@ -94,4 +96,71 @@ Neither set showed horizontal overflow on any section, at either width or in eit
 - Screen readers were not tested by hand. The landmarks, labels, focus order and skip link were checked by the
   gates' role- and label-based selectors only.
 
-## 7V-2 — every other screen (not started; waits for the user's approval of 7V-1)
+## 7V-2 — every other screen
+
+**User approval of 7V-1 (6 November 2026):** "Approve, start 7V-2".
+
+### What changed
+- **Margin**
+  - **Key numbers:** a tile row for list sales, net pocket, pocket margin with its rate, and leaks found.
+  - **Waterfall:** each step's bar now floats from where the previous step ended, as a waterfall chart. Discounts,
+    rebates, freight and cost are red; the margin is green; unknown-cost pocket is dashed. The amount column
+    keeps every "show the math" button and test id, so the chart and its accessible table are one element.
+  - **Drill-down:** right-aligned figures, and the table scrolls inside its card with a sticky header.
+  - **Whale curve:** an SVG chart with grid lines, a filled area and a marker at the peak. The lowest-margin
+    customers stay in a table below.
+  - **Leaks:** type badges, an empty state, and the Leak Report download beside the heading.
+  - **Show the math:** a highlighted card with the value large, and the engine check as a notice.
+- **Data Hub**
+  - An "On this page" jump bar (Import Studio, Fix Later, Reconciliation, Data health, Imported files, Item
+    master cleanup, Cost basis). Its buttons are named "Jump to …", so they never clash with the names the
+    gates use.
+  - The drop zone has an upload icon.
+- **Pricing:** guardrail and rule fields sit in a responsive row instead of one long column. Saved guardrails
+  are a striped list.
+- **Quotes:** the view switcher is a segmented control. The buttons and their names are unchanged.
+- **Reports and Settings:** Reports cards now use the shared Card and Button. Settings has the same jump bar
+  (Language and appearance, backup, Team and roles, Storage and security).
+- **Shared look on every remaining screen:** tables, status pills, warnings and errors (errors now use the "bad"
+  tone instead of the warning tone), link buttons, totals, details and button rows. These legacy classes are
+  restyled to the component tokens, so Import Studio, Fix Later, cleanup, cost basis, backup, roles, the relay
+  inbox and the palette match without their markup changing.
+- **Sign-in, setup, invite and account pages** (`app/globals.css`): the same font, type scale, radius, elevation,
+  fields, buttons and top bar. These pages need Supabase, so they were not opened here; CI's authenticated gate
+  signs in through them.
+
+### Approach, and what is left for later chunks
+Margin, Home, the shell and the unlock screen are rebuilt on `components/ui`. The longest screens keep their
+markup and pick up the restyled classes instead. The gates exercise their file inputs, labels and button names
+in depth, so a full rewrite of Import Studio and Fix Later would mostly add risk. Each later chunk (7C onward)
+builds its new screens on `components/ui` and can move an older card when it touches it.
+
+### Screenshots
+| Screen | Before | After |
+|---|---|---|
+| Margin, light | [before](docs/ui/before/margin-light-desktop.png) | [after](docs/ui/after/margin-light-desktop.png) |
+| Margin, dark | — | [after](docs/ui/after/margin-dark-desktop.png) |
+| Data Hub | [before](docs/ui/before/data-hub-light-desktop.png) | [after](docs/ui/after/data-hub-light-desktop.png) |
+| Pricing | [before](docs/ui/before/pricing-light-desktop.png) | [after](docs/ui/after/pricing-light-desktop.png) |
+| Quotes | [before](docs/ui/before/quotes-light-desktop.png) | [after](docs/ui/after/quotes-light-desktop.png) |
+| Settings, dark | [before](docs/ui/before/settings-dark-desktop.png) | [after](docs/ui/after/settings-dark-desktop.png) |
+| Margin, phone | [before](docs/ui/before/margin-light-phone.png) | [after](docs/ui/after/margin-light-phone.png) |
+
+### Checks
+6 November 2026, Windows, local evidence; the CI run is linked once it finishes.
+- `tsc --noEmit`: clean.
+- TypeScript unit tests: 154 of 154 pass (i18n and theme tests included).
+- JavaScript unit tests: 78 of 78 pass.
+- Migration lock: 11 applied, 0 pending, unchanged.
+- `next build`: succeeded.
+- Vault browser gate: passed in headless Chrome 156.0.8078.80 and Edge 156.0.4314.58, including `uiLayout`, the
+  pseudo-locale walk over every section, `quotesUi` and the mobile check.
+- Relay gate (local PGlite transport): 11 checks passed.
+- `scripts/ui-screenshots.mjs` on the production build: every section in light and dark at 1366 and 375 wide, with
+  no horizontal overflow.
+
+### Not verified (7V-2)
+- CI for this commit: pending.
+- The sign-in, setup, invite and account pages were not opened locally (they need Supabase).
+- Screen readers were not tested by hand.
+

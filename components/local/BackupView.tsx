@@ -9,7 +9,7 @@ export function BackupView({client,busy,operation,unlocked,onStatus}:{client:Vau
  const [s,setS]=useState<Results['backupStatus']|null>(null),[hours,setHours]=useState('24'),[secret,setSecret]=useState(''),[file,setFile]=useState<File|null>(null),[message,setMessage]=useState('');
  const load=async()=>setS(await client.call('backupStatus',{}));useEffect(()=>{void load().catch(()=>setMessage(msg("backup.backupSettingsCouldNot")));},[client]);
  const run=(f:()=>Promise<void>)=>void operation(async()=>{await f();await load();});
- return <section className={styles.card}><h2>{t("backup.encryptedBackupAndRestore")}</h2><p role="status">{say(message)}</p>{s?.reminder&&<p className={styles.error}>{t("backup.noRecentFolderBackup")}</p>}{s?.error&&<p className={styles.error}>{t("backup.theLastFolderBackup")}</p>}
+ return <section className={styles.card} aria-labelledby="backup-heading"><h2 id="backup-heading">{t("backup.encryptedBackupAndRestore")}</h2><p role="status">{say(message)}</p>{s?.reminder&&<p className={styles.error}>{t("backup.noRecentFolderBackup")}</p>}{s?.error&&<p className={styles.error}>{t("backup.theLastFolderBackup")}</p>}
  {unlocked?<><p>{t("backup.scheduledCopiesRunWhile")}</p><p>{t("backup.folderStatus", { state: t(s?.configured ? "backup.selected" : "backup.notSelected"), last: s?.last ? fmt.dateTime(s.last) : t("common.none") })}</p><label>{t("backup.backupIntervalHours")}<input type="number" min="1" max="168" value={hours} onChange={e=>setHours(e.target.value)}/></label><button disabled={busy} onClick={()=>{
  const picker=(window as unknown as {showDirectoryPicker?:(o:{mode:string})=>Promise<FileSystemDirectoryHandle>}).showDirectoryPicker;
  if(!picker){setMessage(msg("backup.folderBackupNeedsChrome"));return;}

@@ -1226,6 +1226,8 @@ const worker = {
 } as const;
 
 const patches = {
+  "shell.onThisPage": "On this page",
+  "shell.jumpTo": "Jump to {name}",
   "shell.sidebar": "Main menu",
   "shell.menu": "Open menu",
   "shell.closeMenu": "Close menu",

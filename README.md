@@ -209,9 +209,9 @@ Keep `LEGACY_BUSINESS_ENABLED` unset/false. The retired class C/X handlers retur
 After an operator upgrades the workspace licence, an Owner/Admin can choose **Use licensed capacity** in local Settings. It updates only the encrypted vault’s capacity metadata, with a local audit entry; it neither sends rows to the server nor recreates the vault. Lower profiles stay available at setup.
 
 
-### Chunk 7V-1 — new look: app shell, unlock screen and Home (local checks; CI and review pending)
+### Chunk 7V — new look (7V-1 CI-verified in CI #95 and approved; 7V-2 local checks, CI pending)
 
-The app has a new shell: a sidebar with icons that collapses (a drawer on phones), a compact top bar with search and the language and theme pickers, page headers, and a summary strip. It is built from shared components in `components/ui` with design tokens in `app/theme.css`. The unlock screen and Home are rebuilt on them; the other screens move in 7V-2. Before and after screenshots are in [CHUNK_7V_VERIFICATION.md](./CHUNK_7V_VERIFICATION.md).
+The app has a new shell: a sidebar with icons that collapses (a drawer on phones), a compact top bar with search and the language and theme pickers, page headers, and a summary strip. It is built from shared components in `components/ui` with design tokens in `app/theme.css`. The unlock screen and Home were rebuilt on them in 7V-1. 7V-2 added the Margin waterfall chart, KPI tiles and whale curve, "On this page" jump bars in Data Hub and Settings, a tidier Pricing and Quotes layout, and the same look on every remaining screen and the account pages. Before and after screenshots are in [CHUNK_7V_VERIFICATION.md](./CHUNK_7V_VERIFICATION.md).
 
 ### Chunk 7B — Quote Desk, Price Check and customer credit (CI-verified: CI #89)
 

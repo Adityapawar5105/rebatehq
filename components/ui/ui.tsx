@@ -94,6 +94,12 @@ export function SectionTabs({ items, current, label, onSelect }: { items: { id: 
   return <nav className={s.tabs} aria-label={label}>{items.map(i => <a key={i.id} href={i.href} className={s.tab} aria-current={i.id === current ? "page" : undefined} onClick={() => onSelect?.(i.id)}>{i.icon && <Icon name={i.icon} size={16}/>}{i.label}</a>)}</nav>;
 }
 
+/** "On this page" bar: scrolls to a card heading without changing the section in the URL. */
+export function JumpNav({ label, items, jumpLabel }: { label: string; items: { id: string; label: string; icon?: IconName }[]; jumpLabel: (name: string) => string }) {
+  const go = (id: string) => { const el = document.getElementById(id); if (!el) return; const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches; el.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" }); };
+  return <nav className={s.jump} aria-label={label}>{items.map(i => <button key={i.id} type="button" className={s.jumpItem} aria-label={jumpLabel(i.label)} onClick={() => go(i.id)}>{i.icon && <Icon name={i.icon} size={15}/>}{i.label}</button>)}</nav>;
+}
+
 export type Step = { id: string; title: ReactNode; meta?: ReactNode; done: boolean; actions?: ReactNode; "data-testid"?: string };
 export function StepList({ steps }: { steps: Step[] }) {
   return <ol className={s.steps}>{steps.map(st => <li key={st.id} className={s.step} data-done={st.done ? "yes" : "no"} data-testid={st["data-testid"]}>

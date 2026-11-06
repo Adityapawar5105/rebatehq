@@ -71,12 +71,15 @@
 
 /* Tables */
 .tableWrap{overflow-x:auto;max-width:100%;border:1px solid var(--border);border-radius:var(--radius-md)}
-.table{width:100%;border-collapse:collapse;font-size:var(--fs-sm)}
+.table{width:100%;border-collapse:collapse;font-size:var(--fs-sm);overflow-wrap:normal}
+.table th,.table td{white-space:nowrap}
 .table caption{caption-side:top;text-align:left;padding:var(--space-3) var(--space-4);font-weight:650;color:var(--heading)}
 .table th,.table td{padding:var(--space-2) var(--space-4);border-bottom:1px solid var(--border-subtle);text-align:left;vertical-align:top}
 .table th{position:sticky;top:0;background:var(--surface-2);font-size:var(--fs-xs);font-weight:650;color:var(--text-muted);letter-spacing:.02em}
 .table tbody tr:last-child td{border-bottom:0}
 .table tbody tr:hover{background:var(--surface-2)}
+/* Long tables scroll inside their card; the header stays visible. */
+.tall{max-height:min(560px,70vh);overflow:auto}
 .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 
 /* Empty state, skeleton, progress */
@@ -110,6 +113,39 @@
 /* Dialog */
 .dialog{box-sizing:border-box;width:min(560px,94vw);max-height:88vh;overflow:auto;border:1px solid var(--border-strong);border-radius:var(--radius-lg);padding:var(--space-5);background:var(--surface);color:var(--text);box-shadow:var(--shadow-3)}
 .dialog::backdrop{background:var(--backdrop)}
+
+/* Data views (7V-2): KPI rows, number links, filter chips, waterfall bars and SVG charts */
+.kpis{margin:0 0 var(--space-5)}
+.numLink{background:none;border:0;padding:2px 4px;margin:-2px -4px;border-radius:var(--radius-sm);color:var(--link);font:inherit;font-variant-numeric:tabular-nums;text-decoration:underline;text-decoration-color:var(--border-strong);text-underline-offset:3px;cursor:pointer;min-height:0}
+.numLink:hover{background:var(--accent-surface);text-decoration-color:currentColor}
+.numLink:focus-visible{outline:3px solid var(--focus);outline-offset:1px}
+.chip{display:inline-flex;align-items:center;gap:var(--space-2);min-height:32px;padding:0 var(--space-3);border-radius:var(--radius-pill);border:1px solid var(--border-strong);background:var(--accent-surface);color:var(--link);font:inherit;font-size:var(--fs-xs);font-weight:600;cursor:pointer}
+.waterfall tbody tr[data-kind=subtotal] td,.waterfall tbody tr[data-kind=end] td,.waterfall tbody tr[data-kind=start] td{font-weight:700;color:var(--heading)}
+.waterfall tbody tr[data-kind=end] td{background:var(--accent-surface)}
+.wfCol{width:45%;min-width:160px}
+.wfTrack{position:relative;height:16px;border-radius:var(--radius-sm);background:var(--surface-2)}
+.wfBar{position:absolute;top:2px;bottom:2px;border-radius:3px;background:var(--chart-teal)}
+.wfBar[data-tone=ok]{background:var(--chart-green)}
+.wfBar[data-tone=bad]{background:var(--chart-red)}
+.wfBar[data-tone=muted]{background:var(--chart-track);outline:1px dashed var(--border-strong)}
+.chart{display:block;width:100%;max-width:720px;height:auto;margin:var(--space-3) 0 var(--space-4);overflow:visible}
+.chart .gridLine{stroke:var(--border-subtle);stroke-dasharray:3 4}
+.chart .axis{stroke:var(--border-strong)}
+.chart .tick{fill:var(--text-muted);font-size:11px}
+.chart .area{fill:var(--accent-surface)}
+.chart .line{fill:none;stroke:var(--accent);stroke-width:2.5;stroke-linejoin:round}
+.chart .peak{fill:var(--surface);stroke:var(--accent);stroke-width:2.5}
+.focusCard{border-color:var(--accent);box-shadow:var(--shadow-2)}
+.mathValue{font-size:var(--fs-2xl);margin:0 0 var(--space-3);color:var(--heading);font-variant-numeric:tabular-nums}
+@media(max-width:600px){.wfCol{min-width:110px;width:35%}}
+@media (forced-colors:active){.wfBar,.chart .line{forced-color-adjust:none;background:Highlight;stroke:Highlight}}
+
+/* Jump bar */
+.jump{display:flex;gap:var(--space-2);overflow-x:auto;scrollbar-width:thin;position:sticky;top:var(--header-h);z-index:5;margin:0 0 var(--space-4);padding:var(--space-2) 0;background:var(--bg)}
+.jumpItem{display:inline-flex;align-items:center;gap:var(--space-2);flex:none;min-height:34px;padding:0 var(--space-3);border-radius:var(--radius-pill);border:1px solid var(--border);background:var(--surface);color:var(--text-muted);font:inherit;font-size:var(--fs-xs);font-weight:600;cursor:pointer;white-space:nowrap}
+.jumpItem:hover{border-color:var(--border-strong);color:var(--text)}
+.jumpItem:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+@media(max-width:780px){.jump{position:static}}
 
 .srOnly{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 

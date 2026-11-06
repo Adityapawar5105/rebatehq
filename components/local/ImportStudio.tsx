@@ -10,6 +10,7 @@ import type { Health } from "@/lib/studio/health";
 import type { ReconSummary } from "@/lib/margin/aggregate";
 import { PLAYGROUND_PREFIX, type PlaygroundManifest } from "@/lib/studio/playground";
 import { fmt, msg, say, t, type MessageKey } from "@/lib/i18n";
+import { Icon } from "@/components/ui/Icon";
 import styles from "./vault.module.css";
 type Props = { client: VaultClient; status: VaultStatus; busy: boolean; operation: (work: () => Promise<void>) => Promise<void>; onStatus: (status: VaultStatus) => void; setMessage: (message: string) => void };
 const ACCEPT = ".csv,.tsv,.txt,.xlsx,.xlsm,.xls,.xlsb,.ods,.json,.xml";
@@ -62,11 +63,12 @@ export function ImportStudio({ client, status, busy, operation, onStatus, setMes
   const files = studio?.files ?? [], report = studio?.report ?? null, current = files.find(f => f.id === open) ?? null;
   const canCommit = !!report && report.loaded !== "0" && report.capOk && (report.rejected === "0" || ack);
   return <>
-    <section className={styles.card}>
-      <h2>{t("studio.importStudio")}</h2>
+    <section className={styles.card} aria-labelledby="studio-heading">
+      <h2 id="studio-heading">{t("studio.importStudio")}</h2>
       <p>{t("studio.dropTheFilesYou")}</p>
       <div className={styles.drop} data-over={over || undefined} onDragOver={event => { event.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)}
         onDrop={event => { event.preventDefault(); setOver(false); if (busy) return; const entries = [...event.dataTransfer.items].map(i => i.webkitGetAsEntry?.()).filter((e): e is FileSystemEntry => !!e); void (entries.length ? droppedFiles(entries) : Promise.resolve([...event.dataTransfer.files])).then(list => add(list)); }}>
+        <span className={styles.dropIcon}><Icon name="upload" size={22}/></span>
         <p><strong>{t("studio.dropFilesOrA")}</strong></p>
         <div className={styles.row} style={{ justifyContent: "center" }}>
           <label>{t("studio.chooseFiles")}<input data-testid="studio-files" type="file" multiple accept={ACCEPT} disabled={busy} onChange={event => { const list = [...(event.target.files ?? [])]; event.target.value = ""; void add(list); }}/></label>
