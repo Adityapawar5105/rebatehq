@@ -1,7 +1,7 @@
 # Chunk 7C verification — part 1
 
 7 November 2026. Scope: **7C-1, items 1–5 only**. Part 2 is not started.
-Status: local unit checks and the Chrome browser/relay harnesses pass. Edge and CI evidence pending. No Supabase
+Status: **7C-1 CI-verified** in [CI #100](https://github.com/Adityapawar5105/rebatehq/actions/runs/42284900986) on `aecfa32`. Chrome and Edge local harnesses pass. No Supabase
 migration or restore-inventory change; all 11 applied migrations and
 `migrations.lock` remain unchanged. No Restore Drill is required for this local
 data-plane change. Blueprint unchanged.
@@ -33,15 +33,15 @@ data-plane change. Blueprint unchanged.
 
 | Criterion | Evidence/status |
 |---|---|
-| Exact bridge and reconciling drills | Local DuckDB-Wasm golden tests pass |
-| Reversal through current guardrails, owner approval and export | Local unit tests pass; Chrome passed; Edge/CI pending |
-| Customer/tier/category impact and contract preservation | Local unit tests pass |
-| Dated/quantity-break exceptions, no duplicate gaps, source rows | Local unit tests pass |
-| 30/60/90-day expiry edges | Local unit tests pass |
-| Translated cost-free letter | French/Spanish unit tests pass; Chrome passed; Edge/CI pending |
-| Old schemas/fixture, margin goldens and rep hiding preserved | Full local suites pass; Chrome passed; Edge/CI pending |
-| Privacy gate and pseudo walk include all new views | Chrome passed; Edge/CI pending |
-| Part 1 committed, pushed and green before part 2 | Pending |
+| Exact bridge and reconciling drills | Verified in [CI #100](https://github.com/Adityapawar5105/rebatehq/actions/runs/42284900986) (DuckDB-Wasm golden tests) |
+| Reversal through current guardrails, owner approval and export | Verified in [CI #100](https://github.com/Adityapawar5105/rebatehq/actions/runs/42284900986) (unit and browser flows); Chrome/Edge also pass |
+| Customer/tier/category impact and contract preservation | Verified in [CI #100](https://github.com/Adityapawar5105/rebatehq/actions/runs/42284900986) (unit tests) |
+| Dated/quantity-break exceptions, no duplicate gaps, source rows | Verified in [CI #100](https://github.com/Adityapawar5105/rebatehq/actions/runs/42284900986) (unit tests) |
+| 30/60/90-day expiry edges | Verified in [CI #100](https://github.com/Adityapawar5105/rebatehq/actions/runs/42284900986) (unit tests) |
+| Translated cost-free letter | Verified in [CI #100](https://github.com/Adityapawar5105/rebatehq/actions/runs/42284900986) (French/Spanish unit tests, browser download); Chrome/Edge also pass |
+| Old schemas/fixture, margin goldens and rep hiding preserved | Verified in [CI #100](https://github.com/Adityapawar5105/rebatehq/actions/runs/42284900986) (239 unit tests and browser flows) |
+| Privacy gate and pseudo walk include all new views | Verified in [CI #100](https://github.com/Adityapawar5105/rebatehq/actions/runs/42284900986); Chrome/Edge also pass |
+| Part 1 committed, pushed and green before part 2 | `aecfa32`, [CI #100](https://github.com/Adityapawar5105/rebatehq/actions/runs/42284900986) green; 7C-2 not started |
 
 ## Command ledger
 
@@ -59,7 +59,7 @@ WindowsApps alias and made no changes; subsequent scripted edits used Node.
 | `node node_modules/.pnpm/tsx@4.23.15/node_modules/tsx/dist/cli.mjs --test --test-concurrency=1 tests/*.test.ts` | 161 passed (adds seven 7C-1 tests) |
 | `node scripts/check-migrations-lock.mjs` | Passed: 11 applied, 0 pending |
 | Targeted `tsx --test tests/pricing-ops.test.ts tests/quotes.test.ts tests/i18n.test.ts` | SQL/parser and unused-key findings fixed; populated-book and transaction regressions pass |
-| `node scripts/test-control-vault.mjs --browser=chrome` | Production build passes. Earlier attempts found a stale localhost listener, missing table accessible names, a select locator, and a real 512 MiB bulk lookup failure. Fixed; Chrome passed: 39 named checks plus the 11-check local relay harness; Edge pending |
+| `node scripts/test-control-vault.mjs --browser=chrome` | Production build passes. Earlier attempts found a stale localhost listener, missing table accessible names, a select locator, and a real 512 MiB bulk lookup failure. Fixed; Chrome and Edge passed: 39 named checks and 11 local relay checks each |
 
 SQL was executed against **the actual pinned DuckDB-Wasm engine**, the owner of
 these local tables, rather than Postgres's different SQL dialect. New v11 DDL,
@@ -81,8 +81,9 @@ Additional commands/diagnostics:
 
 ## Unverified
 
-- CI on this commit and authenticated local-Supabase privacy behavior. Local
-  Chrome uses a synthetic identity; it does not prove authentication.
+- Hosted sign-in/deployment remains unverified. Authenticated local-Supabase
+  behavior is verified by [CI #100](https://github.com/Adityapawar5105/rebatehq/actions/runs/42284900986); the local Chrome/Edge harnesses use synthetic
+  identity and do not independently prove authentication.
 - Hosted sign-in/deployment, real customer contracts/ERP layouts and pilot results.
 - Native-speaker review, manual screen-reader testing and physical crash/quota/
   multi-tab behavior. Existing recovery evidence retains its original scope.
@@ -101,9 +102,11 @@ margin/Playground goldens, privacy, pseudo walk and light/dark desktop/phone lay
 The relay harness passes 11 checks using its local PGlite transport; authenticated
 Supabase remains CI-only evidence. This is not a headed manual review.
 
-The six ignored local screenshots are 7c-chrome-{bridge,planner,versions,exceptions,
+The six ignored local Chrome screenshots are 7c-chrome-{bridge,planner,versions,exceptions,
 expiry,versions-dark-mobile}.png in test-results/. Planner and dark mobile versions
-were visually inspected; no layout issue was found. Edge is running.
+were visually inspected, along with the Edge exception and expiry screens; no
+layout issue was found. Edge 156.0.4314.58 also passed all 39 named checks and its
+11-check local relay harness on the same machine.
 
 ## Files changed
 
@@ -117,4 +120,31 @@ were visually inspected; no layout issue was found. Edge is running.
 - Docs: this record, ASSUMPTIONS.md, README.md, AGENTS.md, CODEX_HANDOFF.md,
   BLUEPRINT_EXECUTION_PLAN.md. Blueprint unchanged.
 
-Commit/push/CI are pending at this point; no result is inferred.
+## CI evidence and close-out
+
+Verified in [CI #100](https://github.com/Adityapawar5105/rebatehq/actions/runs/42284900986), code commit `aecfa3214132d017ec595696cb5919b1733e2edb`,
+7 November 2026 in Asia/Kolkata (6 November UTC). The job is green. The required
+**authenticated local-vault privacy gate ran, was not skipped, and passed 41 named
+checks** (Chromium 156.0.8078.4, auth=true), including pricingOps, pricingOpsUi,
+privacy, uiLayout and i18nUi. Its separate real-authenticated local-Supabase relay
+harness passed 11 checks. The new UI check has 10 flags covering bridge identity,
+branch drill, planner, letter, owner approval, reversal draft/export, exception
+source rows, expiry and unchanged invoice counts.
+
+The same run passed frozen-lockfile installation, dependency audit, typecheck,
+78 JS + 161 TS tests, production build, all 11 applied hashes, runtime role/no-context
+checks, and the 152-check fresh pgTAP suite twice with no residue. No restore
+workflow was run; Supabase objects and inventory did not change. This does not
+prove hosted behavior, native translation quality or real ERP compatibility.
+
+Git commands: `git add -- <the 31 listed files>`, `git diff --cached --check`,
+`git diff --cached --stat`, and the protected-path staged diff passed.
+`git commit -F test-results/7c-commit.txt` created `aecfa32`.
+`git push origin main` initially hit sandbox DNS restrictions; the approved
+outside-sandbox retry succeeded. `git status --short` then showed only the
+pre-existing, untouched, untracked .claude/ directory. GitHub job/step/log tools
+confirmed the result; live job logs were unavailable until completion. No CI fix
+attempt was needed.
+
+This close-out changes documentation only. Its commit/push and follow-up CI result
+will be reported in the final reply. Blueprint unchanged; stop before 7C-2.

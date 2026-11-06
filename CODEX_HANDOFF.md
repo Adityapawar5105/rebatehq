@@ -47,7 +47,7 @@ Read before doing anything, in this order:
 
 Where things stand: chunks 4.0 through 7B and the 7V UI redesign are done and CI-verified. New screens use the
 shared components in components/ui (ui.tsx, Icon.tsx, ui.module.css) inside the shell in components/local/VaultApp.tsx. The local vault is DuckDB-Wasm in a Web
-Worker with encrypted OPFS snapshots, schema v10 (lib/vault/schema.ts). Supabase holds only identity,
+Worker with encrypted OPFS snapshots, schema v11 (37 tables; lib/vault/schema.ts). Supabase holds only identity,
 licences/seats, public data and a ciphertext-only relay (11 applied migrations, all locked).
 
 Hard rules (from the execution plan preamble; they override convenience):
@@ -550,9 +550,10 @@ Write CHUNK_8R_VERIFICATION.md. After 8R, every chunk except 9A is done. 9A wait
 ```
 
 
-## Chunk 7C-1 implementation handoff (7 November 2026; CI pending)
+## Chunk 7C-1 implementation handoff (7 November 2026; CI-verified)
 
-Items 1–5 only are implemented; see CHUNK_7C_VERIFICATION.md. The local vault is
+Items 1–5 are CI-verified in [CI #100](https://github.com/Adityapawar5105/rebatehq/actions/runs/42284900986) on `aecfa32`;
+see CHUNK_7C_VERIFICATION.md. The local vault is
 v11 (37 tables), including price_changesets and price_changeset_rows. Part 2 is
 not started. No Supabase migration or migrations.lock change.
 
@@ -569,3 +570,8 @@ Additional Block B pitfalls found:
 - On an 8 GB machine, do not run the JS suite, TS suite and production build together.
   Their embedded databases can exhaust memory. --test-concurrency=1 changes scheduling,
   not assertions; CI retains its existing commands.
+
+- Bulk price lookups must use resolvedBook() equality joins and staged/grouped inputs.
+  A scalar LATERAL lookup over the complete price book exhausted 512 MiB even
+  for a small segment. Keep the 100k-line/20k-price regression and the memory
+  limit; do not enable plaintext spill or raise the limit to mask a bad join.

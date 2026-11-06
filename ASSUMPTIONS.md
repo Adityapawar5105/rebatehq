@@ -508,7 +508,7 @@ chunk. This chunk makes no blueprint changes and does not commit those edits.
 - **Relay decisions on a quote** (security-review follow-up): an approval from the 7A relay counts only if every approver holds `quoteApprove` in the rep's vault and isn't the quote's author. The shared number and price total must still match the quote. Editing a quote or deciding it locally clears its relay link. An approver counts only with an explicit role in the rep's vault (Settings → Roles) or as the named Pricing Owner. An unknown person, or a vault with no roles yet, grants nothing, and the "whoever opens it is Owner" fallback for pre-5A vaults never applies to relay approvers.
 
 
-## Chunk 7C-1 — pricing operations (7 November 2026; CI unverified)
+## Chunk 7C-1 — pricing operations (7 November 2026; CI-verified)
 
 - Scope is items 1–5 only. No competitor log, editable grid, sliders, extra leak
   types or landed check (7C-2) is started. The Playground manifest is unchanged.
@@ -574,3 +574,9 @@ chunk. This chunk makes no blueprint changes and does not commit those edits.
   a narrow scope and 20,002-pair tier approval/reversal. This is correctness and
   memory-regression evidence, not a 1M/2M performance claim. Versions currently
   show the latest 100 approved entries; older records are not deleted.
+
+Verified in [CI #100](https://github.com/Adityapawar5105/rebatehq/actions/runs/42284900986) on `aecfa32`: 239 unit tests, 41 named authenticated
+local-vault checks and 11 authenticated relay checks. Local Chrome/Edge each
+passed 39 vault + 11 local-transport relay checks. Hosted behavior, native-language
+review and 1M/2M feature performance stay unverified. An absent month means no
+imported rows, not proof of zero business activity; file coverage must be reviewed.

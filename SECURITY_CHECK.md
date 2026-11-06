@@ -384,3 +384,22 @@ CI #39 passed the readiness golden results, upload/fetch security and ingestion 
 Privacy boundary: with `LEGACY_BUSINESS_ENABLED` off (the default), pricing, cost, invoice, rule and margin data in the local vault flow stay on the device; the server's class C/X business-data handlers return 410 and their pages are off. **Verified by the privacy gate and route test in CI run [RebateHQ CI #65](https://github.com/Adityapawar5105/rebatehq/actions/runs/41883249192)** (`38911ee`; authenticated gate `auth: true`, 33 named checks including `retiredHandlers`, `retiredRoutesOff`, `cipherOnly` and `privacy`). Scope: it covers the default-off retired API configuration and the local vault flow on the CI build. Turning the flag on brings the legacy paths back. Historical server business rows are kept (their tables drop in the approved chunks 6R and 8R, not yet run), so there is no app-wide historical zero-storage claim, and deployed configuration is not covered by this run.
 
 Actor trust now uses a private HMAC verifier and reviewed append boundary; app.real_actor_id is ignored by the replacement trigger/policy. Raw JWT forgery and actor-GUC spoofing are rejected, and failed-login byte limits, the direct-call DB rate limit and the rollback-surviving global budget hold, preserving fixed-event and EXECUTE allowlists: these passed on real Postgres in CI #65 pgTAP (and on the restored database in Drill #16). Cross-transaction signature replay is rejected in the PGlite unit test that also ran in CI #65; it has no real-Postgres pgTAP check yet. Their prior Phase 1 open-item descriptions above are historical; production verification remains outstanding. New public functions are in config/function-acl-allowlist.sql. The global key table is private, forced-RLS and owner-only, with operation-only audit.
+
+
+## Chunk 7C-1 — local pricing operations (CI-verified)
+
+Verified in [CI #100](https://github.com/Adityapawar5105/rebatehq/actions/runs/42284900986) on `aecfa32`, 7 November 2026 (local date).
+The required authenticated privacy gate ran and passed 41 named checks, including
+the worker transaction/audit/encrypted-reload regression and the ten-part 7C UI
+flow. The separate authenticated local-Supabase relay gate passed 11 checks.
+78 JS and 161 TS tests passed, including Starter/downgrade gates, denial of every
+new command to Sales Reps, decision-16 payload classification, exact margin
+reconciliation and the 512 MiB populated-book pricing regression.
+
+New operations remain in the vault worker with signed licence/capability gates.
+Drafts do not change the price book; current guardrails, named Pricing Owner
+approval and audited export remain mandatory. Local vault v11 adds two encrypted
+business-data tables (37 local tables total). No Supabase migration, applied hash,
+server route or restore inventory changed. Legacy business routes remain off.
+This is evidence for the authenticated **local vault flow**, not hosted deployment,
+physical-crash behavior, native-language review or 1M/2M performance.
