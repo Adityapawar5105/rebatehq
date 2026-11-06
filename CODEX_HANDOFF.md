@@ -1,6 +1,6 @@
 # RebateHQ — Codex handoff: prompts for every remaining chunk
 
-Written 6 November 2026, after 7B (CI #89, #90, #91 green). This file is the starting point for whoever builds
+Written 6 November 2026, after 7B (CI #89, #90, #91 green); updated 7 November 2026 after 7V (CI #95, #96 green). This file is the starting point for whoever builds
 the next chunk. It holds what a new session needs without the earlier chat history.
 
 ## How to use this file
@@ -42,9 +42,11 @@ Read before doing anything, in this order:
 2. BLUEPRINT.md (v2.3 governs; section 22 lists every change) and BLUEPRINT_EXECUTION_PLAN.md (chunk order and preamble).
 3. ARCHITECTURE_TRANSITION.md, MIGRATION_RULES.md, ASSUMPTIONS.md, RETIREMENT_PROPOSAL.md (for 8R).
 4. CODEX_HANDOFF.md Block B (pitfalls) — every item there caused a real failure before.
-5. The latest verification records: CHUNK_7B_VERIFICATION.md, CHUNK_7U_VERIFICATION.md, CHUNK_7A_VERIFICATION.md.
+5. The latest verification records: CHUNK_7V_VERIFICATION.md (UI components and layout rules), CHUNK_7B_VERIFICATION.md,
+   CHUNK_7U_VERIFICATION.md, CHUNK_7A_VERIFICATION.md.
 
-Where things stand: chunks 4.0 through 7B are done and CI-verified. The local vault is DuckDB-Wasm in a Web
+Where things stand: chunks 4.0 through 7B and the 7V UI redesign are done and CI-verified. New screens use the
+shared components in components/ui (ui.tsx, Icon.tsx, ui.module.css) inside the shell in components/local/VaultApp.tsx. The local vault is DuckDB-Wasm in a Web
 Worker with encrypted OPFS snapshots, schema v10 (lib/vault/schema.ts). Supabase holds only identity,
 licences/seats, public data and a ciphertext-only relay (11 applied migrations, all locked).
 
