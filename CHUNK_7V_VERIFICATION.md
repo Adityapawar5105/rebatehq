@@ -96,7 +96,7 @@ Neither set showed horizontal overflow on any section, at either width or in eit
 - Screen readers were not tested by hand. The landmarks, labels, focus order and skip link were checked by the
   gates' role- and label-based selectors only.
 
-## 7V-2 — every other screen
+## 7V-2 — every other screen (CI-verified: CI #96)
 
 **User approval of 7V-1 (6 November 2026):** "Approve, start 7V-2".
 
@@ -147,7 +147,11 @@ builds its new screens on `components/ui` and can move an older card when it tou
 | Margin, phone | [before](docs/ui/before/margin-light-phone.png) | [after](docs/ui/after/margin-light-phone.png) |
 
 ### Checks
-6 November 2026, Windows, local evidence; the CI run is linked once it finishes.
+**CI-verified:** [CI #96](https://github.com/Adityapawar5105/rebatehq/actions/runs/42269867429) passed on `9063e73` in 13m 54s:
+- the authenticated privacy gate, including `uiLayout`;
+- the real-Supabase relay gate (11 checks).
+
+Local evidence (6 November 2026, Windows):
 - `tsc --noEmit`: clean.
 - TypeScript unit tests: 154 of 154 pass (i18n and theme tests included).
 - JavaScript unit tests: 78 of 78 pass.
@@ -160,7 +164,6 @@ builds its new screens on `components/ui` and can move an older card when it tou
   no horizontal overflow.
 
 ### Not verified (7V-2)
-- CI for this commit: pending.
 - The sign-in, setup, invite and account pages were not opened locally (they need Supabase).
 - Screen readers were not tested by hand.
 

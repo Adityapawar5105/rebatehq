@@ -16,7 +16,7 @@ the next chunk. It holds what a new session needs without the earlier chat histo
 | Order | Chunk | Supabase migration? | Status |
 |---|---|---|---|
 | 1 | 7V-1 UI redesign: design system, shell, Home | No | Done: approved by the user; [CI #95](https://github.com/Adityapawar5105/rebatehq/actions/runs/42264359487) green on `108d427` |
-| 2 | 7V-2 UI redesign: every other screen | No | Built here (see CHUNK_7V_VERIFICATION.md for its CI run) |
+| 2 | 7V-2 UI redesign: every other screen | No | Done: [CI #96](https://github.com/Adityapawar5105/rebatehq/actions/runs/42269867429) green on `9063e73` |
 | 3 | 7C Pricing ops | No | Next |
 | 4 | 7D Rebates | No | — |
 | 5 | 7E Vendor review and simulator | No | — |
