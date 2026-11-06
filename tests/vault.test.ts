@@ -130,7 +130,7 @@ test("local data paths contain no business API, raw SQL protocol, or real OPFS w
   const workflow = readFileSync(".github/workflows/ci.yml", "utf8"); assert.ok(workflow.includes("pnpm test:vault:privacy")); assert.ok(!workflow.includes("continue-on-error"));
   // CI #87 hung for 6 hours in apt inside `playwright install --with-deps`: every job and the network-bound steps have limits.
   assert.match(workflow, /verify:\n\s+runs-on: [^\n]+\n(\s+#[^\n]*\n)*\s+timeout-minutes: \d+/); assert.match(readFileSync(".github/workflows/restore-drill.yml", "utf8"), /restore-drill:\n\s+runs-on: [^\n]+\n(\s+#[^\n]*\n)*\s+timeout-minutes: \d+/);
-  assert.ok(/timeout (-k \d+ )?\d+ pnpm exec playwright install --with-deps chromium/.test(workflow) && workflow.includes('Acquire::http::Timeout') && !/^\s+pnpm exec playwright install/m.test(workflow), "the browser install is bounded and retried");
+  assert.ok(/timeout (-k \d+ )?\d+ pnpm exec playwright install --with-deps chromium/.test(workflow) && workflow.includes('Acquire::http::Timeout') && workflow.includes('DPkg::Lock::Timeout') && workflow.includes("pgrep -x 'apt-get|dpkg'") && !/^\s+pnpm exec playwright install/m.test(workflow), "the browser install is bounded and retried");
   assert.ok(!readFileSync("scripts/vault-test-auth.mjs", "utf8").includes("setSession("));
   assert.ok(readFileSync("app/lab/vault/page.tsx", "utf8").includes('process.env.VAULT_LAB_ENABLED !== "true"'));
 });

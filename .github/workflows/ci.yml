@@ -76,16 +76,19 @@ jobs:
           for(const [key,value] of Object.entries(values)){if(!value)throw Error('Missing local-stack setting '+key);if(key.includes('KEY'))console.log('::add-mask::'+value);fs.appendFileSync(process.env.GITHUB_ENV,key+'='+value+'\n');}
           JS
       - name: Install Playwright Chromium and its system packages (bounded, retried)
-        timeout-minutes: 20
+        timeout-minutes: 25
         shell: bash
         run: |
           set -uo pipefail
-          # apt waits forever on a stalled mirror by default; fail a request after 30 s and retry it.
-          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' | sudo tee /etc/apt/apt.conf.d/99rebatehq-network-timeouts > /dev/null
+          # apt waits forever on a stalled mirror by default; fail a request after 30 s and retry it, and let a
+          # retry wait for the dpkg lock instead of failing at once.
+          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nDPkg::Lock::Timeout "120";\n' | sudo tee /etc/apt/apt.conf.d/99rebatehq-network-timeouts > /dev/null
           for attempt in 1 2 3; do
             if timeout -k 20 360 pnpm exec playwright install --with-deps chromium; then exit 0; fi
             echo "::warning::Playwright install attempt $attempt failed or timed out; retrying."
-            sleep 15
+            # `timeout` cannot signal the root apt-get that playwright starts through sudo (CI #90), so a slow
+            # download keeps the dpkg lock. Wait up to 5 minutes for it to finish before the next attempt.
+            for _ in $(seq 1 60); do pgrep -x 'apt-get|dpkg' > /dev/null || break; sleep 5; done
           done
           echo "::error::Playwright Chromium could not be installed after 3 attempts (package mirror or download problem, not a test failure)."
           exit 1

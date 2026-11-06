@@ -6,7 +6,9 @@ on `f344009`:
 - The relay gate passed 11 checks on real authenticated local Supabase.
 
 A follow-up commit adds the security-review fixes below and the CI time limits (CI #87 hung for 6 hours in
-`apt`; see the CI note at the end). Its CI run is linked once it passes. 7B adds no Supabase migration (the 11 applied migrations and
+`apt`; see the CI note at the end).
+- [CI #90](https://github.com/Adityapawar5105/rebatehq/actions/runs/42250541945) passed on `c56ac52` (relay-decision fixes and CI time limits) in 18m 29s, with the privacy gate (`quotesUi`) and the relay gate (11 checks). It ran into the slow mirror again: see the CI note.
+- [CI #91](https://github.com/Adityapawar5105/rebatehq/actions/runs/42251110870) passed on `f9494e4` (strict approver lookup) in 10m 41s, with the same gates. 7B adds no Supabase migration (the 11 applied migrations and
 `migrations.lock` are unchanged). The local vault schema moves from v9 to **v10**.
 
 ## What was built
@@ -133,7 +135,6 @@ A follow-up commit adds the security-review fixes below and the CI time limits (
 - The 7A relay gate was not rerun locally. 7B does not change the relay code.
 
 ## Not verified
-- **CI for the follow-up commit** (security fixes and CI time limits) is pending.
 - **Real relay round trip for a quote exception.** The 7A relay gate shares references through the inbox UI,
   not from Quote Desk. Quote sharing is unit-tested against a stubbed relay, which checks what is sent, the
   author match and the decision mapping. An end-to-end check needs vault data in each relay test vault.
@@ -158,3 +159,12 @@ recording 7U. GitHub cancelled it at the 6-hour job limit.
     retries, and each install attempt is capped at 6 minutes, with 3 attempts.
   - The privacy gate step has a 25-minute limit.
   - `tests/vault.test.ts` fails if these limits are removed.
+
+### The safeguard in practice ([CI #90](https://github.com/Adityapawar5105/rebatehq/actions/runs/42250541945))
+- The Ubuntu mirror was slow again, at about 40 kB/s. Install attempt 1 was cut off at 6 minutes.
+- Attempt 2 failed in 18 s: `Could not get lock /var/lib/dpkg/lock-frontend`. `timeout` cannot signal the root
+  `apt-get` that Playwright starts through `sudo`, so the first download kept running and held the lock.
+- Attempt 3 succeeded once that download finished, and the run passed in 18m 29s instead of hanging.
+- **Follow-up fix:** apt now waits up to 120 s for the dpkg lock (`DPkg::Lock::Timeout`). After a failed attempt,
+  the step waits up to 5 minutes for a leftover `apt-get`/`dpkg` to exit before retrying. The step limit is now
+  25 minutes. [CI #91](https://github.com/Adityapawar5105/rebatehq/actions/runs/42251110870) did not hit the slow mirror (no retries). The CI run for this follow-up is pending.
