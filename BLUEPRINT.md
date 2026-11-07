@@ -1,7 +1,7 @@
-# RebateHQ Blueprint v2.3
+# RebateHQ Blueprint v2.4
 
 *Local-first pricing and margin software for wholesale distributors.*
-*Last updated: 5 Nov 2026 (v2.1 adopted 2 Nov 2026; v2.2 and v2.3 changes listed in section 22)*
+*Last updated: 8 Nov 2026 (v2.1 adopted 2 Nov 2026; v2.2, v2.3 and v2.4 changes listed in section 22)*
 
 ---
 
@@ -34,7 +34,7 @@
 | 2 | Architecture | Hybrid local-first (data plane in browser, thin cloud control plane) |
 | 3 | Engine | DuckDB-Wasm in a Web Worker, persisted in OPFS |
 | 4 | Persistence | Persistent storage request + folder auto-backup (Chrome/Edge) + encrypted export fallback |
-| 5 | Browsers | Chrome and Edge officially supported |
+| 5 | Browsers | Chrome and Edge officially supported; Firefox supported from Phase 2; Safari desktop via a Phase 3 verification spike; iOS Safari for the mobile thin client only (chunk 9A) |
 | 6 | CRM connectors | Salesforce/HubSpot deferred to Phase 2, only if pilots ask |
 | 7 | Launch integration | CSV/XLSX in (multi-file, with built-in converter), ERP-ready file out |
 | 8 | Approvals | Maximum two approval levels, preset thresholds |
@@ -198,11 +198,20 @@ Goals, not promises. Benchmark on an 8 GB office laptop. "100M rows in a tab" cl
 - **Rep compliance scorecard:** floor/target compliance and "margin protected" points, never margin % or cost; team view by default, individual view opt-in, no leaderboard by default
 - **Folder re-import:** re-run saved converter recipes against a remembered folder (Chrome/Edge File System Access, permission re-prompted each session)
 
+**Phase 2 additions (v2.4)**
+- **Multi-currency:** a workspace display currency (e.g. CAD, AUD, GBP) set in Settings, with a user-entered FX rate per import batch; all amounts in the app (margins, waterfall, quotes, leak totals) display in the workspace currency. No live exchange-rate fetch from the browser
+- **Customer health alerts:** margin-drop cards on Home when a customer's pocket margin falls more than a configurable threshold (default 5 pp) over a rolling 90-day window, or when order frequency drops while discounting deepens; runs when the app is open and feeds the weekly digest; SQL threshold rules on `agg_cm`, not AI — called "Customer health alerts" not "AI monitoring"
+- **Competitor log — suggest alternatives:** when a competitor price is logged on a SKU, the top 3 highest-margin alternatives in the same product category for that customer are shown, ranked by pocket margin; SQL query on price matrix and margin aggregates, no ML
+- **Supplier claim generator:** generate a claim-ready CSV/XLSX export from the supplier rebate tracker for direct submission to the supplier (part of chunk 7D)
+- **Sync status indicator:** last-synced timestamp and synced / pending / conflict status in the relay UI, so users understand that each device holds its own local copy and sync happens via approved relay events
+- **"90-day cash leak" hero number on Home:** the Home dashboard prominently shows the exact cash left on the table over the last 90 days from the existing leak finder data, not just a margin percentage; no schema or calculation change, a UX framing requirement on the Home spec
+
 ### Phase 3
 - Explainable deal guidance (shows the why) and cross-sell suggestions ("customers like X also buy Y")
 - Margin Drain agents (local background checks)
 - Cost index triggers (user-uploaded or public data first), including an import-cost currency buffer rule (rates entered by the user or taken from the control plane's public index feed, never fetched from the browser directly)
-- Dead-stock clearance optimiser (idle 90+ days, floored at replacement cost)
+- Dead-stock clearance optimiser (idle 90+ days, floored at replacement cost) with user-entered carrying-cost parameters (cost of capital % and storage cost per unit per month), showing total capital tied up per SKU in cash terms and suggesting substitute SKUs
+- Safari desktop verification spike: confirm OPFS persistence and DuckDB-Wasm multi-threaded mode in Chrome/Edge behaviour parity before claiming Safari desktop as a supported browser
 - Win/loss log
 - Opt-in anonymous benchmarks (aggregates only, explicit consent)
 - Offline PWA mode, audit and compliance pack
@@ -370,7 +379,7 @@ Success metric: **time to first leak found under 2 minutes.**
 |---|---|
 | Security | Encryption at rest, passphrase never leaves device, relay sees ciphertext only |
 | Reliability | Autosave, versioned snapshots, restore wizard |
-| Browsers | Chrome and Edge officially |
+| Browsers | Chrome and Edge officially; Firefox from Phase 2; Safari desktop after a Phase 3 verification spike |
 | Accessibility | Keyboard navigation, readable contrast, no colour-only signals; light, dark and high-contrast themes built on colour tokens |
 | Languages | No hard-coded user-facing strings from 7U on; `Intl` formatting for numbers, dates and currency; generated text (rule explanations, show-the-math, reports) built from message keys; ERP exports and audit-log entries stay language-neutral; a pseudo-locale test in CI catches untranslated or truncated text |
 | Updates | Instant web deploys, versioned data migrations |
@@ -397,6 +406,7 @@ Success metric: **time to first leak found under 2 minutes.**
 | COEP breaks third-party resources (auth, fonts) | Spike checks Supabase sign-in and assets with COEP on; use `credentialless` or self-host if needed |
 | Mobile snapshot on a lost phone | Snapshot holds floor-price status only (no costs), expires, is bound to a revocable device (5B) and is encrypted |
 | iOS storage eviction and memory limits | Thin client only (no DuckDB on the phone); verify Safari/Chrome storage behaviour in a spike at the start of 9A; keep Chrome/Edge as the only desktop claim |
+| Safari desktop storage eviction and threading | OPFS persistence and DuckDB-Wasm multi-threaded mode must be confirmed in the Phase 3 verification spike before claiming Safari desktop support; do not advertise it until the spike passes |
 | Translation drift and finance jargon | Glossary of fixed terms, native-speaker review before a language ships, ship only languages a pilot asks for; each new feature carries its strings in every shipped language |
 | Rep numbers leak cost | Decision 16: show compliance and floor status only; a test checks that no rep-role payload contains cost or margin % |
 | Alerts only run while the app is open | State this in the UI and in the digest; show "last checked" rather than implying a background service |
@@ -624,3 +634,15 @@ Corrections after reviewing the repository and build history against v2.1. Produ
     - **7V-2:** every remaining screen.
 
     It adds no feature, tier, data-model or privacy change. Every later chunk builds its screens on the 7V components. The mobile field-rep PWA (9A) still waits until the user asks for it. Codex prompts for the remaining chunks are in `CODEX_HANDOFF.md`.
+
+24. **8 Nov 2026 — v2.4: multi-currency, Firefox, customer health alerts, competitor log enhancement, dead-stock carrying costs, sync status indicator, supplier claim generator, cash-leak hero number (decisions 5; sections 6, 12, 13).**
+    - **Multi-currency (Phase 2):** a workspace display currency plus a user-entered FX rate per import batch. All amounts (margins, leaks, waterfall, quotes) display in the workspace currency. No live exchange-rate fetch from the browser (dropped rule unchanged). Added to Phase 2 feature list and chunk 7C/7D scope.
+    - **Firefox officially supported (decision 5):** modern Firefox supports OPFS, SharedArrayBuffer with COOP/COEP, and DuckDB-Wasm reliably. Added to decision 5 and section 12 non-functional requirements. Chrome and Edge remain the primary desktop targets.
+    - **Safari desktop verification spike (Phase 3):** OPFS persistence and DuckDB-Wasm multi-threaded mode must be confirmed in a Phase 3 spike before claiming Safari desktop as supported. Added to Phase 3 feature list and section 13 risks. Do not advertise Safari support until the spike passes.
+    - **Customer health alerts — pulled to Phase 2 (sections 6, 13):** SQL threshold alerts (margin drop above a configurable threshold, default 5 pp, over a rolling 90-day window; order-frequency drop with deepening discounts) surface as cards on Home and feed the weekly digest. Runs when the app is open — the existing risk note ("alerts only run while the app is open") applies and the UI must say so. These are SQL threshold rules on `agg_cm`, not AI or ML; they are labelled "Customer health alerts" in the product, not "AI monitoring." Pulled forward from the Phase 3 Margin Drain agents; the full background-agent version stays in Phase 3.
+    - **Competitor log — suggest alternatives (Phase 2):** when a competitor price is logged on a SKU, the top 3 highest-margin alternatives in the same product category for that customer are shown, ranked by pocket margin. SQL query on price matrix and margin aggregates; no ML. Full "customers like X also buy Y" cross-sell stays in Phase 3.
+    - **Supplier claim generator (7D):** the supplier rebate tracker generates a claim-ready CSV/XLSX export so the user can submit directly to the supplier from the app. Added to the 7D (rebates) chunk scope.
+    - **Sync status indicator (relay UX):** a last-synced timestamp and synced / pending / conflict status indicator in the relay UI. Not a new feature; a UX requirement added to the 7A relay spec so users understand the local-copy-plus-relay model.
+    - **Dead-stock carrying cost inputs (Phase 3):** the dead-stock optimiser gains user-entered carrying-cost parameters (cost of capital % and storage cost per unit per month), showing total capital tied up per SKU in cash terms. Updated in the Phase 3 feature list.
+    - **"90-day cash leak" hero number (Home spec):** the Home dashboard prominently shows the exact cash left on the table over the last 90 days from the existing leak finder data, not just a margin percentage. No schema or calculation change; a UX framing requirement on the already-built leak finder (4D). Added as a Home dashboard spec note.
+    - Scope, tiers ($299 / $599 / $999) and prices are unchanged.

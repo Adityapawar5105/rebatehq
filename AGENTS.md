@@ -3,11 +3,13 @@
 ## Governing blueprint
 
 Read `BLUEPRINT.md` before planning or implementing RebateHQ work. It is the
-user-approved **RebateHQ Blueprint v2.3**: v2.1 (Final) was adopted by the user on
+user-approved **RebateHQ Blueprint v2.4**: v2.1 (Final) was adopted by the user on
 2 November 2026, v2.2 corrections were made on 2 November 2026 with the
-user's standing permission, and v2.3 (UX foundations chunk 7U, languages, mobile
+user's standing permission, v2.3 (UX foundations chunk 7U, languages, mobile
 in Professional built last as 9A, new Phase 2 items; drafted 5 November 2026 at the user's request)
-is not yet built; all are listed in its section 22. It supersedes earlier
+is not yet built, and v2.4 (multi-currency, Firefox support, customer health alerts in Phase 2,
+competitor log alternatives, supplier claim generator, dead-stock carrying costs, sync status,
+cash-leak hero number; 8 November 2026) is not yet built; all are listed in its section 22. It supersedes earlier
 product plans where they conflict. Later explicit user instructions still take
 precedence. Any later blueprint edit must add an entry to that changes section and
 be reported to the user.
