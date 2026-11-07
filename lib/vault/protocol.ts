@@ -47,6 +47,16 @@ export type CleanupUndone = { summary: string; restored: string; skipped: string
 export type StorageStatus = { persistent: boolean; usage: string; quota: string; namedOpfsBytes: string; files: string };
 export type ImportEstimate = { bytes: string; estimatedMemoryBytes: string; maxLines: string; maxProducts: string; warning: string };
 export type Commands = {
+  competitorList:{product:string;customer?:string|null};
+  competitorAdd:{input:import("../pricing/market").CompetitorInput};
+  priceGrid:{offset?:number;search?:string};
+  priceGridPaste:{text:string;keys:string[];start:number};
+  priceGridDraft:{edits:import("../pricing/grid").GridEdit[];revision:string};
+  ruleWhatIf:{id:string;increase:string;exact:boolean};
+  priceLandedState:{id?:string;offset?:number};
+  priceLandedCheck:{receipt:string;file:File};
+  serviceOrders:{offset?:number};
+  serviceFlag:{key:string;free:boolean};
   marginBridge:{input?:BridgeInput};
   priceOpsState:Record<string,never>;
   priceExceptions:{input?:ExceptionInput};
@@ -139,6 +149,16 @@ export type Commands = {
 export type LeaksView = { result: LeakResult; roi: RoiSummary; sample: boolean; recorded: number };
 export type CommitResult = { loaded: string; rejected: string; files: string; cleanup: boolean };
 export type Results = {
+  competitorList:Awaited<ReturnType<VaultService["competitorList"]>>;
+  competitorAdd:Awaited<ReturnType<VaultService["competitorAdd"]>>;
+  priceGrid:Awaited<ReturnType<VaultService["priceGrid"]>>;
+  priceGridPaste:Awaited<ReturnType<VaultService["priceGridPaste"]>>;
+  priceGridDraft:Awaited<ReturnType<VaultService["priceGridDraft"]>>;
+  ruleWhatIf:Awaited<ReturnType<VaultService["ruleWhatIf"]>>;
+  priceLandedState:Awaited<ReturnType<VaultService["priceLandedState"]>>;
+  priceLandedCheck:Awaited<ReturnType<VaultService["priceLandedCheck"]>>;
+  serviceOrders:Awaited<ReturnType<VaultService["serviceOrders"]>>;
+  serviceFlag:Awaited<ReturnType<VaultService["serviceFlag"]>>;
   marginBridge:Awaited<ReturnType<VaultService["marginBridge"]>>;
   priceOpsState:Awaited<ReturnType<VaultService["priceOpsState"]>>;
   priceExceptions:Awaited<ReturnType<VaultService["priceExceptions"]>>;

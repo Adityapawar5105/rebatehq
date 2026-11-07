@@ -162,7 +162,12 @@ const REVIEWED: Record<string, string> = {
   relayView: "7A relay: only what a member chose to share", relayRegister: "7A relay", relayJoin: "7A relay", relayRotate: "7A relay", relaySync: "7A relay", relayShare: "7A relay: the sharer types the amount",
   relayRequest: "7A relay", relayDecide: "7A relay", relayComment: "7A relay: free text", relayRetry: "7A relay", relayDiscard: "7A relay",
 };
-test("decision 16: no Sales Rep payload contains cost or margin", async () => {
+test("decision 16: no Sales Rep payload contains cost or margin", async (context) => {
+  // Keep the strict value scan: a random UUID can otherwise contain the short cost sentinel.
+  // Deterministic valid fixture IDs remove that collision without exempting any payload field.
+  let fixtureId=0;
+  context.mock.method(globalThis.crypto,"randomUUID",()=>`90000000-0000-4000-8000-${String(++fixtureId).padStart(12,"0")}` as ReturnType<Crypto["randomUUID"]>);
+  assert.ok(leaks({id:`fixture-${COST}`}).length>0,"The scanner must still reject the sentinel inside an ID");
   const caps = capsFor("sales_rep", false);
   const repActions = (Object.keys(ACTION_CAP) as Array<keyof typeof ACTION_CAP>).filter(a => ACTION_CAP[a] === null || caps.includes(ACTION_CAP[a]!));
   assert.deepEqual([...repActions].sort(), [...SCANNED, ...Object.keys(REVIEWED)].sort(), "classify every command a Sales Rep can call");

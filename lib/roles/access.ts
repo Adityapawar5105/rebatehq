@@ -58,6 +58,16 @@ export const intersect = (a: Cap[], b: Cap[]) => a.filter(c => b.includes(c));
  * fail when a new command is added without a decision.
  */
 export const ACTION_CAP: Record<Action, Cap | null> = {
+  competitorList:"cost",
+  competitorAdd:"pricing",
+  priceGrid:"pricing",
+  priceGridPaste:"pricing",
+  priceGridDraft:"pricing",
+  ruleWhatIf:"pricing",
+  priceLandedState:"pricing",
+  priceLandedCheck:"pricing",
+  serviceOrders:"cost",
+  serviceFlag:"pricing",
   marginBridge:"cost",priceOpsState:"pricing",priceExceptions:"cost",priceExpiry:"cost",pricePlan:"pricing",priceRollback:"pricing",priceLetter:"pricing",
   relayView:"collaborate",relayRegister:"collaborate",relayJoin:"collaborate",relayRotate:"collaborate",relaySync:"collaborate",relayShare:"collaborate",relayRequest:"collaborate",relayDecide:"collaborate",relayComment:"collaborate",relayRetry:"collaborate",relayDiscard:"collaborate",
   capacityUpgrade: "roles", licenceSet: null, init: null, create: null, unlock: null, lock: null, touch: null, cancel: null, save: null, storage: null,

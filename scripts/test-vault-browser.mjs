@@ -148,6 +148,7 @@ try {
   if(process.argv.includes('--pricing-bench')){const m=await worker('pricingBenchmark',{},900000);console.log(JSON.stringify(m,null,2));await writeFile('test-results/pricing-benchmark-'+channel+'.json',JSON.stringify({browser:results.browser,machine:results.machine,...m},null,2));process.exit(0);}
   if(process.argv.includes('--phase5a-bench')){const m=await worker('phase5aBenchmark',{},900000);console.log(JSON.stringify(m,null,2));await writeFile('test-results/phase5a-benchmark-'+channel+'.json',JSON.stringify({browser:results.browser,machine:results.machine,...m},null,2));process.exit(0);}
   if(process.argv.includes('--pricing-only')){console.log(JSON.stringify(await worker('pricing',{},600000),null,2));process.exit(0);}
+  results.checks.pricingTools=await worker("pricingTools",{},180000);console.log("7C-2 worker transactions, audit, role denial and encrypted reload: PASS");
   results.checks.pricingOps=await worker("pricingOps",{},180000);console.log("7C-1 worker transactions, audit and encrypted reload: PASS");
   if(process.argv.includes("--pricing-ops-only")){console.log(JSON.stringify(results.checks.pricingOps));process.exit(0);}
   const fixture = await readFile("tests/fixtures/vault/v1.enc");
@@ -351,6 +352,18 @@ try {
   assert.equal(await page.getByTestId('line-count').getAttribute('data-value'),invoiceRowsBefore,'Pricing ops changed invoice row counts');
   results.checks.pricingOpsUi={bridgeReconciles:true,branchDrill:true,planner:true,letter:true,ownerApproval:true,reversalDraft:true,reversalExport:true,exceptionsSourceRows:true,contractExpiry:true,invoiceRowsUnchanged:true};
 
+
+  // 7C-2: new screens remain inside the authenticated request/console marker sensors.
+  await page.getByRole('link',{name:'Price grid',exact:true}).click();await page.getByTestId('price-grid').waitFor();await page.getByLabel('Filter product, category or customer',{exact:true}).fill(priceSku);await page.getByRole('button',{name:'Load local rows',exact:true}).click();await page.waitForFunction(()=>document.querySelector('[data-testid=price-grid]')?.getAttribute('aria-busy')==='false');await page.waitForFunction(sku=>document.querySelector('[data-testid=grid-price-0]')?.getAttribute('aria-label')==='New unit price '+sku,priceSku);
+  await page.getByTestId('grid-price-0').evaluate(el=>{const transfer=new DataTransfer();transfer.setData('text/plain','120.01');el.dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:transfer}));});await page.waitForFunction(()=>document.querySelector('[data-testid="grid-price-0"]')?.value==='120.01');
+  await opsShot('grid');await page.getByTestId('grid-review').click();await page.getByRole('heading',{name:'Change preview',exact:true}).waitFor();await page.getByRole('cell',{name:'120.01',exact:true}).first().waitFor();await page.getByRole('button',{name:'Approve as Pricing Owner',exact:true}).click();await page.getByRole('heading',{name:'Export Studio',exact:true}).waitFor();
+  const gridDownloads=[];const receive=d=>gridDownloads.push(d);page.on('download',receive);await page.getByRole('button',{name:'Export prices and change log',exact:true}).click();await page.getByText('Generic file only: preserve the price kind, category, customer, quantity break and dates. Test with your ERP before applying.',{exact:true}).waitFor();page.off('download',receive);assert.equal(gridDownloads.length,2);
+  const gridBytes=await readFile(await gridDownloads[0].path());await page.getByRole('link',{name:'Price-change landed check',exact:true}).click();await page.getByTestId('landed-check').waitFor();await page.getByTestId('landed-check').locator('input[type=file]').setInputFiles({name:'synthetic-next-erp.csv',mimeType:'text/csv',buffer:gridBytes});await page.getByRole('button',{name:'Compare locally',exact:true}).click();await page.getByText('1 of 1 exported rows applied.',{exact:true}).waitFor();await opsShot('landed');
+  await page.getByRole('link',{name:'Rules and previews',exact:true}).click();await page.getByLabel('Saved rule',{exact:true}).selectOption({index:1});const slider=page.getByTestId('what-if').locator('input[type=range]');await slider.focus();await slider.press('ArrowRight');await page.getByTestId('what-if').getByText('Exact rounded impact on release. Save the rate, then simulate to create an approvable draft.',{exact:true}).waitFor();
+  await page.locator('nav a[href="#margin"]').click();await page.getByRole('link',{name:'Competitor prices',exact:true}).click();await page.getByTestId('competitor-product').fill(priceSku);await page.getByLabel('Competitor',{exact:true}).fill(marker+' competitor');await page.getByLabel('New unit price',{exact:true}).fill('119.01');await page.getByLabel('Source (plain text; never fetched)',{exact:true}).fill(marker+' local note');await page.getByRole('button',{name:'Save observation locally',exact:true}).click();await page.getByRole('cell',{name:marker+' competitor',exact:true}).waitFor();await page.getByRole('cell',{name:'119.01',exact:true}).waitFor();await opsShot('competitors');
+  await page.getByRole('link',{name:'Cost to serve',exact:true}).click();await page.getByTestId('service-orders').waitFor();assert.equal(await page.getByTestId('line-count').getAttribute('data-value'),invoiceRowsBefore);
+  results.checks.pricingToolsUi={excelPaste:true,ownerApproval:true,scopeExport:true,landed:true,exactSlider:true,competitor:true,costToServe:true,invoiceRowsUnchanged:true};
+
   // 7B: Price Check answers on Enter (barcode scanners send Enter), a below-floor quote asks for a
   // reason, the Owner sees margin, the Sales Rep preview never does, and the quote fits a phone.
   await page.getByRole('link',{name:'Quotes',exact:true}).click();
@@ -423,7 +436,7 @@ try {
     await page.waitForFunction(()=>!document.querySelector('main [aria-busy="true"]'),null,{timeout:60000}).catch(()=>undefined);await page.waitForTimeout(1500);
     const left=await untranslated();if(left.length)pseudoFindings[hash]=left;
     if(hash==='#margin'||hash==='#pricing'){
-      const ids=hash==='#margin'?['margin-bridge']:['planner','versions','exceptions','expiry'];
+      const ids=hash==='#margin'?['margin-bridge','competitors','service']:['grid','landed','planner','versions','exceptions','expiry'];
       for(const id of ids){const tab=page.getByTestId('ops-tab-'+id);if(!await tab.count())continue;await tab.click();await page.waitForTimeout(1800);const extra=await untranslated();if(extra.length)pseudoFindings[hash+'/'+id]=extra;assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Pricing ops overflow in pseudo locale');}
     }
   }

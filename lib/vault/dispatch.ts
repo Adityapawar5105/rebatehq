@@ -13,6 +13,16 @@ export async function dispatch(service: VaultService, request: Request, hooks: H
   service.licenceGuard(request.action);
   const { progress } = hooks;
   switch (request.action) {
+    case "competitorList": return service.competitorList(request.data.product,request.data.customer);
+    case "competitorAdd": return service.competitorAdd(request.data.input);
+    case "priceGrid": return service.priceGrid(request.data.offset,request.data.search);
+    case "priceGridPaste": return service.priceGridPaste(request.data.text,request.data.keys,request.data.start);
+    case "priceGridDraft": return service.priceGridDraft(request.data.edits,request.data.revision);
+    case "ruleWhatIf": return service.ruleWhatIf(request.data.id,request.data.increase,request.data.exact);
+    case "priceLandedState": return service.priceLandedState(request.data.id,request.data.offset);
+    case "priceLandedCheck": return service.priceLandedCheck(request.data.receipt,request.data.file,hooks.signal());
+    case "serviceOrders": return service.serviceOrders(request.data.offset);
+    case "serviceFlag": return service.serviceFlag(request.data.key,request.data.free);
     case "relayView":case "relayRegister":case "relayJoin":case "relayRotate":case "relaySync":case "relayShare":case "relayRequest":case "relayDecide":case "relayComment":case "relayRetry":case "relayDiscard":return service.relay(request,hooks.signal());
     case "home": return service.home();
     case "checklist": return service.checklist();

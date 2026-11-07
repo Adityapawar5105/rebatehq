@@ -580,3 +580,88 @@ local-vault checks and 11 authenticated relay checks. Local Chrome/Edge each
 passed 39 vault + 11 local-transport relay checks. Hosted behavior, native-language
 review and 1M/2M feature performance stay unverified. An absent month means no
 imported rows, not proof of zero business activity; file coverage must be reviewed.
+
+## Chunk 7C-2 assumptions (8 November 2026; CI unverified until a passing run)
+
+- Scope is items 6–10 only. No 7D or later work. Blueprint unchanged. Local vault
+  v12 adds five tables (42 total): competitor_prices, price_grid_drafts,
+  price_export_receipts, price_landed_checks and sales_service_flags. No Supabase
+  object, inventory, locked migration or hash changes. The encrypted v1 fixture
+  remains frozen and upgrades forward through v12.
+- Competitor observations are manual, in workspace currency, for a product,
+  competitor, price, observation date and plain-text source. Sources are never
+  fetched. The comparison uses today's existing resolver at quantity one and
+  optional customer context. Observations do not automatically change prices.
+  Entries survive product cleanup as historical evidence; an absent product
+  cannot be silently retargeted. The current screen shows the latest 100 entries.
+- Starter's Basic grid edits product list prices only, at most 50 changes per
+  draft. Professional/Scale also edit existing matrix rows (customer, tier,
+  category and quantity breaks), up to 500 changes per draft. Pages have 50 rows.
+  Only prices are editable; Excel paste is one column anchored at the focused
+  visible row. Decimal points, two places maximum, no grouping, signs, formulas,
+  empty cells or extra columns. Invalid paste is rejected as a whole.
+- A grid draft preserves complete scope and before values as bounded JSON with
+  integer-cent/decimal strings. It reuses rule_runs, rule_revisions and
+  price_versions, current guardrails, date/revision conflicts, named Pricing
+  Owner approval and hash-chained audit. It never writes live prices on edit.
+  Matrix changes are dated today (or retain a future start); historical rows are
+  closed, not repriced retroactively. End dates and quantity breaks are retained.
+  Reversal is another guarded draft; conflicting/expired rows block it.
+- Grid impact reprices positive historical sale quantities whose current resolver
+  selects the edited row, including quantity breaks and overrides. It is an
+  estimate, not a revenue forecast; future-dated prices may have zero currently
+  resolved units. Generic/category rows use the strictest applicable guardrail;
+  category rows have unknown unit cost, not a guessed aggregate margin. Grid
+  exports use the generic layout with all scope columns and price_kind; other ERP
+  layouts are refused. A real ERP compatibility review is still required.
+- Slider conditions come from the selected SAVED rule. Worker calls are debounced
+  200 ms with stale-response protection. Approximation aggregates unrounded
+  uplift over the cached bounded rule base; exact release rounds unit prices and
+  line impacts with the existing half-away-from-zero rule. Neither writes a run.
+  Save the rate and explicitly simulate before approval. Cache keys include rule,
+  data version, pricing revision and UTC day. No new 1M/2M performance claim.
+- Cost-to-serve groups sale lines by source file, invoice, customer and date;
+  absent invoice numbers remain individual lines. A length-prefixed key avoids
+  ambiguous concatenation without a DuckDB extension. An invoice must have known
+  costs on every line, freight > 0, margin before freight >= 0 and margin after
+  freight < 0. "Small" is net invoiced sales <= SMALL_ORDER_CENTS (25,000 cents,
+  250.00 workspace currency). This is a review heuristic, not freight rating.
+  Free delivery requires explicit local confirmation on the Cost to serve tab;
+  it is never inferred from a freight charge. Returns/credits are excluded.
+- Invoice loss is allocated only over its negative-margin source lines by
+  cumulative integer division weighted by each line's loss. Allocation sums to
+  the invoice loss and never exceeds a line's loss. The existing per-line MAX
+  overlap rule counts that loss once in the deduplicated total. Freight is not
+  deducted again. The original five planted Playground findings stay unchanged;
+  derived cost-to-serve findings may overlap them. ROI v1 records identified
+  findings, not guaranteed recovery; Phase 2 ROI reconciliation is separate.
+- Every successful price export now writes an immutable receipt in the same
+  audited transaction as export status, including exact scope, cents, profile,
+  time and local SHA-256. Landed checks default to the latest receipt, allow an
+  earlier receipt, and never compare against a moving current price book.
+  Existing exports made before v12 need re-exporting to create a receipt.
+- Landed input is one-sheet XLSX or UTF-8 CSV/TSV, <=32 MiB and <=300,000 rows.
+  Keep the original scope columns, decimal prices and ISO dates. No formulas,
+  macros or ambiguous/missing columns are accepted. Duplicate scopes, missing
+  scope and different prices are distinct findings with file row references.
+  Only receipt rows are assessed; unrelated ERP rows cannot count as applied.
+  Checks and receipts persist encrypted, and history lists the latest 50.
+- Every new command has a capability and read-only/mutation classification;
+  Sales Reps cannot call any of them. Pro features enforce the signed licence,
+  including advanced drafts after downgrade; Basic grid remains in Starter.
+  Worker SQL/payloads never go to a business-data API, console or analytics.
+  New strings have en/es/fr message keys, fr-CA inherits; native review remains
+  unverified. Headed/manual UX, deployed auth and real ERP results are unverified.
+
+Additional 7C-2 review controls: grid copies preserve raw matrix category and
+raw tier (including blank versus NULL); reversal checks the applied scope as
+well as its amount. Zero-list-price sale lines remain in loss/evidence queries,
+so free goods carrying freight cannot inflate allocations onto another line.
+Their discount rate is unknown when its denominator is zero. The slider's input
+uses basisPointsDecimal, without the display formatter's percent suffix.
+
+Matrix rows already starting today or later are updated in place at approval,
+so their stable IDs and resolver tie-break order survive. Earlier rows are closed
+and a new current-dated period is inserted. Draft creation does neither. Leak
+cache identity includes the licensed cost-to-serve gate as well as data version;
+a cached Pro result cannot appear after downgrade to Starter.

@@ -61,7 +61,7 @@ async function testFixture(bytes: Uint8Array) {
   await closeMemory(probe);
   const service = new VaultService(() => undefined); await service.init(fixtureScope);
   const result = await service.unlock(secret);
-  assert(result.schemaVersion === "11" && result.lines === "1", "V1 snapshot did not upgrade with its row intact");
+  assert(result.schemaVersion === "12" && result.lines === "1", "V1 snapshot did not upgrade with its row intact");
   const agg = (await service.engine!.conn.query("SELECT count(*)::VARCHAR AS n, sum(list_cents)::VARCHAR AS l, max(line_kind) AS k FROM agg_cpm")).toArray()[0];
   assert(agg.n === "1" && agg.l === "1250" && agg.k === "sale", "V1 upgrade must build the margin pre-aggregate from existing lines");
   assert((await service.marginWaterfall()).margin === "375", "Upgraded v1 line waterfall wrong");
@@ -404,7 +404,7 @@ async function margin() {
   const service = new VaultService(() => undefined); await service.init(scope); await service.create(secret, "professional");
   const result: Record<string, unknown> = {};
   const out = await service.playgroundLoad(noop), manifest = out.manifest;
-  assert((await service.status()).schemaVersion === "11", "New vaults must be schema v11");
+  assert((await service.status()).schemaVersion === "12", "New vaults must be schema v12");
   // 1. The waterfall equals the imported lines recomputed one by one with the JS engine.
   const raw = await rowsOf(service, "SELECT invoice_id, customer_id, strftime(sale_date, '%Y-%m') AS m, list_cents::VARCHAR AS l, discount_cents::VARCHAR AS d, rebate_cents::VARCHAR AS r, freight_cents::VARCHAR AS f, cost_cents::VARCHAR AS c, line_kind AS k FROM sales_lines");
   let list = Z, discount = Z, rebate = Z, freight = Z, pocket = Z, costedPocket = Z, cost = Z, marginJs = Z;
@@ -606,6 +606,28 @@ async function cipherOnly() {
   await walk(await navigator.storage.getDirectory()); return { cipherOnly: true, files };
 }
 
+
+async function pricingToolsFlow(){
+ const scope={userId:'tools-'+crypto.randomUUID(),tenantId:'tools-'+crypto.randomUUID()},service=new VaultService(()=>undefined);
+ const hooks={signal:()=>new AbortController().signal,progress:()=>undefined};
+ const call=(action:string,data:unknown={})=>dispatch(service,{id:'tools',action,data} as never,hooks) as Promise<any>;
+ await service.init(scope);await service.create(secret,'professional','Synthetic Owner');
+ try{
+  const e=service.engine!;await e.conn.query(`INSERT INTO products(product_id,category,current_cost,list_price) VALUES('TOOL-P','Synthetic',800,1000);INSERT INTO customers(customer_id,tier) VALUES('TOOL-C','T');INSERT INTO source_files VALUES('TOOL-S','synthetic.csv','sales_history',0,'2026-11-07');INSERT INTO sales_lines(source_id,line_id,product_id,customer_id,sale_date,quantity,list_cents,discount_cents,freight_cents,rebate_cents,cost_cents,source_row,invoice_id) VALUES('TOOL-S',1,'TOOL-P','TOOL-C','2026-01-01',1,1000,0,300,0,800,2,'TOOL-I');`);
+  await(service as unknown as {derived(value:typeof e):Promise<void>}).derived(e);await service.save();
+  const comp=await call('competitorAdd',{input:{product:'TOOL-P',competitor:'Synthetic competitor',price:'11.01',date:'2026-11-07',source:'Synthetic note'}});assert(comp.rows[0].price==='1101','Competitor cents differ');
+  const state=await call('priceGrid'),edits=await call('priceGridPaste',{text:'12.01',keys:state.rows.map((r:any)=>r.key),start:0});
+  const draft=await call('priceGridDraft',{edits,revision:state.revision});assert(draft.rows[0].after==='1201','Grid cents differ');await call('ruleApprove',{id:draft.id});
+  const exported=await call('priceExport',{id:draft.id,profile:'generic',format:'xlsx'}),receipts=await call('priceLandedState');
+  const checked=await call('priceLandedCheck',{receipt:receipts.receipts[0].id,file:new File([exported.blob],'synthetic-erp.xlsx')});assert(checked.applied==='1','Landed round trip differs');
+  const orders=await call('serviceOrders');assert(orders.length===1,'Service invoice missing');await call('serviceFlag',{key:orders[0].invoice_key,free:true});const leaks=await call('leaks');assert(leaks.result.findings.some((f:any)=>f.type==='free_delivery_loss'&&f.cents==='100'),'Free delivery loss missing');
+  await call('rolePreview',{role:'sales_rep'});for(const action of ['competitorList','priceGrid','ruleWhatIf','priceLandedState','serviceOrders']){let denied=false;try{await call(action);}catch(e){denied=(e as {code:string}).code==='FORBIDDEN';}assert(denied,'Rep received pricing tools');}await call('rolePreview',{role:null});
+  assert((await service.verify()).valid,'Tools audit invalid');await service.lock();await service.unlock(secret);
+  assert((await call('competitorList',{product:'TOOL-P'})).rows.length===1,'Competitor lost on reload');assert((await call('priceLandedState',{id:checked.checks[0].id})).applied==='1','Landed receipt lost');assert((await call('serviceOrders'))[0].free_delivery,'Confirmation lost');assert((await service.verify()).valid,'Reloaded tools audit invalid');
+  return {competitor:true,paste:true,draft:true,approval:true,scopedXlsx:true,landed:true,serviceLoss:true,repDenied:true,audit:true,encryptedReload:true};
+ }finally{await service.lock();await reset(scope);}
+}
+
 async function pricingOpsFlow(){
  const scope={userId:'ops-'+crypto.randomUUID(),tenantId:'ops-'+crypto.randomUUID()},service=new VaultService(()=>undefined);await service.init(scope);await service.create(secret,'professional','Synthetic Owner');
  try{
@@ -725,7 +747,7 @@ async function phase5a() {
   let refusedNoOwner=false;try{await call(service,'create',{passphrase:secret,tier:'professional',ownerName:'  '});}catch(e){refusedNoOwner=(e as Error).message.includes('Pricing Owner');}
   assert(refusedNoOwner&&!(await service.status()).exists,'A vault was created without a named Pricing Owner');
   const created=await call(service,'create',{passphrase:secret,tier:'professional',ownerName:'Synthetic Pricing Owner'});
-  assert(created.schemaVersion==='11'&&created.access.role==='owner'&&created.access.ownerNamed&&created.access.caps.includes('approve'),'The creator is not the Owner and named Pricing Owner');
+  assert(created.schemaVersion==='12'&&created.access.role==='owner'&&created.access.ownerNamed&&created.access.caps.includes('approve'),'The creator is not the Owner and named Pricing Owner');
   assert((await call(service,'pricingState')).owner.name==='Synthetic Pricing Owner','Pricing Owner was not stored at setup');
   // Sample data never completes setup steps; it still feeds every view.
   await service.playgroundLoad(()=>undefined);
@@ -850,7 +872,7 @@ self.onmessage = async event => {
       assert(!opened, "Tampered engine asset was executed");
       self.postMessage({ result: { tamperedAssetRejected: true } }); return;
     }
-    const result = action === "pricingOps" ? await pricingOpsFlow() : action === "phase5aBenchmark" ? await phase5aBenchmark() : action === "phase5a" ? await phase5a() : action === "pricing" ? await pricingFlow() : action === "legacyStorage" ? await legacyStorage() : action === "pricingBenchmark" ? await pricingBenchmark() : action === "fixture" ? await fixture() : action === "v1" ? await testFixture(event.data.bytes) : action === "seed" ? await seed(event.data.rows) : action === "firstChange" ? await firstChange(event.data.rows) : action === "integrity" ? await integrity() : action === "studio" ? await studio() : action === "mapper" ? await mapper() : action === "playground" ? await playground() : action === "margin" ? await margin() : action === "marginBenchmark" ? await marginBenchmark(event.data.rows) : action === "studioBenchmark" ? await studioBenchmark(event.data.rows) : action === "warmup" ? await warmup() : action === "cipherOnly" ? await cipherOnly() : await storageStatus();
+    const result = action === "pricingTools" ? await pricingToolsFlow() : action === "pricingOps" ? await pricingOpsFlow() : action === "phase5aBenchmark" ? await phase5aBenchmark() : action === "phase5a" ? await phase5a() : action === "pricing" ? await pricingFlow() : action === "legacyStorage" ? await legacyStorage() : action === "pricingBenchmark" ? await pricingBenchmark() : action === "fixture" ? await fixture() : action === "v1" ? await testFixture(event.data.bytes) : action === "seed" ? await seed(event.data.rows) : action === "firstChange" ? await firstChange(event.data.rows) : action === "integrity" ? await integrity() : action === "studio" ? await studio() : action === "mapper" ? await mapper() : action === "playground" ? await playground() : action === "margin" ? await margin() : action === "marginBenchmark" ? await marginBenchmark(event.data.rows) : action === "studioBenchmark" ? await studioBenchmark(event.data.rows) : action === "warmup" ? await warmup() : action === "cipherOnly" ? await cipherOnly() : await storageStatus();
     self.postMessage({ result });
   } catch (e) { self.postMessage({ error: e instanceof Error ? e.message : "test worker failed" }); }
 };

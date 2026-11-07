@@ -1,3 +1,7 @@
+import * as grid from '../pricing/grid';
+import * as market from '../pricing/market';
+import {whatIf} from '../pricing/whatif';
+import * as serviceCost from '../margin/service-cost';
 import * as ops from "../pricing/ops";
 import {bridge,type BridgeInput} from "../margin/bridge";
 import { VaultLicence, capacitySql } from "./licence";
@@ -270,7 +274,7 @@ export class VaultService {
   }
   // ---- Margin intelligence (chunk 4D) -------------------------------------------------
   private dataVersion = 0;
-  private leakCache: { version: number; result: LeakResult } | null = null;
+  private leakCache: { version: number; costToServe:boolean; result: LeakResult } | null = null;
   /** After any change to sales lines: rebuild the pre-aggregate and reconcile it with the lines (same transaction). */
   private async derived(engine: Engine) {
     await engine.conn.query("BEGIN");
@@ -295,7 +299,8 @@ export class VaultService {
   private async isSample(engine: Engine) { const s = await listSources(engine); return s.length > 0 && s.every(x => x.name.startsWith(PLAYGROUND_PREFIX)); }
   private async leakResult() {
     const engine = this.requireEngine();
-    if (!this.leakCache || this.leakCache.version !== this.dataVersion) this.leakCache = { version: this.dataVersion, result: await findLeaks(engine) };
+    const costToServe=this.licence.tier!=='starter';
+    if (!this.leakCache || this.leakCache.version !== this.dataVersion || this.leakCache.costToServe!==costToServe) this.leakCache = { version: this.dataVersion,costToServe,result: await findLeaks(engine,costToServe) };
     return this.leakCache.result;
   }
   /** Run the leak finder and record new or changed findings in the ROI ledger (audited, saved). */
@@ -578,13 +583,23 @@ export class VaultService {
     finally { if (count) await this.afterFixes(e, merged); }
     return { summary: msg("vault.fixCount", { count }), restored: String(restored), skipped: String(skipped), status: await this.status(), scan: await cleanup.scan(e), history: await cleanup.history(e) };
   }  /** Guardrails and price floors are visible to every role; rules, simulations and their costs only to roles that edit pricing. */
+  async competitorList(product:string,customer:string|null=null){this.opsTier();return market.competitors(this.requireEngine(),product,customer);}
+  async competitorAdd(input:market.CompetitorInput){this.opsTier();await this.pricingWrite('pricing.competitor_recorded',async e=>{await e.conn.query(await market.competitorSql(e,input,this.identity.userId));});return this.competitorList(input.product);}
+  async priceGrid(offset=0,search=''){return grid.gridRows(this.requireEngine(),this.licence.tier!=='starter',offset,search);}
+  async priceGridPaste(text:string,keys:string[],start:number){return grid.pastedPrices(text,keys,start);}
+  async priceGridDraft(edits:grid.GridEdit[],revision:string){await this.requireOwnerNamed();let id='';await this.pricingWrite('pricing.grid_drafted',async e=>{id=await grid.gridDraft(e,edits,revision,this.identity.userId,this.licence.tier);});return this.rulePreview(id);}
+  async ruleWhatIf(id:string,increase:string,exact:boolean){this.opsTier();if(typeof exact!=='boolean')grid.fail();return whatIf(this.requireEngine(),id,increase,exact,this.dataVersion);}
+  async serviceOrders(offset=0){this.opsTier();return serviceCost.serviceOrders(this.requireEngine(),offset);}
+  async serviceFlag(key:string,free:boolean){this.opsTier();await this.pricingWrite('pricing.delivery_confirmed',async e=>{await e.conn.query(await serviceCost.serviceFlagSql(e,key,free,this.identity.userId));});return this.serviceOrders();}
+  async priceLandedState(id?:string,offset=0){this.opsTier();return market.landedState(this.requireEngine(),id,offset);}
+  async priceLandedCheck(receipt:string,file:File,signal?:AbortSignal){this.opsTier();const e=this.requireEngine(),r=(await pricing.rows(e,`SELECT rows_json FROM price_export_receipts WHERE id=${sqlText(receipt)}`))[0];if(!r)grid.fail();const result=await market.landedFile(file,JSON.parse(r.rows_json),signal),id=crypto.randomUUID();await this.pricingWrite('pricing.landed_checked',async db=>{await db.conn.query(`INSERT INTO price_landed_checks VALUES(${sqlText(id)},${sqlText(receipt)},${sqlText(file.name.slice(0,160))},${sqlText(new Date().toISOString())},${sqlText(JSON.stringify(result))})`);});return this.priceLandedState(id);}
   private opsTier(){if(this.licence.tier==='starter')throw new VaultError('LICENCE',msg('ops.needPro'));}
   async marginBridge(input?:BridgeInput){this.opsTier();return bridge(this.requireEngine(),input);}
   async priceOpsState(){this.opsTier();return ops.opsState(this.requireEngine());}
   async priceExceptions(input?:ops.ExceptionInput){this.opsTier();return ops.exceptions(this.requireEngine(),input);}
   async priceExpiry(days:number,asOf?:string,offset?:number){this.opsTier();return ops.expiry(this.requireEngine(),days,asOf,offset);}
   async pricePlan(input:ops.PlanInput){this.opsTier();await this.requireOwnerNamed();let run='';const details={actor:this.identity.userId,run_id:''};await this.write('pricing.plan_drafted',details,async e=>{run=await ops.planDraft(e,input,this.identity.userId);details.run_id=run;});return this.rulePreview(run);}
-  async priceRollback(version:string){this.opsTier();await this.requireOwnerNamed();let run='';const details={actor:this.identity.userId,run_id:'',version_id:version};await this.write('pricing.rollback_drafted',details,async e=>{run=await ops.rollbackDraft(e,version,this.identity.userId);details.run_id=run;});return this.rulePreview(run);}
+  async priceRollback(version:string){this.opsTier();await this.requireOwnerNamed();let run='';const details={actor:this.identity.userId,run_id:'',version_id:version};await this.write('pricing.rollback_drafted',details,async e=>{run=await grid.gridRollback(e,version,this.identity.userId,this.licence.tier)??await ops.rollbackDraft(e,version,this.identity.userId);details.run_id=run;});return this.rulePreview(run);}
   async priceLetter(id:string,locale:import('../i18n/core').Locale){this.opsTier();const file=await ops.increaseLetter(this.requireEngine(),id,locale);await this.pricingWrite('pricing.letter_exported',async()=>{});return file;}
   async pricingState(){const state=await pricing.pricingState(this.requireEngine());if((await this.access()).caps.includes('pricing'))return state;return {...state,rules:[],runs:[]};}
   /** Pricing changes need a named Pricing Owner (required at setup). */
@@ -603,12 +618,13 @@ export class VaultService {
     await this.pricingWrite('pricing.simulated',async e=>{const r=await pricing.simulate(e,id);await e.conn.query(r.sql);result=r;});
     return {...await pricing.preview(this.requireEngine(),result!.id),ms:result!.ms};
   }
-  async rulePreview(id:string,offset=0){if(id.startsWith("ops-"))this.opsTier();return pricing.preview(this.requireEngine(),id,offset);}
-  async ruleApprove(id:string){if(id.startsWith("ops-"))this.opsTier();await this.pricingWrite('pricing.approved',async e=>{await e.conn.query(await pricing.approveSql(e,id,this.identity.userId,await ops.approvalMatrixSql(e,id)));});await this.derived(this.requireEngine());await this.save();const config=await backupConfig(this.storage.scope);if(config.directory)await this.backupNow().catch(()=>undefined);return {preview:await this.rulePreview(id),backup:await this.backupStatus()};}
+  async rulePreview(id:string,offset=0){if(id.startsWith("ops-"))this.opsTier();return id.startsWith("grid-")?grid.gridPreview(this.requireEngine(),id,this.licence.tier,offset):pricing.preview(this.requireEngine(),id,offset);}
+  async ruleApprove(id:string){if(id.startsWith("ops-"))this.opsTier();await this.pricingWrite('pricing.approved',async e=>{const isGrid=id.startsWith('grid-');await e.conn.query(await pricing.approveSql(e,id,this.identity.userId,isGrid?await grid.gridApproval(e,id,this.licence.tier):await ops.approvalMatrixSql(e,id),isGrid?await grid.gridPreview(e,id,this.licence.tier):undefined));});await this.derived(this.requireEngine());await this.save();const config=await backupConfig(this.storage.scope);if(config.directory)await this.backupNow().catch(()=>undefined);return {preview:await this.rulePreview(id),backup:await this.backupStatus()};}
   async priceExport(id:string,profile:ErpProfile,format:'csv'|'xlsx'){
     if(id.startsWith('ops-'))this.opsTier();
-    const file=await pricing.exportPrices(this.requireEngine(),id,profile,format,await ops.exportCustomer(this.requireEngine(),id));
-    await this.pricingWrite('pricing.exported',async e=>{await e.conn.query(`UPDATE rule_runs SET status='exported' WHERE id=${sqlText(id)}`);});return file;
+    const e=this.requireEngine();const file=id.startsWith('grid-')?await market.gridExport(e,id,profile,format,this.licence.tier,await this.rulePreview(id)):await pricing.exportPrices(e,id,profile,format,await ops.exportCustomer(e,id));
+    const receipt=await market.exportReceipt(e,id,profile,this.licence.tier),receiptSql=await market.receiptSql(id,profile,file.blob,receipt);
+    await this.pricingWrite('pricing.exported',async e=>{await e.conn.query(`UPDATE rule_runs SET status='exported' WHERE id=${sqlText(id)};${receiptSql}`);});return file;
   }
   async backupStatus(){const c=await backupConfig(this.storage.scope);const settings=this.engine?(await this.pricingState()).owner:null;return {configured:!!c.directory,hours:c.hours,last:c.last,error:c.error,reminder:!c.last||Date.now()-Date.parse(c.last)>(settings?.backupDays??7)*86400000};}
   async backupConfigure(directory:FileSystemDirectoryHandle|null,hours:number){this.requireEngine();if(!Number.isInteger(hours)||hours<1||hours>168)throw new VaultError('BACKUP',msg("vault.chooseABackupInterval"));const old=await backupConfig(this.storage.scope);await storeBackupConfig(this.storage.scope,{...old,directory,hours});return this.backupStatus();}

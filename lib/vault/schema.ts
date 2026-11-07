@@ -1,5 +1,5 @@
 import { msg } from "../i18n/core";
-export const SCHEMA_VERSION = 11;
+export const SCHEMA_VERSION = 12;
 const V1_TABLES = ["vault_meta", "products", "customers", "price_matrix", "price_guardrails", "source_files", "import_batches", "sales_lines", "vendor_costs", "cost_basis_settings", "rules", "rule_runs", "price_versions", "roi_ledger", "audit_log", "import_issues", "converter_recipes"] as const;
 const V4_TABLES = [...V1_TABLES, "rejected_rows"] as const;
 const V5_TABLES = [...V4_TABLES, "agg_cpm", "agg_cm", "agg_p", "recon_issues"] as const;
@@ -7,9 +7,10 @@ const V6_TABLES = [...V5_TABLES, "pricing_settings", "rule_revisions", "rule_cha
 const V7_TABLES = [...V6_TABLES, "role_assignments", "access_settings", "cleanup_fixes", "cleanup_changes", "setup_progress"] as const;
 const V9_TABLES = [...V7_TABLES, "relay_state"] as const;
 const V10_TABLES = [...V9_TABLES, "source_kinds", "credit_profiles", "quotes", "quote_lines"] as const;
-export const TABLES = [...V10_TABLES, "price_changesets", "price_changeset_rows"] as const;
+const V11_TABLES = [...V10_TABLES, "price_changesets", "price_changeset_rows"] as const;
+export const TABLES = [...V11_TABLES, "competitor_prices", "price_grid_drafts", "price_export_receipts", "price_landed_checks", "sales_service_flags"] as const;
 /** Tables that exist at a schema version (in creation order, so copy-on-write inserts parents first). */
-export function tablesFor(version: number): readonly string[] { return version >= 11 ? TABLES : version >= 10 ? V10_TABLES : version >= 9 ? V9_TABLES : version >= 7 ? V7_TABLES : version >= 6 ? V6_TABLES : version >= 5 ? V5_TABLES : version >= 4 ? V4_TABLES : V1_TABLES; }
+export function tablesFor(version: number): readonly string[] { return version >= 12 ? TABLES : version >= 11 ? V11_TABLES : version >= 10 ? V10_TABLES : version >= 9 ? V9_TABLES : version >= 7 ? V7_TABLES : version >= 6 ? V6_TABLES : version >= 5 ? V5_TABLES : version >= 4 ? V4_TABLES : V1_TABLES; }
 // These are local DuckDB migrations, not Supabase migrations. V1 stays frozen
 // so the committed encrypted compatibility fixture exercises a real upgrade.
 export const V1_SQL = `
@@ -128,7 +129,14 @@ CREATE TABLE quote_lines(quote_id VARCHAR NOT NULL, line_no INTEGER NOT NULL CHE
 // 7C-1: draft metadata and scoped changes; never invoice copies.
 export const V11_SQL = `CREATE TABLE price_changesets(run_id VARCHAR PRIMARY KEY, kind VARCHAR NOT NULL CHECK(kind IN ('planner','rollback')), source_version VARCHAR, segment_type VARCHAR NOT NULL CHECK(segment_type IN ('tier','category','customer','version')), segment_value VARCHAR NOT NULL, increase_bp INTEGER, created_by VARCHAR NOT NULL, created_at VARCHAR NOT NULL);
 CREATE TABLE price_changeset_rows(run_id VARCHAR NOT NULL,product_id VARCHAR NOT NULL,tier VARCHAR NOT NULL,customer_id VARCHAR,valid_to DATE,matrix_tier VARCHAR,PRIMARY KEY(run_id,product_id,tier));`;
-const STEPS = [V1_SQL, V2_SQL, V3_SQL, V4_SQL, V5_SQL, V6_SQL, V7_SQL, V8_SQL, V9_SQL, V10_SQL, V11_SQL];
+// Bounded draft/receipt payloads contain exact integer cents and decimal quantity
+// strings, never floating-point JSON numbers. They preserve the complete scope.
+export const V12_SQL = `CREATE TABLE competitor_prices(id VARCHAR PRIMARY KEY,product_id VARCHAR NOT NULL,competitor VARCHAR NOT NULL,price BIGINT NOT NULL CHECK(price>=0),observed_on DATE NOT NULL,source VARCHAR NOT NULL,created_by VARCHAR NOT NULL,created_at VARCHAR NOT NULL);
+CREATE TABLE price_grid_drafts(run_id VARCHAR PRIMARY KEY,required_tier VARCHAR NOT NULL CHECK(required_tier IN ('starter','professional')),rows_json VARCHAR NOT NULL);
+CREATE TABLE price_export_receipts(id VARCHAR PRIMARY KEY,run_id VARCHAR NOT NULL,profile VARCHAR NOT NULL,created_at VARCHAR NOT NULL,content_hash VARCHAR NOT NULL,rows_json VARCHAR NOT NULL);
+CREATE TABLE price_landed_checks(id VARCHAR PRIMARY KEY,receipt_id VARCHAR NOT NULL,file_name VARCHAR NOT NULL,created_at VARCHAR NOT NULL,results_json VARCHAR NOT NULL);
+CREATE TABLE sales_service_flags(invoice_key VARCHAR PRIMARY KEY,free_delivery BOOLEAN NOT NULL,recorded_by VARCHAR NOT NULL,recorded_at VARCHAR NOT NULL);`;
+const STEPS = [V1_SQL, V2_SQL, V3_SQL, V4_SQL, V5_SQL, V6_SQL, V7_SQL, V8_SQL, V9_SQL, V10_SQL, V11_SQL, V12_SQL];
 function checkVersion(version: number) {
   if (!Number.isInteger(version) || version < 1 || version > SCHEMA_VERSION) throw new Error(msg("vault.schema.unsupportedVaultSchemaVersion"));
 }

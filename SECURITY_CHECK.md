@@ -403,3 +403,16 @@ business-data tables (37 local tables total). No Supabase migration, applied has
 server route or restore inventory changed. Legacy business routes remain off.
 This is evidence for the authenticated **local vault flow**, not hosted deployment,
 physical-crash behavior, native-language review or 1M/2M performance.
+
+## Chunk 7C-2 local security checks (CI pending)
+
+Every new command is denied to a Sales Rep by ACTION_CAP. Professional features
+use the signed tier; Starter gets the Basic list-price grid only. Advanced or
+larger grid drafts remain gated after downgrade; the leak cache also keys on the
+licensed feature set. Grid edits stay drafts until a current, non-red preview is
+approved by the named Pricing Owner. Reversal refuses scope or amount conflicts.
+Receipts, observations, confirmations and checks are local encrypted data; write
+paths use the existing atomic/audited/saved transaction helper. File parsing never
+executes formulas or macros, preserves scope and rejects ambiguous input. The
+full Chrome/Edge lab privacy gates pass locally, but authenticated Supabase
+privacy is unverified until the new CI run passes. See CHUNK_7C2_VERIFICATION.md.

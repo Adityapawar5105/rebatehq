@@ -11,7 +11,7 @@ import { msg } from "../i18n/core";
 
 export type RuleInput = { id?: string; name: string; category: string; vendor: string; threshold: string; increase: string };
 export type GuardInput = { tier: string; category: string; start: string; target: string; floor: string };
-export type PriceRow = { product: string; tier: string; before: string; after: string; cost: string | null; quantity: string; impact: string; guard: string; beforeMargin: string | null; afterMargin: string | null };
+export type PriceRow = { product: string; tier: string; rowKey?:string; scope?:{customer:string|null;tier:string;quantity:string;from:string|null;to:string|null;kind:string}; before: string; after: string; cost: string | null; quantity: string; impact: string; guard: string; beforeMargin: string | null; afterMargin: string | null };
 export type Preview = { id: string; count: string; impact: string; red: string; rows: PriceRow[]; offset: number; explanation: string; status: string; ms: number };
 export const MAX_PREVIEW_PAIRS = 250_000;
 const today = () => "DATE "+Q(new Date().toISOString().slice(0,10));
@@ -25,7 +25,7 @@ export async function pricingState(e: Engine) {
   const settings = (await rows(e, "SELECT * FROM pricing_settings WHERE id=1"))[0];
   return { owner: settings ? { id: String(settings.owner_id), name: String(settings.owner_name), backupDays: Number(settings.backup_days) } : null,
     guards: (await rows(e, 'SELECT tier,category,start::VARCHAR AS start,target::VARCHAR AS target,floor::VARCHAR AS floor FROM price_guardrails WHERE tier IS NOT NULL ORDER BY tier,category')).map(r => r as GuardInput),
-    rules: await rows(e, "SELECT r.id,r.name,r.definition,max(v.version)::INTEGER AS version FROM rules r JOIN rule_revisions v ON v.rule_id=r.id WHERE r.id NOT LIKE 'ops-%' GROUP BY r.id,r.name,r.definition ORDER BY r.name"),
+    rules: await rows(e, "SELECT r.id,r.name,r.definition,max(v.version)::INTEGER AS version FROM rules r JOIN rule_revisions v ON v.rule_id=r.id WHERE r.id NOT LIKE 'ops-%' AND r.id NOT LIKE 'grid-%' GROUP BY r.id,r.name,r.definition ORDER BY r.name"),
     runs: await rows(e, "SELECT id,rule_id,status,affected_rows::VARCHAR AS affected,run_date FROM rule_runs ORDER BY run_date DESC LIMIT 50") };
 }
 export async function owner(e: Engine, actor: string) { const s = (await rows(e,"SELECT owner_id FROM pricing_settings WHERE id=1"))[0]; if (!s || s.owner_id !== actor) bad(msg("rules.onlyTheNamedPricing")); }
@@ -68,13 +68,13 @@ export async function preview(e: Engine, id: string, offset = 0): Promise<Previe
   const margin = (p: string,c: string|null) => lineFromCents({list:BigInt(p),cost:c===null?null:BigInt(c),discount:BigInt(0),rebate:BigInt(0),freight:BigInt(0)}).margin;
   return { id,status:r.status,explanation:r.explanation,count:c.n,impact:c.impact,red:c.red,offset,ms:0,rows:page.map(p=>({ product:p.product_id,tier:p.tier,before:p.b,after:p.a,cost:p.c,quantity:p.q,impact:p.i,guard:p.g,beforeMargin:p.c===null?null:String(margin(p.b,p.c)),afterMargin:p.c===null?null:String(margin(p.a,p.c)) })) };
 }
-export async function approveSql(e: Engine, id: string, actor: string, matrixOverride?:string) {
+export async function approveSql(e: Engine, id: string, actor: string, matrixOverride?:string, previewOverride?:Preview) {
   await owner(e,actor);
   const r = (await rows(e,`SELECT r.*,m.pricing_revision AS revision,(SELECT max(version) FROM rule_revisions WHERE rule_id=r.rule_id) AS latest FROM rule_runs r CROSS JOIN vault_meta m WHERE r.id=${Q(id)}`))[0];
   if (!r || r.status!=='preview') return bad(msg("rules.onlyAnUnapprovedPreview"));
   if (String(r.revision)!==String(r.base_revision) || Number(r.latest)!==Number(r.rule_version)) return bad(msg("rules.conflictDataGuardrailsOr"));
   if (String(r.run_date).slice(0,10)!==new Date().toISOString().slice(0,10)) return bad(msg("rules.thePreviewDateChanged"));
-  const p = await preview(e,id); if (p.count==='0') return bad(msg("rules.noPricesChangedAdjust")); if (p.red!=='0') return bad(msg("rules.redAProposedPrice"));
+  const p = previewOverride ?? await preview(e,id); if (p.count==='0') return bad(msg("rules.noPricesChangedAdjust")); if (p.red!=='0') return bad(msg("rules.redAProposedPrice"));
   return `INSERT INTO price_versions VALUES(${Q(crypto.randomUUID())},${Q(id)},${Q(actor)},${Q(JSON.stringify({rows:p.count,impact:p.impact,rule:r.rule_id,version:Number(r.rule_version)}))},${Q(new Date().toISOString())});
 ${matrixOverride ?? `UPDATE price_matrix SET valid_to=${today()} WHERE customer_id IS NULL AND qty_break=0 AND valid_from<${today()} AND (valid_to IS NULL OR valid_to>${today()}) AND (product_id,coalesce(tier,'')) IN (SELECT product_id,tier FROM rule_changes WHERE run_id=${Q(id)});
 DELETE FROM price_matrix WHERE customer_id IS NULL AND qty_break=0 AND valid_from=${today()} AND (product_id,coalesce(tier,'')) IN (SELECT product_id,tier FROM rule_changes WHERE run_id=${Q(id)});

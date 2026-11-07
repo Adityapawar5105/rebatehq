@@ -1,4 +1,5 @@
 "use client";
+import {CompetitorLog,ServiceOrders} from './PricingTools';
 import {MarginBridge} from "./PricingOps";
 import {SectionTabs} from "@/components/ui/ui";
 
@@ -178,6 +179,6 @@ function MathView({ client, target, onClose }: { client: VaultClient; target: No
 export function MarginView(props:Shared){
  const [tab,setTab]=useState('waterfall');
  const canBridge=props.status.licence?.tier==='professional'||props.status.licence?.tier==='scale',shown=canBridge?tab:'waterfall';
- useEffect(()=>{const read=()=>setTab(location.hash==='#margin-bridge'?'bridge':'waterfall');read();window.addEventListener('hashchange',read);return()=>window.removeEventListener('hashchange',read);},[]);
- return <>{canBridge&&<SectionTabs label={t('ops.bridge')} current={shown} onSelect={setTab} items={[{id:'waterfall',label:t('margin.waterfall'),href:'#margin-waterfall'},{id:'bridge',label:t('ops.bridge'),href:'#margin-bridge',testId:'ops-tab-margin-bridge'}]}/>} {shown==='bridge'?<MarginBridge client={props.client}/>:<WaterfallView {...props}/>}</>;
+ useEffect(()=>{const read=()=>setTab(['#margin-bridge','#margin-competitors','#margin-service'].includes(location.hash)?location.hash.slice(8):'waterfall');read();window.addEventListener('hashchange',read);return()=>window.removeEventListener('hashchange',read);},[]);
+ return <>{canBridge&&<SectionTabs label={t('ops.bridge')} current={shown} onSelect={setTab} items={[{id:'waterfall',label:t('margin.waterfall'),href:'#margin-waterfall'},{id:'bridge',label:t('ops.bridge'),href:'#margin-bridge',testId:'ops-tab-margin-bridge'},{id:'competitors',label:t('pc2.competitors'),href:'#margin-competitors',testId:'ops-tab-competitors'},{id:'service',label:t('pc2.service'),href:'#margin-service',testId:'ops-tab-service'}]}/>} {shown==='competitors'?<CompetitorLog client={props.client} canEdit={!!props.status.access?.caps.includes('pricing')}/>:shown==='service'?<ServiceOrders client={props.client} canEdit={!!props.status.access?.caps.includes('pricing')}/>:shown==='bridge'?<MarginBridge client={props.client}/>:<WaterfallView {...props}/>}</>;
 }

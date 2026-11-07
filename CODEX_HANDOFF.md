@@ -47,7 +47,7 @@ Read before doing anything, in this order:
 
 Where things stand: chunks 4.0 through 7B and the 7V UI redesign are done and CI-verified. New screens use the
 shared components in components/ui (ui.tsx, Icon.tsx, ui.module.css) inside the shell in components/local/VaultApp.tsx. The local vault is DuckDB-Wasm in a Web
-Worker with encrypted OPFS snapshots, schema v11 (37 tables; lib/vault/schema.ts). Supabase holds only identity,
+Worker with encrypted OPFS snapshots, schema v12 (42 tables; lib/vault/schema.ts). Supabase holds only identity,
 licences/seats, public data and a ciphertext-only relay (11 applied migrations, all locked).
 
 Hard rules (from the execution plan preamble; they override convenience):
@@ -582,3 +582,22 @@ Additional Block B pitfalls found:
   A scalar LATERAL lookup over the complete price book exhausted 512 MiB even
   for a small segment. Keep the 100k-line/20k-price regression and the memory
   limit; do not enable plaintext spill or raise the limit to mask a bad join.
+
+## Chunk 7C-2 implementation handoff (8 November 2026)
+
+Local implementation; CI still pending until CHUNK_7C2_VERIFICATION.md cites a
+passing run. New worker commands are all denied to Sales Reps. Local v12 adds
+five tables (42 total), no Supabase change. See ASSUMPTIONS.md for Basic/full
+grid limits, saved-rule slider semantics, cost-to-serve grouping and explicit
+free-delivery evidence, and strict landed file scope. Preserve every matrix key
+(including an optional category stored on a product row) through grid approval
+and reversal. Do not replay price exports as live updates: receipts are immutable
+and landed checks are read-only comparisons. Never use the old rule_changes-only
+preview/export path for grid- runs. No 7D or later work has begun.
+
+The Node DuckDB build can have functions unavailable in the self-hosted browser
+bundle: production disables auto-loading/installing extensions. Do not use
+SQL to_json for invoice keys; the browser test caught this difference. The local
+control-vault runner now supports VAULT_TEST_PORT and checks that the port is
+free rather than reusing an unrelated server. It still supplies no Supabase
+configuration. Use 3106 here if the user's older preview holds 3100.

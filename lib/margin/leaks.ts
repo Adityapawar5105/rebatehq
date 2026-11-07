@@ -1,3 +1,4 @@
+import {SERVICE_LEAK_SQL} from './service-cost';
 import { rhaSql } from "./sql";
 import { dec, rescale } from "./decimal";
 // Leak finder (chunk 4D). Generic, documented rules over the vault's sales lines; nothing
@@ -11,8 +12,8 @@ import { bpText, rha } from "./decimal";
 import { lineFromCents } from "./engine";
 import { msg } from "../i18n/core";
 
-export type LeakType = "below_floor" | "discount_outlier" | "unrecovered_freight" | "negative_margin" | "below_lower_tier" | "below_cost";
-export const LEAK_LABELS: Record<LeakType, string> = { below_floor: msg("leak.belowTierFloor"), discount_outlier: msg("leak.discountOutlierVsTier"), unrecovered_freight: msg("leak.unrecoveredFreight"),
+export type LeakType = "small_order_loss" | "free_delivery_loss" | "below_floor" | "discount_outlier" | "unrecovered_freight" | "negative_margin" | "below_lower_tier" | "below_cost";
+export const LEAK_LABELS: Record<LeakType, string> = { small_order_loss:msg("pc2.smallLoss"),free_delivery_loss:msg("pc2.freeLoss"),below_floor: msg("leak.belowTierFloor"), discount_outlier: msg("leak.discountOutlierVsTier"), unrecovered_freight: msg("leak.unrecoveredFreight"),
   negative_margin: msg("leak.negativeMargin"), below_lower_tier: msg("leak.billedAtABetter"), below_cost: msg("leak.priceBelowCost") };
 /** Rule thresholds. Without configured guardrails (chunk 4E) a tier's floor is its peer rate. */
 export const RULES = {
@@ -32,7 +33,7 @@ export type LeakResult = { findings: Finding[]; totalCents: string; overlapCents
   checked: { saleLines: string; creditLines: string; uncostedLines: string; untieredLines: string; tiers: string }; ms: number };
 const q = async (engine: Engine, sql: string) => (await engine.conn.query(sql)).toArray().map(r => ({ ...r }) as Record<string, unknown>);
 const S = (v: unknown) => v === null || v === undefined ? "" : String(v);
-export async function findLeaks(engine: Engine): Promise<LeakResult> {
+export async function findLeaks(engine: Engine,costToServe=true): Promise<LeakResult> {
   const t0 = performance.now(), R = RULES;
   // Statement by statement, so an engine failure names the step (SQL text only, never values).
   const run = async (sql: string) => { for (const stmt of sql.split(/;\s*\n/)) if (stmt.trim()) { try { await engine.conn.query(stmt); } catch (e) { throw new Error(`Leak finder step "${stmt.trim().slice(0, 48)}" failed: ${(e as Error).message.split("\n")[0]}`); } } };
@@ -42,7 +43,7 @@ export async function findLeaks(engine: Engine): Promise<LeakResult> {
 CREATE TEMP TABLE lf_src AS SELECT id AS source_id, (row_number() OVER (ORDER BY id))::INTEGER AS sid FROM source_files;
 CREATE TEMP VIEW lf_lines AS SELECT x.sid, s.source_id, s.line_id, s.source_row, s.invoice_id, s.product_id, s.customer_id, s.sale_date, s.quantity, c.tier, p.category, s.list_cents, s.discount_cents, s.rebate_cents, s.freight_cents, s.cost_cents,
  ${POCKET} AS pocket, ${MARGIN} AS margin, ${discountBpSql()} AS rate_bp
-FROM sales_lines s JOIN lf_src x USING (source_id) JOIN customers c USING (customer_id) JOIN products p USING (product_id) WHERE s.line_kind = 'sale' AND s.list_cents > 0;
+FROM sales_lines s JOIN lf_src x USING (source_id) JOIN customers c USING (customer_id) JOIN products p USING (product_id) WHERE s.line_kind = 'sale';
 CREATE TEMP TABLE lf_tiers AS WITH t AS (SELECT tier, count(*) AS n, count(DISTINCT customer_id) AS nc FROM lf_lines WHERE tier <> '' GROUP BY tier),
  m AS (SELECT tier, rate_bp, count(*) AS k FROM lf_lines WHERE tier <> '' AND list_cents >= ${R.modeMinListCents} GROUP BY tier, rate_bp),
  r AS (SELECT tier, rate_bp, k, row_number() OVER (PARTITION BY tier ORDER BY k DESC, rate_bp) AS rk, sum(k) OVER (PARTITION BY tier) AS mk FROM m)
@@ -80,7 +81,10 @@ INSERT INTO lf_hits SELECT CASE WHEN l.list_cents - l.discount_cents < l.cost_ce
 CREATE OR REPLACE TEMP VIEW lf_guard AS SELECT l.sid,l.line_id,'below_floor|'||l.customer_id||'|'||l.category AS finding,CAST(${rhaSql('CAST(g.floor AS HUGEINT)*CAST(l.quantity*10000 AS HUGEINT)','10000')}-(l.list_cents-l.discount_cents) AS BIGINT) AS leak FROM lf_lines l JOIN price_guardrails g ON g.tier=l.tier AND g.category=l.category;
 INSERT INTO lf_keys SELECT DISTINCT hash(finding),finding,'below_floor' FROM lf_guard WHERE leak>0 AND finding NOT IN(SELECT finding FROM lf_keys);
 INSERT INTO lf_hits SELECT hash(finding),sid,line_id,leak,NULL FROM lf_guard WHERE leak>0;
-DELETE FROM lf_keys WHERE h NOT IN (SELECT DISTINCT h FROM lf_hits);`);
+`);
+  if(costToServe)await run(SERVICE_LEAK_SQL);
+  else await run("DROP TABLE IF EXISTS temp.lf_service_alloc;CREATE TEMP TABLE lf_service_alloc(sid INTEGER,line_id BIGINT,loss BIGINT,weight BIGINT,total HUGEINT,cumulative HUGEINT)");
+  await run("DELETE FROM lf_keys WHERE h NOT IN (SELECT DISTINCT h FROM lf_hits)");
   const keys = (await q(engine, "SELECT count(*) AS n, count(DISTINCT h) AS d FROM lf_keys"))[0];
   if (String(keys.n) !== String(keys.d)) throw new Error(msg("leak.leakFindingKeysCollided"));
   // Narrow join on sales_lines (product and customer only), so the hash table is built on the hits.
@@ -104,6 +108,7 @@ function describe(id: string, g: Record<string, unknown>, shift: Map<string, Rec
   const base = { id, type, label: LEAK_LABELS[type], lines: S(g.n), cents: S(g.cents) };
   const bp = (v: unknown) => bpText(BigInt(S(v) || "0"));
   switch (type) {
+    case "small_order_loss":case "free_delivery_loss":return {...base,scope:{rule:type},title:base.label,formula:msg("pc2.serviceFormula"),detail:msg("pc2.serviceDetail")};
     case "below_lower_tier": { const s = shift.get(a)!;
       return { ...base, scope: { customer: a, tier: S(s.tier), billedAs: b! }, title: msg("leak.tierIsBilledAt", { a, tier: S(s.tier), b }),
         formula: msg("leak.leakPerLineDiscount3", { tier: S(s.tier), tierbp: bp(s.tier_bp) }), detail: msg("leak.linesTypicalDiscountTier", { lines: base.lines, modalbp: bp(s.modal_bp), b, value: bp(tiers.get(b!)) }) }; }
@@ -135,18 +140,18 @@ export async function leakRows(engine: Engine, id: string, offset = 0, limit = 2
   const page = `(SELECT * FROM lf_hits h ${where} ORDER BY h.leak DESC, h.sid, h.line_id LIMIT ${Math.max(1, Math.min(200, limit))} OFFSET ${Math.max(0, Math.floor(offset))})`;
   const rows = await q(engine, `SELECT f.name AS file, l.source_row::VARCHAR AS source_row, l.line_id::VARCHAR AS line_id, coalesce(l.invoice_id,'') AS invoice, l.sale_date::VARCHAR AS d, l.product_id, l.category, l.customer_id, l.tier,
  l.list_cents::VARCHAR AS list, l.discount_cents::VARCHAR AS discount, l.rebate_cents::VARCHAR AS rebate, l.freight_cents::VARCHAR AS freight, l.cost_cents::VARCHAR AS cost, l.pocket::VARCHAR AS pocket, l.margin::VARCHAR AS margin,
- l.quantity::VARCHAR AS quantity, g.floor::VARCHAR AS configured_floor, l.rate_bp::VARCHAR AS rate, p.basis_bp::VARCHAR AS basis, p.leak::VARCHAR AS leak, k.type
-FROM ${page} p JOIN lf_keys k ON k.h = p.h JOIN lf_lines l ON l.sid = p.sid AND l.line_id = p.line_id JOIN source_files f ON f.id = l.source_id LEFT JOIN price_guardrails g ON g.tier=l.tier AND g.category=l.category
+ l.quantity::VARCHAR AS quantity, g.floor::VARCHAR AS configured_floor, l.rate_bp::VARCHAR AS rate, p.basis_bp::VARCHAR AS basis, p.leak::VARCHAR AS leak, k.type,a.loss::VARCHAR service_loss,a.weight::VARCHAR service_weight,a.total::VARCHAR service_total,a.cumulative::VARCHAR service_cumulative
+FROM ${page} p JOIN lf_keys k ON k.h = p.h JOIN lf_lines l ON l.sid = p.sid AND l.line_id = p.line_id JOIN source_files f ON f.id = l.source_id LEFT JOIN price_guardrails g ON g.tier=l.tier AND g.category=l.category LEFT JOIN lf_service_alloc a ON a.sid=l.sid AND a.line_id=l.line_id
 ORDER BY p.leak DESC, p.sid, p.line_id`);
   let agrees = true;
   const out = rows.map(r => {
     const n = (k: string) => BigInt(S(r[k])), type = S(r.type) as LeakType;
     const w = lineFromCents({ list: n("list"), discount: n("discount"), rebate: n("rebate"), freight: n("freight"), cost: r.cost === null ? null : n("cost") });
-    const engineLeak = type === 'below_floor' && r.configured_floor !== null ? rha(BigInt(S(r.configured_floor))*rescale(dec(S(r.quantity)),4).v,BigInt(10000))-(n('list')-n('discount')) : type === "unrecovered_freight" ? n("freight") : ["negative_margin", "below_cost"].includes(type) ? -(w.margin ?? BigInt(0)) : n("discount") - rha(n("list") * n("basis"), BigInt(10000));
+    const engineLeak = ['small_order_loss','free_delivery_loss'].includes(type) ? n('service_loss')*n('service_cumulative')/n('service_total')-n('service_loss')*(n('service_cumulative')-n('service_weight'))/n('service_total') : type === 'below_floor' && r.configured_floor !== null ? rha(BigInt(S(r.configured_floor))*rescale(dec(S(r.quantity)),4).v,BigInt(10000))-(n('list')-n('discount')) : type === "unrecovered_freight" ? n("freight") : ["negative_margin", "below_cost"].includes(type) ? -(w.margin ?? BigInt(0)) : n("discount") - rha(n("list") * n("basis"), BigInt(10000));
     if (String(engineLeak) !== S(r.leak)) agrees = false;
     return { sourceFile: S(r.file), sourceRow: S(r.source_row), lineId: S(r.line_id), invoice: S(r.invoice), date: S(r.d), product: S(r.product_id), category: S(r.category), customer: S(r.customer_id), tier: S(r.tier),
       list: S(r.list), discount: S(r.discount), rebate: S(r.rebate), freight: S(r.freight), cost: r.cost === null ? null : S(r.cost), pocket: S(r.pocket), margin: r.margin === null ? null : S(r.margin),
-      rate: bpText(n("rate")), basis: r.basis === null ? "" : bpText(n("basis")), leak: S(r.leak), engineLeak: String(engineLeak) };
+      rate: r.rate===null?msg("common.unknown"):bpText(n("rate")), basis: r.basis === null ? "" : bpText(n("basis")), leak: S(r.leak), engineLeak: String(engineLeak) };
   });
   return { rows: out, count: S(agg.n), sum: S(agg.c), engineAgrees: agrees };
 }

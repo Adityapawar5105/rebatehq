@@ -63,3 +63,6 @@ export function rateBp(margin: bigint, pocket: bigint): bigint | null {
 }
 export const bpText = (bp: bigint | null) => bp === null ? "n/a" : text({ v: bp, s: 2 }) + "%";
 export const ONE_DEC: Dec = { v: ONE, s: 0 };
+
+/** Canonical percentage input from integer basis points, without a display suffix. */
+export const basisPointsDecimal = (bp: bigint) => text({ v: bp, s: 2 });

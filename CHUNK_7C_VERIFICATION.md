@@ -1,6 +1,6 @@
 # Chunk 7C verification — part 1
 
-7 November 2026. Scope: **7C-1, items 1–5 only**. Part 2 is not started.
+7 November 2026. Scope: **7C-1, items 1–5 only**. Part 2 is recorded separately below.
 Status: **7C-1 CI-verified** in [CI #100](https://github.com/Adityapawar5105/rebatehq/actions/runs/42284900986) on `aecfa32`. Chrome and Edge local harnesses pass. No Supabase
 migration or restore-inventory change; all 11 applied migrations and
 `migrations.lock` remain unchanged. No Restore Drill is required for this local
@@ -184,3 +184,8 @@ separate session.
 - the authenticated privacy gate (auth=true), including `pricingOps` with the customer-export scope check and
   `pricingOpsUi`;
 - the real-Supabase relay gate (11 checks).
+
+## Part 2 — items 6–10
+
+Implemented separately after the user requested 7C-2. Current evidence and limits
+are in CHUNK_7C2_VERIFICATION.md; this does not replace the part-1 CI evidence.
