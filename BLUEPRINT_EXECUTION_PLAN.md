@@ -453,3 +453,9 @@ Run each with the preamble and the same "Done when / close-out" pattern. The ord
 | Before 7A | Ask pilots whether Quote Desk or rebates matters more | Re-orders Phase 2 by evidence |
 
 Open blueprint questions still unanswered: 1 (ERPs), 2 (pilots and a real file), 4 (security reviewer), 5 (benchmarks), 6 (1b scope). Question 3 is answered by Prompt 4.0.
+
+**Concurrent v2.4 scope note (8 November 2026):** 7C-2 completed the original
+v2.3 items 6–10. Commit 51001c0 subsequently added roadmap requirements to the
+blueprint, without changing code. Those additions remain unimplemented and need
+an explicitly scoped reconciliation; the progress line does not claim them done.
+No 7D or v2.4 extension work is authorized by the 7C-2 close-out.

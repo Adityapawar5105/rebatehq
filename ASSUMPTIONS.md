@@ -671,3 +671,20 @@ on `05ff468`, 8 November 2026 (Asia/Kolkata): 249 unit tests, 43 authenticated
 local-vault checks and 11 real-authenticated local-Supabase relay checks. Local
 v12 has 42 tables. Only the exercised local flows are proven; hosted/ERP/native
 language/manual recovery and 1M/2M feature-performance limits above remain open.
+
+## Concurrent blueprint v2.4 update (scope boundary)
+
+While CI #104 was finishing, a separate commit, `51001c0`, promoted BLUEPRINT.md
+and AGENTS.md to v2.4 (section 22 item 24). It was authored outside this 7C-2
+implementation and is preserved. The original 7C-2 code was already committed
+as 05ff468 before that update. "Blueprint unchanged" in the 7C records means
+no blueprint edits by this chunk, not a claim that no parallel commit exists.
+
+The acceptance scope completed here is the original v2.3 items 6–10. Newly added
+v2.4 work is not claimed complete: competitor top-3 margin alternatives,
+workspace/import FX conversion, Firefox verification/support, customer health
+alerts, relay sync-status UX and the new Home framing require separately scoped
+work; supplier claim exports remain in 7D and carrying-cost/Safari work is later.
+Do not start any of those from this close-out. Current evidence covers Chrome
+and Edge and single-workspace-currency observations only. The execution plan
+needs a user-scoped reconciliation with v2.4 before adding that work.

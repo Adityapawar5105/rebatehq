@@ -92,3 +92,8 @@ on `05ff468`, 8 November 2026 (Asia/Kolkata): 249 unit tests, 43 authenticated
 vault checks and 11 real-authenticated local-Supabase relay checks. Local v12,
 42 tables; no Supabase, dependency or locked-hash change. Blueprint unchanged.
 See CHUNK_7C2_VERIFICATION.md. Do not start 7D without a new user task.
+
+Scope note: 7C-2 verification covers the original v2.3 items 6–10. The separate
+blueprint v2.4 commit 51001c0 was preserved after the code was committed; its new
+requirements are not claimed implemented. See ASSUMPTIONS.md for the boundary.
+Do not automatically expand 7C or start 7D from this documentation close-out.

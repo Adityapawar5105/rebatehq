@@ -162,3 +162,19 @@ reported in the completion reply. Blueprint unchanged. **7C is complete; stop
 before 7D.** Hosted behavior, real ERP compatibility, native-language review,
 headed/manual accessibility, physical recovery and 1M/2M feature performance
 remain unverified.
+
+## Parallel blueprint commit preserved
+
+`51001c0` (01:05 IST, 8 November 2026) independently changed BLUEPRINT.md and
+AGENTS.md to v2.4, section 22 item 24, after the original code commit 05ff468
+(00:54 IST). It is preserved; this chunk did not edit BLUEPRINT.md. The 33-file
+inventory above describes this chunk's files, not the separate blueprint commit.
+The historical protected-path diff was empty at 05ff468; the final cumulative
+diff contains that other commit's BLUEPRINT.md change. Locked migrations, their
+hashes, server code, dependencies and workflows remain unchanged.
+
+Verification here covers the **original v2.3 7C-2 items 6–10**. v2.4 competitor
+alternatives, multi-currency, Firefox and other newly pulled-forward items are
+not implemented or verified by this chunk. They require a new scoped task;
+see ASSUMPTIONS.md. No 7D work was started. This distinction also applies to
+"7C complete" / "Blueprint unchanged" statements in the earlier local record.

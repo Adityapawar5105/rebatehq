@@ -275,3 +275,8 @@ See [RELAY_DESIGN.md](./RELAY_DESIGN.md), [CHUNK_7A_VERIFICATION.md](./CHUNK_7A_
 and the security review for metadata visibility and fork/rollback limits.
 A malicious endpoint or trusted deployment can still read an unlocked vault.
 New migration remains pending until green CI plus the user's Restore Drill.
+
+The separate blueprint v2.4 update (`51001c0`, section 22 item 24) is preserved.
+7C-2 verification covers its original items 6–10; new competitor alternatives,
+multi-currency, Firefox and other v2.4 additions are follow-up work, not a
+verified feature claim. See ASSUMPTIONS.md.
