@@ -180,4 +180,7 @@ separate session.
 - Migration lock unchanged (11 applied).
 - `build-spike` and `next build` succeed.
 - Vault browser gate passed in Chrome.
-- The CI run for this commit is linked once it finishes.
+**CI-verified:** [CI #102](https://github.com/Adityapawar5105/rebatehq/actions/runs/42397030001) passed on `155f149` in 11m 15s:
+- the authenticated privacy gate (auth=true), including `pricingOps` with the customer-export scope check and
+  `pricingOpsUi`;
+- the real-Supabase relay gate (11 checks).

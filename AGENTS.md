@@ -79,6 +79,6 @@ in git-ignored `test-results/real/` and are never committed.
 
 
 7C-1 (pricing-operation items 1–5: margin bridge, reversal drafts, exceptions,
-segment planner and localized letter, contract expiry) is CI-verified in [CI #100](https://github.com/Adityapawar5105/rebatehq/actions/runs/42284900986) on `aecfa32` (7 November 2026;
+segment planner and localized letter, contract expiry) is CI-verified in [CI #100](https://github.com/Adityapawar5105/rebatehq/actions/runs/42284900986) on `aecfa32`; its customer-contract export-scope fix passed [CI #102](https://github.com/Adityapawar5105/rebatehq/actions/runs/42397030001) on `155f149` (7 November 2026;
 239 unit tests, 41 authenticated vault checks and 11 authenticated relay checks). Local vault v11 has 37 tables, with no Supabase migration or locked hash
 change. See CHUNK_7C_VERIFICATION.md. Stop here; 7C-2 requires a new user task.
