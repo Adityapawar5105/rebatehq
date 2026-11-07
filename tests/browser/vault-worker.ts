@@ -620,10 +620,11 @@ async function pricingOpsFlow(){
   await service.ruleApprove(plan.id);const version=(await service.priceOpsState()).versions[0];
   const reversed=await service.priceRollback(version.id);await service.ruleApprove(reversed.id);
   assert((await service.priceExport(reversed.id,'generic','csv')).blob.size>0,'Ops reversal export missing');
+  const customerPlan=await service.pricePlan({segment:'customer',value:'OPS-C',increase:'5'});await service.ruleApprove(customerPlan.id);const customerFile=await service.priceExport(customerPlan.id,'generic','csv');const csv=await customerFile.blob.text();assert(csv.includes('\"OPS-P\",\"\",\"105.00\"')&&csv.includes('\"customer_id\",\"valid_to\"'),'Customer export changed matrix scope');
   assert((await service.verify()).valid,'Ops audit chain invalid');await service.lock();await service.unlock(secret);
-  assert((await service.priceOpsState()).versions.length===2,'Ops versions lost on encrypted reload');
+  assert((await service.priceOpsState()).versions.length===3,'Ops versions lost on encrypted reload');
   assert((await service.verify()).valid,'Ops chain changed after encrypted reload');
-  return {draft:true,impact:true,ownerApproval:true,reversal:true,export:true,audit:true,encryptedReload:true};
+  return {draft:true,impact:true,ownerApproval:true,reversal:true,export:true,customerExportScope:true,audit:true,encryptedReload:true};
  }finally{await service.lock();await reset(scope);}
 }
 

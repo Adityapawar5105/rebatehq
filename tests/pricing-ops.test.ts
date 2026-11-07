@@ -66,7 +66,9 @@ test('7C-1 customer plans preserve scope and contract end, leave quantity breaks
   c.query(await approveSql(e,run,'owner',await ops.approvalMatrixSql(e,run)));assert.equal((await pricePoint(e,'A','C','1')).bookCents,'945');assert.equal((await pricePoint(e,'A','D','1')).bookCents,'1000');assert.equal((await pricePoint(e,'A','C','10')).bookCents,'800');
   assert.equal(read(c,"SELECT valid_to::VARCHAR ends FROM price_matrix WHERE price=945")[0].ends,'2028-01-01');
   await assert.rejects(exportPrices(e,run,'netsuite','csv',await ops.exportCustomer(e,run)),/customer_id/);
-  assert.match(await (await exportPrices(e,run,'generic','csv',await ops.exportCustomer(e,run))).blob.text(),/customer_id/);
+  const exported=await exportPrices(e,run,'generic','csv',await ops.exportCustomer(e,run));
+  assert.match(await exported.blob.text(),/"A","","9\.45",[^\r\n]+,"C","2028-01-01"/,'customer export must retain the NULL matrix tier rather than the guardrail tier');
+  assert.match(await exported.log.text(),/"customer_id"/);assert.match(await exported.log.text(),/"A","","9\.00","9\.45",[^\r\n]+,"C","2028-01-01"/);
   const version=(await ops.opsState(e)).versions.find(v=>v.run===run)!;
   const reversed=await ops.rollbackDraft(e,version.id,'manager');assert.equal((await preview(e,reversed)).rows.find(r=>r.product==='A')!.before,'945','reversal resolves the base price, not a quantity-break price');
   c.query(await approveSql(e,reversed,'owner',await ops.approvalMatrixSql(e,reversed)));assert.equal((await pricePoint(e,'A','C','1')).bookCents,'900');assert.equal((await pricePoint(e,'A','C','10')).bookCents,'800');

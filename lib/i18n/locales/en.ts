@@ -1826,7 +1826,7 @@ const ops = {
   "ops.invalidSelection": "Choose a valid period, segment and percentage.",
   "ops.tooLarge": "This draft exceeds 250,000 price pairs. Choose a smaller segment.",
   "ops.rollbackConflict": "Prices or contract dates changed after this version. Review the current prices and create a new draft.",
-  "ops.customerExport": "Customer-specific changes require the generic export with its customer_id column. Other ERP layouts do not preserve that scope.",
+  "ops.customerExport": "These changes require the generic export with customer_id and valid_to columns. Other ERP layouts do not preserve the full scope.",
   "ops.planDescription": "Proposed increase for {value}. Review before approving.",
   "ops.rollbackDescription": "Proposed reversal of version {value}. Current guardrails and owner approval still apply.",
   "ops.letterBody": "Subject: Proposed price update\n\nDear customer,\n\nWe propose a {rate}% price increase for {segment}, prepared on {date}. This is a draft notice. Changes take effect only after approval and an update in our ERP. Existing contracts must be reviewed separately. Please contact your account manager to discuss the revised price list.\n\nThank you.",

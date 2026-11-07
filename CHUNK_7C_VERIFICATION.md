@@ -148,3 +148,36 @@ attempt was needed.
 
 This close-out changes documentation only. Its commit/push and follow-up CI result
 will be reported in the final reply. Blueprint unchanged; stop before 7C-2.
+
+## Follow-up: customer-contract export scope (7 November 2026)
+
+[CI #101](https://github.com/Adityapawar5105/rebatehq/actions/runs/42288521868) (the documentation close-out) is green.
+
+**The defect.** A final review found that a customer-specific draft exported the guardrail tier in the price
+file's tier column, even when the customer contract's own price-matrix tier was blank. Re-importing that file
+could have changed quantity-break precedence.
+
+**Who fixed it.** Codex started the fix and hit its usage limit before finishing. The fix was completed in a
+separate session.
+
+**What changed** (`lib/pricing/rules.ts`, `exportPrices`):
+- For pricing-operation runs (`ops-` ids), the export joins `price_changeset_rows`.
+- It writes the contract's real matrix tier (blank when NULL), plus `customer_id` and `valid_to` columns.
+- It refuses the export if the row count no longer matches the approved run.
+- Any ERP layout other than the generic one is refused when rows carry a customer or end date, because those
+  layouts cannot hold that scope.
+- The change log now carries the same scope columns as the price file. Before, it added only `customer_id`.
+
+**Tests:**
+- `tests/pricing-ops.test.ts` asserts the exact CSV row (`"A","","9.45",…,"C","2028-01-01"`) in both the price
+  file and the change log.
+- `tests/browser/vault-worker.ts` (pricingOps) exports a customer plan in the real worker and checks the blank
+  tier and the scope columns (`customerExportScope`).
+
+**Local checks** (Windows, local evidence):
+- `tsc --noEmit` clean.
+- 161 of 161 TypeScript and 78 of 78 JavaScript tests pass.
+- Migration lock unchanged (11 applied).
+- `build-spike` and `next build` succeed.
+- Vault browser gate passed in Chrome.
+- The CI run for this commit is linked once it finishes.

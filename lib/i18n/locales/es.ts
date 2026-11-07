@@ -1772,7 +1772,7 @@ export const es: Catalog = {
   "ops.invalidSelection": "Elija un período, segmento y porcentaje válidos.",
   "ops.tooLarge": "Este borrador supera 250.000 pares de precios. Elija un segmento menor.",
   "ops.rollbackConflict": "Los precios o las fechas cambiaron después de esta versión. Revise los precios actuales y cree otro borrador.",
-  "ops.customerExport": "Los cambios por cliente requieren la exportación genérica con customer_id. Otros formatos ERP no conservan ese alcance.",
+  "ops.customerExport": "Estos cambios requieren la exportación genérica con las columnas customer_id y valid_to. Los otros formatos ERP no conservan todo el alcance.",
   "ops.planDescription": "Aumento propuesto para {value}. Revise antes de aprobar.",
   "ops.rollbackDescription": "Reversión propuesta de la versión {value}. Se mantienen las reglas y la aprobación.",
   "ops.letterBody": "Asunto: Actualización de precios propuesta\n\nEstimado cliente:\n\nProponemos un aumento del {rate}% para {segment}, preparado el {date}. Este aviso es un borrador. Los cambios entran en vigor solo tras la aprobación y actualización del ERP. Los contratos existentes requieren revisión separada. Consulte la nueva lista con su responsable de cuenta.\n\nGracias.",

@@ -1772,7 +1772,7 @@ export const fr: Catalog = {
   "ops.invalidSelection": "Choisissez une période, un segment et un pourcentage valides.",
   "ops.tooLarge": "Ce brouillon dépasse 250 000 paires de prix. Réduisez le segment.",
   "ops.rollbackConflict": "Les prix ou dates ont changé après cette version. Vérifiez les prix actuels et créez un nouveau brouillon.",
-  "ops.customerExport": "Les changements par client exigent un export générique avec customer_id. Les autres formats ERP ne préservent pas ce périmètre.",
+  "ops.customerExport": "Ces changements nécessitent l’export générique avec les colonnes customer_id et valid_to. Les autres formats ERP ne conservent pas toute la portée.",
   "ops.planDescription": "Hausse proposée pour {value}. Vérifiez avant approbation.",
   "ops.rollbackDescription": "Annulation proposée de la version {value}. Les seuils et l’approbation restent obligatoires.",
   "ops.letterBody": "Objet : Proposition de mise à jour des prix\n\nMadame, Monsieur,\n\nNous proposons une hausse de {rate}% pour {segment}, préparée le {date}. Cet avis est un brouillon. Les changements prennent effet après approbation et mise à jour dans notre ERP. Les contrats existants nécessitent une vérification distincte. Veuillez contacter votre responsable de compte.\n\nMerci.",

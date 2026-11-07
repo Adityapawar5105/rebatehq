@@ -85,15 +85,22 @@ UPDATE rule_runs SET status='approved',approved_by=${Q(actor)} WHERE id=${Q(id)}
 export const EXPORT_LAYOUTS: Record<ErpProfile,string[]> = { generic:['product_id','tier','price','effective_from'],netsuite:['Item','Price Level','Unit Price','Effective Date'],p21:['Item ID','Pricing Library','Price','Effective Date'],infor:['Item','Price Type','Sales Price','Effective Date'],bc:['Product No.','Source No.','Unit Price','Starting Date'],quickbooks:['Item','Price Level','Custom Price','Effective Date'] };
 export async function exportPrices(e: Engine, id: string, profile: ErpProfile, format: 'csv'|'xlsx', customerId?:string) {
   if (!EXPORT_LAYOUTS[profile] || !['csv','xlsx'].includes(format)) return bad(msg("rules.chooseASupportedErp"));
-  const run = (await rows(e,`SELECT status,run_date,approved_by FROM rule_runs WHERE id=${Q(id)}`))[0]; if (!run || !['approved','exported'].includes(run.status)) return bad(msg("rules.thePricingOwnerMust"));
-  if(customerId&&profile!=='generic')return bad(msg('ops.customerExport'));
-  const data = await rows(e,`SELECT product_id,tier,before_cents::VARCHAR AS b,after_cents::VARCHAR AS a,guard_status FROM rule_changes WHERE run_id=${Q(id)} ORDER BY product_id,tier`);
+  const run = (await rows(e,`SELECT status,run_date,approved_by,affected_rows::VARCHAR AS affected FROM rule_runs WHERE id=${Q(id)}`))[0]; if (!run || !['approved','exported'].includes(run.status)) return bad(msg("rules.thePricingOwnerMust"));
+  const scoped=id.startsWith('ops-');
+  // A customer contract's matrix tier can be NULL even when its guardrail tier
+  // is set. Export the actual scope, or a round trip would override its breaks.
+  const data = await rows(e,`SELECT r.product_id,${scoped?"coalesce(d.matrix_tier,'')":'r.tier'} AS tier,r.before_cents::VARCHAR AS b,r.after_cents::VARCHAR AS a,r.guard_status,${scoped?'d.customer_id,d.valid_to::VARCHAR AS valid_to':'NULL AS customer_id,NULL AS valid_to'} FROM rule_changes r ${scoped?`JOIN price_changeset_rows d ON d.run_id=r.run_id AND d.product_id=r.product_id AND d.tier=r.tier`:''} WHERE r.run_id=${Q(id)} ORDER BY r.product_id,r.tier`);
+  if(scoped&&String(data.length)!==run.affected)return bad(msg("rules.thePreviewNoLonger"));
+  if(profile!=='generic'&&(customerId||data.some(r=>r.customer_id!==null||r.valid_to!==null)))return bad(msg('ops.customerExport'));
+  const extraHeaders=profile==='generic'&&scoped?['customer_id','valid_to']:customerId?['customer_id']:[];
+  const scopeCells=(r:Record<string,any>)=>scoped&&profile==='generic'?[r.customer_id??'',r.valid_to??'']:customerId?[customerId]:[];
   const clean = (v: unknown) => csvSafeCell(String(v));
-  const table = [[...EXPORT_LAYOUTS[profile],...(customerId?['customer_id']:[])],...data.map(r=>[r.product_id,r.tier,centsText(BigInt(r.a)),run.run_date.slice(0,10),...(customerId?[customerId]:[])].map(clean))];
+  const table = [[...EXPORT_LAYOUTS[profile],...extraHeaders],...data.map(r=>[r.product_id,r.tier,centsText(BigInt(r.a)),run.run_date.slice(0,10),...scopeCells(r)].map(clean))];
   const csv = (t:string[][])=>t.map(r=>r.map(v=>'"'+v.replaceAll('"','""')+'"').join(',')).join('\r\n');
   let blob: Blob;
   if(format==='xlsx'){const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(table),'Prices');blob=new Blob([XLSX.write(wb,{type:'array',bookType:'xlsx'})],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});}
   else blob=new Blob(['\ufeff'+csv(table)],{type:'text/csv;charset=utf-8'});
-  const log=[['SKU','Tier','Before','After','Guardrail','Pricing Owner','Run'],...data.map(r=>[r.product_id,r.tier,centsText(BigInt(r.b)),centsText(BigInt(r.a)),r.guard_status,run.approved_by,id].map(clean))];
+  // The change log carries the same scope columns as the price file, so the two always describe the same rows.
+  const log=[['SKU','Tier','Before','After','Guardrail','Pricing Owner','Run',...extraHeaders],...data.map(r=>[r.product_id,r.tier,centsText(BigInt(r.b)),centsText(BigInt(r.a)),r.guard_status,run.approved_by,id,...scopeCells(r)].map(clean))];
   return {name:`rebatehq-${profile}-prices.${format}`,blob,logName:'rebatehq-change-log.csv',log:new Blob(['\ufeff'+csv(log)],{type:'text/csv;charset=utf-8'}),warning:msg("rules.unverifiedUntilTestedOn", { label: PROFILES[profile].label })};
 }

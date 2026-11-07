@@ -154,6 +154,13 @@ what remains unverified.
   update `pnpm-lock.yaml` with pnpm 10 in the same change. Prefer no new dependencies. Never load fonts,
   scripts or icons from a CDN: the CSP and the privacy gate forbid external requests.
 
+**Price exports (from 7C-1)**
+- Pricing-operation runs (ids starting with `ops-`) export the price-matrix scope they change: the matrix tier
+  (blank for a customer contract), `customer_id` and `valid_to`, in the generic layout only, and the change log
+  carries the same columns. Never write the guardrail tier into an export for a customer contract.
+- If Codex stops mid-task (usage limit), the next session must first run `git status` and `git diff`, finish or
+  revert the half-done change, and run the tests before starting anything new.
+
 **UI (from 7V-1)**
 - Build screens from `components/ui` (`ui.tsx`, `Icon.tsx`, `ui.module.css`) and the shell in
   `components/local/shell.module.css`. Old element rules in `vault.module.css` use `:where()` (zero specificity) so
