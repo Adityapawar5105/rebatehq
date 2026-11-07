@@ -585,8 +585,8 @@ Additional Block B pitfalls found:
 
 ## Chunk 7C-2 implementation handoff (8 November 2026)
 
-Local implementation; CI still pending until CHUNK_7C2_VERIFICATION.md cites a
-passing run. New worker commands are all denied to Sales Reps. Local v12 adds
+CI-verified in [CI #104](https://github.com/Adityapawar5105/rebatehq/actions/runs/42406059786) on `05ff468`; CHUNK_7C2_VERIFICATION.md records 249 unit tests, 43
+authenticated vault checks and 11 real-authenticated local-Supabase relay checks. New worker commands are all denied to Sales Reps. Local v12 adds
 five tables (42 total), no Supabase change. See ASSUMPTIONS.md for Basic/full
 grid limits, saved-rule slider semantics, cost-to-serve grouping and explicit
 free-delivery evidence, and strict landed file scope. Preserve every matrix key

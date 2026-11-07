@@ -404,7 +404,7 @@ server route or restore inventory changed. Legacy business routes remain off.
 This is evidence for the authenticated **local vault flow**, not hosted deployment,
 physical-crash behavior, native-language review or 1M/2M performance.
 
-## Chunk 7C-2 local security checks (CI pending)
+## Chunk 7C-2 security checks (verified in [CI #104](https://github.com/Adityapawar5105/rebatehq/actions/runs/42406059786) on `05ff468`)
 
 Every new command is denied to a Sales Rep by ACTION_CAP. Professional features
 use the signed tier; Starter gets the Basic list-price grid only. Advanced or
@@ -414,5 +414,7 @@ approved by the named Pricing Owner. Reversal refuses scope or amount conflicts.
 Receipts, observations, confirmations and checks are local encrypted data; write
 paths use the existing atomic/audited/saved transaction helper. File parsing never
 executes formulas or macros, preserves scope and rejects ambiguous input. The
-full Chrome/Edge lab privacy gates pass locally, but authenticated Supabase
-privacy is unverified until the new CI run passes. See CHUNK_7C2_VERIFICATION.md.
+full Chrome/Edge lab privacy gates pass locally. The required authenticated local-vault
+privacy gate ran and passed 43 named checks in [CI #104](https://github.com/Adityapawar5105/rebatehq/actions/runs/42406059786) on `05ff468`, with 11 real-authenticated
+local-Supabase relay checks. This proves the exercised local flow, not hosted deployment
+or app-wide absence of legacy paths. See CHUNK_7C2_VERIFICATION.md.

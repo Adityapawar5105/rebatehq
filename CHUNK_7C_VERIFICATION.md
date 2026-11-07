@@ -189,3 +189,8 @@ separate session.
 
 Implemented separately after the user requested 7C-2. Current evidence and limits
 are in CHUNK_7C2_VERIFICATION.md; this does not replace the part-1 CI evidence.
+
+Part 2 is now CI-verified in [CI #104](https://github.com/Adityapawar5105/rebatehq/actions/runs/42406059786)
+on `05ff468`: 249 unit tests, 43 authenticated vault checks and 11 real-authenticated
+local-Supabase relay checks, 8 November 2026 (Asia/Kolkata). See
+CHUNK_7C2_VERIFICATION.md. This completes 7C; 7D has not started.

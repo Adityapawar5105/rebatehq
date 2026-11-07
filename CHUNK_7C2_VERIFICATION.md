@@ -1,7 +1,6 @@
 # Chunk 7C-2 verification
 
-8 November 2026. Items 6–10 only; 7D and later not started. **CI unverified**
-until the new commit's run is green. Blueprint unchanged. No server code,
+8 November 2026. Items 6–10 only; 7D and later not started. **CI-verified** in [CI #104](https://github.com/Adityapawar5105/rebatehq/actions/runs/42406059786) on `05ff468`. Blueprint unchanged. No server code,
 Supabase migration, migrations.lock, function allowlist or restore inventory
 changed. Local schema v12: 42 tables (37 before this chunk).
 
@@ -12,7 +11,7 @@ changed. Local schema v12: 42 tables (37 before this chunk).
 | Slider approximate/exact | Read-only cached worker base; exact matches normal simulation |
 | Small/free delivery losses | Known-cost invoice controls, explicit confirmation, exact allocation and overlap tests |
 | Landed comparison | Immutable export receipt, full scopes, changed/missing/duplicate/applied cases, CSV and XLSX |
-| Privacy, audit and encrypted reload | New pricingTools and pricingToolsUi checks added to the existing gate; CI pending |
+| Privacy, audit and encrypted reload | New pricingTools and pricingToolsUi checks added to the existing gate; verified in CI #104 |
 | Margin golden / Playground | Existing golden tests retained; five planted findings not changed |
 | Frozen database | 11 applied migrations, zero pending; lock/schema gates unchanged |
 
@@ -38,8 +37,8 @@ ignored and contain synthetic fixtures only. Passing CI will be cited separately
 
 ## Unverified
 
-- New authenticated CI gate until the run passes; local lab identities are not
-  real Supabase authentication.
+- Hosted/deployed authentication remains unverified. Local lab identities are not
+  real Supabase authentication; CI #104 separately proves the real local-Supabase flow.
 - Deployed/hosted authentication and ERP compatibility; no restore workflow is
   required because the Supabase schema/inventory is unchanged.
 - Native Spanish/French translation review, headed manual accessibility/UX,
@@ -59,13 +58,13 @@ ignored and contain synthetic fixtures only. Passing CI will be cited separately
   absent src/ and pages/ are expected, and the nonzero-file gate remains.
 - `node --test --test-concurrency=1 tests/*.test.js`: passed, 78 tests.
 - `node node_modules/.pnpm/tsx@4.23.15/node_modules/tsx/dist/cli.mjs --test --test-concurrency=1 tests/*.test.ts`:
-  171 tests in the expanded suite (161 before this chunk); final rerun recorded
-  below after completion. Targeted runs of pricing-tools (10), prior pricing ops,
+  171 tests in the expanded suite (161 before this chunk); final rerun passed
+  all 171. Targeted runs of pricing-tools (10), prior pricing ops,
   margin-v2, i18n and vault tests were also used while correcting defects.
 - `VAULT_TEST_PORT=3106 node scripts/test-control-vault.mjs` (PowerShell sets the
   environment separately): builds self-hosted workers and Next production assets,
   starts 127.0.0.1:3106, runs Chrome then Edge vault/relay harnesses, and stops its
-  server. Current final results are recorded below after completion. This is the
+  server. Both final browser results are recorded below. This is the
   repository's documented direct-script equivalent on a machine without pnpm on
   PATH; no dependencies were added or lockfile changed.
 - `git diff --check`: passed; only autocrlf informational warnings. Protected-path
@@ -88,7 +87,7 @@ and the 11-check local PGlite relay transport harness. Both include pricingTools
 rep denial, audit and encrypted reload) and pricingToolsUi (8 flags: Excel paste,
 owner approval, scoped export, landed comparison, exact slider, competitor screen,
 cost-to-serve screen and unchanged invoice counts). The pseudo-locale walk includes
-all new tabs. These are headless local checks, not authenticated Supabase evidence.
+all new tabs. These are headless local checks, not authenticated Supabase evidence (that evidence is recorded below).
 
 Grid, landed and competitor screenshots in ignored test-results/ were visually
 inspected; wide tables retain the shared keyboard-focusable horizontal scroll
@@ -134,3 +133,32 @@ BLUEPRINT.md) is empty. Git staging/commit/push and CI evidence follow separatel
 
 Staged diff/check and the protected-path staged diff passed. No .env files,
 .claude/, generated assets, test-results/ or customer files are staged.
+
+## CI evidence and close-out
+
+Verified in [RebateHQ CI #104](https://github.com/Adityapawar5105/rebatehq/actions/runs/42406059786),
+code commit `05ff468d3cdd033ad2f5204f91d26758a6baed95`, 8 November 2026
+Asia/Kolkata (7 November UTC). The run completed successfully in 10m 24s.
+The required **authenticated local-vault privacy gate ran (not skipped), passed
+43 named checks with auth=true**, and included pricingTools, pricingToolsUi,
+pricingOps, quotesUi, uiLayout, i18nUi and privacy. Its real-authenticated
+local-Supabase relay gate passed 11 checks. No zero-test or skipped gate is
+being treated as proof.
+
+That run passed frozen installation, dependency audit, typecheck, **78 JS + 171 TS
+= 249 unit tests**, production build, all 11 applied migration hashes, runtime
+pool/no-context checks and the **152-check fresh pgTAP suite twice** with planned
+== ran and no residue. No restore workflow was run: Supabase objects and inventory
+were unchanged. Local v12 has 42 tables and the frozen encrypted v1 fixture still
+upgrades forward. The two final 3107 worker probes also passed locally after the
+last scope/cache fixes; they are not a substitute for authenticated CI.
+
+`git add -- <the 33 listed files>`, `git diff --cached --check`, staged stat and
+protected-path diff passed. `git commit -F test-results/7c2-commit.txt` created
+05ff468; `git push origin main` succeeded. Status then contained only the
+pre-existing untracked .claude/ directory. No CI fix attempt was needed.
+This close-out is documentation only; its commit/push and follow-up run are
+reported in the completion reply. Blueprint unchanged. **7C is complete; stop
+before 7D.** Hosted behavior, real ERP compatibility, native-language review,
+headed/manual accessibility, physical recovery and 1M/2M feature performance
+remain unverified.

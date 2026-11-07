@@ -581,7 +581,7 @@ passed 39 vault + 11 local-transport relay checks. Hosted behavior, native-langu
 review and 1M/2M feature performance stay unverified. An absent month means no
 imported rows, not proof of zero business activity; file coverage must be reviewed.
 
-## Chunk 7C-2 assumptions (8 November 2026; CI unverified until a passing run)
+## Chunk 7C-2 assumptions (8 November 2026; verified in [CI #104](https://github.com/Adityapawar5105/rebatehq/actions/runs/42406059786) on `05ff468`)
 
 - Scope is items 6–10 only. No 7D or later work. Blueprint unchanged. Local vault
   v12 adds five tables (42 total): competitor_prices, price_grid_drafts,
@@ -665,3 +665,9 @@ so their stable IDs and resolver tie-break order survive. Earlier rows are close
 and a new current-dated period is inserted. Draft creation does neither. Leak
 cache identity includes the licensed cost-to-serve gate as well as data version;
 a cached Pro result cannot appear after downgrade to Starter.
+
+7C-2 verified in [CI #104](https://github.com/Adityapawar5105/rebatehq/actions/runs/42406059786)
+on `05ff468`, 8 November 2026 (Asia/Kolkata): 249 unit tests, 43 authenticated
+local-vault checks and 11 real-authenticated local-Supabase relay checks. Local
+v12 has 42 tables. Only the exercised local flows are proven; hosted/ERP/native
+language/manual recovery and 1M/2M feature-performance limits above remain open.
