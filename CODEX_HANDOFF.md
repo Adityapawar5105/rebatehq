@@ -446,6 +446,18 @@ Chunk 7D. Professional and Scale. Build screens on the 7V components (a new "Reb
 blueprint section 9). Precondition: 7C-3a (multi-currency) is CI-verified; all rebate and claim amounts use the
 workspace currency.
 
+Size: this chunk is large. Work in two parts, each committed, pushed and green in CI before the next:
+7D-1 = items 1 and 4 (customer rebate engine, agreement loading, waterfall reconciliation; the schema bump with
+rebate_programs, rebate_tiers and rebate_accruals); 7D-2 = items 2, 3 and 5 (supplier claim tracker, Purchases
+import role, rebate progress, supplier claim generator; a second schema bump with supplier_claims and purchases).
+Stop after 7D-1 and report; the user starts 7D-2 in a new session with Block A and this same prompt, saying
+"continue with 7D-2". Record both parts in CHUNK_7D_VERIFICATION.md (part 1, part 2).
+
+Money and browsers (from 7C-3): show every amount through the existing formatters with the workspace currency;
+never hard-code "$" or USD, and browser assertions check the currency as well as the amount. Run the Chrome and
+Edge gates locally (Firefox also if it launches); CI's required Firefox gate must pass as well as the
+authenticated Chromium gate.
+
 Scope:
 1. Customer rebate engine: programs with thresholds, rates and period; accruals; tier progress; reminders.
    - Port the tier math from the legacy code (rebate-engine.js, lib/rebates.ts, and their tests in
