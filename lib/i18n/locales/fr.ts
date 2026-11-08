@@ -3,6 +3,7 @@
 import type { Catalog } from "../core";
 
 export const fr: Catalog = {
+  "rebate.expectedInput": "Montant attendu (après ajustements déclarés)",
   "rebate.section": "Ristournes et contrats",
   "rebate.description": "Ristournes clients, paliers et justificatifs.",
   "rebate.heading": "Ristournes clients",
@@ -873,7 +874,7 @@ export const fr: Catalog = {
   "studio.showingTheFirstRows": { one: "Affichage de la première ligne de ce groupe ({count}).", other: "Affichage des {count} premières lignes de ce groupe." },
   "studio.reconciliation": "Rapprochement",
   "studio.acceptedDifferenceSAre": { one: "{count} écart accepté est conservé au dossier.", other: "{count} écarts acceptés sont conservés au dossier." },
-  "studio.differenceSBetweenThe": { one: "⚠ {count} écart entre la cascade et les lignes importées. Rien n'a été ajusté. Recalculez les totaux à partir des lignes, corrigez le fichier source ou acceptez un écart pour le consigner.", other: "⚠ {count} écarts entre la cascade et les lignes importées. Rien n'a été ajusté. Recalculez les totaux à partir des lignes, corrigez le fichier source ou acceptez un écart pour le consigner." },
+  "studio.differenceSBetweenThe": {"one":"⚠ {count} écart entre la cascade et les montants après ajustements déclarés. Aucune valeur modifiée pour masquer cet écart. Recalculez, vérifiez sources et accords, ou acceptez l’écart pour le consigner.","other":"⚠ {count} écarts entre la cascade et les montants après ajustements déclarés. Aucune valeur modifiée pour masquer ces écarts. Recalculez, vérifiez sources et accords, ou acceptez un écart pour le consigner."},
   "studio.reconciliationDifferences": "Écarts de rapprochement",
   "studio.level": "Niveau",
   "studio.difference": "Écart",
@@ -1444,10 +1445,10 @@ export const fr: Catalog = {
   "recon.knownCost": "coût connu",
   "recon.linesWithKnownCost": "lignes à coût connu",
   "recon.pocketOfLinesWith": "poche des lignes à coût connu",
-  "recon.customerTheWaterfallS": "Client {c}, {month} : la valeur {part} de la cascade diffère des lignes importées.",
+  "recon.customerTheWaterfallS": "Client {c}, {month} : {part} de la cascade diffère des montants après ajustements déclarés.",
   "recon.customerMonthTotalsDiffer": "La valeur {part} des totaux client x mois diffère des lignes importées.",
   "recon.productTotalsDiffer": "La valeur {part} des totaux par produit diffère des lignes importées.",
-  "recon.theWaterfallSTotal": "Le total {value} de la cascade diffère des lignes importées.",
+  "recon.theWaterfallSTotal": "Le total {value} de la cascade diffère des montants après ajustements déclarés.",
   "recon.invoiceHasLinesFor": "La facture {invoice} contient des lignes pour {customers} clients ; son total ne peut donc pas être rapproché d'un seul client.",
   "recon.invoiceHasLinesIn": "La facture {invoice} contient des lignes sur {months} mois ; son total ne peut donc pas être rapproché d'un seul mois.",
   "issue.decimalComma": "virgule",
@@ -1491,7 +1492,7 @@ export const fr: Catalog = {
   "studio.fromHeader": "Du fichier d'en-têtes de commande (rapproché par numéro de facture)",
   "studio.fromHeaderSpread": "Du fichier d'en-têtes de commande (rapproché par numéro de facture, réparti sur les lignes)",
   "studio.generateFromInvoiceAndLine": "Générer à partir du numéro de facture et du numéro de ligne",
-  "studio.reconciled": "✓ La cascade de marge concorde au cent près avec les lignes importées pour {invoices} factures, {months} mois-clients et au total.",
+  "studio.reconciled": "✓ Aucun écart de rapprochement non accepté pour {invoices} factures, {months} mois-clients ou le total. Les ajustements de ristournes déclarés sont inclus ; les factures originales restent intactes.",
   "studio.level.invoice": "Facture",
   "studio.level.customerMonth": "Client x mois",
   "studio.level.total": "Total",

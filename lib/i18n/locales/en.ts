@@ -640,7 +640,7 @@ const studio = {
   "studio.showingTheFirstRows": { one: "Showing the first {count} row of this group.", other: "Showing the first {count} rows of this group." },
   "studio.reconciliation": "Reconciliation",
   "studio.acceptedDifferenceSAre": { one: "{count} accepted difference is kept on record.", other: "{count} accepted differences are kept on record." },
-  "studio.differenceSBetweenThe": { one: "⚠ {count} difference between the waterfall and the imported lines. Nothing was adjusted. Rebuild the totals from the lines, fix the source file, or accept a difference to keep it on record.", other: "⚠ {count} differences between the waterfall and the imported lines. Nothing was adjusted. Rebuild the totals from the lines, fix the source file, or accept a difference to keep it on record." },
+  "studio.differenceSBetweenThe": {"one":"⚠ {count} difference between the waterfall and financial inputs after declared adjustments. No values were changed to hide this difference. Rebuild totals, review source files and program terms, or accept a difference to keep it on record.","other":"⚠ {count} differences between the waterfall and financial inputs after declared adjustments. No values were changed to hide this difference. Rebuild totals, review source files and program terms, or accept a difference to keep it on record."},
   "studio.reconciliationDifferences": "Reconciliation differences",
   "studio.level": "Level",
   "studio.difference": "Difference",
@@ -1217,10 +1217,10 @@ const worker = {
   "recon.knownCost": "known cost",
   "recon.linesWithKnownCost": "lines with known cost",
   "recon.pocketOfLinesWith": "pocket of lines with known cost",
-  "recon.customerTheWaterfallS": "Customer {c}, {month}: the waterfall's {part} differs from the imported lines.",
+  "recon.customerTheWaterfallS": "Customer {c}, {month}: the waterfall’s {part} differs from financial inputs after declared adjustments.",
   "recon.customerMonthTotalsDiffer": "The customer x month totals' {part} differ from the imported lines.",
   "recon.productTotalsDiffer": "The product totals' {part} differ from the imported lines.",
-  "recon.theWaterfallSTotal": "The waterfall's total {value} differs from the imported lines.",
+  "recon.theWaterfallSTotal": "The waterfall’s total {value} differs from financial inputs after declared adjustments.",
   "recon.invoiceHasLinesFor": "Invoice {invoice} has lines for {customers} customers, so its total cannot reconcile to one customer.",
   "recon.invoiceHasLinesIn": "Invoice {invoice} has lines in {months} months, so its total cannot reconcile to one month.",
 } as const;
@@ -1406,7 +1406,7 @@ const patches = {
   "studio.fromHeader": "From the order header file (matched by invoice number)",
   "studio.fromHeaderSpread": "From the order header file (matched by invoice number, spread over the lines)",
   "studio.generateFromInvoiceAndLine": "Generate from invoice number and line number",
-  "studio.reconciled": "✓ The margin waterfall matches the imported lines to the cent for {invoices} invoices, {months} customer-months and in total.",
+  "studio.reconciled": "✓ No unaccepted reconciliation differences for {invoices} invoices, {months} customer-months or the total. Checks include declared rebate adjustments; raw invoice amounts stay unchanged.",
   "studio.level.invoice": "Invoice",
   "studio.level.customerMonth": "Customer x month",
   "studio.level.total": "Total",
@@ -1998,6 +1998,7 @@ const monitor = {
   "monitor.neverSynced": "No successful inbox sync on this device yet.",
 } as const;
 const rebate = {
+  "rebate.expectedInput": "Expected input (after declared adjustments)",
   "rebate.section": "Rebates & Contracts",
   "rebate.description": "Customer rebates, tier progress and accrual evidence.",
   "rebate.heading": "Customer rebates",

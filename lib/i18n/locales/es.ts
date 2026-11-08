@@ -3,6 +3,7 @@
 import type { Catalog } from "../core";
 
 export const es: Catalog = {
+  "rebate.expectedInput": "Importe esperado (con ajustes declarados)",
   "rebate.section": "Rebajas y contratos",
   "rebate.description": "Rebajas de clientes, niveles y pruebas de acumulación.",
   "rebate.heading": "Rebajas de clientes",
@@ -873,7 +874,7 @@ export const es: Catalog = {
   "studio.showingTheFirstRows": { one: "Se muestra la primera {count} fila de este grupo.", other: "Se muestran las primeras {count} filas de este grupo." },
   "studio.reconciliation": "Conciliación",
   "studio.acceptedDifferenceSAre": { one: "Se conserva {count} diferencia aceptada en el registro.", other: "Se conservan {count} diferencias aceptadas en el registro." },
-  "studio.differenceSBetweenThe": { one: "⚠ {count} diferencia entre la cascada y las líneas importadas. No se ajustó nada. Recalcule los totales a partir de las líneas, corrija el archivo de origen o acepte una diferencia para dejarla registrada.", other: "⚠ {count} diferencias entre la cascada y las líneas importadas. No se ajustó nada. Recalcule los totales a partir de las líneas, corrija el archivo de origen o acepte una diferencia para dejarla registrada." },
+  "studio.differenceSBetweenThe": {"one":"⚠ {count} diferencia entre la cascada y los importes con ajustes declarados. No se cambiaron valores para ocultarla. Recalcule, revise archivos y acuerdos, o acepte la diferencia para registrarla.","other":"⚠ {count} diferencias entre la cascada y los importes con ajustes declarados. No se cambiaron valores para ocultarlas. Recalcule, revise archivos y acuerdos, o acepte una diferencia para registrarla."},
   "studio.reconciliationDifferences": "Diferencias de conciliación",
   "studio.level": "Nivel",
   "studio.difference": "Diferencia",
@@ -1444,10 +1445,10 @@ export const es: Catalog = {
   "recon.knownCost": "costo conocido",
   "recon.linesWithKnownCost": "líneas con costo conocido",
   "recon.pocketOfLinesWith": "bolsillo de las líneas con costo conocido",
-  "recon.customerTheWaterfallS": "Cliente {c}, {month}: el valor de {part} de la cascada difiere de las líneas importadas.",
+  "recon.customerTheWaterfallS": "Cliente {c}, {month}: {part} de la cascada difiere de los importes con ajustes declarados.",
   "recon.customerMonthTotalsDiffer": "El valor de {part} de los totales cliente x mes difiere de las líneas importadas.",
   "recon.productTotalsDiffer": "El valor de {part} de los totales por producto difiere de las líneas importadas.",
-  "recon.theWaterfallSTotal": "El total de {value} de la cascada difiere de las líneas importadas.",
+  "recon.theWaterfallSTotal": "El total de {value} de la cascada difiere de los importes con ajustes declarados.",
   "recon.invoiceHasLinesFor": "La factura {invoice} tiene líneas de {customers} clientes, así que su total no puede conciliarse con un solo cliente.",
   "recon.invoiceHasLinesIn": "La factura {invoice} tiene líneas de {months} meses, así que su total no puede conciliarse con un solo mes.",
   "issue.decimalComma": "coma",
@@ -1491,7 +1492,7 @@ export const es: Catalog = {
   "studio.fromHeader": "Del archivo de encabezados de pedido (vinculado por número de factura)",
   "studio.fromHeaderSpread": "Del archivo de encabezados de pedido (vinculado por número de factura, repartido entre las líneas)",
   "studio.generateFromInvoiceAndLine": "Generar a partir del número de factura y el número de línea",
-  "studio.reconciled": "✓ La cascada de margen coincide al centavo con las líneas importadas en {invoices} facturas, {months} meses-cliente y en total.",
+  "studio.reconciled": "✓ Sin diferencias de conciliación pendientes de aceptar en {invoices} facturas, {months} meses-cliente o el total. Se incluyen los ajustes de rebajas declarados; las facturas originales no cambian.",
   "studio.level.invoice": "Factura",
   "studio.level.customerMonth": "Cliente x mes",
   "studio.level.total": "Total",
