@@ -1,6 +1,8 @@
 # Chunk 7D — verification
 
-## Part 1 — customer rebates (done locally in Chrome/Edge; Firefox and CI pending)
+## Part 1 — customer rebates (CI-verified)
+
+**Verified in [CI #114](https://github.com/Adityapawar5105/rebatehq/actions/runs/42470690491) on `585ccf8`, 8 November 2026:** 269 unit tests (78 JS + 191 TS), **50 authenticated Chromium vault checks**, **48 Firefox lab checks**, **12 real-authenticated local-Supabase relay checks**, and the fresh 152-check pgTAP suite twice with unchanged tenant row counts. Both required browser gates ran and passed with nonzero counts. Local vault **v14 / 45 tables**; 24 public tenant tables, 11 locked migrations, zero pending. No restore drill needed or run: no Supabase schema/inventory change.
 
 Scope: customer programs, agreement imports, tier progress/reminders and accrual reconciliation. Local vault **v14 / 45 base tables**; three new tables: `rebate_programs`, `rebate_tiers`, `rebate_accruals`, plus the read-only `rebate_sales` financial input view. No server/API/control-plane changes, Supabase migration, dependency, lock-file change or restore inventory change. Blueprint unchanged.
 
@@ -33,14 +35,14 @@ Machine: Windows, Ryzen 5 5600H, approximately 8 GB RAM. Node 24.22.1. Actual pi
 | TS runner, `tests/*.test.ts` | First complete run 186/189; three new-role expectation/dispatcher-format failures corrected, final 191/191 TS rerun passed (269 total with JS) |
 | `VAULT_TEST_PORT=3106 node scripts/test-control-vault.mjs` | Production build passed; initial browser run caught obsolete “XML converted only” expectation. Updated to require missing terms in Fix Later. Final Chrome/Edge rerun passed |
 | Chrome 156.0.8078.80 and Edge 157.0.4341.42 | Each passed 48 vault/privacy checks and 12 local PGlite relay checks; authenticated transport unverified locally |
-| Firefox local gate | Pending |
+| Firefox 157.0 local vault gate | 48 checks passed, exit 0 |
 | `git diff --check` | Passed |
 
-SQL execution coverage: v13→v14 migration including AR sidecar preservation; manual create/edit/delete, tier validation and overlap checks; staged rates/FX/date/required field validation; whole-program validation; agreement commit/rejection retention; Fix Later correction, recheck and dismissal; accrual rebuild/window allocation; raw-versus-recognized reconciliation; waterfall/math/drill and invoice differences; source removal and rollback; source-linked evidence; currency blockers and role projection. Browser tests additionally exercise actual converter staging/read_csv, encrypted snapshot open/copy-on-write/reload and source replacement. Final execution status is recorded after those gates finish.
+SQL execution coverage: v13→v14 migration including AR sidecar preservation; manual create/edit/delete, tier validation and overlap checks; staged rates/FX/date/required field validation; whole-program validation; agreement commit/rejection retention; Fix Later correction, recheck and dismissal; accrual rebuild/window allocation; raw-versus-recognized reconciliation; waterfall/math/drill and invoice differences; source removal and rollback; source-linked evidence; currency blockers and role projection. Browser tests additionally exercise actual converter staging/read_csv, encrypted snapshot open/copy-on-write/reload and source replacement. All listed local SQL executed successfully in the pinned DuckDB-Wasm unit/browser harness; no new SQL statement remains unexecuted locally.
 
 ### Remaining unverified
 
-CI and authenticated local-Supabase privacy/relay gates remain unverified until their new run passes. Hosted/deployed auth/restore, headed/native permission UI, physical crash/quota/multi-tab recovery, native-language review, real customer contract/ERP acceptance and large-vault rebate/import latency are unverified. No new performance claim. No restore drill is needed because the server schema/inventory did not change.
+Hosted/deployed auth/restore, headed/native permission UI, physical crash/quota/multi-tab recovery, native-language review, real customer contract/ERP acceptance and large-vault rebate/import latency are unverified. No new performance claim. No restore drill is needed because the server schema/inventory did not change.
 
 ## Part 2 — unstarted
 
@@ -48,8 +50,43 @@ Supplier claims, Purchases (PO receipts), supplier progress and claim exports ar
 
 ### Final local notes
 
-The final Chrome/Edge production harness exited 0. It builds the self-hosted workers with disposable keys, runs production Next.js build/start, and stops its own loopback server. No fake Supabase configuration. Visual QA reviewed the Chrome phone screenshots in light and contrast themes; screenshots are git-ignored. The final complete unit rerun passed 78 JS + 191 TS, zero failures/skips. Typecheck passed. Existing MODULE_TYPELESS_PACKAGE_JSON and absent optional src/pages scan warnings were not changed.
+The final Chrome/Edge production harness and the separate Firefox vault harness exited 0. It builds the self-hosted workers with disposable keys, runs production Next.js build/start, and stops its own loopback server. No fake Supabase configuration. Visual QA reviewed the Chrome phone screenshots in light and contrast themes; screenshots are git-ignored. The final complete unit rerun passed 78 JS + 191 TS, zero failures/skips. Typecheck passed. Existing MODULE_TYPELESS_PACKAGE_JSON and absent optional src/pages scan warnings were not changed.
 
 Rebate agreement commits require an explicit terms acknowledgement in the report UI and independently in the worker, even with zero rejected rows. An attempted unacknowledged commit is tested as denied, then the same plan succeeds with confirmation. Existing Fix Later rules remain: a wholly invalid batch cannot commit; correct/re-upload it or include it with valid batch rows before retaining rejections. The mixed-format browser fixture proves old six-column terms are retained as rejected without activating partial programs.
 
 Concurrent user commit edb77c3 advanced AGENTS/BLUEPRINT to v2.5 during this task; preserved unchanged. This attached prompt explicitly authorizes 7D-1 under v2.4. Selection aggregates, row notes and universal column filter/sort are **not implemented or verified by 7D-1** and require a separately scoped follow-up. No blueprint edit made by this chunk.
+
+### Files changed by part 1
+
+- Screen/shell: components/local/RebatesView.tsx (new), VaultApp.tsx, MarginView.tsx, ImportStudio.tsx.
+- Worker engine/store/import adapters: lib/rebate/{engine,input,store,import}.ts (new); lib/vault/{schema,protocol,dispatch,licence,service,currency}.ts; lib/roles/access.ts.
+- Financial input: lib/margin/{aggregate,views,bridge,leaks,monitor,service-cost}.ts; lib/pricing/alternatives.ts; lib/cleanup/item-master.ts. Quantity-only pricing inputs remain raw; financial pocket inputs use recognized allocations.
+- Import/source/Fix Later: lib/studio/{formats,mapper,load,studio,fixlater}.ts.
+- Translations: lib/i18n/locales/{en,es,fr}.ts (fr-CA inherits).
+- Tests: tests/rebate-local.test.ts (new), quotes.test.ts, roles.test.ts, vault.test.ts; tests/browser/vault-worker.ts; scripts/test-vault-browser.mjs.
+- Evidence/assumptions: this record and ASSUMPTIONS.md, README.md, AGENTS.md, SECURITY_CHECK.md, BLUEPRINT_EXECUTION_PLAN.md and CODEX_HANDOFF.md.
+
+### Command inventory
+
+The pinned TS runner below is node_modules/.pnpm/tsx@4.23.15/node_modules/tsx/dist/cli.mjs. This machine has no pnpm on PATH, so the documented Node equivalents were used locally. CI runs the actual pnpm scripts and frozen-lockfile install.
+
+- Read-only inventory/review: Get-Content and rg on the attachment, governing docs and owning source/tests; git status --short / -sb, git diff --stat / --numstat / --name-only / --check, git log, git show, git branch --show-current and git rev-parse. Missing-file exploratory searches were corrected; no user data or secrets printed.
+- `node <TS-runner> --test --test-concurrency=1 tests/rebate-local.test.ts`, focused rebate+quote and role+quote runs: passed after correcting a reserved DuckDB alias and fixture/type errors; final full suite includes all eight rebate tests.
+- `node --test --test-concurrency=1 tests/*.test.js`: final **78/78 passed**, zero skipped.
+- `node <TS-runner> --test --test-concurrency=1 tests/*.test.ts`: final **191/191 passed**, zero skipped. Earlier full run caught three stale role/dispatcher expectations; fixed without removing checks.
+- `node node_modules/typescript/bin/tsc --noEmit`: passed.
+- `node scripts/check-migrations-lock.mjs`: passed, 11 locked / 0 pending. `node scripts/check-schema.mjs`: passed, 24 live public tenant tables. `node scripts/check-service-role.mjs`: passed, 228 user-facing files.
+- `VAULT_TEST_PORT=3106 node scripts/test-control-vault.mjs`: final exit 0; invokes `node scripts/build-spike.mjs`, `node node_modules/next/dist/bin/next build`, starts/stops its own loopback server, and runs the Chrome/Edge vault and relay scripts. Each browser passed 48 vault + 12 local PGlite relay checks. Initial runs exposed obsolete converted-only/rep-section expectations and the missing terms-confirmation UI/worker link; all corrected before push.
+- Same controller with `--browser=firefox --vault-only`: exit 0, Firefox 157.0, 48 checks.
+- `git diff --check`: passed. Explicit `git add …`, `git commit -F test-results/7d1-commit-message.txt`: implementation **585ccf8**; `git push origin main`: succeeded. The concurrent documentation parent edb77c3 is preserved. No locked migration/hash, server/API, dependency or real-file changes.
+- GitHub connector: read run/jobs/steps/logs to confirm actual non-skipped gate execution; CI evidence is added only on success.
+
+### CI evidence
+
+[CI #114](https://github.com/Adityapawar5105/rebatehq/actions/runs/42470690491) on `585ccf8`, 8 November 2026: 269 unit tests (78 JS + 191 TS), **50 authenticated Chromium vault checks**, **48 Firefox lab checks**, **12 real-authenticated local-Supabase relay checks**, and the fresh 152-check pgTAP suite twice with unchanged tenant row counts. Both required browser gates ran and passed with nonzero counts. Local vault **v14 / 45 tables**; 24 public tenant tables, 11 locked migrations, zero pending. No restore drill needed or run: no Supabase schema/inventory change.
+
+Job 128700494264: step 21 (Required authenticated local-vault privacy gate) and step 23 (Required Firefox local-vault lab gate) completed with success, not skipped. Chromium 156.0.8078.4 ran 50 checks; Firefox 157.0 ran 48. Both result lists include rebates and rebatesUi, whose assertions cover exact CAD amounts and rep/source/persistence controls. The real authenticated relay gate ran 12 checks. PostgreSQL 17 ran plan 152 twice; repeatability found no residue. Install with --frozen-lockfile, advisory audit, typecheck, pnpm test/build, migration/warning gates and runtime role verification passed. The source scanner counted 220 files in CI and 228 locally. No restore drill or hosted verification was performed.
+
+Post-CI documentation close-out reruns the unit suites, typecheck and lock check before commit/push. Implementation proof stays attached to 585ccf8; a documentation-only follow-up does not change the code or locked migrations.
+
+Close-out checks after CI #114: 78/78 JS and 191/191 TS tests passed with zero failures/skips; typecheck and migrations-lock check passed. `git diff --check` passed. Documentation-only close-out: explicit staging of AGENTS.md, ASSUMPTIONS.md, BLUEPRINT_EXECUTION_PLAN.md, CHUNK_7D_VERIFICATION.md, CODEX_HANDOFF.md, README.md and SECURITY_CHECK.md, then `git commit -F test-results/7d1-closeout-message.txt` and `git push origin main`. No blueprint, source/test logic, locked migration or hash is changed by the close-out.

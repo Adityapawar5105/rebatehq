@@ -724,7 +724,7 @@ Headed permission UI, hosted sign-in/restore, physical crash/quota/multi-tab rec
 The 7C-3b proof covers the authenticated local vault flow only. It does not prove deployed/hosted behavior, native permission UI, physical recovery, language suitability for pilots or large-vault monitoring performance. Next prompt: 7D, only on explicit instruction.
 
 
-## 7D-1 — customer rebates (8 November 2026; unverified)
+## 7D-1 — customer rebates (8 November 2026; CI-verified)
 
 - Scope: customer programs, tiers, accruals, agreement loading and waterfall reconciliation only. No supplier_claims, purchases, supplier imports/claims/exports, retirement migration or 7D-2. Local schema v14 adds exactly rebate_programs, rebate_tiers and rebate_accruals (45 tables). All 11 Supabase migrations and migrations.lock stay unchanged.
 - Period endpoints inclusive; tier lower bounds inclusive, upper bounds exclusive. Incremental/retroactive tier math ports the legacy golden cases. Rates allow three decimal places in percent; all production amounts are integer workspace cents with one final half-away rounding.
@@ -738,6 +738,10 @@ The 7C-3b proof covers the authenticated local vault flow only. It does not prov
 - Tier cap is 100 per program. Agreement import cohorts must have consistent metadata; a dismissed bad band cannot be omitted to activate the remaining tiers. Legacy six-column terms need explicit mode and treatment corrections in Fix Later. Item merges touching an agreement inclusion/exclusion are blocked until the terms are reviewed.
 - Local role tests classify and scan the nonempty rebateProgress payload; private accrual evidence/manual writes remain gated. The final CI and browser results are recorded in CHUNK_7D_VERIFICATION.md, part 1. 7D-2 remains unstarted.
 
-- Final pre-push local checks: 78 JS + 191 TS tests, typecheck, production build, migration freeze/schema/service-role gates passed. Chrome 156.0.8078.80 and Edge 157.0.4341.42 each passed 48 vault/privacy and 12 local PGlite relay checks. Firefox and new CI evidence are pending; no real Supabase credentials/Docker are present locally.
+- Final pre-push local checks: 78 JS + 191 TS tests, typecheck, production build, migration freeze/schema/service-role gates passed. Chrome 156.0.8078.80 and Edge 157.0.4341.42 each passed 48 vault/privacy and 12 local PGlite relay checks. Firefox 157.0 also passed 48 checks; CI evidence is recorded below. No real Supabase credentials/Docker are present locally.
 - Concurrent user commit edb77c3 introduced v2.5 selection aggregates/row notes/universal grid filter-sort. Preserved unchanged. This explicit v2.4-scoped 7D-1 prompt does not implement or verify those additions; a separate catch-up scope is needed. Blueprint not edited by this chunk.
 - Agreement term confirmation is independent of rejected-row acknowledgement and enforced at worker commit. Wholly invalid batches retain the existing review-only behavior: correct/re-upload or combine with valid rows before persisting rejected cohorts.
+
+**7D-1 verified in [CI #114](https://github.com/Adityapawar5105/rebatehq/actions/runs/42470690491) on `585ccf8`, 8 November 2026:** 269 unit tests (78 JS + 191 TS), **50 authenticated Chromium vault checks**, **48 Firefox lab checks**, **12 real-authenticated local-Supabase relay checks**, and the fresh 152-check pgTAP suite twice with unchanged tenant row counts. Both required browser gates ran and passed with nonzero counts. Local vault **v14 / 45 tables**; 24 public tenant tables, 11 locked migrations, zero pending. No restore drill needed or run: no Supabase schema/inventory change.
+
+This proves the tested authenticated local-vault flow, not deployed/hosted authentication or restore, headed native permissions, physical recovery, native-language/customer/ERP acceptance, or new large-vault rebate performance. 7D-2 remains unstarted. The concurrent v2.5 selection/notes/grid-standard additions remain unimplemented by this v2.4-scoped task. No blueprint edit by this chunk.

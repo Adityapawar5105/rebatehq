@@ -3,6 +3,8 @@
 Written 6 November 2026, after 7B (CI #89, #90, #91 green); updated 7 November 2026 after 7V (CI #95, #96 green). This file is the starting point for whoever builds
 the next chunk. It holds what a new session needs without the earlier chat history.
 
+**Current status (8 November 2026): 7D-1 done and CI-verified in [CI #114](https://github.com/Adityapawar5105/rebatehq/actions/runs/42470690491) on `585ccf8`, 8 November 2026.** Local v14 / 45 tables. Part 2 is unstarted; start it only in a separate explicitly authorized session. The concurrent v2.5 selection aggregates/row notes/all-grid filter-sort additions are not covered by 7D-1. See CHUNK_7D_VERIFICATION.md.
+
 ## How to use this file
 1. Work **one chunk per session**, in the order below. Paste **Block A (shared context)** first, then that
    chunk's prompt. Never start the next chunk in the same session.
@@ -200,6 +202,14 @@ what remains unverified.
 - Health rates are integer basis points. Convert with basisPointsDecimal before fmt.percent, whose input unit is percent. Currency assertions must include CA$ or the currency code, not digits alone.
 - CURRENT_DATE needs the disabled ICU extension in this pinned Wasm build. Tests use an explicit UTC DATE literal. Execute new SQL in the pinned engine before pushing.
 - Workspace currency is both a card name and a field: select the concrete currency-heading select in browser tests. Pseudo-locale unlock uses structural form selectors. The extra monitoring test profile is isolated and remains under the request/header/body/console sensors.
+
+### 7D-1 pitfalls (8 November 2026)
+
+- Raw sales_lines retain ERP rebates. Financial amounts must use salesInput/effectiveRebuildSql and the rebate_sales view; quantity-only imports/cleanup remain raw. Do not rebuild latest-schema aggregates with raw REBUILD_SQL.
+- Terms declare additional versus replace; never infer it from booked amounts. Require acknowledgement in both UI and worker. One overlapping period per customer is deliberate until a separate allocation policy is specified.
+- File-owned terms change only through source replacement/removal. Reject the whole program if any band is invalid; Fix Later must recheck the complete cohort, and a dismissed band cannot activate a partial program. Wholly invalid batches retain the existing review-only rule.
+- All 12 rejected-row slots are used by the agreement role. A future larger role needs a schema change, not silently truncated metadata. Preserve AR sidecar kinds when expanding source_kinds.
+- Preserve the rep-safe rebateProgress projection/classification and signed-tier guard. Never expose the private state/evidence commands to reps. Test currency amount AND symbol/code, and update historical browser section expectations when adding allowed navigation.
 
 ## Block C — close-out prompt (after a green CI run)
 
