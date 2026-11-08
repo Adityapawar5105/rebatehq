@@ -95,7 +95,7 @@ Fixes found by the local gates before the first push: the filter panel opened un
 **7V-3a is CI-verified** in [CI #118](https://github.com/Adityapawar5105/rebatehq/actions/runs/42480527882) on `027a14d`, 8 November 2026: 278 unit tests (78 JS + 200 TS), **51 authenticated Chromium vault checks** (including `gridsUi`), **49 Firefox lab checks**, **12 real-authenticated local-Supabase relay checks**, and the fresh 152-check pgTAP suite twice. Local vault v14 / 45 tables, 11 locked migrations, zero pending; no restore drill needed (no Supabase change). Every step of the job passed, including "Required authenticated local-vault privacy gate" and "Required Firefox local-vault lab gate"; their result lists include `gridsUi` and `rebatesUi`. 
 ## Part b — freeform row notes
 
-**Status: built here 8 November 2026; CI result: pending.** Local vault schema **v15** (45 tables): `notes` on `customers` and `products`. No Supabase migration, no locked-hash change, no dependency change. Blueprint unchanged by this part.
+**7V-3b is CI-verified** in [CI #120](https://github.com/Adityapawar5105/rebatehq/actions/runs/42487588209) on `7ef16fc`, 8 November 2026: 286 unit tests (78 JS + 208 TS), **52 authenticated Chromium vault checks** (including `notesUi` and `gridsUi`), **50 Firefox lab checks**, **12 real-authenticated local-Supabase relay checks**, and the fresh 152-check pgTAP suite twice. Local vault **v15 / 45 tables**; 11 locked migrations, zero pending; no restore drill needed (no Supabase change). Schema v15 (45 tables): `notes` on `customers` and `products`. No Supabase migration, no locked-hash change, no dependency change. Blueprint unchanged by this part.
 
 ### What was built
 
@@ -129,6 +129,9 @@ Fix found by the local gate before the first push: the filter panel of a grid lo
 
 ### Unverified
 
-- Passing CI for this part, until linked.
 - Headed screen-reader use of the inline note editor.
 - Native-language review of the new labels.
+
+### CI proof (part b)
+
+**7V-3b is CI-verified** in [CI #120](https://github.com/Adityapawar5105/rebatehq/actions/runs/42487588209) on `7ef16fc`, 8 November 2026: 286 unit tests (78 JS + 208 TS), **52 authenticated Chromium vault checks** (including `notesUi` and `gridsUi`), **50 Firefox lab checks**, **12 real-authenticated local-Supabase relay checks**, and the fresh 152-check pgTAP suite twice. Local vault **v15 / 45 tables**; 11 locked migrations, zero pending; no restore drill needed (no Supabase change). Every job step passed, including both required browser gates; their result lists include `notesUi`. 7V-3 is complete. 7D-2 has not started.

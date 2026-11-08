@@ -1,5 +1,9 @@
 # RebateHQ security verification
 
+## Chunk 7V-3b — row notes (CI-verified)
+
+Verified in [CI #120](https://github.com/Adityapawar5105/rebatehq/actions/runs/42487588209) on `7ef16fc`, 8 November 2026 (52 authenticated Chromium, 50 Firefox, 12 relay checks; 286 unit tests). Notes are free text, so they are treated as private business data: stored only in the encrypted vault and its encrypted backups, never in a relay event, server request, ERP export or change log (the authenticated gate writes notes containing the privacy marker under the request and console sensors; the worker test checks the CSV export and change log). The note commands need `data`; the palette searches and returns notes only for `data` roles, and the decision 16 test proves a Sales Rep can neither see nor search them. Notes are validated in the worker (1,000 code points, control characters refused), stored as quoted SQL values and rendered as text, never HTML. Saving a note is audited with the row kind and ID, not the text. Details: [CHUNK_7V3_VERIFICATION.md](./CHUNK_7V3_VERIFICATION.md).
+
 ## Chunk 7V-3a — grid standard (CI-verified)
 
 Verified in [CI #118](https://github.com/Adityapawar5105/rebatehq/actions/runs/42480527882) on `027a14d`, 8 November 2026 (51 authenticated Chromium, 49 Firefox, 12 relay checks; 278 unit tests). Grid sort, filter and totals run locally; nothing new leaves the device. Worker grids accept only their own code-defined columns and quote every filter value (unit test with an injection attempt). The new `gridTotals` command is read-only, needs only `view`, accepts at most 5,000 rows of plain numbers (formulas and text are rejected) and returns only sums, counts, minimum and maximum of numbers the caller already holds; it is classified for decision 16. A grid never adds a column, and the rep-reachable rebate progress grid has no cost or margin column. Details: [CHUNK_7V3_VERIFICATION.md](./CHUNK_7V3_VERIFICATION.md).
