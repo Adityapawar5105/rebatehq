@@ -13,6 +13,7 @@ export async function dispatch(service: VaultService, request: Request, hooks: H
   service.licenceGuard(request.action);
   const { progress } = hooks;
   switch (request.action) {
+    case "currencySet": return service.currencySet(request.data.currency);
     case "competitorList": return service.competitorList(request.data.product,request.data.customer);
     case "competitorAdd": return service.competitorAdd(request.data.input);
     case "priceGrid": return service.priceGrid(request.data.offset,request.data.search);

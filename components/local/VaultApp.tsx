@@ -1,8 +1,9 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { CurrencySettings } from './CurrencySettings';
 import { VaultClient } from "@/lib/vault/client";
 import type { Scope, StorageStatus, Tier, VaultStatus } from "@/lib/vault/protocol";
-import { fmt, msg, say, t, useLocale, type MessageKey } from "@/lib/i18n";
+import { fmt, msg, say, t, useLocale, setWorkspaceCurrency, type MessageKey } from "@/lib/i18n";
 import { Preferences } from "@/components/Preferences";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { Button, Card, Field, JumpNav, Notice, PageHeader } from "@/components/ui/ui";
@@ -35,6 +36,7 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
   const client = useRef<VaultClient | null>(null);
   const [status, setStatus] = useState<VaultStatus | null>(null), [section, setSection] = useState<Section>("Home");
   // Status and error text are kept as message references, so a language switch re-renders them.
+  useEffect(() => { setWorkspaceCurrency(status?.state === "unlocked" ? status.currency : "USD"); }, [status?.state, status?.currency]);
   const [error, setError] = useState(""), [message, setMessage] = useState(msg("shell.opening")), [busy, setBusy] = useState(false);
   const [passphrase, setPassphrase] = useState(""), [tier, setTier] = useState<Tier>("starter"), [ownerName, setOwnerName] = useState("");
   const [storage, setStorage] = useState<StorageStatus | null>(null), [progress, setProgress] = useState<{ stage: string; done: string; total: string } | null>(null);
@@ -56,7 +58,7 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
     client.current = c;
     c.ready.then(s => { if (active) { setStatus(s); setMessage(msg(s.exists ? "shell.unlockPrompt" : "shell.createPrompt")); } }).catch(e => { if (active) setError(e instanceof Error ? e.message : msg("common.operationFailed")); });
     void c.call("storage", {}).then(s => { if (active) setStorage(s); }).catch(() => undefined);
-    setSupported(/Chrome|Edg\//.test(navigator.userAgent));
+    setSupported(/Chrome|Edg\/|Firefox\//.test(navigator.userAgent));
     let lastActivity = 0;
     const touch = () => { if (Date.now() - lastActivity > 5000) { lastActivity = Date.now(); void c.call("touch", {}).catch(() => undefined); } };
     const leaving = () => { void c.call("lock", {}).catch(() => undefined); };
@@ -107,7 +109,7 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
       }}/>
       <main id="local-content" className={sh.content} tabIndex={-1}>
         {unlocked && <PageHeader eyebrow={t("shell.eyebrow")} title={t(SECTION_LABEL[shown])} description={t(SECTION_DESC[shown])} actions={<Button icon="lock" disabled={busy} onClick={lock}>{t("shell.lock")}</Button>}/>}
-        {!supported && <Notice tone="warn">{t("shell.browserNotice")}</Notice>}
+        {!supported && <Notice data-testid="browser-support-notice" tone="warn">{t("shell.browserNotice")}</Notice>}
         <p role="status" aria-live="polite" className={sh.message}>{say(message)}</p>
         {error && <Notice tone="bad" role="alert">{t("common.warningMark", { text: say(error) })}</Notice>}
         {status?.preparing && <Notice tone="info" data-testid="preparing">{t("shell.preparing")}</Notice>}
@@ -169,7 +171,8 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
             { id: "prefs-heading", label: t("shell.prefs.heading"), icon: "palette" }, ...(caps.includes("backup") ? [{ id: "backup-heading", label: t("backup.encryptedBackupAndRestore"), icon: "download" as const }] : []),
             { id: "roles-heading", label: t("roles.teamAndRoles"), icon: "users" }, { id: "storage-heading", label: t("shell.storage.heading"), icon: "database" },
           ]}/>}
-          {shown === "Settings" && <Card headingId="prefs-heading" title={t("shell.prefs.heading")} description={t("shell.prefs.body")}><Preferences pseudo={lab} className={styles.row}/></Card>}
+          {shown === "Settings" && <Card headingId="prefs-heading" title={t("shell.prefs.heading")} description={t("shell.prefs.body")}><Preferences pseudo={lab} className={styles.row}/><p>{t("fx.moneyNote", {code:status.currency})}</p></Card>}
+          {shown === "Settings" && client.current && <CurrencySettings client={client.current} status={status} busy={busy} operation={operation} onStatus={setStatus}/>}
           {shown === "Settings" && client.current && caps.includes("backup") && <BackupView client={client.current} busy={busy} operation={operation} unlocked onStatus={setStatus}/>}
           {shown === "Settings" && client.current && <RolesView client={client.current} busy={busy} operation={operation} refresh={async () => setStatus(await client.current!.call("status", {}))}/>}
           {shown === "Settings" && <section className={styles.card} aria-labelledby="storage-heading"><h2 id="storage-heading">{t("shell.storage.heading")}</h2>{status.licence?.writable&&status.tier!==status.licence.tier&&caps.includes('roles')&&<button disabled={busy} onClick={()=>void operation(async()=>{setStatus(await client.current!.call('capacityUpgrade',{}));setMessage(msg("shell.storage.upgraded"));})}>{t("shell.storage.upgrade")}</button>}<p>{t("shell.storage.summary", { saved: status.lastSaved ? fmt.dateTime(status.lastSaved) : t("common.none") })}</p><p>{t("shell.storage.persistence", { persistence: storage ? t(storage.persistent ? "shell.storage.granted" : "shell.storage.notGranted") : t("common.unknown"), usage: storage?.usage ? fmt.int(storage.usage) : t("common.unknown"), quota: storage?.quota ? fmt.int(storage.quota) : t("common.unknown"), bytes: storage?.namedOpfsBytes ? fmt.int(storage.namedOpfsBytes) : t("common.unknown") })}</p><button className={styles.primary} onClick={() => void operation(async () => { await navigator.storage.persist(); setStorage(await client.current!.call("storage", {})); setMessage(msg("shell.storage.refreshed")); })}>{t("shell.storage.request")}</button><p className={styles.muted}>{t("shell.storage.note")}</p>{!lab && <p><a href="/account/users">{t("shell.storage.team")}</a>{t("common.listSeparator")}<a href="/account/workspace">{t("shell.storage.workspace")}</a></p>}</section>}

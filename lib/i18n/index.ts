@@ -10,6 +10,9 @@ export { LOCALES, LOCALE_NAMES, isLocale, msg, plainText } from "./core";
 export const LOCALE_STORAGE_KEY = "rebatehq.locale";
 export const LOCALE_COOKIE = "rebatehq_locale";
 let current: Locale = core.DEFAULT_LOCALE;
+let workspaceCurrency = "USD";
+export const getWorkspaceCurrency = () => workspaceCurrency;
+export function setWorkspaceCurrency(code: string) { if (code !== workspaceCurrency) { workspaceCurrency = code; for (const f of listeners) f(); } }
 const listeners = new Set<() => void>();
 
 export const getLocale = () => current;
@@ -45,6 +48,7 @@ function subscribe(f: () => void) { listeners.add(f); return () => { listeners.d
  */
 export function useLocale(): Locale {
   const locale = useSyncExternalStore(subscribe, getLocale, () => core.DEFAULT_LOCALE);
+  useSyncExternalStore(subscribe, () => workspaceCurrency, () => "USD");
   useEffect(() => { setLocale(preferredLocale(), false); }, []);
   return locale;
 }
@@ -54,7 +58,7 @@ export const t = (key: MessageKey, params?: Params) => core.translate(current, k
 export const say = (text: string | null | undefined) => core.say(current, text);
 export const fmt = {
   money: (cents: string | bigint) => core.money(current, cents),
-  currency: (cents: string | bigint) => core.currency(current, cents),
+  currency: (cents: string | bigint, code = workspaceCurrency) => core.currency(current, cents, code),
   decimal: (value: string | number | bigint, digits?: number) => core.decimal(current, value, digits),
   int: (value: string | number | bigint) => core.integer(current, value),
   percent: (value: string | number) => core.percent(current, value),

@@ -12,7 +12,7 @@ import { PROFILE_IDS,PROFILES,type ErpProfile } from '@/lib/studio/mapper';
 import { fmt, msg, say, t, type MessageKey } from "@/lib/i18n";
 import styles from './vault.module.css';
 export function download(name:string,blob:Blob){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
-const money=(v:string|null)=>v===null?t("pricing.unknown"):fmt.money(v);
+const money=(v:string|null)=>v===null?t("pricing.unknown"):fmt.currency(v);
 const GUARD_FIELD:Record<'tier'|'category'|'start'|'target'|'floor',MessageKey>={tier:"pricing.customerTier",category:"pricing.productCategory",start:"pricing.startPrice",target:"pricing.targetPrice",floor:"pricing.floorPrice"};
 const RULE_FIELD:Record<'name'|'category'|'vendor'|'threshold'|'increase',MessageKey>={name:"pricing.ruleName",category:"pricing.ruleCategory",vendor:"pricing.costSourceSupplier",threshold:"pricing.costRiseThreshold",increase:"pricing.priceIncrease"};
 const RUN_STATUS:Record<string,MessageKey>={preview:"pricing.status.preview",approved:"pricing.status.approved",exported:"pricing.status.exported"};

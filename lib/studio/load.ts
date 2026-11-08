@@ -1,3 +1,4 @@
+import { convertAmountSql } from '../vault/currency';
 // DuckDB side of the Import Studio: stage converted files, validate exactly, find
 // duplicates, then commit or remove with source tracking. Only row/column
 // locations and fixed messages leave this module; engine errors (which can embed
@@ -23,7 +24,7 @@ export function output(field: Field) {
   if (field.type === "amount") return { name: field.name.replace(/_amount$/, "") + (field.name.endsWith("_amount") ? "_cents" : ""), type: "BIGINT" };
   return { name: field.name, type: field.type === "line_id" ? "BIGINT" : field.type === "date" ? "DATE" : field.type.startsWith("quantity") ? "DECIMAL(18,4)" : "VARCHAR" };
 }
-function fieldSql(field: Field, settings: Pick<Settings, "decimal" | "dateFormat">) {
+function fieldSql(field: Field, settings: Pick<Settings, "decimal" | "dateFormat">, rate = "1") {
   const x = q(field.name), sep = settings.decimal === "comma" ? "," : "\\.", fmt = sqlText(STRPTIME[settings.dateFormat]);
   const num = (digits: number, scale: number) => `regexp_full_match(${x},'^(0|[1-9][0-9]{0,${digits}})(${sep}[0-9]{1,${scale}})?$')`;
   const dec = (scale: number) => `try_cast(replace(${x},',','.') AS DECIMAL(18,${scale}))`;
@@ -34,7 +35,7 @@ function fieldSql(field: Field, settings: Pick<Settings, "decimal" | "dateFormat
     case "date": return { ok: `year(try_strptime(${x},${fmt})) BETWEEN 1900 AND 2100`, value: `CAST(try_strptime(${x},${fmt}) AS DATE)` };
     case "quantity": return { ok: `${num(13, 4)} AND ${dec(4)}>0`, value: dec(4) };
     case "quantity0": return { ok: num(13, 4), value: dec(4) };
-    case "amount": return { ok: num(12, 2), value: `(${dec(2)}*100)::BIGINT` };
+    case "amount": { const value = convertAmountSql(x, rate); return {ok: `${num(12, rate === "1" ? 2 : 6)} AND ${value} IS NOT NULL`, value}; }
   }
 }
 export function issueMessage(code: string, settings: Settings) {
@@ -93,7 +94,7 @@ export async function stageFile(engine: Engine, file: StagedFile, blob: Blob) {
 export async function validate(engine: Engine, role: Exclude<Role, "rebate_agreement">, files: StagedFile[], replaces: string | null) {
   const fields = ROLE_FIELDS[role];
   const parts = files.filter(f => f.role === role).map(file => {
-    const sql = fields.map(f => ({ f, ...fieldSql(f, CANONICAL), out: output(f) }));
+    const sql = fields.map(f => ({ f, ...fieldSql(f, CANONICAL, file.settings.fxRate ?? "1"), out: output(f) }));
     const signed = (f: Field) => f.type === "amount" || f.type.startsWith("quantity");
     const err = `coalesce(${sql.map(s => `CASE WHEN ${q(s.f.name)} IS NULL THEN ${s.f.required ? sqlText(s.f.name + ":required") : "NULL"}${signed(s.f) ? ` WHEN ${q(s.f.name)} LIKE '-%' THEN ${sqlText(s.f.name + ":negative")}` : ""} WHEN NOT coalesce(${s.ok},false) THEN ${sqlText(s.f.name + ":invalid")} END`).join(",")})`;
     return `SELECT file_ord, src_row, ${sql.map(s => `CASE WHEN ${q(s.f.name)} IS NOT NULL AND coalesce(${s.ok},false) THEN ${s.value} END::${s.out.type} AS ${q(s.out.name)}`).join(",")}, ${err} AS err FROM ${stage(role)} WHERE file_ord=${file.ord}`;

@@ -18,7 +18,7 @@ const STATUS: Record<QuoteStatus, MessageKey> = { draft: "quotes.status.draft", 
 const CREDIT: Record<CreditSignal["level"], MessageKey> = { green: "quotes.credit.green", amber: "quotes.credit.amber", red: "quotes.credit.red", unknown: "quotes.credit.unknown" };
 // Style hooks use tone names, not colour words (theme test: colours come only from tokens).
 const TONE: Record<string, string> = { green: "ok", yellow: "warn", amber: "warn", red: "bad" };
-const money = (v: string | null | undefined) => v === null || v === undefined ? t("quotes.none") : fmt.money(v);
+const money = (v: string | null | undefined) => v === null || v === undefined ? t("quotes.none") : fmt.currency(v);
 
 /** A typed price ("12.34" or "12,34") to whole cents, or null when it is not a valid amount. */
 export function priceToCents(text: string): string | null {
@@ -35,14 +35,14 @@ export function Thermometer({ value, floor, target, start, label }: { value: str
   const f = Number(floor), tg = Number(target), s = Number(start), v = Number(value), span = Math.max(s - f, 1);
   const lo = Math.max(0, f - span * 0.25), hi = s + span * 0.15, at = (x: number) => Math.min(100, Math.max(0, (x - lo) / (hi - lo) * 100));
   const zone: Guard = v < f ? "red" : v < tg ? "yellow" : "green";
-  return <div className={styles.thermo} role="meter" aria-label={label} aria-valuemin={lo} aria-valuemax={hi} aria-valuenow={Math.min(hi, Math.max(lo, v))} aria-valuetext={t("quotes.meterText", { zone: t(GUARD[zone]), price: fmt.money(value) })}>
+  return <div className={styles.thermo} role="meter" aria-label={label} aria-valuemin={lo} aria-valuemax={hi} aria-valuenow={Math.min(hi, Math.max(lo, v))} aria-valuetext={t("quotes.meterText", { zone: t(GUARD[zone]), price: fmt.currency(value) })}>
     <div className={styles.thermoTrack} aria-hidden="true">
       <span className={styles.thermoRed} style={{ width: `${at(f)}%` }}/>
       <span className={styles.thermoYellow} style={{ left: `${at(f)}%`, width: `${at(tg) - at(f)}%` }}/>
       <span className={styles.thermoGreen} style={{ left: `${at(tg)}%`, width: `${100 - at(tg)}%` }}/>
       <span className={styles.thermoMark} style={{ left: `${at(v)}%` }}/>
     </div>
-    <div className={styles.thermoScale} aria-hidden="true"><span>{t("quotes.floorShort", { price: fmt.money(floor) })}</span><span>{t("quotes.targetShort", { price: fmt.money(target) })}</span><span>{t("quotes.startShort", { price: fmt.money(start) })}</span></div>
+    <div className={styles.thermoScale} aria-hidden="true"><span>{t("quotes.floorShort", { price: fmt.currency(floor) })}</span><span>{t("quotes.targetShort", { price: fmt.currency(target) })}</span><span>{t("quotes.startShort", { price: fmt.currency(start) })}</span></div>
   </div>;
 }
 
@@ -113,7 +113,7 @@ export function QuotesView({ client, userId, caps, tier, busy, operation }: { cl
       <Credit credit={quote.credit}/>
       {quote.warnings.length > 0 && <div className={styles.warning} role="note"><ul>{quote.warnings.map(w => <li key={w}>{say(w)}</li>)}</ul></div>}
       <dl className={styles.totals}>
-        <div><dt>{t("quotes.total")}</dt><dd data-testid="quote-total">{fmt.money(quote.totalCents)}</dd></div>
+        <div><dt>{t("quotes.total")}</dt><dd data-testid="quote-total">{fmt.currency(quote.totalCents)}</dd></div>
         <div><dt>{t("quotes.position")}</dt><dd>{quote.positionBp === null ? t("quotes.none") : fmt.percent((Number(quote.positionBp) / 100).toFixed(1))}</dd></div>
         {seesCost && <div><dt>{t("quotes.margin")}</dt><dd data-testid="quote-margin">{quote.marginRate == null ? t("quotes.none") : fmt.percent(quote.marginRate)}</dd></div>}
         {seesCost && <div><dt>{t("quotes.marginAmount")}</dt><dd>{money(quote.marginCents)}</dd></div>}
@@ -125,10 +125,10 @@ export function QuotesView({ client, userId, caps, tier, busy, operation }: { cl
         <td className={styles.wrap}><span translate="no">{l.productId}</span><br/><span className={styles.muted}>{l.description}</span>
           <Thermometer value={l.unitCents} floor={l.floorCents} target={l.targetCents} start={l.startCents} label={t("quotes.meterLabel", { sku: l.productId })}/></td>
         <td>{editable ? <input aria-label={t("quotes.quantityFor", { sku: l.productId })} inputMode="decimal" value={lines[i]?.quantity ?? ""} onChange={e => setLines(lines.map((x, j) => j === i ? { ...x, quantity: e.target.value } : x))}/> : fmt.decimal(trimQty(l.quantity))}</td>
-        <td>{editable ? <input aria-label={t("quotes.priceFor", { sku: l.productId })} inputMode="decimal" value={lines[i]?.price ?? ""} onChange={e => setLines(lines.map((x, j) => j === i ? { ...x, price: e.target.value } : x))} data-testid={`price-${l.lineNo}`}/> : fmt.money(l.unitCents)}</td>
+        <td>{editable ? <input aria-label={t("quotes.priceFor", { sku: l.productId })} inputMode="decimal" value={lines[i]?.price ?? ""} onChange={e => setLines(lines.map((x, j) => j === i ? { ...x, price: e.target.value } : x))} data-testid={`price-${l.lineNo}`}/> : fmt.currency(l.unitCents)}</td>
         <td>{money(l.bookCents)}<br/><span className={styles.muted}>{t(SOURCE[l.source])}</span></td>
         <td><Zone guard={l.guard}/></td>
-        <td>{fmt.money(l.totalCents)}</td>
+        <td>{fmt.currency(l.totalCents)}</td>
         {seesCost && <td>{l.marginRate == null ? t("quotes.none") : fmt.percent(l.marginRate)}</td>}
         {editable && <td><button type="button" disabled={busy} onClick={() => void operation(() => save(lines.filter((_, j) => j !== i)))}>{t("quotes.remove")}</button></td>}
       </tr>)}</tbody></table></div>
@@ -161,7 +161,7 @@ export function QuotesView({ client, userId, caps, tier, busy, operation }: { cl
         {[t("quotes.number"), t("quotes.customer"), t("quotes.statusLabel"), t("quotes.zone"), t("quotes.total"), t("quotes.updated")].map(h => <th key={h} scope="col">{h}</th>)}
       </tr></thead><tbody>{list.map(q => <tr key={q.id}>
         <td><button type="button" disabled={busy} onClick={() => open(q.id)}><span translate="no">{q.number}</span></button></td>
-        <td>{q.customerName || q.customerId}</td><td>{t(STATUS[q.status])}</td><td><Zone guard={q.worst}/></td><td>{fmt.money(q.totalCents)}</td><td>{fmt.date(q.updatedAt.slice(0, 10))}</td>
+        <td>{q.customerName || q.customerId}</td><td>{t(STATUS[q.status])}</td><td><Zone guard={q.worst}/></td><td>{fmt.currency(q.totalCents)}</td><td>{fmt.date(q.updatedAt.slice(0, 10))}</td>
       </tr>)}</tbody></table></div>}
     </section>}
   </>;

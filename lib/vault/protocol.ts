@@ -29,7 +29,7 @@ export type VaultStatus = {
   /** writable: the first change will not need a copy; preparing: that copy is running in the background. */
   writable: boolean; preparing: boolean;
   lines: string; products: string; customers: string; auditEntries: string;
-  schemaVersion: string; generation: string; tier: Tier; lastSaved: string | null;
+  currency: string; schemaVersion: string; generation: string; tier: Tier; lastSaved: string | null;
   /** cost and margin are null for roles that may not see cost: the worker never selects them. */
   totals?: { list: string; discounts: string; freight: string; rebates: string; pocket: string; cost: string | null; margin: string | null };
   access?: Access;
@@ -47,6 +47,7 @@ export type CleanupUndone = { summary: string; restored: string; skipped: string
 export type StorageStatus = { persistent: boolean; usage: string; quota: string; namedOpfsBytes: string; files: string };
 export type ImportEstimate = { bytes: string; estimatedMemoryBytes: string; maxLines: string; maxProducts: string; warning: string };
 export type Commands = {
+  currencySet: { currency: string };
   competitorList:{product:string;customer?:string|null};
   competitorAdd:{input:import("../pricing/market").CompetitorInput};
   priceGrid:{offset?:number;search?:string};
@@ -149,6 +150,7 @@ export type Commands = {
 export type LeaksView = { result: LeakResult; roi: RoiSummary; sample: boolean; recorded: number };
 export type CommitResult = { loaded: string; rejected: string; files: string; cleanup: boolean };
 export type Results = {
+  currencySet: VaultStatus;
   competitorList:Awaited<ReturnType<VaultService["competitorList"]>>;
   competitorAdd:Awaited<ReturnType<VaultService["competitorAdd"]>>;
   priceGrid:Awaited<ReturnType<VaultService["priceGrid"]>>;

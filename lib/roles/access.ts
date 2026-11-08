@@ -58,6 +58,7 @@ export const intersect = (a: Cap[], b: Cap[]) => a.filter(c => b.includes(c));
  * fail when a new command is added without a decision.
  */
 export const ACTION_CAP: Record<Action, Cap | null> = {
+  currencySet: "roles",
   competitorList:"cost",
   competitorAdd:"pricing",
   priceGrid:"pricing",

@@ -6,7 +6,7 @@ import { fmt, msg, say, t } from "@/lib/i18n";
 import { Button, ButtonLink, Card, Field, Grid, Meter, Notice, Skeleton, Split, StatTile, StepList, SrOnly } from "@/components/ui/ui";
 import { Term } from "./Glossary";
 import styles from "./vault.module.css";
-const money = (cents: string) => fmt.money(cents);
+const money = (cents: string) => fmt.currency(cents);
 /** Home: who you are here, the numbers your role may see, the 7-day setup checklist and the ROI tracker. */
 export function HomeView({ client, userId, version, busy, operation, refresh }: { client: VaultClient; userId: string; version: string; busy: boolean; operation: (f: () => Promise<void>) => Promise<void>; refresh: () => Promise<void> }) {
   const [home, setHome] = useState<HomeData | null>(null), [owner, setOwner] = useState(""), [note, setNote] = useState("");

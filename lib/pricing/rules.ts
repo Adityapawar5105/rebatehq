@@ -1,3 +1,4 @@
+import { workspaceCurrency } from '../vault/currency';
 import type { Engine } from "../vault/engine";
 import { VaultError } from "../vault/protocol";
 import { sqlText as Q } from "../spike/exact";
@@ -95,12 +96,14 @@ export async function exportPrices(e: Engine, id: string, profile: ErpProfile, f
   const extraHeaders=profile==='generic'&&scoped?['customer_id','valid_to']:customerId?['customer_id']:[];
   const scopeCells=(r:Record<string,any>)=>scoped&&profile==='generic'?[r.customer_id??'',r.valid_to??'']:customerId?[customerId]:[];
   const clean = (v: unknown) => csvSafeCell(String(v));
-  const table = [[...EXPORT_LAYOUTS[profile],...extraHeaders],...data.map(r=>[r.product_id,r.tier,centsText(BigInt(r.a)),run.run_date.slice(0,10),...scopeCells(r)].map(clean))];
+  const currency = await workspaceCurrency(e);
+  const currencyCells = profile === "generic" ? [currency] : [];
+  const table = [[...EXPORT_LAYOUTS[profile],...extraHeaders,...(profile === "generic" ? ["currency"] : [])],...data.map(r=>[r.product_id,r.tier,centsText(BigInt(r.a)),run.run_date.slice(0,10),...scopeCells(r),...currencyCells].map(clean))];
   const csv = (t:string[][])=>t.map(r=>r.map(v=>'"'+v.replaceAll('"','""')+'"').join(',')).join('\r\n');
   let blob: Blob;
   if(format==='xlsx'){const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(table),'Prices');blob=new Blob([XLSX.write(wb,{type:'array',bookType:'xlsx'})],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});}
   else blob=new Blob(['\ufeff'+csv(table)],{type:'text/csv;charset=utf-8'});
   // The change log carries the same scope columns as the price file, so the two always describe the same rows.
-  const log=[['SKU','Tier','Before','After','Guardrail','Pricing Owner','Run',...extraHeaders],...data.map(r=>[r.product_id,r.tier,centsText(BigInt(r.b)),centsText(BigInt(r.a)),r.guard_status,run.approved_by,id,...scopeCells(r)].map(clean))];
+  const log=[['SKU','Tier','Before','After','Guardrail','Pricing Owner','Run',...extraHeaders,...(profile === 'generic' ? ['currency'] : [])],...data.map(r=>[r.product_id,r.tier,centsText(BigInt(r.b)),centsText(BigInt(r.a)),r.guard_status,run.approved_by,id,...scopeCells(r),...currencyCells].map(clean))];
   return {name:`rebatehq-${profile}-prices.${format}`,blob,logName:'rebatehq-change-log.csv',log:new Blob(['\ufeff'+csv(log)],{type:'text/csv;charset=utf-8'}),warning:msg("rules.unverifiedUntilTestedOn", { label: PROFILES[profile].label })};
 }

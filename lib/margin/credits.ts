@@ -1,3 +1,4 @@
+import { sourceFx } from '../vault/currency';
 // Returns and credits (chunk 4D decision). At import, sales rows with a negative quantity
 // still wait in Fix Later ("quantity:negative"). The user loads that group as credits:
 // each row is checked with the import's exact SQL on its absolute values, must have every
@@ -19,7 +20,7 @@ export async function loadCredits(engine: Engine, sourceId: string, tier: Tier) 
   if (!src) throw new StudioError(msg("credits.thatFileIsNo"));
   if (src.role !== "sales_history") throw new StudioError(msg("credits.onlySalesHistoryRows"));
   const fields = ROLE_FIELDS.sales_history, name = String(src.name);
-  const file: StagedFile = { ord: 0, role: "sales_history", name, bytes: 0, fingerprint: "", alignment: fields.map((f, index) => ({ field: f.name, index })), settings: CANONICAL, keyed: true, headers: fields.map(f => f.name), colOffset: 0 };
+  const file: StagedFile = { ord: 0, role: "sales_history", name, bytes: 0, fingerprint: "", alignment: fields.map((f, index) => ({ field: f.name, index })), settings: { ...CANONICAL, ...(await sourceFx(engine, sourceId)) }, keyed: true, headers: fields.map(f => f.name), colOffset: 0 };
   await resetStage(engine); await createStage(engine, "sales_history");
   const abs = fields.map((f, i) => SIGNED.has(f.name) ? `CASE WHEN v${i} LIKE '-%' THEN substr(v${i}, 2) ELSE v${i} END` : `v${i}`).join(", ");
   await engine.conn.query(`INSERT INTO st_sales_history SELECT 0, source_row, ${abs} FROM rejected_rows WHERE source_id=${s} AND status='open' AND code=${sqlText(CREDIT_CODE)}`);

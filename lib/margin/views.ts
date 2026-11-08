@@ -137,7 +137,7 @@ const CONTRIB: Record<Exclude<Metric, "rate">, { expr: string; kind?: "sale" | "
   margin: { expr: MARGIN, cost: "known", formula: msg("waterfall.pocketMarginPocketWith") },
   lines: { expr: "1", formula: msg("waterfall.linesNumberOfInvoice") },
 };
-export type MathRow = { sourceFile: string; sourceId: string; sourceRow: string; lineId: string; invoice: string; date: string; product: string; customer: string; kind: string; quantity: string;
+export type MathRow = { sourceCurrency:string;workspaceCurrency:string;fxRate:string;headerFx:string; sourceFile: string; sourceId: string; sourceRow: string; lineId: string; invoice: string; date: string; product: string; customer: string; kind: string; quantity: string;
   list: string; discount: string; rebate: string; freight: string; cost: string | null; pocket: string; margin: string | null; contribution: string };
 export type MathPanel = { metric: Metric; label: string; value: string; formula: string; inputs: Array<{ label: string; cents: string }>; check: { engine: string; agrees: boolean };
   rows: MathRow[]; rowCount: string; rowsSum: string; rowsAgree: boolean; offset: number };
@@ -168,7 +168,7 @@ export async function math(engine: Engine, metric: Metric, filters?: Filters, of
   const j = needsJoin(f), base = `FROM sales_lines s${j.c ? " JOIN customers c ON c.customer_id = s.customer_id" : ""}${j.p ? " JOIN products p ON p.product_id = s.product_id" : ""} ${conds.length ? "WHERE " + conds.join(" AND ") : ""}`;
   const agg = (await engine.conn.query(`SELECT count(*)::VARCHAR AS n, coalesce(sum(${spec.expr}),0)::VARCHAR AS total ${base}`)).toArray()[0];
   const at = Math.max(0, Math.floor(offset));
-  const rows = (await engine.conn.query(`SELECT f.name AS file, s.source_id, s.source_row::VARCHAR AS source_row, s.line_id::VARCHAR AS line_id, coalesce(s.invoice_id,'') AS invoice, s.sale_date::VARCHAR AS d, s.product_id, s.customer_id, s.line_kind, s.quantity::VARCHAR AS q,
+  const rows = (await engine.conn.query(`SELECT (SELECT source_currency FROM import_batches b WHERE b.source_id=s.source_id LIMIT 1) AS source_currency,(SELECT workspace_currency FROM import_batches b WHERE b.source_id=s.source_id LIMIT 1) AS workspace_currency,(SELECT fx_rate FROM import_batches b WHERE b.source_id=s.source_id LIMIT 1) AS fx_rate,(SELECT header_fx FROM import_batches b WHERE b.source_id=s.source_id LIMIT 1) AS header_fx, f.name AS file, s.source_id, s.source_row::VARCHAR AS source_row, s.line_id::VARCHAR AS line_id, coalesce(s.invoice_id,'') AS invoice, s.sale_date::VARCHAR AS d, s.product_id, s.customer_id, s.line_kind, s.quantity::VARCHAR AS q,
  s.list_cents::VARCHAR AS list, s.discount_cents::VARCHAR AS discount, s.rebate_cents::VARCHAR AS rebate, s.freight_cents::VARCHAR AS freight, s.cost_cents::VARCHAR AS cost, ${POCKET.replaceAll("list_cents", "s.list_cents").replaceAll("discount_cents", "s.discount_cents").replaceAll("rebate_cents", "s.rebate_cents").replaceAll("freight_cents", "s.freight_cents")}::VARCHAR AS pocket,
  (CASE WHEN s.cost_cents IS NULL THEN NULL ELSE s.list_cents - s.discount_cents - s.rebate_cents - s.freight_cents - s.cost_cents END)::VARCHAR AS margin, (${spec.expr})::VARCHAR AS contribution
  ${base.replace("FROM sales_lines s", "FROM sales_lines s JOIN source_files f ON f.id = s.source_id")} ORDER BY abs(${spec.expr}) DESC, s.source_id, s.source_row LIMIT 25 OFFSET ${at}`)).toArray();
@@ -177,7 +177,7 @@ export async function math(engine: Engine, metric: Metric, filters?: Filters, of
   return { metric, label, value, formula: metric === "rate" ? msg("waterfall.pocketMarginRatePocket") : spec.formula,
     inputs: inputs[metric].map(([l, v]) => ({ label: l, cents: v })), check: { engine: String(computed), agrees: String(computed) === value },
     rowCount: String(agg.n), rowsSum: String(agg.total), rowsAgree: metric === "rate" ? String(agg.total) === w.margin : String(agg.total) === value, offset: at,
-    rows: rows.map(r => ({ sourceFile: String(r.file), sourceId: String(r.source_id), sourceRow: String(r.source_row), lineId: String(r.line_id), invoice: String(r.invoice), date: String(r.d), product: String(r.product_id), customer: String(r.customer_id), kind: String(r.line_kind), quantity: String(r.q),
+    rows: rows.map(r => ({ sourceCurrency:String(r.source_currency ?? "USD"),workspaceCurrency:String(r.workspace_currency ?? "USD"),fxRate:String(r.fx_rate ?? "1"),headerFx:String(r.header_fx ?? "[]"), sourceFile: String(r.file), sourceId: String(r.source_id), sourceRow: String(r.source_row), lineId: String(r.line_id), invoice: String(r.invoice), date: String(r.d), product: String(r.product_id), customer: String(r.customer_id), kind: String(r.line_kind), quantity: String(r.q),
       list: String(r.list), discount: String(r.discount), rebate: String(r.rebate), freight: String(r.freight), cost: r.cost === null ? null : String(r.cost), pocket: String(r.pocket), margin: r.margin === null ? null : String(r.margin), contribution: String(r.contribution) })) };
 }
 export { centsText };

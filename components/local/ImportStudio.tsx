@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import type { VaultClient } from "@/lib/vault/client";
 import type { VaultStatus } from "@/lib/vault/protocol";
+import { CURRENCIES } from '@/lib/vault/currency';
 import { DATE_FORMATS, ROLES, ROLE_LABELS, kindOf, type Role, type Settings } from "@/lib/studio/formats";
 import type { FileView, SourceView, StudioState } from "@/lib/studio/studio";
 import type { ErpProfile, FieldSource } from "@/lib/studio/mapper";
@@ -59,7 +60,13 @@ export function ImportStudio({ client, status, busy, operation, onStatus, setMes
       setMessage(msg("studio.filesAdded", { count: supported.length }) + (skipped ? " " + msg("studio.filesIgnored", { count: skipped }) : ""));
     });
   }
-  const update = (id: string, settings: Partial<Settings>, role?: Role | null) => operation(async () => { setStudio(await client.call("studioUpdate", { id, settings, ...(role !== undefined ? { role } : {}) })); setAck(false); });
+  const update = (id: string, settings: Partial<Settings>, role?: Role | null) => {
+    const work = async () => { setStudio(await client.call("studioUpdate", { id, settings, ...(role !== undefined ? { role } : {}) })); setAck(false); };
+    // Rate typing is cheap staging metadata. Do not disable/blur the input per
+    // keystroke; the worker queue applies all edits before a subsequent review.
+    return Object.keys(settings).length === 1 && settings.fxRate !== undefined
+      ? work().catch(error => operation(async () => { throw error; })) : operation(work);
+  };
   const files = studio?.files ?? [], report = studio?.report ?? null, current = files.find(f => f.id === open) ?? null;
   const canCommit = !!report && report.loaded !== "0" && report.capOk && (report.rejected === "0" || ack);
   return <>
@@ -101,7 +108,7 @@ export function ImportStudio({ client, status, busy, operation, onStatus, setMes
         <button disabled={busy} onClick={() => void operation(async () => { setStudio(await client.call("studioClear", {})); setOpen(null); })}>{t("studio.clearBatch")}</button>
       </div>
     </section>}
-    {current && <FilePanel file={current} busy={busy} studio={studio!} recipeName={recipeName} setRecipeName={setRecipeName} update={update}
+    {current && <FilePanel currency={status.currency} file={current} busy={busy} studio={studio!} recipeName={recipeName} setRecipeName={setRecipeName} update={update}
       patch={data => operation(async () => { setStudio(await client.call("studioUpdate", { id: current.id, ...data })); setAck(false); })}
       apply={recipeId => operation(async () => { setStudio(await client.call("recipeApply", { id: current.id, recipeId })); })}
       saveRecipe={() => operation(async () => { setStudio(await client.call("recipeSave", { id: current.id, name: recipeName })); setMessage(msg("studio.recipeSavedInYour", { recipeName: recipeName.trim() })); setRecipeName(""); })}/>}
@@ -112,7 +119,7 @@ export function ImportStudio({ client, status, busy, operation, onStatus, setMes
       {report.warnings.map(w => <p key={w} className={styles.warning}>{t("common.warningMark", { text: say(w) })}</p>)}
       <div className={styles.tableWrap}><table className={styles.table}>
         <thead><tr><th scope="col">{t("studio.file3")}</th><th scope="col">{t("studio.role2")}</th><th scope="col">{t("studio.rowsRead")}</th><th scope="col">{t("studio.loaded2")}</th><th scope="col">{t("studio.rejected2")}</th><th scope="col">{t("studio.skipped")}</th><th scope="col">{t("studio.issues")}</th><th scope="col">{t("studio.dates")}</th></tr></thead>
-        <tbody>{report.files.map(r => <tr key={r.id}><td className={styles.wrap} translate="no">{r.name}</td><td>{say(ROLE_LABELS[r.role])}</td><td>{fmt.int(r.rowsRead)}</td><td>{fmt.int(r.rowsLoaded)}</td><td>{fmt.int(r.rowsRejected)}</td><td>{fmt.int(r.rowsSkipped)}</td><td>{fmt.int(r.issueCount)}</td><td>{r.dateRange ? t("studio.to2", { from: fmt.date(r.dateRange.from), to: fmt.date(r.dateRange.to) }) : "—"}</td></tr>)}</tbody>
+        <tbody>{report.files.map(r => <tr key={r.id}><td className={styles.wrap}><span translate="no">{r.name}</span><small>{t('fx.provenance',{source:r.fx.sourceCurrency,workspace:r.fx.workspaceCurrency,rate:fmt.decimal(r.fx.fxRate)})}</small></td><td>{say(ROLE_LABELS[r.role])}</td><td>{fmt.int(r.rowsRead)}</td><td>{fmt.int(r.rowsLoaded)}</td><td>{fmt.int(r.rowsRejected)}</td><td>{fmt.int(r.rowsSkipped)}</td><td>{fmt.int(r.issueCount)}</td><td>{r.dateRange ? t("studio.to2", { from: fmt.date(r.dateRange.from), to: fmt.date(r.dateRange.to) }) : "—"}</td></tr>)}</tbody>
       </table></div>
       <p className={styles.muted}>{t("studio.skippedRowsAreBlank")}</p>
       {report.files.filter(r => r.cleaned.length).map(r => <p key={r.id} className={styles.small}><strong>{t("studio.cleanedIn", { name: r.name })}</strong> {r.cleaned.map(c => t("studio.cleanedNote", { field: c.field, note: say(c.note), count: Number(c.count) })).join(" · ")}</p>)}
@@ -137,7 +144,7 @@ export function ImportStudio({ client, status, busy, operation, onStatus, setMes
       {!sources.length ? <p className={styles.muted}>{t("studio.noFilesImportedYet")}</p> : <div className={styles.tableWrap}><table className={styles.table}>
         <thead><tr><th scope="col">{t("studio.file2")}</th><th scope="col">{t("studio.role")}</th><th scope="col">{t("studio.loaded")}</th><th scope="col">{t("studio.rejected")}</th><th scope="col">{t("studio.openIssues")}</th><th scope="col">{t("studio.imported2")}</th><th scope="col">{t("studio.actions2")}</th></tr></thead>
         <tbody>{sources.map(s => <tr key={s.id}>
-          <td className={styles.wrap} translate="no">{s.name}</td><td>{ROLE_LABELS[s.role as Role] ? say(ROLE_LABELS[s.role as Role]) : s.role}</td><td>{fmt.int(s.rowsLoaded)}</td><td>{fmt.int(s.rowsRejected)}</td><td>{fmt.int(s.issues)}</td><td>{fmt.dateTime(s.importedAt)}</td>
+          <td className={styles.wrap}><span translate="no">{s.name}</span><small>{t('fx.provenance',{source:s.sourceCurrency,workspace:s.workspaceCurrency,rate:fmt.decimal(s.fxRate)})}</small>{s.headerFx !== '[]' && <small>{t('fx.headerProvenance',{details:s.headerFx})}</small>}</td><td>{ROLE_LABELS[s.role as Role] ? say(ROLE_LABELS[s.role as Role]) : s.role}</td><td>{fmt.int(s.rowsLoaded)}</td><td>{fmt.int(s.rowsRejected)}</td><td>{fmt.int(s.issues)}</td><td>{fmt.dateTime(s.importedAt)}</td>
           <td><div className={styles.row}>
             <label className={styles.linkish}>{t("studio.replace2")}<input type="file" aria-label={t("studio.replace", { name: s.name })} accept={ACCEPT} disabled={busy} style={{ display: "none" }} onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void add([file], s.id); }}/></label>
             {removing === s.id
@@ -192,15 +199,21 @@ function MappingEditor({ file, busy, patch }: { file: FileView; busy: boolean; p
     {file.needsConfirmation && <label className={styles.row}><input type="checkbox" style={{ width: "auto" }} checked={confirmed} disabled={busy || file.missing.length > 0} onChange={e => { setConfirmed(e.target.checked); void patch({ confirmed: e.target.checked }); }}/>{" "}{t("studio.iCheckedThisMapping")}{file.missing.length ? t("studio.mapFirst", { missing: file.missing.join(", ") }) : ""}</label>}
   </div>;
 }
-function FilePanel({ file, busy, studio, recipeName, setRecipeName, update, patch, apply, saveRecipe }: { file: FileView; busy: boolean; studio: StudioState; recipeName: string; setRecipeName: (v: string) => void; update: (id: string, settings: Partial<Settings>, role?: Role | null) => Promise<void>; patch: (data: Patch) => Promise<void>; apply: (recipeId: string) => Promise<void>; saveRecipe: () => Promise<void> }) {
+function FilePanel({ currency, file, busy, studio, recipeName, setRecipeName, update, patch, apply, saveRecipe }: { currency: string; file: FileView; busy: boolean; studio: StudioState; recipeName: string; setRecipeName: (v: string) => void; update: (id: string, settings: Partial<Settings>, role?: Role | null) => Promise<void>; patch: (data: Patch) => Promise<void>; apply: (recipeId: string) => Promise<void>; saveRecipe: () => Promise<void> }) {
   const s = file.settings, set = (patch: Partial<Settings>) => void update(file.id, patch);
+  const [rate, setRate] = useState(s.fxRate ?? '1');
+  // Ignore intermediate worker responses while typing. A new file/source resets the draft.
+  useEffect(() => { setRate(s.fxRate ?? '1'); }, [file.id, s.sourceCurrency]);
   const width = Math.max(0, ...file.preview.map(r => r.cells.length));
   return <section className={styles.card} aria-labelledby="panel-heading">
     <h2 id="panel-heading">{t("studio.previewAndFix", { name: file.name })}</h2>
     {file.reason && <p className={styles.warning}>{t("common.warningMark", { text: say(file.reason) })}</p>}
     {file.recipe && <p className={styles.notice}>{t("studio.aSavedRecipeMatches")}{" "}<strong translate="no">{file.recipe.name}</strong>{t("roles.sentenceEnd")} <button disabled={busy} onClick={() => void apply(file.recipe!.id)}>{t("studio.applyRecipe")}</button></p>}
     {file.notices.map(n => <p key={n} className={styles.notice}>{say(n)}</p>)}
+    <p>{t('fx.importHelp')}</p><p>{t('fx.rounding')}</p>
     <div className={styles.grid}>
+      <label>{t('fx.source')}<select value={s.sourceCurrency ?? 'USD'} disabled={busy} onChange={e => set({ sourceCurrency: e.target.value, fxRate: e.target.value === currency ? "1" : "" })}>{CURRENCIES.map(code => <option key={code}>{code}</option>)}</select></label>
+      <label>{t('fx.rate')}<input inputMode="decimal" value={rate} disabled={busy} onChange={e => { setRate(e.target.value); set({ fxRate: e.target.value }); }}/></label>
       {file.sheets.length > 1 && <label>{t("studio.sheet")}<select value={s.sheet ?? ""} disabled={busy} onChange={e => set({ sheet: e.target.value })}>{file.sheets.map(n => <option key={n} translate="no">{n}</option>)}</select></label>}
       {!file.fixedLayout && <label>{t("studio.headerRow")}<select value={s.headerRow} disabled={busy} onChange={e => set({ headerRow: Number(e.target.value) })}><option value={-1}>{t("studio.noHeaderRow")}</option>{file.headerRowOptions.map(o => <option key={o.index} value={o.index}>{t("studio.row3", { row: Number(o.row) })}</option>)}</select></label>}
       {!file.fixedLayout && <label>{t("studio.headerRows")}<select value={s.headerDepth} disabled={busy} onChange={e => set({ headerDepth: Number(e.target.value) as 1 | 2 | 3 })}><option value={1}>{t("studio.1Row")}</option><option value={2}>{t("studio.2Rows")}</option><option value={3}>{t("studio.3Rows")}</option></select></label>}
@@ -271,7 +284,7 @@ function Reconciliation({ client, busy, operation, onStatus, setMessage, version
     {recon.reconciled ? <p role="status" data-testid="recon-ok">{t("studio.reconciled", { invoices: fmt.int(recon.invoices), months: fmt.int(recon.customerMonths) })}{recon.accepted !== "0" ? " " + t("studio.acceptedDifferenceSAre", { count: Number(recon.accepted) }) : ""}</p>
       : <><p className={styles.warning}>{t("studio.differenceSBetweenThe", { count: recon.open.length })}</p>
         <div className={styles.tableWrap}><table className={styles.table} aria-label={t("studio.reconciliationDifferences")}><thead><tr><th scope="col">{t("studio.level")}</th><th scope="col">{t("studio.difference")}</th><th scope="col">{t("studio.imported")}</th><th scope="col">{t("studio.waterfall")}</th><th scope="col">{t("studio.firstSourceRow")}</th><th scope="col"><span className={styles.srOnly}>{t("margin.col.actions")}</span></th></tr></thead>
-          <tbody>{recon.open.map(i => <tr key={i.id}><td>{t(RECON_LEVEL[i.level])}</td><td className={styles.wrap}>{say(i.message)}</td><td>{i.imported === null ? t("common.none") : fmt.money(i.imported)}</td><td>{i.waterfall === null ? t("common.none") : fmt.money(i.waterfall)}</td><td>{i.sourceRow ? fmt.int(i.sourceRow) : ""}</td>
+          <tbody>{recon.open.map(i => <tr key={i.id}><td>{t(RECON_LEVEL[i.level])}</td><td className={styles.wrap}>{say(i.message)}</td><td>{i.imported === null ? t("common.none") : fmt.currency(i.imported)}</td><td>{i.waterfall === null ? t("common.none") : fmt.currency(i.waterfall)}</td><td>{i.sourceRow ? fmt.int(i.sourceRow) : ""}</td>
             <td><button className={styles.linkish} disabled={busy} aria-label={t("studio.acceptDifference", { scopeKey: i.scopeKey, component: i.component })} onClick={() => void operation(async () => { const out = await client.call("reconAccept", { id: i.id }); onStatus(out.status); setRecon(out.recon); bump(); setMessage(msg("studio.differenceAcceptedAndRecorded")); })}>{t("studio.accept")}</button></td></tr>)}</tbody></table></div>
         <button disabled={busy} onClick={() => void operation(async () => { const out = await client.call("reconAccept", { id: null }); onStatus(out.status); setRecon(out.recon); bump(); setMessage(msg("studio.allOpenDifferencesAccepted")); })}>{t("studio.acceptAllDifferences")}</button>{" "}
         <button disabled={busy} onClick={() => void operation(async () => { const out = await client.call("reconRebuild", {}); onStatus(out.status); setRecon(out.recon); bump(); setMessage(msg(out.recon.reconciled ? "studio.marginTotalsRebuiltFrom" : "studio.totalsRebuiltSomeDifferences")); })}>{t("studio.rebuildTotalsFromThe")}</button></>}
@@ -302,6 +315,6 @@ function Playground({ client, busy, operation, onStatus, setMessage, bump, sourc
     <p>{t("studio.aFictionalIndustrialValve")}</p>
     {!loaded ? <button className={styles.primary} disabled={busy} onClick={() => void operation(async () => { const out = await client.call("playgroundLoad", {}); onStatus(out.status); setManifest(out.manifest); await onSources(); bump(); setMessage(msg("studio.playgroundLoadedInvoiceLines", { lines: out.manifest.lines, count: out.manifest.leaks.length })); })}>{t("studio.loadThePlayground")}</button>
       : <button disabled={busy} onClick={() => void operation(async () => { const out = await client.call("playgroundRemove", {}); onStatus(out.status); setManifest(null); await onSources(); bump(); setMessage(msg("studio.removedPlaygroundFilesAnd", { count: Number(out.removed) })); })}>{t("studio.removePlaygroundData")}</button>}
-    {manifest && <ul className={styles.small}>{manifest.leaks.map(l => <li key={l.id}>{t("studio.plantedLeak", { id: l.id, description: l.id in PLANTED ? t(PLANTED[l.id]) : l.description, count: l.lines, dollars: fmt.currency(String(Math.round(Number(l.dollars) * 100))) })}</li>)}</ul>}
+    {manifest && <ul className={styles.small}>{manifest.leaks.map(l => <li key={l.id}>{t("studio.plantedLeak", { id: l.id, description: l.id in PLANTED ? t(PLANTED[l.id],{minimum:fmt.currency("10000"),freight:fmt.currency("1500")}) : l.description, count: l.lines, dollars: fmt.currency(l.cents) })}</li>)}</ul>}
   </section>;
 }

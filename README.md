@@ -280,3 +280,12 @@ The separate blueprint v2.4 update (`51001c0`, section 22 item 24) is preserved.
 7C-2 verification covers its original items 6–10; new competitor alternatives,
 multi-currency, Firefox and other v2.4 additions are follow-up work, not a
 verified feature claim. See ASSUMPTIONS.md.
+
+
+## Workspace currency and browser support (7C-3a)
+
+Settings → Workspace currency chooses a two-decimal ISO currency (USD, CAD, AUD, GBP, EUR and other supported cent-based currencies). Existing vaults stay USD with identical amounts. Choose before importing: changing currency with business data is blocked; create an empty vault and re-import instead.
+
+Each import file records its source currency and your rate to workspace currency. Enter workspace units for one source unit. We never fetch rates. Exact conversions round half away from zero to the cent; import review/history and source-linked margin math show the rate. Fix Later and returns retain it. Generic price exports include currency; named ERP layouts keep their original columns.
+
+Chrome and Edge are primary desktop targets. Firefox is a supported target once the required full Firefox lab gate passes in CI; this chunk is currently **unverified in CI**. Safari is not supported yet. Windows Firefox launch and other manual limits are recorded in [CHUNK_7C3_VERIFICATION.md](./CHUNK_7C3_VERIFICATION.md). 7C-3b and 7D are not started.

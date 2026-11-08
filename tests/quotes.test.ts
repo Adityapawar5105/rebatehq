@@ -20,7 +20,7 @@ async function vault() {
   const c = await duckdbConnection();
   for (const table of [...tablesFor(SCHEMA_VERSION)].reverse()) c.query(`DROP TABLE IF EXISTS ${table}`);
   c.query(schemaSql(SCHEMA_VERSION));
-  c.query(`INSERT INTO vault_meta VALUES(1,${SCHEMA_VERSION},'professional','unit','tip',0,0);
+  c.query(`INSERT INTO vault_meta(id,schema_version,tier,scope,audit_tip,audit_count,pricing_revision) VALUES(1,${SCHEMA_VERSION},'professional','unit','tip',0,0);
 INSERT INTO pricing_settings VALUES(1,'po','Pat Owner',7);
 INSERT INTO role_assignments VALUES ${Object.entries(people).map(([id, role]) => `('${id}','${id}','${role}','owner1','2025-01-01')`).join(",")};
 INSERT INTO products(product_id,description,category,uom,current_cost,list_price) VALUES('P1','Ball valve','Valves','EA',${COST},12000),('P2','Gate valve','Valves','EA',NULL,9000),('P3','Hose','Hoses','EA',100,500);
@@ -230,13 +230,14 @@ test("7B AR aging import: recognised, validated, one profile per customer, and r
 test("7B exception through the 7A relay: only the quote number and price total are shared; a decision counts only from a real approver for the unchanged quote", async () => {
   const { c } = await vault();
   try {
+    c.query("UPDATE vault_meta SET currency='CAD' WHERE id=1");
     const rep = serviceFor(c, "rep") as unknown as Record<string, unknown>, sent: unknown[] = [];
-    let approval: { status: string; decisions: { userId: string; decision: string }[] } | null = null, amountMinor: string | null = null, nextId = 1;
+    let approval: { status: string; decisions: { userId: string; decision: string }[] } | null = null, amountMinor: string | null = null, sharedCurrency = "CAD", nextId = 1;
     rep.relay = async (request: { action: string; data: { input?: { reference: string; amount: string } } }) => {
       sent.push(request);
       if (request.action === "relayShare") { amountMinor = String(Math.round(Number(request.data.input!.amount) * 100)); nextId++; }
       const share = [...sent].reverse().find(r => (r as { action: string }).action === "relayShare") as { data: { input: { reference: string } } } | undefined;
-      const subject = share ? { ...share.data.input, amountMinor } : null;
+      const subject = share ? { ...share.data.input, amountMinor, currency: sharedCurrency } : null;
       return { objects: subject ? [{ id: "obj-other", author: "rep2", subject, approval: { status: "approved", decisions: [{ userId: "sm", decision: "approve" }] } }, { id: `obj-${nextId - 1}`, author: "rep", subject, approval }] : [] };
     };
     const s = rep as unknown as VaultService, po = serviceFor(c, "po");
@@ -247,7 +248,7 @@ test("7B exception through the 7A relay: only the quote number and price total a
     let shared = await call(s, "quoteShare", { id, preset: "standard" }) as Record<string, string>;
     assert.equal(shared.relayObject, "obj-1", "the rep's own shared object is linked, not another member's with the same number");
     const input = (sent[0] as { data: { input: Record<string, string> } }).data.input;
-    assert.deepEqual({ ...input, title: plainText(input.title) }, { objectKind: "quote", title: `Price exception for quote ${shared.number}`, reference: shared.number, amount: "210.00", currency: "USD", preset: "standard" });
+    assert.deepEqual({ ...input, title: plainText(input.title) }, { objectKind: "quote", title: `Price exception for quote ${shared.number}`, reference: shared.number, amount: "210.00", currency: "CAD", preset: "standard" });
     assert.deepEqual(leaks(sent), [], "no cost or margin goes to the relay");
     assert.equal((await call(s, "quoteRelaySync", { id }) as Record<string, string>).status, "pending"); // not decided yet
     // An approval from someone without quoteApprove in this vault, or from the author, is refused.
@@ -255,6 +256,8 @@ test("7B exception through the 7A relay: only the quote number and price total a
     await assert.rejects(call(s, "quoteRelaySync", { id }), code("QUOTE"));
     approval = { status: "approved", decisions: [{ userId: "rep", decision: "approve" }] };
     await assert.rejects(call(s, "quoteRelaySync", { id }), code("QUOTE"));
+    approval = { status: "approved", decisions: [{userId:"sm",decision:"approve"}] };
+    sharedCurrency="USD"; await assert.rejects(call(s,"quoteRelaySync",{id}),code("QUOTE")); sharedCurrency="CAD";
     // A stale approval: rejected locally, edited to a lower price and resubmitted. The old link is gone.
     await call(po, "quoteDecide", { id, decision: "reject", note: null });
     const edited = await call(s, "quoteLines", { id, lines: [{ productId: "P1", quantity: "3", unitCents: "6000" }] }) as Record<string, string | null>;

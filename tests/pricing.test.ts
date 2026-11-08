@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { duckdbConnection,rows as q } from './helpers/duckdb-node';
-import { schemaSql,upgradeSql,tablesFor } from '../lib/vault/schema';
+import { schemaSql,upgradeSql,tablesFor,SCHEMA_VERSION } from '../lib/vault/schema';
 import { raised,rate,guardStatus,guardSql,ruleSql,simulate,preview,approveSql,exportPrices,EXPORT_LAYOUTS } from '../lib/pricing/rules';
 import { rhaSql } from '../lib/margin/sql';
 import type { Engine } from '../lib/vault/engine';
@@ -16,9 +16,9 @@ test('folder copy is ciphertext-only, atomic and keeps the previous backup on a 
 });
 test('price-rule rounding is exact JS == DuckDB SQL including ties',async()=>{const c=await duckdbConnection();try{for(const price of [1,10,100,9999,1234567])for(const percent of ['0','4.5','5','100']){const b=rate(percent);assert.equal(q(c,`SELECT ${rhaSql(`CAST(${price} AS HUGEINT)*(10000+${b})`,'10000')}::VARCHAR AS n`)[0].n,String(raised(BigInt(price),b)));}assert.throws(()=>rate('1e3'));assert.throws(()=>rate('101'));assert.throws(()=>rate('-1'));assert.equal(guardStatus(BigInt(9),BigInt(20),BigInt(10)),'red');assert.equal(guardStatus(BigInt(10),BigInt(20),BigInt(10)),'yellow');assert.equal(guardStatus(BigInt(20),BigInt(20),BigInt(10)),'green');}finally{c.close();}});
 test('v6 price copy, version conflicts, owner, red guard, approval and safe ERP exports execute in DuckDB',async()=>{
-const c=await duckdbConnection();c.query(schemaSql(6));const e={conn:c} as unknown as Engine;
+const c=await duckdbConnection();c.query(schemaSql(SCHEMA_VERSION));const e={conn:c} as unknown as Engine;
 try{
-c.query(`INSERT INTO vault_meta VALUES(1,6,'starter','unit','tip',0,0);INSERT INTO pricing_settings VALUES(1,'owner','Pricing Owner',7);
+c.query(`INSERT INTO vault_meta(id,schema_version,tier,scope,audit_tip,audit_count,pricing_revision) VALUES(1,6,'starter','unit','tip',0,0);INSERT INTO pricing_settings VALUES(1,'owner','Pricing Owner',7);
 INSERT INTO products(product_id,category,current_cost,list_price) VALUES('=unsafe','Valves',6000,10000),('NO-COST','Valves',NULL,20000);
 INSERT INTO vendor_costs(id,vendor,product_id,cost,effective_date,source_file) VALUES('a','Supplier','=unsafe',6000,'2025-01-01','one'),('b','Supplier','=unsafe',6600,'2025-02-01','two'),('c','Supplier','NO-COST',100,'2025-01-01','one'),('d','Supplier','NO-COST',120,'2025-02-01','two');`);
 const input={name:'Cost rule',category:'Valves',vendor:'Supplier',threshold:'5',increase:'4.5'};

@@ -1,3 +1,4 @@
+import { batchFx, workspaceCurrency } from '../vault/currency';
 import { fitsLicenceCapacity } from "../licence-policy";
 // Import Studio orchestration inside the vault worker. Files stay in worker memory
 // (File handles; bounded grids for spreadsheets/JSON/XML) and nothing is uploaded.
@@ -35,10 +36,10 @@ export type FileView = {
   appliedRecipe: string | null; replaces: string | null; fixedLayout: boolean; textFormat: boolean; columnLabels: string[];
   range: { from: string | null; to: string | null };
 };
-export type FileReport = { id: string; name: string; role: Role; rowsRead: string; rowsLoaded: string; rowsRejected: string; rowsSkipped: string; issueCount: string; issues: StudioIssue[]; dateRange: { from: string; to: string } | null; cleaned: { field: string; note: string; count: string }[] };
+export type FileReport = { id: string; name: string; role: Role; rowsRead: string; rowsLoaded: string; rowsRejected: string; rowsSkipped: string; issueCount: string; issues: StudioIssue[]; dateRange: { from: string; to: string } | null; fx: {sourceCurrency:string;workspaceCurrency:string;fxRate:string}; cleaned: { field: string; note: string; count: string }[] };
 export type BatchReport = { files: FileReport[]; warnings: string[]; loaded: string; rejected: string; capOk: boolean; capMessage: string | null; replaces: string | null };
 export type StudioState = { files: FileView[]; report: BatchReport | null; recipes: { id: string; name: string; role: Role | null }[] };
-export type SourceView = { id: string; name: string; role: string; importedAt: string; rowsLoaded: string; rowsRejected: string; issues: string };
+export type SourceView = { id: string; name: string; role: string; importedAt: string; rowsLoaded: string; rowsRejected: string; issues: string; sourceCurrency: string; workspaceCurrency: string; fxRate: string; headerFx: string };
 export type Progress = (stage: string, done: string, total: string) => void;
 type Entry = {
   id: string; file: File; kind: Kind; settings: Settings; role: Role | null; roleManual: boolean; sheets: string[]; zipNotices: string[];
@@ -84,7 +85,7 @@ export function canonicalRow(role: Role, mapping: Record<string, FieldSource>, s
     if (s.kind === "column") {
       const v = clean(f.type, cell(s), settings, notes, f.name);
       // Money stored with 4 decimals (SQL Server "money", ERP extended amounts) rounds to the cent; unit prices keep theirs.
-      const cents = f.type === "amount" ? toCents(v) : null;
+      const cents = f.type === "amount" && (!settings.fxRate || settings.fxRate === "1") ? toCents(v) : null;
       if (cents !== null && cents !== v) note(notes, f.name, ["rounded"]);
       values.set(f.name, cents ?? v);
     }
@@ -128,13 +129,13 @@ export class Studio {
   private invalidate() { this.report = null; this.staged = null; }
   private get(fileId: string) { const e = this.entries.get(fileId); if (!e) throw new StudioError(msg("import.thatFileIsNo2")); return e; }
 
-  async add(files: File[], recipes: Recipe[], replaces: string | null = null) {
+  async add(files: File[], recipes: Recipe[], replaces: string | null = null, currency = "USD") {
     if (!files.length) throw new StudioError(msg("import.chooseAtLeastOne"));
     if (replaces && (files.length !== 1 || this.order.length)) throw new StudioError(msg("import.replaceOneImportedFile"));
     if (this.order.length && [...this.entries.values()].some(e => e.replaces)) throw new StudioError(msg("import.finishOrClearThe"));
     if (this.order.length + files.length > MAX_FILES) throw new StudioError(msg("import.addAtMostFiles", { maxfiles: MAX_FILES }));
     const added: Entry[] = [];
-    for (const file of files) added.push(await this.inspect(file, recipes, replaces));
+    for (const file of files) { const entry = await this.inspect(file, recipes, replaces); entry.settings.sourceCurrency = currency; entry.settings.fxRate = "1"; added.push(entry); };
     for (const e of added) { this.entries.set(e.id, e); this.order.push(e.id); }
     this.invalidate();
   }
@@ -258,7 +259,7 @@ export class Studio {
     return null;
   }
   private applySettings(entry: Entry, recipe: Recipe) {
-    const { kind: _kind, role, erp, mapping, ...settings } = recipe.settings;
+    const { kind: _kind, role, erp, mapping, sourceCurrency: _currency, fxRate: _fx, ...settings } = recipe.settings;
     entry.settings = { ...entry.settings, ...settings, sheet: entry.settings.sheet };
     if (role) { entry.role = role; entry.roleManual = true; }
     if (erp && PROFILE_IDS.includes(erp)) entry.erp = erp;
@@ -279,7 +280,7 @@ export class Studio {
       if (patch.confirmed && entry.role && mappingProblems(entry.role, this.mappingOf(entry)).length) throw new StudioError(msg("import.mapEveryRequiredField"));
       entry.confirmed = patch.confirmed;
     }
-    if (patch.erp || patch.field || patch.confirmed !== undefined) { entry.appliedRecipe = null; this.invalidate(); return; }
+    if ((patch.erp || patch.field || patch.confirmed !== undefined) && Object.keys(patch).every(k => ["erp","field","confirmed"].includes(k))) { entry.appliedRecipe = null; this.invalidate(); return; }
     const next: Settings = { ...before };
     if (patch.sheet !== undefined && entry.sheets.includes(String(patch.sheet))) next.sheet = String(patch.sheet);
     if (patch.encoding && ["utf-8", "utf-16le", "utf-16be", "windows-1252"].includes(patch.encoding)) next.encoding = patch.encoding;
@@ -288,6 +289,8 @@ export class Studio {
     if (patch.dateFormat && DATE_FORMATS.includes(patch.dateFormat)) next.dateFormat = patch.dateFormat;
     if (patch.headerDepth === 1 || patch.headerDepth === 2 || patch.headerDepth === 3) next.headerDepth = patch.headerDepth;
     if (patch.headerRow !== undefined && Number.isInteger(patch.headerRow) && patch.headerRow >= NO_HEADER && patch.headerRow < 40) next.headerRow = patch.headerRow;
+    if (patch.sourceCurrency !== undefined) next.sourceCurrency = patch.sourceCurrency;
+    if (patch.fxRate !== undefined) next.fxRate = patch.fxRate;
     entry.settings = next;
     if (next.sheet !== before.sheet && entry.bytes) { entry.grid = await this.loadSheet(entry, next.sheet!); this.detect(entry); }
     else if (TEXT.includes(entry.kind) && (next.encoding !== before.encoding || next.delimiter !== before.delimiter)) entry.sample = sampleRows(await this.sampleText(entry), next.delimiter, 60);
@@ -349,7 +352,8 @@ export class Studio {
     const entry = this.get(fileId), label = name.trim();
     if (!label || label.length > 80) throw new StudioError(msg("import.nameTheRecipeAfter"));
     if (entry.role && needsConfirmation(this.mapping(entry)) && !entry.confirmed) throw new StudioError(msg("import.confirmTheColumnMapping"));
-    return { name: label, profile: fingerprint(entry.kind, this.headers(entry)), settings: { ...entry.settings, kind: entry.kind, role: entry.role, erp: entry.erp, mapping: this.mappingOf(entry) } };
+    const {sourceCurrency: _currency, fxRate: _fx, ...portable} = entry.settings;
+    return { name: label, profile: fingerprint(entry.kind, this.headers(entry)), settings: { ...portable, kind: entry.kind, role: entry.role, erp: entry.erp, mapping: this.mappingOf(entry) } };
   }
   apply(fileId: string, recipe: Recipe) {
     const entry = this.get(fileId);
@@ -402,10 +406,13 @@ export class Studio {
 
   async plan(engine: Engine, tier: Tier, signal: AbortSignal, progress: Progress) {
     this.invalidate();
+    const currency = await workspaceCurrency(engine);
     const entries = this.order.map(x => this.entries.get(x)!);
     if (!entries.length) throw new StudioError(msg("import.addFilesToImport"));
     const warnings: string[] = [], replaces = entries.find(e => e.replaces)?.replaces ?? null;
     for (const e of entries) {
+      const fx = batchFx(e.settings.sourceCurrency ?? currency, currency, e.settings.fxRate ?? '1');
+      e.settings = {...e.settings, sourceCurrency: fx.sourceCurrency, fxRate: fx.fxRate};
       if (!e.role) throw new StudioError(msg("import.chooseWhatThisFile", { name: e.file.name }));
       if (!USABLE.includes(e.role)) continue;
       const mapped = this.mapping(e), missing = mappingProblems(e.role, this.mappingOf(e));
@@ -506,11 +513,11 @@ export class Studio {
         const issues = [...st.issues.slice(0, 50), ...sampled.map(s => ({ row: s.row, column: issueColumn(s.code, file), message: issueMessage(s.code, file.settings) }))].sort((a, b) => a.row - b.row).slice(0, 100);
         const bad = BigInt(c.bad) + BigInt(st.rejected);
         if (role !== "order_header") { loaded += BigInt(c.ok); rejected += bad; }
-        reports.push({ id: load[c.ord].id, name: file.name, role, rowsRead: String(st.read), rowsLoaded: c.ok, rowsRejected: String(bad), rowsSkipped: String(st.skipped), issueCount: String(BigInt(c.bad) + BigInt(st.issueCount)), issues, dateRange: null, cleaned: cleanups.get(c.ord) ?? [] });
+        reports.push({ id: load[c.ord].id, name: file.name, role, fx: batchFx(file.settings.sourceCurrency ?? currency,currency,file.settings.fxRate ?? "1"), rowsRead: String(st.read), rowsLoaded: c.ok, rowsRejected: String(bad), rowsSkipped: String(st.skipped), issueCount: String(BigInt(c.bad) + BigInt(st.issueCount)), issues, dateRange: null, cleaned: cleanups.get(c.ord) ?? [] });
       }
       for (const f of files) if (!reports.some(r => r.id === load[f.ord].id)) {
         const st = stats.get(f.ord)!; rejected += BigInt(st.rejected);
-        reports.push({ id: load[f.ord].id, name: f.name, role: f.role, rowsRead: String(st.read), rowsLoaded: "0", rowsRejected: String(st.rejected), rowsSkipped: String(st.skipped), issueCount: String(st.issueCount), issues: st.issues.slice(0, 100), dateRange: null, cleaned: cleanups.get(f.ord) ?? [] });
+        reports.push({ id: load[f.ord].id, name: f.name, role: f.role, fx: batchFx(f.settings.sourceCurrency ?? currency,currency,f.settings.fxRate ?? "1"), rowsRead: String(st.read), rowsLoaded: "0", rowsRejected: String(st.rejected), rowsSkipped: String(st.skipped), issueCount: String(st.issueCount), issues: st.issues.slice(0, 100), dateRange: null, cleaned: cleanups.get(f.ord) ?? [] });
       }
       if (roles.has("sales_history")) {
         const ranges = await salesRanges(engine, replaces);
@@ -552,7 +559,7 @@ CREATE TEMP TABLE studio_messages AS SELECT * FROM (VALUES ${messages}) v(file_o
       for (const [i, f] of kept.entries()) {
         const r = report.files.find(x => x.id === staged.entries[f.ord].id)!;
         await engine.conn.query(`INSERT INTO source_files VALUES (${sqlText(sources[i])},${sqlText(f.name)},${sqlText(f.role === "ar_aging" ? "customer_list" : f.role)},${f.bytes},${sqlText(now)});${f.role === "ar_aging" ? `INSERT INTO source_kinds VALUES (${sqlText(sources[i])},'ar_aging');` : ""}
-INSERT INTO import_batches(id,source_id,rows_loaded,rows_rejected,imported_at,content_sha256,fingerprint,rows_skipped) VALUES (${sqlText(id())},${sqlText(sources[i])},${r.rowsLoaded},${r.rowsRejected},${sqlText(now)},NULL,${sqlText(f.fingerprint)},${r.rowsSkipped})`);
+INSERT INTO import_batches(id,source_id,rows_loaded,rows_rejected,imported_at,content_sha256,fingerprint,rows_skipped,source_currency,workspace_currency,fx_rate,header_fx) VALUES (${sqlText(id())},${sqlText(sources[i])},${r.rowsLoaded},${r.rowsRejected},${sqlText(now)},NULL,${sqlText(f.fingerprint)},${r.rowsSkipped},${sqlText(f.settings.sourceCurrency ?? "USD")},${sqlText(await workspaceCurrency(engine))},${sqlText(f.settings.fxRate ?? "1")},${sqlText(JSON.stringify(staged.files.filter(h=>h.role === "order_header").map(h=>({sourceCurrency:h.settings.sourceCurrency,fxRate:h.settings.fxRate}))))})`);
       }
       await engine.conn.query(commitSql(new Set([...staged.roles].filter(r => r !== "order_header"))));
       for (const [i, f] of kept.entries()) {
@@ -589,9 +596,9 @@ export async function removeSource(engine: Engine, source: string) {
   catch { await engine.conn.query("ROLLBACK").catch(() => undefined); return false; }
 }
 export async function listSources(engine: Engine): Promise<SourceView[]> {
-  return (await engine.conn.query(`SELECT s.id, s.name, coalesce(k.kind, s.role) AS role, s.imported_at, coalesce(b.rows_loaded,0)::VARCHAR AS loaded, coalesce(b.rows_rejected,0)::VARCHAR AS rejected,
+  return (await engine.conn.query(`SELECT s.id, s.name, coalesce(k.kind, s.role) AS role, s.imported_at, coalesce(b.rows_loaded,0)::VARCHAR AS loaded, coalesce(b.rows_rejected,0)::VARCHAR AS rejected, b.source_currency, b.workspace_currency, b.fx_rate, b.header_fx,
 (SELECT count(*) FROM import_issues i WHERE i.source_id=s.id)::VARCHAR AS issues FROM source_files s LEFT JOIN source_kinds k ON k.source_id=s.id LEFT JOIN import_batches b ON b.source_id=s.id ORDER BY s.imported_at DESC, s.name`)).toArray()
-    .map(r => ({ id: String(r.id), name: String(r.name), role: String(r.role), importedAt: String(r.imported_at), rowsLoaded: String(r.loaded), rowsRejected: String(r.rejected), issues: String(r.issues) }));
+    .map(r => ({ id: String(r.id), name: String(r.name), role: String(r.role), importedAt: String(r.imported_at), rowsLoaded: String(r.loaded), rowsRejected: String(r.rejected), issues: String(r.issues), sourceCurrency: String(r.source_currency ?? "USD"), workspaceCurrency: String(r.workspace_currency ?? "USD"), fxRate: String(r.fx_rate ?? "1"), headerFx: String(r.header_fx ?? "[]") }));
 }
 export async function loadRecipes(engine: Engine): Promise<Recipe[]> {
   const rows = (await engine.conn.query("SELECT id, name, profile, settings FROM converter_recipes ORDER BY name LIMIT 200")).toArray();

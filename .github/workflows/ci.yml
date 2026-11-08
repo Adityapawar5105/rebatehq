@@ -9,9 +9,9 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-24.04
-    # A normal run takes about 11 minutes. Without a limit, a hung step (CI #87: an Ubuntu package
-    # mirror stalled inside `playwright install --with-deps`) runs for GitHub's 6-hour maximum.
-    timeout-minutes: 45
+    # Recent runs take 11–22 minutes; Firefox needs additional headroom. Keep a job limit:
+    # CI #87 ran for six hours when the apt mirror stalled inside playwright install.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -108,6 +108,38 @@ jobs:
           JS
           pnpm test:vault:privacy --browser=chromium
           node scripts/test-relay-browser.mjs --auth --browser=chromium
+      - name: Install Playwright Firefox and its system packages (bounded, retried)
+        timeout-minutes: 25
+        shell: bash
+        run: |
+          set -uo pipefail
+          # apt waits forever on a stalled mirror by default; fail a request after 30 s and retry it, and let a
+          # retry wait for the dpkg lock instead of failing at once.
+          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nDPkg::Lock::Timeout "120";\n' | sudo tee /etc/apt/apt.conf.d/99rebatehq-network-timeouts > /dev/null
+          for attempt in 1 2 3; do
+            if timeout -k 20 360 pnpm exec playwright install --with-deps firefox; then exit 0; fi
+            echo "::warning::Playwright install attempt $attempt failed or timed out; retrying."
+            # `timeout` cannot signal the root apt-get that playwright starts through sudo (CI #90), so a slow
+            # download keeps the dpkg lock. Wait up to 5 minutes for it to finish before the next attempt.
+            for _ in $(seq 1 60); do pgrep -x 'apt-get|dpkg' > /dev/null || break; sleep 5; done
+          done
+          echo "::error::Playwright Firefox could not be installed after 3 attempts (package mirror or download problem, not a test failure)."
+          exit 1
+      - name: Required Firefox local-vault lab gate
+        timeout-minutes: 25
+        env:
+          VAULT_LAB_ENABLED: "true"
+          VAULT_TEST_URL: "http://127.0.0.1:3001"
+        shell: bash
+        run: |
+          set -euo pipefail
+          node node_modules/next/dist/bin/next start --hostname 127.0.0.1 --port 3001 > "$RUNNER_TEMP/firefox-vault-app.log" 2>&1 &
+          app_pid=$!
+          trap 'kill "$app_pid" 2>/dev/null || :' EXIT
+          node --input-type=module <<'JS'
+          let ready=false;for(let i=0;i<60;i++){try{if((await fetch('http://127.0.0.1:3001/lab/vault')).ok){ready=true;break}}catch{}await new Promise(r=>setTimeout(r,1000))}if(!ready)throw Error('Lab app did not start for Firefox');
+          JS
+          pnpm test:vault --browser=firefox
       - name: Upload privacy gate failure diagnostics
         if: failure()
         uses: actions/upload-artifact@v4

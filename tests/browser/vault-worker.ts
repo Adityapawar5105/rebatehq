@@ -61,7 +61,7 @@ async function testFixture(bytes: Uint8Array) {
   await closeMemory(probe);
   const service = new VaultService(() => undefined); await service.init(fixtureScope);
   const result = await service.unlock(secret);
-  assert(result.schemaVersion === "12" && result.lines === "1", "V1 snapshot did not upgrade with its row intact");
+  assert(result.schemaVersion === "13" && result.lines === "1", "V1 snapshot did not upgrade with its row intact");
   const agg = (await service.engine!.conn.query("SELECT count(*)::VARCHAR AS n, sum(list_cents)::VARCHAR AS l, max(line_kind) AS k FROM agg_cpm")).toArray()[0];
   assert(agg.n === "1" && agg.l === "1250" && agg.k === "sale", "V1 upgrade must build the margin pre-aggregate from existing lines");
   assert((await service.marginWaterfall()).margin === "375", "Upgraded v1 line waterfall wrong");
@@ -404,7 +404,7 @@ async function margin() {
   const service = new VaultService(() => undefined); await service.init(scope); await service.create(secret, "professional");
   const result: Record<string, unknown> = {};
   const out = await service.playgroundLoad(noop), manifest = out.manifest;
-  assert((await service.status()).schemaVersion === "12", "New vaults must be schema v12");
+  assert((await service.status()).schemaVersion === "13", "New vaults must be schema v13");
   // 1. The waterfall equals the imported lines recomputed one by one with the JS engine.
   const raw = await rowsOf(service, "SELECT invoice_id, customer_id, strftime(sale_date, '%Y-%m') AS m, list_cents::VARCHAR AS l, discount_cents::VARCHAR AS d, rebate_cents::VARCHAR AS r, freight_cents::VARCHAR AS f, cost_cents::VARCHAR AS c, line_kind AS k FROM sales_lines");
   let list = Z, discount = Z, rebate = Z, freight = Z, pocket = Z, costedPocket = Z, cost = Z, marginJs = Z;
@@ -747,7 +747,7 @@ async function phase5a() {
   let refusedNoOwner=false;try{await call(service,'create',{passphrase:secret,tier:'professional',ownerName:'  '});}catch(e){refusedNoOwner=(e as Error).message.includes('Pricing Owner');}
   assert(refusedNoOwner&&!(await service.status()).exists,'A vault was created without a named Pricing Owner');
   const created=await call(service,'create',{passphrase:secret,tier:'professional',ownerName:'Synthetic Pricing Owner'});
-  assert(created.schemaVersion==='12'&&created.access.role==='owner'&&created.access.ownerNamed&&created.access.caps.includes('approve'),'The creator is not the Owner and named Pricing Owner');
+  assert(created.schemaVersion==='13'&&created.access.role==='owner'&&created.access.ownerNamed&&created.access.caps.includes('approve'),'The creator is not the Owner and named Pricing Owner');
   assert((await call(service,'pricingState')).owner.name==='Synthetic Pricing Owner','Pricing Owner was not stored at setup');
   // Sample data never completes setup steps; it still feeds every view.
   await service.playgroundLoad(()=>undefined);
@@ -862,6 +862,29 @@ INSERT INTO vendor_costs(id,vendor,product_id,cost,effective_date,source_file) S
   return {lines:'1000000',products:'101000',duplicateGroups:scan.totals.duplicateProducts,cleanupScanMs:scanMs,costBasisMs:basisMs,homeMs,statusMs,mergeOneGroupInclRebuildAndSaveMs:mergeMs,undoMergeInclRebuildAndSaveMs:undoMs,unitFixAllSpellingsInclSaveMs:unitMs,memoryLimit:'512MB'};
  }finally{await service.lock().catch(()=>undefined);await reset(scope);}
 }
+async function currencyFlow() {
+ const scope={userId:'fx-'+crypto.randomUUID(),tenantId:'fx-'+crypto.randomUUID()},service=new VaultService(()=>undefined);
+ await service.init(scope);await service.create(secret,'professional','FX Owner');
+ try {
+  assert((await service.status()).currency==='USD','Old/default currency must be USD');
+  await dispatch(service,{id:'fx',action:'currencySet',data:{currency:'EUR'}},{signal:()=>new AbortController().signal,progress:()=>undefined});
+  await service.studioAdd([
+   new File(['product_id,current_cost,list_price\nP,6.00,10.00\n'],'items.csv'),
+   new File(['line_id,product_id,customer_id,sale_date,quantity,list_amount,discount_amount,freight_amount,rebate_amount,cost_amount\n1,P,C,2026-01-01,1,20.00,2.00,1.00,0.50,8.00\n'],'sales.csv')
+  ]);
+  for(const file of (await service.studioState()).files)await service.studioUpdate(file.id,{sourceCurrency:file.role==='item_master'?'USD':'CAD',fxRate:file.role==='item_master'?'0.8':'0.5'},undefined,{confirmed:true});
+  await service.studioPlan(new AbortController().signal,()=>undefined);await service.studioCommit(true,()=>undefined);
+  const w=await service.marginWaterfall();assert(w.sales.list==='1000'&&w.cost==='400','FX import was not reconciled');
+  const source=await service.sources();assert(source.some(s=>s.sourceCurrency==='CAD'&&s.fxRate==='0.5'&&s.workspaceCurrency==='EUR'),'Source FX provenance missing');
+  const math=await service.marginMath('list');assert(math.rows[0].sourceCurrency==='CAD'&&math.rows[0].fxRate==='0.5','Show math lost FX');
+  let blocked=false;try{await service.currencySet('GBP');}catch{blocked=true;}assert(blocked&&(await service.status()).currency==='EUR','Currency was silently relabelled');
+  await service.lock();await service.unlock(secret);assert((await service.status()).currency==='EUR','Currency not in encrypted snapshot');
+  assert((await service.sources()).some(s=>s.sourceCurrency==='CAD'&&s.fxRate==='0.5'),'Reload lost rate');
+  const pdf=await(await service.leakReport('en')).blob.text();assert(pdf.includes('EUR')&&pdf.includes('\\20010.00')&&!pdf.includes(String.fromCharCode(36)),'Report PDF lost workspace denomination');
+  const point=await service.priceCheck('P','C','1');assert(point.bookCents==='800','Quote price did not use converted item amount');
+  return {sourceFx:true,showMath:true,encryptedReload:true,changeBlocked:true,quotePrice:true,pdf:true};
+ }finally{await service.lock().catch(()=>undefined);await reset(scope);}
+}
 self.onmessage = async event => {
   try {
     const { action } = event.data;
@@ -872,7 +895,7 @@ self.onmessage = async event => {
       assert(!opened, "Tampered engine asset was executed");
       self.postMessage({ result: { tamperedAssetRejected: true } }); return;
     }
-    const result = action === "pricingTools" ? await pricingToolsFlow() : action === "pricingOps" ? await pricingOpsFlow() : action === "phase5aBenchmark" ? await phase5aBenchmark() : action === "phase5a" ? await phase5a() : action === "pricing" ? await pricingFlow() : action === "legacyStorage" ? await legacyStorage() : action === "pricingBenchmark" ? await pricingBenchmark() : action === "fixture" ? await fixture() : action === "v1" ? await testFixture(event.data.bytes) : action === "seed" ? await seed(event.data.rows) : action === "firstChange" ? await firstChange(event.data.rows) : action === "integrity" ? await integrity() : action === "studio" ? await studio() : action === "mapper" ? await mapper() : action === "playground" ? await playground() : action === "margin" ? await margin() : action === "marginBenchmark" ? await marginBenchmark(event.data.rows) : action === "studioBenchmark" ? await studioBenchmark(event.data.rows) : action === "warmup" ? await warmup() : action === "cipherOnly" ? await cipherOnly() : await storageStatus();
+    const result = action === "currency" ? await currencyFlow() : action === "pricingTools" ? await pricingToolsFlow() : action === "pricingOps" ? await pricingOpsFlow() : action === "phase5aBenchmark" ? await phase5aBenchmark() : action === "phase5a" ? await phase5a() : action === "pricing" ? await pricingFlow() : action === "legacyStorage" ? await legacyStorage() : action === "pricingBenchmark" ? await pricingBenchmark() : action === "fixture" ? await fixture() : action === "v1" ? await testFixture(event.data.bytes) : action === "seed" ? await seed(event.data.rows) : action === "firstChange" ? await firstChange(event.data.rows) : action === "integrity" ? await integrity() : action === "studio" ? await studio() : action === "mapper" ? await mapper() : action === "playground" ? await playground() : action === "margin" ? await margin() : action === "marginBenchmark" ? await marginBenchmark(event.data.rows) : action === "studioBenchmark" ? await studioBenchmark(event.data.rows) : action === "warmup" ? await warmup() : action === "cipherOnly" ? await cipherOnly() : await storageStatus();
     self.postMessage({ result });
   } catch (e) { self.postMessage({ error: e instanceof Error ? e.message : "test worker failed" }); }
 };

@@ -1,3 +1,4 @@
+import { sourceFx } from '../vault/currency';
 import { fitsLicenceCapacity } from "../licence-policy";
 // Fix Later queue: rejected rows kept at import (canonical values in rejected_rows
 // v0..v11), corrected singly or in bulk, then re-checked with the same exact SQL and
@@ -67,7 +68,7 @@ export async function recheck(engine: Engine, sourceId: string, code: string, ti
   if (!LOADABLE.includes(role)) throw new StudioError(msg("fixlater.rowsOfThisFile"));
   if (code === "structure") throw new StudioError(msg("fixlater.rowsWithABroken"));
   const fields = ROLE_FIELDS[role], s = sqlText(sourceId), name = String((await engine.conn.query(`SELECT name FROM source_files WHERE id=${s}`)).toArray()[0].name);
-  const file: StagedFile = { ord: 0, role, name, bytes: 0, fingerprint: "", alignment: fields.map((f, index) => ({ field: f.name, index })), settings: CANONICAL, keyed: true, headers: fields.map(f => f.name), colOffset: 0 };
+  const file: StagedFile = { ord: 0, role, name, bytes: 0, fingerprint: "", alignment: fields.map((f, index) => ({ field: f.name, index })), settings: { ...CANONICAL, ...(await sourceFx(engine, sourceId)) }, keyed: true, headers: fields.map(f => f.name), colOffset: 0 };
   await resetStage(engine); await createStage(engine, role);
   await engine.conn.query(`INSERT INTO st_${role} SELECT 0, source_row, ${fields.map((_, i) => `v${i}`).join(",")} FROM rejected_rows WHERE source_id=${s} AND status='open' AND code=${sqlText(code)}`);
   await validate(engine, role as Exclude<Role, "rebate_agreement">, [file], null);

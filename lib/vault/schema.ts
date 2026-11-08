@@ -1,5 +1,5 @@
 import { msg } from "../i18n/core";
-export const SCHEMA_VERSION = 12;
+export const SCHEMA_VERSION = 13;
 const V1_TABLES = ["vault_meta", "products", "customers", "price_matrix", "price_guardrails", "source_files", "import_batches", "sales_lines", "vendor_costs", "cost_basis_settings", "rules", "rule_runs", "price_versions", "roi_ledger", "audit_log", "import_issues", "converter_recipes"] as const;
 const V4_TABLES = [...V1_TABLES, "rejected_rows"] as const;
 const V5_TABLES = [...V4_TABLES, "agg_cpm", "agg_cm", "agg_p", "recon_issues"] as const;
@@ -136,7 +136,13 @@ CREATE TABLE price_grid_drafts(run_id VARCHAR PRIMARY KEY,required_tier VARCHAR 
 CREATE TABLE price_export_receipts(id VARCHAR PRIMARY KEY,run_id VARCHAR NOT NULL,profile VARCHAR NOT NULL,created_at VARCHAR NOT NULL,content_hash VARCHAR NOT NULL,rows_json VARCHAR NOT NULL);
 CREATE TABLE price_landed_checks(id VARCHAR PRIMARY KEY,receipt_id VARCHAR NOT NULL,file_name VARCHAR NOT NULL,created_at VARCHAR NOT NULL,results_json VARCHAR NOT NULL);
 CREATE TABLE sales_service_flags(invoice_key VARCHAR PRIMARY KEY,free_delivery BOOLEAN NOT NULL,recorded_by VARCHAR NOT NULL,recorded_at VARCHAR NOT NULL);`;
-const STEPS = [V1_SQL, V2_SQL, V3_SQL, V4_SQL, V5_SQL, V6_SQL, V7_SQL, V8_SQL, V9_SQL, V10_SQL, V11_SQL, V12_SQL];
+// V13: no amount is rewritten; old vaults retain USD cents exactly.
+export const V13_SQL = `ALTER TABLE vault_meta ADD COLUMN currency VARCHAR DEFAULT 'USD';
+ALTER TABLE import_batches ADD COLUMN source_currency VARCHAR DEFAULT 'USD';
+ALTER TABLE import_batches ADD COLUMN workspace_currency VARCHAR DEFAULT 'USD';
+ALTER TABLE import_batches ADD COLUMN fx_rate VARCHAR DEFAULT '1';
+ALTER TABLE import_batches ADD COLUMN header_fx VARCHAR DEFAULT '[]';`;
+const STEPS = [V1_SQL, V2_SQL, V3_SQL, V4_SQL, V5_SQL, V6_SQL, V7_SQL, V8_SQL, V9_SQL, V10_SQL, V11_SQL, V12_SQL, V13_SQL];
 function checkVersion(version: number) {
   if (!Number.isInteger(version) || version < 1 || version > SCHEMA_VERSION) throw new Error(msg("vault.schema.unsupportedVaultSchemaVersion"));
 }

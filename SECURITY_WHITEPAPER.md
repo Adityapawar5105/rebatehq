@@ -61,3 +61,10 @@ checks remain unverified.
 · [CI #75](https://github.com/Adityapawar5105/rebatehq/actions/runs/41989796464).
 
 Detailed findings, owners and review dates: [security review](./SECURITY_REVIEW.md).
+
+
+## Browser and currency scope — 7C-3a
+
+Chrome and Edge remain primary desktop targets. Firefox support is gated by the full required Firefox lab/privacy suite in CI; **unverified for this chunk until that run passes**. Safari is not supported. The Firefox fault checks use worker termination and test-only OPFS quota errors because CDP is Chromium-only; they do not prove physical crash or disk-full recovery. A Windows SideBySide/mozglue launch issue was fixed by one browser-package reinstall; application verification is recorded separately in the chunk record.
+
+Workspace currency and per-batch manually supplied FX live only in the encrypted local vault and worker. Rates are not fetched or uploaded. Exact conversion produces integer cents; existing vaults default to USD without rewriting numbers. Currency changes with business data are blocked to prevent relabelling. See [part a verification](./CHUNK_7C3_VERIFICATION.md) for evidence and unverified limits.

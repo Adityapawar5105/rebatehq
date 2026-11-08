@@ -1,3 +1,4 @@
+import { currencyChangeSql, workspaceCurrency } from './currency';
 import * as grid from '../pricing/grid';
 import * as market from '../pricing/market';
 import {whatIf} from '../pricing/whatif';
@@ -53,7 +54,7 @@ export class VaultService {
     switch(request.action){
       case 'relayView':return session.view();case 'relayRegister':return session.register();case 'relayJoin':return session.join(request.data.fingerprint);
       case 'relayRotate':return session.rotate(request.data.confirmations);case 'relaySync':return session.sync();
-      case 'relayShare':{const {amount,...input}=request.data.input;let amountMinor:string;try{amountMinor=minorUnits(amount).toString();}catch{throw new RelayError('CONTENT',msg("vault.enterANonNegative"));}return session.share({...input,amountMinor});}
+      case 'relayShare':{const {amount,...input}=request.data.input;const currency=await workspaceCurrency(this.requireEngine());if(input.currency!==currency)throw new VaultError('CURRENCY',msg('fx.current',{code:currency}));let amountMinor:string;try{amountMinor=minorUnits(amount).toString();}catch{throw new RelayError('CONTENT',msg("vault.enterANonNegative"));}return session.share({...input,amountMinor});}
       case 'relayRequest':return session.request(request.data.id,request.data.approvers);case 'relayDecide':return session.decide(request.data.id,request.data.decision);
       case 'relayComment':return session.comment(request.data.id,request.data.text,request.data.mentions);case 'relayRetry':return session.retry();case 'relayDiscard':return session.discard();
     }
@@ -192,7 +193,7 @@ export class VaultService {
   }
   private async recipes() { return loadRecipes(this.requireEngine()); }
   async studioState() { return this.studio.state(await this.recipes()); }
-  async studioAdd(files: File[], replaces: string | null = null) { this.requireEngine(); await this.studio.add(files, await this.recipes(), replaces); return this.studioState(); }
+  async studioAdd(files: File[], replaces: string | null = null) { this.requireEngine(); await this.studio.add(files, await this.recipes(), replaces, await workspaceCurrency(this.requireEngine())); return this.studioState(); }
   async studioUpdate(id: string, settings: Partial<Settings> = {}, role?: Role | null, extra: { erp?: ErpProfile; field?: { name: string; source: FieldSource }; confirmed?: boolean; range?: { from: string | null; to: string | null } } = {}) {
     this.requireEngine(); await this.studio.update(id, { ...settings, ...(role !== undefined ? { role } : {}), ...extra }); return this.studioState();
   }
@@ -354,7 +355,7 @@ export class VaultService {
     this.quoteTier(); await this.guard("collaborate"); const v = await this.ownQuote(id);
     if (v.status !== "pending") throw new VaultError("QUOTE", msg("quote.notPending"));
     const cents = BigInt(v.totalCents), amount = `${cents / BigInt(100)}.${(cents % BigInt(100)).toString().padStart(2, "0")}`;
-    const shared = await this.relay({ id: "quote", action: "relayShare", data: { input: { objectKind: "quote", title: plainText(msg("quote.shareTitle", { number: v.number })), reference: v.number, amount, currency: "USD", preset: preset === "conservative" ? "conservative" : "standard" } } } as never, signal) as { objects?: { id: string; author: string; subject: { reference: string } }[] };
+    const shared = await this.relay({ id: "quote", action: "relayShare", data: { input: { objectKind: "quote", title: plainText(msg("quote.shareTitle", { number: v.number })), reference: v.number, amount, currency: await workspaceCurrency(this.requireEngine()), preset: preset === "conservative" ? "conservative" : "standard" } } } as never, signal) as { objects?: { id: string; author: string; subject: { reference: string } }[] };
     // Quote numbers are per vault, so match this author's newest object with the number.
     const object = shared.objects?.filter(o => o.subject.reference === v.number && o.author === this.identity.userId).pop();
     if (!object) throw new VaultError("QUOTE", msg("quote.shareFailed"));
@@ -370,11 +371,11 @@ export class VaultService {
   async quoteRelaySync(id: string, signal: AbortSignal) {
     this.quoteTier(); await this.guard("collaborate"); const v = await this.ownQuote(id);
     if (!v.relayObject || v.status !== "pending" || !v.mine) return v;
-    const view = await this.relay({ id: "quote", action: "relaySync", data: {} } as never, signal) as { objects?: { id: string; author: string; subject: { reference: string; amountMinor: string }; approval?: { status: string; decisions: { userId: string; decision: string }[] } | null }[] };
+    const view = await this.relay({ id: "quote", action: "relaySync", data: {} } as never, signal) as { objects?: { id: string; author: string; subject: { reference: string; amountMinor: string; currency: string }; approval?: { status: string; decisions: { userId: string; decision: string }[] } | null }[] };
     const object = view.objects?.find(o => o.id === v.relayObject);
     const status = object?.approval?.status;
     if (!object || (status !== "approved" && status !== "rejected")) return v;
-    if (object.author !== this.identity.userId || object.subject.reference !== v.number || String(object.subject.amountMinor) !== v.totalCents) throw new VaultError("QUOTE", msg("quote.relayMismatch"));
+    if (object.author !== this.identity.userId || object.subject.reference !== v.number || String(object.subject.amountMinor) !== v.totalCents || object.subject.currency !== await workspaceCurrency(this.requireEngine())) throw new VaultError("QUOTE", msg("quote.relayMismatch"));
     if (status === "approved") {
       const approvers = object.approval!.decisions.filter(d => d.decision === "approve").map(d => d.userId);
       if (!approvers.length) throw new VaultError("QUOTE", msg("quote.relayNotApprover"));
@@ -406,7 +407,7 @@ export class VaultService {
     const meta = (await engine.conn.query("SELECT count(*)::VARCHAR AS n, strftime(min(sale_date), '%Y-%m-%d') AS a, strftime(max(sale_date), '%Y-%m-%d') AS b FROM sales_lines")).toArray()[0];
     const sources = (await listSources(engine)).filter(s => s.role === "sales_history").map(s => s.name);
     const generatedAt = new Date().toISOString();
-    const bytes = leakReport({ locale: isLocale(locale) ? locale : "en", generatedAt, sample: view.sample, lines: String(meta.n), from: meta.a === null ? null : String(meta.a), to: meta.b === null ? null : String(meta.b), sources, waterfall: await waterfall(engine), leaks: result, roi: view.roi, evidence });
+    const bytes = leakReport({ currency: await workspaceCurrency(engine), locale: isLocale(locale) ? locale : "en", generatedAt, sample: view.sample, lines: String(meta.n), from: meta.a === null ? null : String(meta.a), to: meta.b === null ? null : String(meta.b), sources, waterfall: await waterfall(engine), leaks: result, roi: view.roi, evidence });
     const w = await this.writable();
     await w.conn.query("BEGIN");
     try { await appendAudit(w, "report.leak_pdf", { findings: String(result.findings.length), bytes: String(bytes.byteLength), sample: String(view.sample) }); await w.conn.query("COMMIT"); }
@@ -664,14 +665,19 @@ export class VaultService {
     if (engine) await closeMemory(engine).catch(() => undefined);
     this.releaseLease?.(); this.releaseLease = null; this.dirty = false;
   }
+  async currencySet(currency: string) {
+    await this.write('workspace.currency_set', {}, async e => { const sql = await currencyChangeSql(e, currency); if (sql) await e.conn.query(sql); });
+    this.studio.clear();
+    return this.status();
+  }
   async status(): Promise<VaultStatus> {
     const base: VaultStatus = { licence:this.licence.view(), state: this.engine ? "unlocked" : "locked", exists: await this.storage.exists(), dirty: this.dirty,
-      writable: !!this.engine?.writable || !!this.engine?.warmReady, preparing: !!this.engine && !this.engine.writable && !!this.engine.warming && !this.engine.warmDone, recovered: this.recovered, lines: "0", products: "0", customers: "0", auditEntries: "0", schemaVersion: "0", generation: this.generation, tier: this.tier, lastSaved: this.lastSaved };
+      writable: !!this.engine?.writable || !!this.engine?.warmReady, preparing: !!this.engine && !this.engine.writable && !!this.engine.warming && !this.engine.warmDone, recovered: this.recovered, lines: "0", products: "0", customers: "0", auditEntries: "0", currency: "USD", schemaVersion: "0", generation: this.generation, tier: this.tier, lastSaved: this.lastSaved };
     if (!this.engine) return base;
     const data = (await this.engine.conn.query(`SELECT (SELECT count(*) FROM sales_lines)::VARCHAR AS lines,(SELECT count(*) FROM products)::VARCHAR AS products,(SELECT count(*) FROM customers)::VARCHAR AS customers,audit_count::VARCHAR AS entries,schema_version::VARCHAR AS version FROM vault_meta WHERE id=1`)).toArray()[0];
     // A role without cost access never has cost or margin selected: the query itself leaves them out.
     const access = await this.access(), cost = access.caps.includes("cost");
     const totals = (await this.engine.conn.query(`SELECT coalesce(sum(list_cents),0)::VARCHAR AS list,coalesce(sum(discount_cents),0)::VARCHAR AS discounts,coalesce(sum(freight_cents),0)::VARCHAR AS freight,coalesce(sum(rebate_cents),0)::VARCHAR AS rebates,coalesce(sum(list_cents-discount_cents-freight_cents-rebate_cents),0)::VARCHAR AS pocket${cost ? `,coalesce(sum(cost_cents),0)::VARCHAR AS cost,coalesce(sum(list_cents-discount_cents-freight_cents-rebate_cents-cost_cents),0)::VARCHAR AS margin` : ""} FROM sales_lines`)).toArray()[0];
-    return { ...base, lines: String(data.lines), products: String(data.products), customers: String(data.customers), auditEntries: String(data.entries), schemaVersion: String(data.version), totals: { cost: null, margin: null, ...totals } as VaultStatus["totals"], access };
+    return { ...base, currency: await workspaceCurrency(this.requireEngine()), lines: String(data.lines), products: String(data.products), customers: String(data.customers), auditEntries: String(data.entries), schemaVersion: String(data.version), totals: { cost: null, margin: null, ...totals } as VaultStatus["totals"], access };
   }
 }

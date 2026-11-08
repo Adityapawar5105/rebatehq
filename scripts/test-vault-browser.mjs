@@ -6,7 +6,7 @@ import path from "node:path";
 import os from "node:os";
 import { Script } from "node:vm";
 import { build } from "esbuild";
-import { chromium } from "@playwright/test";
+import { chromium, firefox } from "@playwright/test";
 import { signInLocal } from "./vault-test-auth.mjs";
 const auth = process.argv.includes("--auth"), full = process.argv.includes("--full"), makeFixture = process.argv.includes("--make-fixture");
 const channel = process.argv.find(v => v.startsWith("--browser="))?.split("=")[1] || "chrome";
@@ -31,10 +31,26 @@ const testCode = await readFile("test-results/vault-tests.js", "utf8");
 const productionWorkerCsp=(await fetch(base+'/spike/vault-worker.js')).headers.get('content-security-policy');
 assert.ok(productionWorkerCsp?.includes("connect-src 'self' blob:")&&!productionWorkerCsp.includes("'unsafe-eval'"),'Production worker must support verified WASM blobs under CSP');
 const profile = await mkdtemp(path.join(os.tmpdir(), "rebatehq-vault-"));
-const browserOptions = { ...(channel === "chromium" ? {} : { channel }), headless: true, viewport: { width: 1365, height: 900 } };
-let context = await chromium.launchPersistentContext(profile, browserOptions);
+const browserType = channel === "firefox" ? firefox : chromium;
+const browserOptions = { ...(["chromium","firefox"].includes(channel) ? {} : { channel }), headless: true, ...(channel === "firefox" ? {firefoxUserPrefs:{"dom.storageManager.prompt.testing":true,"dom.storageManager.prompt.testing.allow":true}} : {}), viewport: { width: 1365, height: 900 } };
+let context = await browserType.launchPersistentContext(profile, browserOptions);
 const results = { date: new Date().toISOString(), auth, channel, browser: context.browser().version(), machine: { cpu: os.cpus()[0].model, ram: String(os.totalmem()), os: os.type() + " " + os.release() }, checks: {}, measurements: {} };
+let quotaActive = false;
 async function configureContext() {
+// Firefox has no CDP quota/crash APIs. Test-only interception injects a real
+// QuotaExceededError at OPFS createWritable, without a production test switch.
+if(channel === 'firefox') {
+ await context.route('**/spike/vault-worker.js', async route => {
+  const response = await route.fetch();
+  const seam = `let __quota = ${quotaActive};
+addEventListener('message', e => { if(e.data?.__opfsQuotaTest !== undefined) { __quota=e.data.__opfsQuotaTest; e.stopImmediatePropagation(); } });
+const __write = FileSystemFileHandle.prototype.createWritable;
+FileSystemFileHandle.prototype.createWritable = function(...args) { if(__quota) return Promise.reject(new DOMException('Synthetic capacity exhaustion','QuotaExceededError')); return __write.apply(this,args); };\n`;
+  const headers={...response.headers()};delete headers['content-length'];delete headers['content-encoding'];
+  await route.fulfill({response,headers,body:seam+await response.text()});
+ });
+ await context.addInitScript(() => { const RealWorker = Worker; window.__vaultWorkers=[]; window.Worker=class extends RealWorker { constructor(...args) { super(...args); window.__vaultWorkers.push(this); } }; });
+}
 if(!auth)await context.route('**/api/licence?device=*',async r=>{
  const issued=Math.floor(Date.now()/1000),device=new URL(r.request().url()).searchParams.get('device'),payload=JSON.stringify({v:1,sub:'synthetic-lab-user',workspace:'synthetic-lab-workspace',device,tier:'scale',state:'active',issued,expires:issued+3600,offlineUntil:issued+86400,reason:''});
  const key=createPrivateKey({key:Buffer.from(process.env.LICENCE_SIGNING_KEY,'base64'),format:'der',type:'pkcs8'});
@@ -58,7 +74,11 @@ context.on("console", m => {
     if (markers.some(value => text.includes(value))) failures.push("Private fixture value appeared in a console argument");
   }).catch(() => { failures.push("Could not inspect console arguments"); }));
 });
-await context.addInitScript(() => { window.__vaultLongTasks = []; new PerformanceObserver(list => { for (const e of list.getEntries()) window.__vaultLongTasks.push(e.duration); }).observe({ type: "longtask", buffered: true }); });
+await context.addInitScript(() => {
+ window.__vaultLongTasks = [];
+ if(PerformanceObserver.supportedEntryTypes.includes('longtask')) new PerformanceObserver(list => { for(const e of list.getEntries()) window.__vaultLongTasks.push(e.duration); }).observe({type:'longtask',buffered:true});
+ else { let last=performance.now(); setInterval(() => { const now=performance.now(); if(now-last>50)window.__vaultLongTasks.push(now-last); last=now; },10); }
+});
 }
 await configureContext();
 // VAULT_TEST_CPU_THROTTLE (e.g. 4) slows each page to approximate a small CI runner.
@@ -66,6 +86,7 @@ const throttle = Number(process.env.VAULT_TEST_CPU_THROTTLE || 0);
 async function openPage() {
   const opened = await context.newPage();
   opened.on("pageerror", e => {failures.push("Unhandled page error");pageErrors.push(e.message);});
+  if(throttle > 1 && channel === 'firefox') throw Error('CDP CPU throttling is not available in Firefox');
   if (throttle > 1) await (await context.newCDPSession(opened)).send("Emulation.setCPUThrottlingRate", { rate: throttle });
   return opened;
 }
@@ -96,6 +117,10 @@ function csv(rows, first = 1) { const lines = []; for (let i = first; i < first 
 // Import Studio flow: add files, review the batch report, optionally confirm.
 async function review(paths) {
   await page.getByTestId("studio-files").setInputFiles(paths);
+  if(!results.checks.currencyUi){
+    const rate=page.getByLabel('Rate to workspace currency',{exact:true});await rate.fill('');await rate.pressSequentially('1.000',{delay:25});
+    assert.equal(await rate.inputValue(),'1.000','FX editing disabled the field or dropped typed digits');results.checks.currencyUi=true;
+  }
   await page.getByRole("button", { name: "Review import" }).click();
   await page.getByRole("heading", { name: "Batch report" }).waitFor({ timeout: 120000 });
 }
@@ -148,6 +173,7 @@ try {
   if(process.argv.includes('--pricing-bench')){const m=await worker('pricingBenchmark',{},900000);console.log(JSON.stringify(m,null,2));await writeFile('test-results/pricing-benchmark-'+channel+'.json',JSON.stringify({browser:results.browser,machine:results.machine,...m},null,2));process.exit(0);}
   if(process.argv.includes('--phase5a-bench')){const m=await worker('phase5aBenchmark',{},900000);console.log(JSON.stringify(m,null,2));await writeFile('test-results/phase5a-benchmark-'+channel+'.json',JSON.stringify({browser:results.browser,machine:results.machine,...m},null,2));process.exit(0);}
   if(process.argv.includes('--pricing-only')){console.log(JSON.stringify(await worker('pricing',{},600000),null,2));process.exit(0);}
+  await ready();assert.equal(await page.getByTestId('browser-support-notice').count(),0,'Supported browser is incorrectly flagged unsupported');results.checks.browserSupport=true;
   results.checks.pricingTools=await worker("pricingTools",{},180000);console.log("7C-2 worker transactions, audit, role denial and encrypted reload: PASS");
   results.checks.pricingOps=await worker("pricingOps",{},180000);console.log("7C-1 worker transactions, audit and encrypted reload: PASS");
   if(process.argv.includes("--pricing-ops-only")){console.log(JSON.stringify(results.checks.pricingOps));process.exit(0);}
@@ -155,6 +181,7 @@ try {
   results.checks.v1 = await worker("v1", { bytes: new Uint8Array(fixture) });
   results.checks.integrity = await worker("integrity");
   results.checks.studio = await worker("studio");
+  results.checks.currency = await worker("currency");
   results.checks.warmup = await worker("warmup");
   results.checks.mapper = await worker("mapper");
   results.checks.playground = await worker("playground");
@@ -207,9 +234,12 @@ try {
   results.checks.multiFormatImport = { files: marked.map(f => f.name), lines: 16 };
   await page.getByRole("link", { name: "Settings", exact: true }).click(); await page.getByRole("button", { name: "Request persistent storage" }).click();
   await page.getByRole("status").filter({ hasText: /Storage status refreshed/ }).waitFor(); results.checks.storage = await worker("storage");
+  if(channel === "firefox")assert.equal(results.checks.storage.persistent,true,"Granted persistent-storage permission did not take effect");
   results.checks.cipherOnly = await worker("cipherOnly");
   // A killed renderer cannot complete a pagehide save. Success must already be durable.
-  const cdp = await context.newCDPSession(page); await Promise.race([cdp.send("Page.crash").catch(() => undefined), new Promise(resolve => setTimeout(resolve, 3000))]); await page.close().catch(() => undefined);
+  if(channel === 'firefox') await page.evaluate(() => { for(const worker of window.__vaultWorkers)worker.terminate(); });
+  else { const cdp = await context.newCDPSession(page); await Promise.race([cdp.send('Page.crash').catch(() => undefined), new Promise(resolve => setTimeout(resolve,3000))]); }
+  await page.close().catch(() => undefined);
   page = await openPage(); await page.goto(base + route); await ready(); await unlock(); assert.equal(await page.getByTestId("line-count").getAttribute("data-value"), "100016"); results.checks.killedTabRecovery = true;
   await page.getByRole("button", { name: "Lock vault", exact: true }).click(); await ready();
   await page.getByLabel("Vault passphrase").fill("deliberately-wrong-passphrase"); await page.getByRole("button", { name: "Unlock vault", exact: true }).click(); await page.getByRole("alert").filter({ hasText: /Wrong passphrase/ }).waitFor(); results.checks.wrongPassphrase = true;
@@ -220,8 +250,11 @@ try {
   await importFiles([afterReload], 100017);
   await page.reload(); await ready(); await unlock(); assert.equal(await page.getByTestId("line-count").getAttribute("data-value"), "100017"); results.checks.firstMutationAfterUnlock = true;
   // 6A: storage near quota. The origin quota is cut to current usage + 64 KiB, so the next encrypted save cannot fit.
-  const quotaCdp = await context.newCDPSession(page), origin = new URL(base).origin;
-  const setQuota = async on => quotaCdp.send("Storage.overrideQuotaForOrigin", on ? { origin, quotaSize: await page.evaluate(async () => (await navigator.storage.estimate()).usage) + 65536 } : { origin });
+  const quotaCdp = channel === 'firefox' ? null : await context.newCDPSession(page), origin = new URL(base).origin;
+  const setQuota = async on => {
+    if(quotaCdp) return quotaCdp.send('Storage.overrideQuotaForOrigin',on?{origin,quotaSize:await page.evaluate(async()=>(await navigator.storage.estimate()).usage)+65536}:{origin});
+    quotaActive=on; await page.evaluate(on=>{for(const w of window.__vaultWorkers)w.postMessage({__opfsQuotaTest:on});},on);
+  };
   const nearQuota = path.resolve("test-results", "synthetic-near-quota.csv"); await writeFile(nearQuota, csv(1, 700002));
   const importOverQuota = async () => {
     await page.getByRole("link", { name: "Data Hub", exact: true }).click(); await review([nearQuota]);
@@ -235,7 +268,9 @@ try {
   // Fail again, free space, and Retry Save makes the same change durable.
   await importOverQuota(); await setQuota(false);
   await page.getByRole("button", { name: "Retry Save", exact: true }).click(); await page.getByRole("status").filter({ hasText: "Encrypted save completed." }).waitFor({ timeout: 120000 });
-  await page.reload(); await ready(); await unlock(); assert.equal(await page.getByTestId("line-count").getAttribute("data-value"), "100018"); await quotaCdp.detach().catch(() => undefined);
+  await page.reload(); await ready(); await unlock(); assert.equal(await page.getByTestId("line-count").getAttribute("data-value"), "100018"); await quotaCdp?.detach().catch(() => undefined);
+  results.measurements.quotaMechanism = channel === 'firefox' ? 'OPFS QuotaExceededError injection (test only)' : 'CDP origin quota';
+  results.measurements.terminationMechanism = channel === 'firefox' ? 'terminate workers without lock/save' : 'CDP renderer crash';
   results.checks.nearQuota = { failedSaveKeptPreviousSnapshot: true, retryAfterFreeingSpaceSaved: true };
   // Real-world shaped export (InvoiceNo/StockCode/UnitPrice, M/D/YY dates, blank customers): mapping must be
   // confirmed, rejected rows go to Fix Later, a bulk fix and group re-check loads them. Marker sits in StockCode.
@@ -324,7 +359,7 @@ try {
   for(const [label,value]of Object.entries({'Rule name':marker+' rule','Rule category':'Privacy category','Cost source (supplier)':'Privacy Mills','Cost rise threshold (%)':'5','Price increase (%)':'4.5'}))await page.getByLabel(label,{exact:true}).fill(value);
   await page.getByRole('button',{name:'Save rule version',exact:true}).click();await page.getByRole('status').filter({hasText:'Rule version saved.'}).waitFor();
   await page.getByRole('button',{name:'Simulate price change',exact:true}).click();await page.getByRole('heading',{name:'Change preview',exact:true}).waitFor();
-  await page.getByRole('cell',{name:'⚠ Yellow · owner review',exact:true}).waitFor();await page.getByRole('cell',{name:'104.50',exact:true}).first().waitFor();
+  await page.getByRole('cell',{name:'⚠ Yellow · owner review',exact:true}).waitFor();await page.getByRole('cell',{name:'$104.50',exact:true}).first().waitFor();
   await page.getByRole('button',{name:'Approve as Pricing Owner',exact:true}).click();await page.getByRole('heading',{name:'Export Studio',exact:true}).waitFor();
   const outputs=[];const capture=d=>outputs.push(d);page.on('download',capture);await page.getByRole('button',{name:'Export prices and change log',exact:true}).click();
   await page.getByRole('status').filter({hasText:/unverified until tested on a real import/}).waitFor();assert.equal(outputs.length,2,'Missing ERP export or change log');
@@ -344,8 +379,8 @@ try {
   await page.locator('nav a[href="#pricing"]').click();await page.getByRole('link',{name:'Increase planner',exact:true}).click();await page.getByRole('combobox',{name:'Segment value',exact:true}).selectOption('Privacy category');await page.getByLabel('Increase (%)',{exact:true}).fill('5');
   await page.getByRole('button',{name:'Create increase preview',exact:true}).click();await page.getByTestId('ops-draft').waitFor();
   const letterEvent=page.waitForEvent('download');await page.getByRole('button',{name:'Download draft increase letter',exact:true}).click();const letterText=await readFile(await(await letterEvent).path(),'utf8');assert.ok(letterText.includes('5')&&!letterText.includes('66.00'),'Letter leaked cost or omitted rate');await opsShot('planner');
-  await page.getByRole('button',{name:'Review draft and approval',exact:true}).click();await page.getByRole('cell',{name:'109.73',exact:true}).first().waitFor();await page.getByRole('button',{name:'Approve as Pricing Owner',exact:true}).click();await page.getByRole('heading',{name:'Export Studio',exact:true}).waitFor();
-  await page.getByRole('link',{name:'Price versions',exact:true}).click();await page.getByRole('button',{name:'Draft reversal',exact:true}).first().waitFor();await opsShot('versions');await page.getByRole('button',{name:'Draft reversal',exact:true}).first().click();await page.getByTestId('ops-draft').waitFor();await page.getByRole('button',{name:'Review draft and approval',exact:true}).click();await page.getByRole('cell',{name:'104.50',exact:true}).first().waitFor();await page.getByRole('button',{name:'Approve as Pricing Owner',exact:true}).click();await page.getByRole('heading',{name:'Export Studio',exact:true}).waitFor();
+  await page.getByRole('button',{name:'Review draft and approval',exact:true}).click();await page.getByRole('cell',{name:'$109.73',exact:true}).first().waitFor();await page.getByRole('button',{name:'Approve as Pricing Owner',exact:true}).click();await page.getByRole('heading',{name:'Export Studio',exact:true}).waitFor();
+  await page.getByRole('link',{name:'Price versions',exact:true}).click();await page.getByRole('button',{name:'Draft reversal',exact:true}).first().waitFor();await opsShot('versions');await page.getByRole('button',{name:'Draft reversal',exact:true}).first().click();await page.getByTestId('ops-draft').waitFor();await page.getByRole('button',{name:'Review draft and approval',exact:true}).click();await page.getByRole('cell',{name:'$104.50',exact:true}).first().waitFor();await page.getByRole('button',{name:'Approve as Pricing Owner',exact:true}).click();await page.getByRole('heading',{name:'Export Studio',exact:true}).waitFor();
   const reversed=[];const collect=d=>reversed.push(d);page.on('download',collect);await page.getByRole('button',{name:'Export prices and change log',exact:true}).click();await page.getByRole('status').filter({hasText:/unverified until tested on a real import/}).waitFor();page.off('download',collect);assert.equal(reversed.length,2);for(const d of reversed)assert.ok((await readFile(await d.path())).includes(Buffer.from('104.50')),'Reversal export differs');
   await page.getByRole('link',{name:'Price exceptions',exact:true}).click();await page.getByTestId('price-exceptions').waitFor();await page.getByLabel('Product',{exact:true}).fill(priceSku);await page.getByRole('button',{name:'Show results',exact:true}).click();await page.getByRole('table',{name:'Price exceptions'}).getByRole('cell',{name:priceSku,exact:true}).first().waitFor();await opsShot('exceptions');
   await page.getByRole('link',{name:'Contract expiry',exact:true}).click();await page.getByRole('table',{name:'Contract expiry'}).getByRole('cell',{name:expirySku,exact:true}).waitFor();await opsShot('expiry');
@@ -355,12 +390,15 @@ try {
 
   // 7C-2: new screens remain inside the authenticated request/console marker sensors.
   await page.getByRole('link',{name:'Price grid',exact:true}).click();await page.getByTestId('price-grid').waitFor();await page.getByLabel('Filter product, category or customer',{exact:true}).fill(priceSku);await page.getByRole('button',{name:'Load local rows',exact:true}).click();await page.waitForFunction(()=>document.querySelector('[data-testid=price-grid]')?.getAttribute('aria-busy')==='false');await page.waitForFunction(sku=>document.querySelector('[data-testid=grid-price-0]')?.getAttribute('aria-label')==='New unit price '+sku,priceSku);
-  await page.getByTestId('grid-price-0').evaluate(el=>{const transfer=new DataTransfer();transfer.setData('text/plain','120.01');el.dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:transfer}));});await page.waitForFunction(()=>document.querySelector('[data-testid="grid-price-0"]')?.value==='120.01');
-  await opsShot('grid');await page.getByTestId('grid-review').click();await page.getByRole('heading',{name:'Change preview',exact:true}).waitFor();await page.getByRole('cell',{name:'120.01',exact:true}).first().waitFor();await page.getByRole('button',{name:'Approve as Pricing Owner',exact:true}).click();await page.getByRole('heading',{name:'Export Studio',exact:true}).waitFor();
+  // Gecko discards constructor-supplied clipboardData on an untrusted ClipboardEvent.
+  // Supply the same DataTransfer on a bubbling paste event in every browser; this
+  // exercises the real React handler and parser without touching the OS clipboard.
+  await page.getByTestId('grid-price-0').evaluate(el=>{const transfer=new DataTransfer();transfer.setData('text/plain','120.01');const event=new Event('paste',{bubbles:true,cancelable:true});Object.defineProperty(event,'clipboardData',{value:transfer});el.dispatchEvent(event);});await page.waitForFunction(()=>document.querySelector('[data-testid="grid-price-0"]')?.value==='120.01');
+  await opsShot('grid');await page.getByTestId('grid-review').click();await page.getByRole('heading',{name:'Change preview',exact:true}).waitFor();await page.getByRole('cell',{name:'$120.01',exact:true}).first().waitFor();await page.getByRole('button',{name:'Approve as Pricing Owner',exact:true}).click();await page.getByRole('heading',{name:'Export Studio',exact:true}).waitFor();
   const gridDownloads=[];const receive=d=>gridDownloads.push(d);page.on('download',receive);await page.getByRole('button',{name:'Export prices and change log',exact:true}).click();await page.getByText('Generic file only: preserve the price kind, category, customer, quantity break and dates. Test with your ERP before applying.',{exact:true}).waitFor();page.off('download',receive);assert.equal(gridDownloads.length,2);
   const gridBytes=await readFile(await gridDownloads[0].path());await page.getByRole('link',{name:'Price-change landed check',exact:true}).click();await page.getByTestId('landed-check').waitFor();await page.getByTestId('landed-check').locator('input[type=file]').setInputFiles({name:'synthetic-next-erp.csv',mimeType:'text/csv',buffer:gridBytes});await page.getByRole('button',{name:'Compare locally',exact:true}).click();await page.getByText('1 of 1 exported rows applied.',{exact:true}).waitFor();await opsShot('landed');
   await page.getByRole('link',{name:'Rules and previews',exact:true}).click();await page.getByLabel('Saved rule',{exact:true}).selectOption({index:1});const slider=page.getByTestId('what-if').locator('input[type=range]');await slider.focus();await slider.press('ArrowRight');await page.getByTestId('what-if').getByText('Exact rounded impact on release. Save the rate, then simulate to create an approvable draft.',{exact:true}).waitFor();
-  await page.locator('nav a[href="#margin"]').click();await page.getByRole('link',{name:'Competitor prices',exact:true}).click();await page.getByTestId('competitor-product').fill(priceSku);await page.getByLabel('Competitor',{exact:true}).fill(marker+' competitor');await page.getByLabel('New unit price',{exact:true}).fill('119.01');await page.getByLabel('Source (plain text; never fetched)',{exact:true}).fill(marker+' local note');await page.getByRole('button',{name:'Save observation locally',exact:true}).click();await page.getByRole('cell',{name:marker+' competitor',exact:true}).waitFor();await page.getByRole('cell',{name:'119.01',exact:true}).waitFor();await opsShot('competitors');
+  await page.locator('nav a[href="#margin"]').click();await page.getByRole('link',{name:'Competitor prices',exact:true}).click();await page.getByTestId('competitor-product').fill(priceSku);await page.getByLabel('Competitor',{exact:true}).fill(marker+' competitor');await page.getByLabel('New unit price',{exact:true}).fill('119.01');await page.getByLabel('Source (plain text; never fetched)',{exact:true}).fill(marker+' local note');await page.getByRole('button',{name:'Save observation locally',exact:true}).click();await page.getByRole('cell',{name:marker+' competitor',exact:true}).waitFor();await page.getByRole('cell',{name:'$119.01',exact:true}).waitFor();await opsShot('competitors');
   await page.getByRole('link',{name:'Cost to serve',exact:true}).click();await page.getByTestId('service-orders').waitFor();assert.equal(await page.getByTestId('line-count').getAttribute('data-value'),invoiceRowsBefore);
   results.checks.pricingToolsUi={excelPaste:true,ownerApproval:true,scopeExport:true,landed:true,exactSlider:true,competitor:true,costToServe:true,invoiceRowsUnchanged:true};
 
@@ -478,7 +516,7 @@ try {
     console.log(`Margin on 2M lines: waterfall ${results.measurements.margin2M.waterfallMs} ms, product drill ${results.measurements.margin2M.drillProductMs} ms, customer drill ${results.measurements.margin2M.drillCustomerMs} ms, leak finder ${results.measurements.margin2M.leakFinderMs} ms.`);
     for (const rows of [1000000, 2000000]) {
       results.measurements[`seed${rows}`] = await worker("seed", { rows });
-      await context.close(); context = await chromium.launchPersistentContext(profile, browserOptions); await configureContext();
+      await context.close(); context = await browserType.launchPersistentContext(profile, browserOptions); await configureContext();
       page = await openPage(); await page.goto(base + route); await ready(); await unlock();
       assert.equal(await page.getByTestId("line-count").getAttribute("data-value"), String(rows));
       results.measurements[`navigationToUnlocked${rows}Ms`] = await page.evaluate(() => Math.round(performance.now()));

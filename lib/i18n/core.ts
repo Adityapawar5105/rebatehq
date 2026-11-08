@@ -68,14 +68,14 @@ export function decimal(locale: Locale, value: string | number | bigint, digits?
   // Intl.NumberFormat formats decimal strings exactly (no float rounding of large cents values).
   return numberFormat(locale, places, places).format(text as unknown as number);
 }
-/** Whole cents (integer text or bigint) as an amount with two decimals. No currency symbol: the vault does not record a currency yet. */
+/** Whole cents as a numeric input/export amount. UI money uses currency(), with the vault currency. */
 export function money(locale: Locale, cents: string | bigint): string {
   const c = BigInt(cents), neg = c < BigInt(0), abs = neg ? -c : c, hundred = BigInt(100);
   return decimal(locale, `${neg ? "-" : ""}${abs / hundred}.${(abs % hundred).toString().padStart(2, "0")}`, 2);
 }
 /**
- * Whole cents with a currency symbol, for screens that showed "$" before 7U (Margin, Leak Report).
- * The vault has no currency column yet, so USD is assumed there, as before (ASSUMPTIONS.md).
+ * Whole cents in the workspace currency. The caller supplies the encrypted-vault setting;
+ * USD is the backward-compatible default for old vaults and standalone legacy callers.
  */
 export function currency(locale: Locale, cents: string | bigint, code = "USD"): string {
   const c = BigInt(cents), neg = c < BigInt(0), abs = neg ? -c : c, hundred = BigInt(100);

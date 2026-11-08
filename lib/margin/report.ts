@@ -8,11 +8,11 @@ import { RULES } from "./leaks";
 import type { Waterfall } from "./views";
 import type { RoiSummary } from "./roi";
 import { currency, dateTime, date, integer, percent, say, translate, type Locale, type MessageKey, type Params } from "../i18n/core";
-export type ReportInput = { locale?: Locale; generatedAt: string; sample: boolean; lines: string; from: string | null; to: string | null; sources: string[]; waterfall: Waterfall; leaks: LeakResult; roi: RoiSummary; evidence: Record<string, LeakRow[]> };
+export type ReportInput = { currency?: string; locale?: Locale; generatedAt: string; sample: boolean; lines: string; from: string | null; to: string | null; sources: string[]; waterfall: Waterfall; leaks: LeakResult; roi: RoiSummary; evidence: Record<string, LeakRow[]> };
 const INK: Color = [0.1, 0.1, 0.12], MUTED: Color = [0.42, 0.42, 0.46], ACCENT: Color = [0.11, 0.37, 0.62], LOSS: Color = [0.7, 0.16, 0.12], BAR: Color = [0.78, 0.85, 0.93], PANEL: Color = [0.95, 0.96, 0.97];
 export function leakReport(r: ReportInput): Uint8Array {
   const locale: Locale = r.locale ?? "en";
-  const tr = (key: MessageKey, params?: Params) => translate(locale, key, params), $ = (cents: string) => currency(locale, cents), n = (v: string | number) => integer(locale, v), text = (s: string) => say(locale, s);
+  const tr = (key: MessageKey, params?: Params) => translate(locale, key, params), $ = (cents: string) => currency(locale, cents, r.currency ?? "USD"), n = (v: string | number) => integer(locale, v), text = (s: string) => say(locale, s);
   const pdf = new Pdf(), L = 48, R = pdf.width - 48;
   let y = 0;
   const newPage = () => { pdf.page(); y = pdf.height - 56; pdf.text(L, 28, tr("report.rebatehqMarginLeakReport2"), 7, false, MUTED); };
@@ -20,7 +20,8 @@ export function leakReport(r: ReportInput): Uint8Array {
   newPage();
   pdf.text(L, y, tr("report.marginLeakReport"), 22, true, INK); y -= 18;
   pdf.text(L, y, tr(r.sample ? "report.generatedSample" : "report.generated", { when: dateTime(locale, r.generatedAt, true) }), 9, false, r.sample ? LOSS : MUTED); y -= 13;
-  pdf.text(L, y, Pdf.fit(tr(r.from ? "report.linesRangeSources" : "report.linesSources", { count: Number(r.lines), from: date(locale, r.from), to: date(locale, r.to), sources: r.sources.join(", ") }), 9, R - L), 9, false, MUTED); y -= 26;
+  pdf.text(L, y, Pdf.fit(tr(r.from ? "report.linesRangeSources" : "report.linesSources", { count: Number(r.lines), from: date(locale, r.from), to: date(locale, r.to), sources: r.sources.join(", ") }), 9, R - L), 9, false, MUTED); y -= 13;
+  pdf.text(L,y,tr("fx.moneyNote",{code:r.currency ?? "USD"}),9,false,MUTED); y -= 13;
   // Headline
   pdf.rect(L, y - 58, R - L, 66, PANEL);
   pdf.text(L + 14, y - 12, tr("report.leakDollarsFound"), 10, false, MUTED);
@@ -76,7 +77,7 @@ export function leakReport(r: ReportInput): Uint8Array {
   pdf.text(L, y, tr("report.howTheseNumbersAre"), 11, true, INK); y -= 14;
   for (const t of [
     tr("report.moneyIsExactInteger"),
-    tr("report.aTierSPeer"),
+    tr("report.aTierSPeer",{minimum:$(String(RULES.modeMinListCents))}),
     tr("report.overDiscountedAtLeast", { value: RULES.excessBp / 100, value2: RULES.patternShare * 100 }),
     tr("report.unrecoveredFreightFreightAbove", { value: RULES.freightShareBp / 100, count: Number(r.leaks.checked.uncostedLines) }),
     tr("report.returnsAndCreditsLines", { count: Number(r.leaks.checked.creditLines) }),

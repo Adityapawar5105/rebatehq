@@ -6,7 +6,7 @@ export type Kind = "csv" | "tsv" | "txt" | "xlsx" | "xlsm" | "xls" | "xlsb" | "o
 export type Encoding = "utf-8" | "utf-16le" | "utf-16be" | "windows-1252";
 export type Delimiter = "," | ";" | "\t" | "|";
 export type DateFormat = "YYYY-MM-DD" | "DD/MM/YYYY" | "MM/DD/YYYY" | "DD.MM.YYYY" | "DD-MM-YYYY";
-export type Settings = { sheet: string | null; headerRow: number; headerDepth: 1 | 2 | 3; delimiter: Delimiter; encoding: Encoding; decimal: "dot" | "comma"; dateFormat: DateFormat };
+export type Settings = { sheet: string | null; headerRow: number; headerDepth: 1 | 2 | 3; delimiter: Delimiter; encoding: Encoding; decimal: "dot" | "comma"; dateFormat: DateFormat; sourceCurrency?: string; fxRate?: string };
 export type StudioIssue = { row: number; column: string; message: string };
 export class StudioError extends Error {}
 

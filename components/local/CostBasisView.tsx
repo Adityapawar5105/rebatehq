@@ -5,7 +5,7 @@ import type { BasisId, CostBasisView as View } from "@/lib/cost/basis";
 import { BASES, BASIS_LABEL, NO_CATEGORY } from "@/lib/cost/basis";
 import { fmt, msg, say, t } from "@/lib/i18n";
 import styles from "./vault.module.css";
-const money = (c: string) => fmt.money(c);
+const money = (c: string) => fmt.currency(c);
 const groupName = (g: string) => g === NO_CATEGORY ? t("basis.noCategory") : g;
 /** Cost basis selector: margin under invoice, last, average and replacement cost, side by side, per product group. */
 export function CostBasisView({ client, version, busy, operation, canChoose }: { client: VaultClient; version: string; busy: boolean; operation: (f: () => Promise<void>) => Promise<void>; canChoose: boolean }) {
