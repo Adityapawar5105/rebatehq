@@ -2,6 +2,7 @@ import * as rebates from '../rebate/store';
 import {salesInput} from '../rebate/input';
 import { currencyChangeSql, workspaceCurrency } from './currency';
 import {customerHealth} from '../margin/monitor';
+import {valuesTotals} from '../grid/sql';
 import * as grid from '../pricing/grid';
 import * as market from '../pricing/market';
 import {whatIf} from '../pricing/whatif';
@@ -300,9 +301,9 @@ export class VaultService {
     await engine.conn.query('UPDATE vault_meta SET pricing_revision=pricing_revision+1 WHERE id=1');
     const d=await findDifferences(engine);await engine.conn.query(await recordSql(d.found,new Date().toISOString()));
   }
-  async rebateProgress(offset=0){this.rebateTier();return rebates.progress(this.requireEngine(),offset);}
+  async rebateProgress(offset=0,grid?:unknown){this.rebateTier();return rebates.progress(this.requireEngine(),offset,grid);}
   async rebateState(){this.rebateTier();return rebates.state(this.requireEngine());}
-  async rebateRows(id:string,offset=0){this.rebateTier();return rebates.evidence(this.requireEngine(),id,offset);}
+  async rebateRows(id:string,offset=0,grid?:unknown){this.rebateTier();return rebates.evidence(this.requireEngine(),id,offset,grid);}
   async rebateSave(input:rebates.ProgramInput){
     this.rebateTier();const plan=await rebates.saveSql(this.requireEngine(),input,this.identity.userId);
     await this.write('rebate.program_saved',{id:plan.id,actor:this.identity.userId},async e=>{await e.conn.query(plan.sql);await this.financialBody(e);});return this.rebateState();
@@ -315,9 +316,9 @@ export class VaultService {
     this.touch(); return { status: await this.status(), groups: await fixGroups(engine), ...out };
   }
   async marginWaterfall(filters?: Filters) { return waterfall(this.requireEngine(), filters); }
-  async marginDrill(dim: Dim, filters?: Filters, sort?: "margin" | "pocket" | "rate") { return drill(this.requireEngine(), dim, filters, sort); }
+  async marginDrill(dim: Dim, filters?: Filters, sort?: "margin" | "pocket" | "rate", grid?: unknown) { return drill(this.requireEngine(), dim, filters, sort, 100, grid); }
   async marginWhale(filters?: Filters) { return whale(this.requireEngine(), this.tier, filters); }
-  async marginMath(metric: Metric, filters?: Filters, offset = 0) { return math(this.requireEngine(), metric, filters, offset); }
+  async marginMath(metric: Metric, filters?: Filters, offset = 0, grid?: unknown) { return math(this.requireEngine(), metric, filters, offset, grid); }
   private async isSample(engine: Engine) { const s = await listSources(engine); return s.length > 0 && s.every(x => x.name.startsWith(PLAYGROUND_PREFIX)); }
   private async leakResult() {
     const engine = this.requireEngine();
@@ -338,10 +339,13 @@ export class VaultService {
     }
     this.touch(); return { result, roi: await roiSummary(engine), sample, recorded: changed };
   }
-  async leakRows(id: string, offset = 0) { await this.leakResult(); return leakRows(this.requireEngine(), id, offset); }
+  async leakRows(id: string, offset = 0, grid?: unknown) { await this.leakResult(); return leakRows(this.requireEngine(), id, offset, 25, grid); }
   async roi() { return roiSummary(this.requireEngine()); }
   /** Read-only, cost-gated by dispatch. Does not renew the inactivity timer or
    * write the ROI ledger. Home only requests this while the screen is mounted. */
+  /** Selection totals for a grid held in the browser (7V-3a): DuckDB sums only the values the caller already
+   * shows, so it reveals nothing the role cannot see. Read-only; no audit row. */
+  async gridTotals(types:unknown,values:unknown){return valuesTotals(this.requireEngine(),types,values);}
   async homeMonitor(thresholdBp='500'){
     const e=this.requireEngine();
     try{
@@ -617,19 +621,19 @@ export class VaultService {
   }  /** Guardrails and price floors are visible to every role; rules, simulations and their costs only to roles that edit pricing. */
   async competitorList(product:string,customer:string|null=null){this.opsTier();return market.competitors(this.requireEngine(),product,customer);}
   async competitorAdd(input:market.CompetitorInput){this.opsTier();await this.pricingWrite('pricing.competitor_recorded',async e=>{await e.conn.query(await market.competitorSql(e,input,this.identity.userId));});return this.competitorList(input.product);}
-  async priceGrid(offset=0,search=''){return grid.gridRows(this.requireEngine(),this.licence.tier!=='starter',offset,search);}
+  async priceGrid(offset=0,search='',query?:unknown){return grid.gridRows(this.requireEngine(),this.licence.tier!=='starter',offset,search,query);}
   async priceGridPaste(text:string,keys:string[],start:number){return grid.pastedPrices(text,keys,start);}
   async priceGridDraft(edits:grid.GridEdit[],revision:string){await this.requireOwnerNamed();let id='';await this.pricingWrite('pricing.grid_drafted',async e=>{id=await grid.gridDraft(e,edits,revision,this.identity.userId,this.licence.tier);});return this.rulePreview(id);}
   async ruleWhatIf(id:string,increase:string,exact:boolean){this.opsTier();if(typeof exact!=='boolean')grid.fail();return whatIf(this.requireEngine(),id,increase,exact,this.dataVersion);}
-  async serviceOrders(offset=0){this.opsTier();return serviceCost.serviceOrders(this.requireEngine(),offset);}
+  async serviceOrders(offset=0,query?:unknown){this.opsTier();return serviceCost.serviceOrders(this.requireEngine(),offset,query);}
   async serviceFlag(key:string,free:boolean){this.opsTier();await this.pricingWrite('pricing.delivery_confirmed',async e=>{await e.conn.query(await serviceCost.serviceFlagSql(e,key,free,this.identity.userId));});return this.serviceOrders();}
-  async priceLandedState(id?:string,offset=0){this.opsTier();return market.landedState(this.requireEngine(),id,offset);}
+  async priceLandedState(id?:string,offset=0,query?:unknown){this.opsTier();return market.landedState(this.requireEngine(),id,offset,query);}
   async priceLandedCheck(receipt:string,file:File,signal?:AbortSignal){this.opsTier();const e=this.requireEngine(),r=(await pricing.rows(e,`SELECT rows_json FROM price_export_receipts WHERE id=${sqlText(receipt)}`))[0];if(!r)grid.fail();const result=await market.landedFile(file,JSON.parse(r.rows_json),signal),id=crypto.randomUUID();await this.pricingWrite('pricing.landed_checked',async db=>{await db.conn.query(`INSERT INTO price_landed_checks VALUES(${sqlText(id)},${sqlText(receipt)},${sqlText(file.name.slice(0,160))},${sqlText(new Date().toISOString())},${sqlText(JSON.stringify(result))})`);});return this.priceLandedState(id);}
   private opsTier(){if(this.licence.tier==='starter')throw new VaultError('LICENCE',msg('ops.needPro'));}
   async marginBridge(input?:BridgeInput){this.opsTier();return bridge(this.requireEngine(),input);}
   async priceOpsState(){this.opsTier();return ops.opsState(this.requireEngine());}
   async priceExceptions(input?:ops.ExceptionInput){this.opsTier();return ops.exceptions(this.requireEngine(),input);}
-  async priceExpiry(days:number,asOf?:string,offset?:number){this.opsTier();return ops.expiry(this.requireEngine(),days,asOf,offset);}
+  async priceExpiry(days:number,asOf?:string,offset?:number,query?:unknown){this.opsTier();return ops.expiry(this.requireEngine(),days,asOf,offset,query);}
   async pricePlan(input:ops.PlanInput){this.opsTier();await this.requireOwnerNamed();let run='';const details={actor:this.identity.userId,run_id:''};await this.write('pricing.plan_drafted',details,async e=>{run=await ops.planDraft(e,input,this.identity.userId);details.run_id=run;});return this.rulePreview(run);}
   async priceRollback(version:string){this.opsTier();await this.requireOwnerNamed();let run='';const details={actor:this.identity.userId,run_id:'',version_id:version};await this.write('pricing.rollback_drafted',details,async e=>{run=await grid.gridRollback(e,version,this.identity.userId,this.licence.tier)??await ops.rollbackDraft(e,version,this.identity.userId);details.run_id=run;});return this.rulePreview(run);}
   async priceLetter(id:string,locale:import('../i18n/core').Locale){this.opsTier();const file=await ops.increaseLetter(this.requireEngine(),id,locale);await this.pricingWrite('pricing.letter_exported',async()=>{});return file;}
@@ -650,7 +654,7 @@ export class VaultService {
     await this.pricingWrite('pricing.simulated',async e=>{const r=await pricing.simulate(e,id);await e.conn.query(r.sql);result=r;});
     return {...await pricing.preview(this.requireEngine(),result!.id),ms:result!.ms};
   }
-  async rulePreview(id:string,offset=0){if(id.startsWith("ops-"))this.opsTier();return id.startsWith("grid-")?grid.gridPreview(this.requireEngine(),id,this.licence.tier,offset):pricing.preview(this.requireEngine(),id,offset);}
+  async rulePreview(id:string,offset=0,query?:unknown){if(id.startsWith("ops-"))this.opsTier();return id.startsWith("grid-")?grid.gridPreview(this.requireEngine(),id,this.licence.tier,offset,query):pricing.preview(this.requireEngine(),id,offset,query);}
   async ruleApprove(id:string){if(id.startsWith("ops-"))this.opsTier();await this.pricingWrite('pricing.approved',async e=>{const isGrid=id.startsWith('grid-');await e.conn.query(await pricing.approveSql(e,id,this.identity.userId,isGrid?await grid.gridApproval(e,id,this.licence.tier):await ops.approvalMatrixSql(e,id),isGrid?await grid.gridPreview(e,id,this.licence.tier):undefined));});await this.derived(this.requireEngine());await this.save();const config=await backupConfig(this.storage.scope);if(config.directory)await this.backupNow().catch(()=>undefined);return {preview:await this.rulePreview(id),backup:await this.backupStatus()};}
   async priceExport(id:string,profile:ErpProfile,format:'csv'|'xlsx'){
     if(id.startsWith('ops-'))this.opsTier();

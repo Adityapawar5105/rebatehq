@@ -13,9 +13,10 @@ export async function dispatch(service: VaultService, request: Request, hooks: H
   service.licenceGuard(request.action);
   const { progress } = hooks;
   switch (request.action) {
-    case "rebateProgress":return service.rebateProgress(request.data.offset);
+    case "gridTotals":return service.gridTotals(request.data.types,request.data.values);
+    case "rebateProgress":return service.rebateProgress(request.data.offset,request.data.grid);
     case "rebateState":return service.rebateState();
-    case "rebateRows":return service.rebateRows(request.data.id,request.data.offset);
+    case "rebateRows":return service.rebateRows(request.data.id,request.data.offset,request.data.grid);
     case "rebateSave":return service.rebateSave(request.data.input);
     case "rebateDelete":return service.rebateDelete(request.data.id);
     case "rebateRecalculate":return service.rebateRecalculate();
@@ -23,13 +24,13 @@ export async function dispatch(service: VaultService, request: Request, hooks: H
     case "homeMonitor": return service.homeMonitor(request.data.thresholdBp);
     case "competitorList": return service.competitorList(request.data.product,request.data.customer);
     case "competitorAdd": return service.competitorAdd(request.data.input);
-    case "priceGrid": return service.priceGrid(request.data.offset,request.data.search);
+    case "priceGrid": return service.priceGrid(request.data.offset,request.data.search,request.data.grid);
     case "priceGridPaste": return service.priceGridPaste(request.data.text,request.data.keys,request.data.start);
     case "priceGridDraft": return service.priceGridDraft(request.data.edits,request.data.revision);
     case "ruleWhatIf": return service.ruleWhatIf(request.data.id,request.data.increase,request.data.exact);
-    case "priceLandedState": return service.priceLandedState(request.data.id,request.data.offset);
+    case "priceLandedState": return service.priceLandedState(request.data.id,request.data.offset,request.data.grid);
     case "priceLandedCheck": return service.priceLandedCheck(request.data.receipt,request.data.file,hooks.signal());
-    case "serviceOrders": return service.serviceOrders(request.data.offset);
+    case "serviceOrders": return service.serviceOrders(request.data.offset,request.data.grid);
     case "serviceFlag": return service.serviceFlag(request.data.key,request.data.free);
     case "relayView":case "relayRegister":case "relayJoin":case "relayRotate":case "relaySync":case "relayShare":case "relayRequest":case "relayDecide":case "relayComment":case "relayRetry":case "relayDiscard":return service.relay(request,hooks.signal());
     case "home": return service.home();
@@ -50,7 +51,7 @@ export async function dispatch(service: VaultService, request: Request, hooks: H
     case "marginBridge": return service.marginBridge(request.data.input);
     case "priceOpsState": return service.priceOpsState();
     case "priceExceptions": return service.priceExceptions(request.data.input);
-    case "priceExpiry": return service.priceExpiry(request.data.days,request.data.asOf,request.data.offset);
+    case "priceExpiry": return service.priceExpiry(request.data.days,request.data.asOf,request.data.offset,request.data.grid);
     case "pricePlan": return service.pricePlan(request.data.input);
     case "priceRollback": return service.priceRollback(request.data.version);
     case "priceLetter": return service.priceLetter(request.data.id,request.data.locale);
@@ -59,7 +60,7 @@ export async function dispatch(service: VaultService, request: Request, hooks: H
     case "guardSet": return service.guardSet(request.data.input);
     case "ruleSave": return service.ruleSave(request.data.input);
     case "ruleSimulate": return service.ruleSimulate(request.data.id);
-    case "rulePreview": return service.rulePreview(request.data.id, request.data.offset);
+    case "rulePreview": return service.rulePreview(request.data.id, request.data.offset, request.data.grid);
     case "ruleApprove": return service.ruleApprove(request.data.id);
     case "priceExport": return service.priceExport(request.data.id, request.data.profile, request.data.format);
     case "backupStatus": return service.backupStatus();
@@ -105,11 +106,11 @@ export async function dispatch(service: VaultService, request: Request, hooks: H
     case "playgroundRemove": return service.playgroundRemove();
     case "creditsLoad": return service.creditsLoad(request.data.sourceId);
     case "marginWaterfall": return service.marginWaterfall(request.data.filters);
-    case "marginDrill": return service.marginDrill(request.data.dim, request.data.filters, request.data.sort);
+    case "marginDrill": return service.marginDrill(request.data.dim, request.data.filters, request.data.sort, request.data.grid);
     case "marginWhale": return service.marginWhale(request.data.filters);
-    case "marginMath": return service.marginMath(request.data.metric, request.data.filters, request.data.offset ?? 0);
+    case "marginMath": return service.marginMath(request.data.metric, request.data.filters, request.data.offset ?? 0, request.data.grid);
     case "leaks": return service.leaks();
-    case "leakRows": return service.leakRows(request.data.id, request.data.offset ?? 0);
+    case "leakRows": return service.leakRows(request.data.id, request.data.offset ?? 0, request.data.grid);
     case "leakReport": return service.leakReport(request.data.locale);
     case "search": return service.search(request.data.text);
     case "priceCheck": return service.priceCheck(request.data.productId, request.data.customerId, request.data.quantity);

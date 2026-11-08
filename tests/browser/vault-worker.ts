@@ -621,10 +621,10 @@ async function pricingToolsFlow(){
   const draft=await call('priceGridDraft',{edits,revision:state.revision});assert(draft.rows[0].after==='1201','Grid cents differ');await call('ruleApprove',{id:draft.id});
   const exported=await call('priceExport',{id:draft.id,profile:'generic',format:'xlsx'}),receipts=await call('priceLandedState');
   const checked=await call('priceLandedCheck',{receipt:receipts.receipts[0].id,file:new File([exported.blob],'synthetic-erp.xlsx')});assert(checked.applied==='1','Landed round trip differs');
-  const orders=await call('serviceOrders');assert(orders.length===1,'Service invoice missing');await call('serviceFlag',{key:orders[0].invoice_key,free:true});const leaks=await call('leaks');assert(leaks.result.findings.some((f:any)=>f.type==='free_delivery_loss'&&f.cents==='100'),'Free delivery loss missing');
+  const orders=(await call('serviceOrders')).rows;assert(orders.length===1,'Service invoice missing');await call('serviceFlag',{key:orders[0].invoice_key,free:true});const leaks=await call('leaks');assert(leaks.result.findings.some((f:any)=>f.type==='free_delivery_loss'&&f.cents==='100'),'Free delivery loss missing');
   await call('rolePreview',{role:'sales_rep'});for(const action of ['homeMonitor','competitorList','priceGrid','ruleWhatIf','priceLandedState','serviceOrders']){let denied=false;try{await call(action);}catch(e){denied=(e as {code:string}).code==='FORBIDDEN';}assert(denied,'Rep received pricing tools');}await call('rolePreview',{role:null});
   assert((await service.verify()).valid,'Tools audit invalid');await service.lock();await service.unlock(secret);
-  assert((await call('competitorList',{product:'TOOL-P'})).rows.length===1,'Competitor lost on reload');assert((await call('priceLandedState',{id:checked.checks[0].id})).applied==='1','Landed receipt lost');assert((await call('serviceOrders'))[0].free_delivery,'Confirmation lost');assert((await service.verify()).valid,'Reloaded tools audit invalid');
+  assert((await call('competitorList',{product:'TOOL-P'})).rows.length===1,'Competitor lost on reload');assert((await call('priceLandedState',{id:checked.checks[0].id})).applied==='1','Landed receipt lost');assert((await call('serviceOrders')).rows[0].free_delivery,'Confirmation lost');assert((await service.verify()).valid,'Reloaded tools audit invalid');
   return {competitor:true,paste:true,draft:true,approval:true,scopedXlsx:true,landed:true,serviceLoss:true,repDenied:true,audit:true,encryptedReload:true};
  }finally{await service.lock();await reset(scope);}
 }

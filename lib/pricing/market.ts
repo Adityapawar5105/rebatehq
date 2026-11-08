@@ -12,6 +12,9 @@ import {pricePoint} from '../quotes/quotes';
 import {centsText} from '../margin/decimal';
 import {csvSafeCell} from '../csv';
 import {msg} from '../i18n/core';
+import {gridPage,gridQuery,memoryPage} from '../grid/sql';
+import type {ClientColumn,GridMeta,GridSpec} from '../grid/core';
+export const LANDED_GRID:GridSpec={product:'text',expected:'money',actual:'money',row:'text',status:'text'};
 import {CsvTokenizer,decodeChunks,detectDelimiter} from '../studio/text';
 import {checkZip,sheetNames,sheetGrid} from '../studio/sheets';
 import * as XLSX from 'xlsx';
@@ -85,10 +88,12 @@ export async function landedFile(file:File,receipt:Receipt,signal?:AbortSignal){
  }
  if(!headers||!data.length)fail('pc2.empty');return diffPrices(receipt,headers as unknown as string[],data);
 }
-export async function landedState(e:Engine,id?:string,offset=0){
+export async function landedState(e:Engine,id?:string,offset=0,grid?:unknown){
  const receipts=await rows(e,'SELECT id,run_id,created_at,profile FROM price_export_receipts ORDER BY created_at DESC,id DESC LIMIT 50');
  const checks=await rows(e,'SELECT id,receipt_id,file_name,created_at FROM price_landed_checks ORDER BY created_at DESC,id DESC LIMIT 50');
  const check=id?(await rows(e,`SELECT results_json FROM price_landed_checks WHERE id=${Q(id)}`))[0]:null;
  const all:LandedRow[]=check?JSON.parse(check.results_json):[];offset=Math.max(0,Math.floor(offset));
- return {receipts,checks,count:String(all.length),applied:String(all.filter(r=>r.status==='applied').length),offset,rows:all.slice(offset,offset+50)};
+ const cols:ClientColumn<LandedRow>[]=[{id:'product',type:'text',value:r=>r.product},{id:'expected',type:'money',value:r=>r.expected},{id:'actual',type:'money',value:r=>r.actual},{id:'row',type:'text',value:r=>r.row},{id:'status',type:'text',value:r=>r.status}];
+ const page=await memoryPage(e,all,cols,LANDED_GRID,gridQuery(LANDED_GRID,grid),{limit:50,offset});
+ return {receipts,checks,count:page.grid.matched,applied:String(all.filter(r=>r.status==='applied').length),offset,rows:page.rows,grid:page.grid};
 }

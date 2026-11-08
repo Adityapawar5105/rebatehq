@@ -1,4 +1,7 @@
 import type {Engine} from '../vault/engine';
+import {gridPage,gridQuery,memoryPage} from '../grid/sql';
+import type {ClientColumn,GridSpec} from '../grid/core';
+import {PREVIEW_GRID} from './rules';
 import {VaultError,type Tier} from '../vault/protocol';
 import {sqlText as Q,minorUnits} from '../spike/exact';
 import {dec,rescale,rha} from '../margin/decimal';
@@ -21,14 +24,16 @@ export function pastedPrices(text:string,keys:string[],start:number):GridEdit[]{
  if(cells.length>FULL_GRID_LIMIT||start+cells.length>keys.length)return fail('pc2.pasteError');
  return cells.map((value,i)=>{if(!/^(0|[1-9]\d{0,11})(\.\d{1,2})?$/.test(value))throw new VaultError('PRICING',msg('pc2.pasteAt',{row:start+i+1,column:value.includes('\t')?2:1}));moneyCell(value);return {key:keys[start+i],price:value};});
 }
-export async function gridRows(e:Engine,advanced:boolean,offset=0,search=''){
+/** Grid columns (7V-3a) of the editable price grid. */
+export const PRICE_GRID:GridSpec={product_label:'text',customer_id:'text',tier:'text',qty_break:'decimal',price:'money'};
+export async function gridRows(e:Engine,advanced:boolean,offset=0,search='',grid?:unknown){
  if(!Number.isInteger(offset)||offset<0||typeof search!=='string'||search.length>160)fail();
  const filter=search?`WHERE contains(lower(coalesce(product_id,'')||' '||category||' '||coalesce(customer_id,'')),lower(${Q(search)}))`:'';
  const sql=`SELECT 'l:'||product_id AS key,product_id,category,NULL::VARCHAR AS customer_id,'' AS tier,'0.0000' AS qty_break,NULL::VARCHAR AS valid_from,NULL::VARCHAR AS valid_to,list_price::VARCHAR AS price,current_cost::VARCHAR AS cost,NULL::VARCHAR AS raw_category,NULL::VARCHAR AS raw_tier FROM products WHERE list_price IS NOT NULL
  ${advanced?`UNION ALL SELECT 'm:'||m.id,m.product_id,CASE WHEN m.product_id IS NULL THEN coalesce(m.category,'') ELSE coalesce(p.category,'') END,m.customer_id,coalesce(m.tier,''),m.qty_break::VARCHAR,m.valid_from::VARCHAR,m.valid_to::VARCHAR,m.price::VARCHAR,p.current_cost::VARCHAR,m.category,m.tier FROM price_matrix m LEFT JOIN products p ON p.product_id=m.product_id WHERE m.valid_to IS NULL OR m.valid_to>DATE ${Q(day())}`:''}`;
- const count=String((await rows(e,`SELECT count(*)::VARCHAR n FROM (${sql}) t ${filter}`))[0].n);
- const data=await rows(e,`SELECT * FROM (${sql}) t ${filter} ORDER BY key LIMIT 50 OFFSET ${offset}`);
- return {revision:String((await rows(e,'SELECT pricing_revision::VARCHAR n FROM vault_meta WHERE id=1'))[0].n),count,offset,advanced,rows:data.map(toRow)};
+ const q=gridQuery(PRICE_GRID,grid);
+ const page=await gridPage(e,`SELECT *,coalesce(product_id,category) AS product_label FROM (${sql}) t ${filter}`,PRICE_GRID,q,{fallback:'g.key',limit:50,offset});
+ return {revision:String((await rows(e,'SELECT pricing_revision::VARCHAR n FROM vault_meta WHERE id=1'))[0].n),count:page.grid.matched,offset,advanced,rows:page.rows.map(toRow),grid:page.grid};
 }
 function toRow(r:Record<string,any>):GridRow{return {key:r.key,product:r.product_id,category:r.category,rawCategory:r.raw_category??null,rawTier:r.raw_tier??null,customer:r.customer_id,tier:r.tier,quantityBreak:r.qty_break,from:r.valid_from,to:r.valid_to,price:r.price,cost:r.cost};}
 async function selected(e:Engine,keys:string[]){
@@ -69,10 +74,14 @@ export async function gridDraft(e:Engine,edits:GridEdit[],revision:string,actor:
  return store(e,actor,await changes(e,await selected(e,edits.map(x=>x.key)),edits),tier!=='starter'&&edits.some(x=>x.key.startsWith('m:')));
 }
 export async function gridData(e:Engine,id:string,tier:Tier){const r=(await rows(e,`SELECT * FROM price_grid_drafts WHERE run_id=${Q(id)}`))[0];if(!r)fail();if(tier==='starter'&&r.required_tier!=='starter')throw new VaultError('LICENCE',msg('ops.needPro'));return JSON.parse(r.rows_json) as Change[];}
-export async function gridPreview(e:Engine,id:string,tier:Tier,offset=0):Promise<Preview>{
- const data=await gridData(e,id,tier),run=(await rows(e,`SELECT status FROM rule_runs WHERE id=${Q(id)}`))[0];offset=Math.max(0,Math.floor(offset));
+export async function gridPreview(e:Engine,id:string,tier:Tier,offset=0,grid?:unknown):Promise<Preview>{
+ const all=await gridData(e,id,tier),run=(await rows(e,`SELECT status FROM rule_runs WHERE id=${Q(id)}`))[0];offset=Math.max(0,Math.floor(offset));
+ const q=gridQuery(PREVIEW_GRID,grid),cents=(v:string|null)=>v===null?null:String(v);
+ const unit=(v:string,c:string|null)=>c===null?null:String(BigInt(v)-BigInt(c));
+ const cols:ClientColumn<Change>[]=[{id:'product',type:'text',value:r=>r.product??r.category},{id:'tier',type:'text',value:r=>r.tier},{id:'before',type:'money',value:r=>cents(r.price)},{id:'after',type:'money',value:r=>cents(r.after)},{id:'cost',type:'money',value:r=>cents(r.cost)},{id:'quantity',type:'decimal',value:r=>r.quantity},{id:'impact',type:'money',value:r=>cents(r.impact)},{id:'guard',type:'text',value:r=>r.guard},{id:'before_margin',type:'money',value:r=>unit(r.price,r.cost)},{id:'after_margin',type:'money',value:r=>unit(r.after,r.cost)}];
+ const paged=await memoryPage(e,all,cols,PREVIEW_GRID,q,{limit:50,offset});
  const margin=(v:string,c:string|null)=>{const m=lineFromCents({list:BigInt(v),cost:c===null?null:BigInt(c),discount:BigInt(0),freight:BigInt(0),rebate:BigInt(0)}).margin;return m===null?null:String(m);};
- return {id,count:String(data.length),impact:String(data.reduce((s,r)=>s+BigInt(r.impact),BigInt(0))),red:String(data.filter(r=>r.guard==='red').length),offset,explanation:msg('pc2.gridDraft'),status:run.status,ms:0,rows:data.slice(offset,offset+50).map(r=>({product:r.product??r.category,tier:r.tier,rowKey:r.key,scope:{customer:r.customer,tier:r.tier,quantity:r.quantityBreak,from:r.from,to:r.to,kind:r.key.startsWith('l:')?'list':'matrix'},before:r.price,after:r.after,cost:r.cost,quantity:r.quantity,impact:r.impact,guard:r.guard,beforeMargin:margin(r.price,r.cost),afterMargin:margin(r.after,r.cost)} as PriceRow))};
+ return {id,count:String(all.length),impact:String(all.reduce((s,r)=>s+BigInt(r.impact),BigInt(0))),red:String(all.filter(r=>r.guard==='red').length),offset,explanation:msg('pc2.gridDraft'),status:run.status,ms:0,grid:paged.grid,rows:paged.rows.map(r=>({product:r.product??r.category,tier:r.tier,rowKey:r.key,scope:{customer:r.customer,tier:r.tier,quantity:r.quantityBreak,from:r.from,to:r.to,kind:r.key.startsWith('l:')?'list':'matrix'},before:r.price,after:r.after,cost:r.cost,quantity:r.quantity,impact:r.impact,guard:r.guard,beforeMargin:margin(r.price,r.cost),afterMargin:margin(r.after,r.cost)} as PriceRow))};
 }
 export async function gridApproval(e:Engine,id:string,tier:Tier){
  const data=await gridData(e,id,tier),current=await selected(e,data.map(r=>r.key)),sql:string[]=[];

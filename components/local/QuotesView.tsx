@@ -8,6 +8,7 @@ import type { Guard, LineInput, PricePoint, PriceSource, QuoteStatus, QuoteSumma
 import type { CreditSignal } from "@/lib/quotes/credit";
 import { fmt, msg, say, t, type MessageKey } from "@/lib/i18n";
 import styles from "./vault.module.css";
+import { DataGrid } from "@/components/ui/DataGrid";
 
 type Op = (f: () => Promise<void>) => Promise<void>;
 type Tab = "check" | "new" | "inbox" | "history";
@@ -119,19 +120,17 @@ export function QuotesView({ client, userId, caps, tier, busy, operation }: { cl
         {seesCost && <div><dt>{t("quotes.marginAmount")}</dt><dd>{money(quote.marginCents)}</dd></div>}
       </dl>
       {seesCost && !!quote.uncostedLines && <p className={styles.muted}>{t("quotes.uncosted", { count: quote.uncostedLines })}</p>}
-      <div className={styles.tableWrap}><table className={styles.table}><thead><tr>
-        {[t("quotes.sku"), t("quotes.quantity"), t("quotes.unitPrice"), t("quotes.book"), t("quotes.zone"), t("quotes.lineTotal"), ...(seesCost ? [t("quotes.lineMargin")] : []), ...(editable ? [t("quotes.actions")] : [])].map(h => <th key={h} scope="col">{h}</th>)}
-      </tr></thead><tbody>{quote.lines.map((l, i) => <tr key={l.lineNo} data-zone={l.guard}>
-        <td className={styles.wrap}><span translate="no">{l.productId}</span><br/><span className={styles.muted}>{l.description}</span>
-          <Thermometer value={l.unitCents} floor={l.floorCents} target={l.targetCents} start={l.startCents} label={t("quotes.meterLabel", { sku: l.productId })}/></td>
-        <td>{editable ? <input aria-label={t("quotes.quantityFor", { sku: l.productId })} inputMode="decimal" value={lines[i]?.quantity ?? ""} onChange={e => setLines(lines.map((x, j) => j === i ? { ...x, quantity: e.target.value } : x))}/> : fmt.decimal(trimQty(l.quantity))}</td>
-        <td>{editable ? <input aria-label={t("quotes.priceFor", { sku: l.productId })} inputMode="decimal" value={lines[i]?.price ?? ""} onChange={e => setLines(lines.map((x, j) => j === i ? { ...x, price: e.target.value } : x))} data-testid={`price-${l.lineNo}`}/> : fmt.currency(l.unitCents)}</td>
-        <td>{money(l.bookCents)}<br/><span className={styles.muted}>{t(SOURCE[l.source])}</span></td>
-        <td><Zone guard={l.guard}/></td>
-        <td>{fmt.currency(l.totalCents)}</td>
-        {seesCost && <td>{l.marginRate == null ? t("quotes.none") : fmt.percent(l.marginRate)}</td>}
-        {editable && <td><button type="button" disabled={busy} onClick={() => void operation(() => save(lines.filter((_, j) => j !== i)))}>{t("quotes.remove")}</button></td>}
-      </tr>)}</tbody></table></div>
+      <DataGrid label={t("quotes.linesLabel")} testId="quote-lines" rows={quote.lines} rowKey={l => String(l.lineNo)} rowProps={l => ({ "data-zone": l.guard })} columns={[
+        { id: "sku", name: t("quotes.sku"), value: l => l.productId, cell: l => <span className={styles.wrap}><span translate="no">{l.productId}</span><br/><span className={styles.muted}>{l.description}</span>
+          <Thermometer value={l.unitCents} floor={l.floorCents} target={l.targetCents} start={l.startCents} label={t("quotes.meterLabel", { sku: l.productId })}/></span> },
+        { id: "quantity", name: t("quotes.quantity"), type: "decimal", value: l => trimQty(l.quantity), cell: l => { const i = quote.lines.indexOf(l); return editable ? <input aria-label={t("quotes.quantityFor", { sku: l.productId })} inputMode="decimal" value={lines[i]?.quantity ?? ""} onChange={e => setLines(lines.map((x, j) => j === i ? { ...x, quantity: e.target.value } : x))}/> : fmt.decimal(trimQty(l.quantity)); } },
+        { id: "unit", name: t("quotes.unitPrice"), type: "money", value: l => String(l.unitCents), cell: l => { const i = quote.lines.indexOf(l); return editable ? <input aria-label={t("quotes.priceFor", { sku: l.productId })} inputMode="decimal" value={lines[i]?.price ?? ""} onChange={e => setLines(lines.map((x, j) => j === i ? { ...x, price: e.target.value } : x))} data-testid={`price-${l.lineNo}`}/> : fmt.currency(l.unitCents); } },
+        { id: "book", name: t("quotes.book"), type: "money", value: l => l.bookCents === null || l.bookCents === undefined ? null : String(l.bookCents), cell: l => <>{money(l.bookCents)}<br/><span className={styles.muted}>{t(SOURCE[l.source])}</span></> },
+        { id: "zone", name: t("quotes.zone"), value: l => t(GUARD[l.guard]), cell: l => <Zone guard={l.guard}/> },
+        { id: "total", name: t("quotes.lineTotal"), type: "money", value: l => String(l.totalCents) },
+        ...(seesCost ? [{ id: "margin", name: t("quotes.lineMargin"), type: "percent" as const, value: (l: QuoteView["lines"][number]) => l.marginRate == null ? null : String(l.marginRate), cell: (l: QuoteView["lines"][number]) => l.marginRate == null ? t("quotes.none") : fmt.percent(l.marginRate) }] : []),
+        ...(editable ? [{ id: "actions", name: t("quotes.actions"), cell: (l: QuoteView["lines"][number]) => <button type="button" disabled={busy} onClick={() => void operation(() => save(lines.filter((_, j) => j !== quote.lines.indexOf(l))))}>{t("quotes.remove")}</button> }] : []),
+      ]}/>
       {editable && <>
         <button type="button" disabled={busy || !lines.length} onClick={() => void operation(() => save(lines))}>{t("quotes.reprice")}</button>
         <form className={styles.quoteForm} onSubmit={e => { e.preventDefault(); if (!add.productId.trim()) return; void operation(async () => { await save([...lines, { productId: add.productId.trim(), quantity: add.quantity.trim() || "1", price: "" }]); setAdd({ productId: "", quantity: "1" }); }); }}>
@@ -157,12 +156,14 @@ export function QuotesView({ client, userId, caps, tier, busy, operation }: { cl
     </section>}
 
     {(tab === "inbox" || tab === "history") && <section className={styles.card} aria-labelledby="quote-list-heading"><h2 id="quote-list-heading">{t(tab === "inbox" ? "quotes.inbox.heading" : "quotes.history.heading")}</h2>
-      {!list.length ? <p>{t(tab === "inbox" ? "quotes.inbox.empty" : "quotes.history.empty")}</p> : <div className={styles.tableWrap}><table className={styles.table}><thead><tr>
-        {[t("quotes.number"), t("quotes.customer"), t("quotes.statusLabel"), t("quotes.zone"), t("quotes.total"), t("quotes.updated")].map(h => <th key={h} scope="col">{h}</th>)}
-      </tr></thead><tbody>{list.map(q => <tr key={q.id}>
-        <td><button type="button" disabled={busy} onClick={() => open(q.id)}><span translate="no">{q.number}</span></button></td>
-        <td>{q.customerName || q.customerId}</td><td>{t(STATUS[q.status])}</td><td><Zone guard={q.worst}/></td><td>{fmt.currency(q.totalCents)}</td><td>{fmt.date(q.updatedAt.slice(0, 10))}</td>
-      </tr>)}</tbody></table></div>}
+      {!list.length ? <p>{t(tab === "inbox" ? "quotes.inbox.empty" : "quotes.history.empty")}</p> : <DataGrid label={t(tab === "inbox" ? "quotes.inbox.heading" : "quotes.history.heading")} testId="quote-list" rows={list} rowKey={q => q.id} columns={[
+        { id: "number", name: t("quotes.number"), value: q => q.number, cell: q => <button type="button" disabled={busy} onClick={() => open(q.id)}><span translate="no">{q.number}</span></button> },
+        { id: "customer", name: t("quotes.customer"), value: q => q.customerName || q.customerId },
+        { id: "status", name: t("quotes.statusLabel"), value: q => t(STATUS[q.status]) },
+        { id: "zone", name: t("quotes.zone"), value: q => t(GUARD[q.worst]), cell: q => <Zone guard={q.worst}/> },
+        { id: "total", name: t("quotes.total"), type: "money", value: q => String(q.totalCents) },
+        { id: "updated", name: t("quotes.updated"), type: "date", value: q => q.updatedAt.slice(0, 10) },
+      ]}/>}
     </section>}
   </>;
 }

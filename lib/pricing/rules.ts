@@ -1,4 +1,6 @@
 import { workspaceCurrency } from '../vault/currency';
+import { gridPage, gridQuery } from '../grid/sql';
+import type { GridMeta, GridSpec } from '../grid/core';
 import type { Engine } from "../vault/engine";
 import { VaultError } from "../vault/protocol";
 import { sqlText as Q } from "../spike/exact";
@@ -13,7 +15,9 @@ import { msg } from "../i18n/core";
 export type RuleInput = { id?: string; name: string; category: string; vendor: string; threshold: string; increase: string };
 export type GuardInput = { tier: string; category: string; start: string; target: string; floor: string };
 export type PriceRow = { product: string; tier: string; rowKey?:string; scope?:{customer:string|null;tier:string;quantity:string;from:string|null;to:string|null;kind:string}; before: string; after: string; cost: string | null; quantity: string; impact: string; guard: string; beforeMargin: string | null; afterMargin: string | null };
-export type Preview = { id: string; count: string; impact: string; red: string; rows: PriceRow[]; offset: number; explanation: string; status: string; ms: number };
+export type Preview = { id: string; count: string; impact: string; red: string; rows: PriceRow[]; offset: number; explanation: string; status: string; ms: number; grid?: GridMeta };
+/** Grid columns (7V-3a) of every change preview, SQL or in memory. */
+export const PREVIEW_GRID: GridSpec = { product: "text", tier: "text", before: "money", after: "money", cost: "money", quantity: "decimal", impact: "money", guard: "text", before_margin: "money", after_margin: "money" };
 export const MAX_PREVIEW_PAIRS = 250_000;
 const today = () => "DATE "+Q(new Date().toISOString().slice(0,10));
 const bad = (text: string): never => { throw new VaultError("PRICING", text); };
@@ -61,13 +65,14 @@ SELECT product_id,tier,category,current_cost,before_cents,CAST(${rhaSql(`CAST(be
   return { id: run, count, ms: Math.round(performance.now()-started), sql: `INSERT INTO rule_runs(id,rule_id,run_date,affected_rows,status,rule_version,base_revision) SELECT ${Q(run)},${Q(id)},${Q(new Date().toISOString())},${count},'preview',${Number(r.version)},pricing_revision FROM vault_meta WHERE id=1;
 INSERT INTO rule_changes SELECT ${Q(run)},p.product_id,p.tier,p.before_cents,p.after_cents,p.current_cost,p.qty,CAST(${rhaSql("CAST(p.after_cents-p.before_cents AS HUGEINT)*CAST(p.qty*10000 AS HUGEINT)","10000")} AS BIGINT),CASE WHEN g.id IS NULL THEN 'unset' WHEN p.after_cents<g.floor THEN 'red' WHEN p.after_cents<g.target THEN 'yellow' ELSE 'green' END FROM md_price_copy p LEFT JOIN price_guardrails g ON g.tier=p.tier AND g.category=p.category;` };
 }
-export async function preview(e: Engine, id: string, offset = 0): Promise<Preview> {
-  offset = Math.max(0,Math.floor(offset));
+export async function preview(e: Engine, id: string, offset = 0, grid?: unknown): Promise<Preview> {
+  offset = Math.max(0,Math.floor(offset)); const q = gridQuery(PREVIEW_GRID, grid);
   const r = (await rows(e,`SELECT r.status,v.explanation FROM rule_runs r JOIN rule_revisions v ON v.rule_id=r.rule_id AND v.version=r.rule_version WHERE r.id=${Q(id)}`))[0]; if (!r) return bad(msg("rules.thePreviewNoLonger"));
   const c = (await rows(e,`SELECT count(*)::VARCHAR AS n,coalesce(sum(impact_cents),0)::VARCHAR AS impact,count(*) FILTER(WHERE guard_status='red')::VARCHAR AS red FROM rule_changes WHERE run_id=${Q(id)}`))[0];
-  const page = await rows(e,`SELECT product_id,tier,before_cents::VARCHAR AS b,after_cents::VARCHAR AS a,cost_cents::VARCHAR AS c,quantity::VARCHAR AS q,impact_cents::VARCHAR AS i,guard_status AS g FROM rule_changes WHERE run_id=${Q(id)} ORDER BY product_id,tier LIMIT 50 OFFSET ${offset}`);
+  const paged = await gridPage(e,`SELECT product_id AS product,tier,before_cents::VARCHAR AS before,after_cents::VARCHAR AS after,cost_cents::VARCHAR AS cost,quantity::VARCHAR AS quantity,impact_cents::VARCHAR AS impact,guard_status AS guard,(before_cents-cost_cents)::VARCHAR AS before_margin,(after_cents-cost_cents)::VARCHAR AS after_margin FROM rule_changes WHERE run_id=${Q(id)}`, PREVIEW_GRID, q, { fallback: "g.product,g.tier", limit: 50, offset });
+  const page = paged.rows.map(p => ({ product_id: p.product, tier: p.tier, b: p.before, a: p.after, c: p.cost, q: p.quantity, i: p.impact, g: p.guard })) as Record<string, any>[];
   const margin = (p: string,c: string|null) => lineFromCents({list:BigInt(p),cost:c===null?null:BigInt(c),discount:BigInt(0),rebate:BigInt(0),freight:BigInt(0)}).margin;
-  return { id,status:r.status,explanation:r.explanation,count:c.n,impact:c.impact,red:c.red,offset,ms:0,rows:page.map(p=>({ product:p.product_id,tier:p.tier,before:p.b,after:p.a,cost:p.c,quantity:p.q,impact:p.i,guard:p.g,beforeMargin:p.c===null?null:String(margin(p.b,p.c)),afterMargin:p.c===null?null:String(margin(p.a,p.c)) })) };
+  return { id,status:r.status,explanation:r.explanation,count:c.n,impact:c.impact,red:c.red,offset,ms:0,grid:paged.grid,rows:page.map(p=>({ rowKey:p.product_id+'|'+p.tier,product:p.product_id,tier:p.tier,before:p.b,after:p.a,cost:p.c,quantity:p.q,impact:p.i,guard:p.g,beforeMargin:p.c===null?null:String(margin(p.b,p.c)),afterMargin:p.c===null?null:String(margin(p.a,p.c)) })) };
 }
 export async function approveSql(e: Engine, id: string, actor: string, matrixOverride?:string, previewOverride?:Preview) {
   await owner(e,actor);

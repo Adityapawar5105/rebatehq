@@ -5,6 +5,7 @@ import type { VaultStatus } from "@/lib/vault/protocol";
 import type { FixKind, FixView, Scan } from "@/lib/cleanup/item-master";
 import { fmt, msg, say, t, type MessageKey } from "@/lib/i18n";
 import styles from "./vault.module.css";
+import { DataGrid } from "@/components/ui/DataGrid";
 const KIND: Record<FixKind, MessageKey> = { merge_duplicates: "cleanup.mergeDuplicates", normalize_uom: "cleanup.unitSpelling", set_category: "cleanup.missingCategory" };
 const skippedNote = (n: string) => n !== "0" ? " " + msg("cleanup.undoSkipped", { count: Number(n) }) : "";
 /** Item master cleanup assistant: every one-click fix is audited and can be undone. */
@@ -41,24 +42,34 @@ export function CleanupView({ client, version, busy, operation, onStatus, setMes
     {scan.duplicates.length > 0 && <><h3>{t("cleanup.duplicateSkusExtra", { count: Number(scan.totals.duplicateProducts) })}</h3>
       {scan.duplicates.some(g => g.confidence === "certain") && <p><button className={styles.primary} disabled={busy} onClick={mergeAll}>{t("cleanup.mergeAllCertainDuplicates")}</button> <span className={styles.small}>{t("cleanup.onlyIdsThatDiffer")}</span></p>}
       {batch.length > 0 && <p><button disabled={busy} onClick={undoBatch}>{t("cleanup.undoTheLastBatch", { count: batch.length })}</button></p>}
-      <div className={styles.tableWrap}><table className={styles.table} aria-label={t("cleanup.duplicateSkus")}><thead><tr><th scope="col">{t("cleanup.productIds")}</th><th scope="col">{t("cleanup.invoiceLines")}</th><th scope="col">{t("cleanup.keep")}</th><th scope="col">{t("cleanup.confidence")}</th><th scope="col">{t("cleanup.fix3")}</th></tr></thead>
-        <tbody>{scan.duplicates.map(g => <tr key={g.key}><td className={styles.wrap} translate="no">{g.members.map(m => m.product).join(" · ")}</td><td>{fmt.int(g.lines)}</td><td translate="no">{g.canonical}</td>
-          <td>{g.confidence === "certain" ? t("cleanup.sameIdApartFrom") : t("cleanup.differByPunctuationCheck")}</td>
-          <td><button disabled={busy} aria-label={t("cleanup.mergeLookAlikeIds", { count: g.members.length - 1, canonical: g.canonical })} onClick={() => apply("merge_duplicates", g.key)}>{t("cleanup.mergeInto", { canonical: g.canonical })}</button></td></tr>)}</tbody></table></div></>}
+      <DataGrid label={t("cleanup.duplicateSkus")} testId="cleanup-duplicates" rows={scan.duplicates} rowKey={g => g.key} columns={[
+        { id: "ids", name: t("cleanup.productIds"), value: g => g.members.map(m => m.product).join(" · "), cell: g => <span className={styles.wrap} translate="no">{g.members.map(m => m.product).join(" · ")}</span> },
+        { id: "lines", name: t("cleanup.invoiceLines"), type: "int", num: true, value: g => g.lines },
+        { id: "keep", name: t("cleanup.keep"), value: g => g.canonical, cell: g => <span translate="no">{g.canonical}</span> },
+        { id: "confidence", name: t("cleanup.confidence"), value: g => g.confidence === "certain" ? t("cleanup.sameIdApartFrom") : t("cleanup.differByPunctuationCheck") },
+        { id: "fix", name: t("cleanup.fix3"), cell: g => <button disabled={busy} aria-label={t("cleanup.mergeLookAlikeIds", { count: g.members.length - 1, canonical: g.canonical })} onClick={() => apply("merge_duplicates", g.key)}>{t("cleanup.mergeInto", { canonical: g.canonical })}</button> },
+      ]}/></>}
     {scan.units.length > 0 && <><h3>{t("cleanup.unitOfMeasureProducts", { count: Number(scan.totals.unitProducts) })}</h3>
       <p className={styles.small}>{t("cleanup.spellingsOfOneUnit")}</p>
-      <div className={styles.tableWrap}><table className={styles.table} aria-label={t("cleanup.unitSpellings")}><thead><tr><th scope="col">{t("cleanup.storedAs")}</th><th scope="col">{t("cleanup.products2")}</th><th scope="col">{t("cleanup.examples2")}</th><th scope="col">{t("cleanup.fix2")}</th></tr></thead>
-        <tbody>{scan.units.map(u => <tr key={u.from}><td translate="no">{u.from || <span translate="yes">{t("cleanup.blank2")}</span>}</td><td>{fmt.int(u.products)}</td><td className={styles.wrap} translate="no">{u.examples.join(", ")}</td>
-          <td>{u.kind === "spelling" && u.to ? <button disabled={busy} aria-label={t("cleanup.spellAs2", { from: u.from, to: u.to })} onClick={() => apply("normalize_uom", u.from)}>{t("cleanup.spellAs", { to: u.to })}</button>
+      <DataGrid label={t("cleanup.unitSpellings")} testId="cleanup-units" rows={scan.units} rowKey={u => u.from} columns={[
+        { id: "from", name: t("cleanup.storedAs"), value: u => u.from, cell: u => <span translate="no">{u.from || <span translate="yes">{t("cleanup.blank2")}</span>}</span> },
+        { id: "products", name: t("cleanup.products2"), type: "int", num: true, value: u => u.products },
+        { id: "examples", name: t("cleanup.examples2"), value: u => u.examples.join(", "), cell: u => <span className={styles.wrap} translate="no">{u.examples.join(", ")}</span> },
+        { id: "fix", name: t("cleanup.fix2"), cell: u => <>{u.kind === "spelling" && u.to ? <button disabled={busy} aria-label={t("cleanup.spellAs2", { from: u.from, to: u.to })} onClick={() => apply("normalize_uom", u.from)}>{t("cleanup.spellAs", { to: u.to })}</button>
             : <><label className={styles.small}>{t("cleanup.unitFor")}{" "}{u.from || t("cleanup.blank")}<select value={pick[u.from] ?? ""} onChange={e => setPick({ ...pick, [u.from]: e.target.value })}><option value="">{t("cleanup.chooseAUnit")}</option>{scan.unitChoices.map(c => <option key={c}>{c}</option>)}</select></label>
-              <button disabled={busy || !pick[u.from]} onClick={() => apply("normalize_uom", u.from, pick[u.from])}>{t("cleanup.use")}{" "}{pick[u.from] || "…"}</button></>}</td></tr>)}</tbody></table></div></>}
+              <button disabled={busy || !pick[u.from]} onClick={() => apply("normalize_uom", u.from, pick[u.from])}>{t("cleanup.use")}{" "}{pick[u.from] || "…"}</button></>}</> },
+      ]}/></>}
     {scan.categories.length > 0 && <><h3>{t("cleanup.missingCategoriesProducts", { count: Number(scan.totals.uncategorised) })}</h3>
       <p className={styles.small}>{t("cleanup.groupedByTheStart")}</p>
-      <div className={styles.tableWrap}><table className={styles.table} aria-label={t("cleanup.missingCategories")}><thead><tr><th scope="col">{t("cleanup.idPrefix")}</th><th scope="col">{t("cleanup.products")}</th><th scope="col">{t("cleanup.examples")}</th><th scope="col">{t("cleanup.suggestion")}</th><th scope="col">{t("cleanup.fix")}</th></tr></thead>
-        <tbody>{scan.categories.map(c => <tr key={c.key}><td translate="no">{c.key}</td><td>{fmt.int(c.products)}</td><td className={styles.wrap} translate="no">{c.examples.join(", ")}</td><td>{c.suggestion ? t("cleanup.productsAgree", { suggestion: c.suggestion, count: Number(c.support) }) : t("cleanup.notEnoughEvidence")}</td>
-          <td>{c.suggestion && <button disabled={busy} aria-label={t("cleanup.setCategoryForPrefix", { suggestion: c.suggestion, key: c.key })} onClick={() => apply("set_category", c.key)}>{t("cleanup.set", { suggestion: c.suggestion })}</button>}
+      <DataGrid label={t("cleanup.missingCategories")} testId="cleanup-categories" rows={scan.categories} rowKey={c => c.key} columns={[
+        { id: "prefix", name: t("cleanup.idPrefix"), value: c => c.key, cell: c => <span translate="no">{c.key}</span> },
+        { id: "products", name: t("cleanup.products"), type: "int", num: true, value: c => c.products },
+        { id: "examples", name: t("cleanup.examples"), value: c => c.examples.join(", "), cell: c => <span className={styles.wrap} translate="no">{c.examples.join(", ")}</span> },
+        { id: "suggestion", name: t("cleanup.suggestion"), value: c => c.suggestion ?? null, cell: c => c.suggestion ? t("cleanup.productsAgree", { suggestion: c.suggestion, count: Number(c.support) }) : t("cleanup.notEnoughEvidence") },
+        { id: "fix", name: t("cleanup.fix"), cell: c => <>{c.suggestion && <button disabled={busy} aria-label={t("cleanup.setCategoryForPrefix", { suggestion: c.suggestion, key: c.key })} onClick={() => apply("set_category", c.key)}>{t("cleanup.set", { suggestion: c.suggestion })}</button>}
             <label className={styles.small}>{t("cleanup.categoryFor", { key: c.key })}<input value={cat[c.key] ?? ""} maxLength={160} onChange={e => setCat({ ...cat, [c.key]: e.target.value })} /></label>
-            <button disabled={busy || !(cat[c.key] ?? "").trim()} onClick={() => apply("set_category", c.key, cat[c.key])}>{t("cleanup.useMyCategory")}</button></td></tr>)}</tbody></table></div></>}
+            <button disabled={busy || !(cat[c.key] ?? "").trim()} onClick={() => apply("set_category", c.key, cat[c.key])}>{t("cleanup.useMyCategory")}</button></> },
+      ]}/></>}
     {scan.truncated && <p className={styles.small}>{t("cleanup.showingTheLargestGroups")}</p>}
     <h3>{t("cleanup.fixHistory")}</h3>
     {!history.length ? <p className={styles.small}>{t("cleanup.noFixesAppliedYet")}</p> : <ul data-testid="cleanup-history">{history.map(h => <li key={h.id}>{t(KIND[h.kind])} · {say(h.summary)} · {t("cleanup.cells", { count: Number(h.cells) })} · {fmt.dateTime(h.appliedAt)}{" "}

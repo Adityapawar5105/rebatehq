@@ -127,12 +127,18 @@ async function review(paths) {
 }
 async function importFiles(paths, lines, acknowledge = false) {
   await review(paths);
-  if (acknowledge) await page.getByRole("checkbox").check();
+  if (acknowledge) await page.getByTestId("studio-ack").check();
   await page.getByRole("button", { name: "Confirm and import locally" }).click();
   await page.locator(`[data-testid="line-count"][data-value="${lines}"]`).waitFor({ timeout: 120000 });
 }
 async function clearBatch() { await page.getByRole("button", { name: "Clear batch" }).click(); await page.getByRole("heading", { name: "Batch report" }).waitFor({ state: "detached" }); }
 
+/** "$1,234.56" or "-CA$0.05" (en) to exact cents, without floating point. */
+const centsOf=text=>{const t=text.trim(),neg=t.startsWith('-')||t.startsWith('\u2212'),[i,f='']=t.replace(/[^0-9.]/g,'').split('.');return String((neg?-1n:1n)*BigInt((i||'0')+f.padEnd(2,'0').slice(0,2)));};
+const intOf=text=>text.replace(/[^0-9-]/g,'');
+async function gridColumn(grid,n){return grid.locator('tbody tr td:nth-child('+n+')').allInnerTexts();}
+async function until(test,message,ms=30000){const end=Date.now()+ms;for(;;){if(await test())return;if(Date.now()>end)throw new Error(message);await new Promise(r=>setTimeout(r,200));}}
+const ordered=(values,dir)=>values.every((v,i)=>i===0||(dir==='asc'?BigInt(values[i-1])<=BigInt(v):BigInt(values[i-1])>=BigInt(v)));
 async function rebatesUi(){
  const savedContext=context,savedPage=page,active=dataPlaneActive;
  context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-rebates-')),browserOptions);await configureContext();page=await openPage();
@@ -145,13 +151,14 @@ async function rebatesUi(){
   const agreement=Buffer.from('program_id,party,rate_percent,threshold_amount,period_start,period_end,calculation_mode,to_amount,eligible_skus,excluded_skus,party_type,rebate_treatment\n'+ref+','+customer+',2,0,2026-01-01,2026-03-31,retroactive,,,,customer,replace\n');
   await page.locator('nav a[href="#data-hub"]').click();await importFiles([{name:'synthetic-customer-rebate-agreement.csv',mimeType:'text/csv',buffer:agreement},{name:'synthetic-rebate-sales.csv',mimeType:'text/csv',buffer:sales}],'1',true);
   await page.locator('nav a[href="#rebates"]').click();const progress=page.getByTestId('rebate-progress');await page.getByTestId('rebate-earned').filter({hasText:'CA$590.00'}).waitFor();assert.ok((await progress.innerText()).includes('CA$29,500.00'),'Rebate spend lost CAD denomination');assert.ok((await progress.innerText()).includes('CA$240.00'),'Adjustment differs');
+  const rebateGrid=page.getByTestId('rebate-table');await rebateGrid.getByTestId('grid-select-all').check();const earnedTotal=rebateGrid.getByTestId('grid-total-earned');await earnedTotal.waitFor();assert.equal(await earnedTotal.getAttribute('data-sum'),'59000','Rebate selection total differs from the earned amount');assert.ok((await earnedTotal.innerText()).includes('CA$590.00'),'Rebate selection total lost its currency');await rebateGrid.getByRole('button',{name:'Clear selection',exact:true}).click();
   await progress.getByRole('button',{name:'Show the math',exact:true}).click();const dialog=page.getByRole('dialog');await dialog.getByRole('cell',{name:'CA$350.00',exact:true}).waitFor();assert.equal(await dialog.getByRole('cell',{name:'CA$590.00',exact:true}).count(),2);await dialog.getByRole('button',{name:'Close',exact:true}).click();
   await page.locator('nav a[href="#margin"]').click();await page.getByTestId('wf-rebate').filter({hasText:'-CA$590.00'}).waitFor();await page.getByTestId('wf-rebate').click();await page.getByTestId('math-value').filter({hasText:'CA$590.00'}).waitFor();await page.getByRole('dialog').getByText('CA$350.00',{exact:false}).waitFor();
   await page.locator('nav a[href="#rebates"]').click();await page.getByTestId('rebate-reference').fill(marker+'-MANUAL');await page.getByTestId('rebate-customer').fill(marker+'-OTHER');await page.getByTestId('rebate-confirm').check();await page.getByRole('button',{name:'Save approved terms',exact:true}).click();await page.getByTestId('rebate-program-row').filter({hasText:marker+'-MANUAL'}).waitFor();const row=page.getByTestId('rebate-program-row').filter({hasText:marker+'-MANUAL'});await row.getByRole('button',{name:'Edit terms',exact:true}).click();await page.getByLabel('Program active',{exact:true}).uncheck();await page.getByTestId('rebate-confirm').check();await page.getByRole('button',{name:'Save approved terms',exact:true}).click();await row.getByText('Paused',{exact:true}).waitFor();await row.getByRole('button',{name:'Remove manual program',exact:true}).click();await row.waitFor({state:'detached'});
   for(const theme of ['light','dark','contrast']){await page.evaluate(v=>{document.documentElement.dataset.theme=v;},theme);await page.setViewportSize({width:375,height:812});await page.waitForTimeout(400);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Rebates overflow at 375px');await page.screenshot({path:'test-results/rebates-'+channel+'-'+theme+'.png',fullPage:true});}await page.setViewportSize({width:1280,height:800});
   await page.locator('nav a[href="#settings"]').click();await page.getByLabel('Preview as').selectOption('sales_rep');await page.getByTestId('preview-banner').waitFor();await page.locator('nav a[href="#rebates"]').click();await page.getByTestId('rebate-earned').filter({hasText:'CA$590.00'}).waitFor();assert.equal(await page.getByTestId('rebate-form').count(),0);assert.equal(await page.getByRole('button',{name:'Show the math',exact:true}).count(),0);assert.ok(!/cost|margin/i.test(await progress.innerText()),'Rep UI exposed margin or cost');await page.getByRole('button',{name:'Return to my own view'}).click();
   await page.evaluate(()=>localStorage.setItem('rebatehq.locale','pseudo'));await page.reload();await page.locator('form input[type="password"]').fill(secret);await page.locator('form:has(input[type="password"]) button').click();await page.getByTestId('line-count').waitFor();await page.evaluate(()=>{location.hash='#rebates';});await page.getByTestId('rebate-program-row').waitFor();assert.ok((await progress.innerText()).includes('⟦'));assert.ok((await page.getByTestId('rebate-form').innerText()).includes('⟦'));
-  results.checks.rebatesUi={cadAmount:'CA$590.00',cadSpend:'CA$29,500.00',cadAdjustment:'CA$240.00',sourceMath:true,manualCrud:true,repProgressOnly:true,encryptedReload:true,pseudo:true,themes:true,phone375:true};
+  results.checks.rebatesUi={gridTotalsInCad:true,cadAmount:'CA$590.00',cadSpend:'CA$29,500.00',cadAdjustment:'CA$240.00',sourceMath:true,manualCrud:true,repProgressOnly:true,encryptedReload:true,pseudo:true,themes:true,phone375:true};
  }finally{await context.close();context=savedContext;page=savedPage;dataPlaneActive=active;}
 }
 
@@ -347,7 +354,7 @@ try {
   await page.locator('[data-testid="line-count"][data-value="100041"]').waitFor({ timeout: 60000 });
   // The retail-like fixture's invoices span several customers: reconciliation must flag them, never adjust them.
   const diffs = page.getByRole("table", { name: "Reconciliation differences" }); await diffs.waitFor({ timeout: 60000 });
-  const levels = await diffs.locator("tbody tr td:first-child").allInnerTexts();
+  const levels = await diffs.locator("tbody tr td:nth-child(2)").allInnerTexts();
   assert.ok(levels.length > 0 && levels.every(l => l === "Invoice"), `Unexpected reconciliation differences: ${levels.join(",")}`);
   await page.getByRole("button", { name: "Accept all differences" }).click();
   await page.getByTestId("recon-ok").waitFor({ timeout: 60000 });
@@ -449,6 +456,31 @@ try {
   await page.getByRole('link',{name:'Cost to serve',exact:true}).click();await page.getByTestId('service-orders').waitFor();assert.equal(await page.getByTestId('line-count').getAttribute('data-value'),invoiceRowsBefore);
   results.checks.pricingToolsUi={excelPaste:true,ownerApproval:true,scopeExport:true,landed:true,exactSlider:true,competitor:true,costToServe:true,invoiceRowsUnchanged:true};
 
+  // 7V-3a grid standard: sort, multi-value filter, "N of M", selection totals (worker/DuckDB) on every kind of grid.
+  await page.evaluate(()=>{location.hash='#margin';});const drillGrid=page.getByTestId('drill-table');await drillGrid.waitFor({timeout:60000});
+  await drillGrid.getByTestId('grid-sort-lines').click();await drillGrid.locator('th[aria-sort="ascending"]').waitFor();
+  await until(async()=>ordered((await gridColumn(drillGrid,3)).map(intOf),'asc'),'Drill-down did not sort by lines in the worker');
+  await drillGrid.getByTestId('grid-sort-lines').click();await drillGrid.locator('th[aria-sort="descending"]').waitFor();
+  await until(async()=>ordered((await gridColumn(drillGrid,3)).map(intOf),'desc'),'Drill-down did not sort descending');
+  await drillGrid.getByTestId('grid-filter-key').click();const panel=page.getByRole('dialog',{name:/^Filter /});await panel.getByRole('list').waitFor();
+  await panel.getByRole('button',{name:'Select none',exact:true}).click();await panel.getByRole('list').getByRole('checkbox').nth(1).check();await panel.getByTestId('grid-filter-apply').click();
+  await drillGrid.getByTestId('grid-count').filter({hasText:/^1 of [\d,]+ rows$/}).waitFor();await until(async()=>(await drillGrid.locator('tbody tr').count())===1,'Filter did not narrow the drill-down to one group');
+  const oneLines=intOf((await gridColumn(drillGrid,3))[0]);await drillGrid.getByTestId('grid-select-all').check();
+  const linesTotal=drillGrid.getByTestId('grid-total-lines');await linesTotal.waitFor();assert.equal(await linesTotal.getAttribute('data-sum'),oneLines,'Totals of all matching rows differ from the row');assert.equal(await linesTotal.getAttribute('data-count'),'1');
+  await drillGrid.getByRole('button',{name:'Clear filters',exact:true}).click();await drillGrid.getByTestId('grid-count').waitFor({state:'detached'});
+  await until(async()=>(await drillGrid.locator('tbody tr').count())>=3,'Drill-down did not reload every group after clearing the filter');const picks=drillGrid.getByTestId('grid-select');await picks.nth(0).click();await drillGrid.getByTestId('grid-status').filter({hasText:'1 row selected'}).waitFor();await picks.nth(2).click({modifiers:['Shift']});
+  const pocketCells=(await gridColumn(drillGrid,7)).slice(0,3).map(centsOf),pocketTotal=drillGrid.getByTestId('grid-total-pocket');
+  await until(async()=>(await pocketTotal.getAttribute('data-count'))==='3','Shift-click did not select a range of three rows');
+  assert.equal(await pocketTotal.getAttribute('data-sum'),String(pocketCells.reduce((a,b)=>a+BigInt(b),0n)),'Selection total differs from the selected cells');
+  await page.getByRole('link',{name:'Data Hub',exact:true}).click();const basisGrid=page.getByTestId('cost-basis-grid');await basisGrid.waitFor({timeout:60000});
+  await basisGrid.getByTestId('grid-sort-lines').click();await basisGrid.getByTestId('grid-sort-lines').click();await until(async()=>ordered((await gridColumn(basisGrid,3)).map(intOf),'desc'),'Browser grid did not sort numerically');
+  await basisGrid.getByTestId('grid-select-all').check();const basisLines=(await gridColumn(basisGrid,3)).map(intOf);const basisTotal=basisGrid.getByTestId('grid-total-lines');await basisTotal.waitFor();
+  assert.equal(await basisTotal.getAttribute('data-sum'),String(basisLines.reduce((a,b)=>a+BigInt(b),0n)),'Browser-grid totals differ from the cells');
+  await page.locator('nav a[href="#pricing"]').click();await page.getByRole('link',{name:'Price grid',exact:true}).click();await page.getByLabel('Filter product, category or customer',{exact:true}).fill('');await page.getByRole('button',{name:'Load local rows',exact:true}).click();
+  const priceTable=page.getByTestId('price-grid-table');await priceTable.waitFor();await priceTable.getByTestId('grid-sort-price').click();await priceTable.getByTestId('grid-sort-price').click();await priceTable.locator('th[aria-sort="descending"]').waitFor();
+  await until(async()=>{const v=(await gridColumn(priceTable,4)).map(centsOf);return v.length>1&&ordered(v,'desc');},'Price grid did not sort by price in the worker');
+  results.checks.gridsUi={pagedWorkerSort:true,workerFilterOneOfN:true,totalsAllMatching:true,shiftRangeTotals:true,browserGridSort:true,browserGridTotals:true,priceGridSort:true,rebateTotalsInCurrency:'checked in rebatesUi'};
+
   // 7B: Price Check answers on Enter (barcode scanners send Enter), a below-floor quote asks for a
   // reason, the Owner sees margin, the Sales Rep preview never does, and the quote fits a phone.
   await page.getByRole('link',{name:'Quotes',exact:true}).click();
@@ -467,7 +499,7 @@ try {
   await page.setViewportSize({width:1280,height:900});assert.ok(fits,'The quote overflows a 375px phone screen');
   await page.getByRole('link',{name:'Settings',exact:true}).click();await page.getByLabel('Preview as').selectOption('sales_rep');await page.getByTestId('preview-banner').waitFor();
   await page.getByRole('link',{name:'Quotes',exact:true}).click();await page.getByRole('button',{name:'History',exact:true}).click();
-  await page.getByRole('heading',{name:'Quote history',exact:true}).waitFor();await page.getByRole('table').getByRole('button').first().click();
+  await page.getByRole('heading',{name:'Quote history',exact:true}).waitFor();await page.getByRole('table',{name:'Quote history',exact:true}).locator('tbody').getByRole('button').first().click();
   await page.locator('[data-testid="quote"][data-status="pending"]').waitFor();
   assert.equal(await page.getByTestId('quote-margin').count(),0,'The Sales Rep preview shows quote margin');
   assert.equal(await page.getByRole('columnheader',{name:'Margin',exact:true}).count(),0,'The Sales Rep preview shows a margin column');

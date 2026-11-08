@@ -1,5 +1,10 @@
 import type {Engine} from '../vault/engine';
 import {VaultError} from '../vault/protocol';
+import {gridPage,gridQuery} from '../grid/sql';
+import type {GridSpec} from '../grid/core';
+/** Grid columns (7V-3a) for the exceptions and expiry grids: output names and types only. */
+export const EXCEPTION_GRID:GridSpec={source_file:'text',product_id:'text',customer_id:'text',quantity:'decimal',unit_price:'money',floor:'money',contract:'money',gap:'money'};
+export const EXPIRY_GRID:GridSpec={product_id:'text',customer_id:'text',tier:'text',quantity_break:'decimal',valid_from:'date',valid_to:'date'};
 import {sqlText as Q,validDate} from '../spike/exact';
 import {rhaSql} from '../margin/sql';
 import {dec,rescale,bpText} from '../margin/decimal';
@@ -90,7 +95,7 @@ export async function increaseLetter(e:Engine,run:string,locale:Locale){
  const body=translate(locale,'ops.letterBody',{segment:m.segment_value,rate:decimal(locale,bpText(BigInt(String(m.increase_bp)))),date:new Intl.DateTimeFormat(locale==='pseudo'?'en-US':locale,{dateStyle:'long',timeZone:'UTC'}).format(new Date())});
  return {name:'rebatehq-price-increase.txt',blob:new Blob([body],{type:'text/plain;charset=utf-8'})};
 }
-export type ExceptionInput={customer?:string;product?:string;offset?:number};
+export type ExceptionInput={customer?:string;product?:string;offset?:number;grid?:unknown};
 export async function exceptions(e:Engine,input:ExceptionInput={}){
  const where=[input.customer?`AND l.customer_id=${Q(id(input.customer))}`:'',input.product?`AND l.product_id=${Q(id(input.product))}`:''].join(' '),offset=Math.max(0,Math.min(10000000,Math.floor(input.offset??0)));
  const inputSql=`SELECT row_number() OVER()::VARCHAR lookup_id,l.*,p.category,c.tier,c.branch,f.name AS source_file,g.floor,l.sale_date AS as_of FROM sales_lines l JOIN products p USING(product_id) JOIN customers c USING(customer_id) JOIN source_files f ON f.id=l.source_id
@@ -98,11 +103,15 @@ export async function exceptions(e:Engine,input:ExceptionInput={}){
  const cte=`WITH b AS(SELECT *,book_price AS contract,matrix_id AS contract_id,(list_cents-discount_cents) AS selling,CAST(quantity*10000 AS HUGEINT) AS qty FROM (${resolvedBook(inputSql,true)})),x AS(SELECT *,floor IS NOT NULL AND CAST(selling AS HUGEINT)*10000<CAST(floor AS HUGEINT)*qty AS below_floor,contract IS NOT NULL AND CAST(selling AS HUGEINT)*10000<CAST(contract AS HUGEINT)*qty AS below_contract,
  greatest(coalesce(${rhaSql('CAST(floor AS HUGEINT)*qty','10000')}-selling,0),coalesce(${rhaSql('CAST(contract AS HUGEINT)*qty','10000')}-selling,0),0) AS gap FROM b),hit AS(SELECT * FROM x WHERE below_floor OR below_contract)`;
  const total=(await rows(e,`${cte} SELECT count(*)::VARCHAR count,coalesce(sum(gap),0)::VARCHAR gap,count(*) FILTER(WHERE below_floor)::VARCHAR floor_count,count(*) FILTER(WHERE below_contract)::VARCHAR contract_count FROM hit`))[0];
- const page=await rows(e,`${cte} SELECT source_id,source_file,source_row::VARCHAR source_row,line_id::VARCHAR line_id,invoice_id,product_id,customer_id,branch,sale_date::VARCHAR date,quantity::VARCHAR quantity,selling::VARCHAR selling,CAST(${rhaSql('CAST(selling AS HUGEINT)*10000','qty')} AS BIGINT)::VARCHAR unit_price,floor::VARCHAR floor,contract::VARCHAR contract,contract_id,below_floor,below_contract,gap::VARCHAR gap FROM hit ORDER BY gap DESC,source_id,line_id LIMIT 50 OFFSET ${offset}`);
- return {total,rows:page,offset};
+ const q=gridQuery(EXCEPTION_GRID,input.grid);
+ const base=`${cte} SELECT source_id,source_file,source_row::VARCHAR source_row,line_id::VARCHAR line_id,invoice_id,product_id,customer_id,branch,sale_date::VARCHAR date,quantity::VARCHAR quantity,selling::VARCHAR selling,CAST(${rhaSql('CAST(selling AS HUGEINT)*10000','qty')} AS BIGINT)::VARCHAR unit_price,floor::VARCHAR floor,contract::VARCHAR contract,contract_id,below_floor,below_contract,gap::VARCHAR gap,gap AS gap_order FROM hit`;
+ const page=await gridPage(e,base,EXCEPTION_GRID,q,{fallback:'g.gap_order DESC,g.source_id,g.line_id',limit:50,offset});
+ return {total,rows:page.rows.map(({gap_order:_,...r})=>r) as Record<string,any>[],offset,grid:page.grid};
 }
-export async function expiry(e:Engine,days:number,asOf=today(),offset=0){
+export async function expiry(e:Engine,days:number,asOf=today(),offset=0,grid?:unknown){
  if(![30,60,90].includes(days))bad();try{validDate(asOf);}catch{bad();}offset=Math.max(0,Math.min(10000000,Math.floor(offset)));
  const where=`valid_to>=DATE ${Q(asOf)} AND valid_to<=DATE ${Q(asOf)}+INTERVAL '${days} days'`;
- return {count:String((await rows(e,`SELECT count(*)::VARCHAR n FROM price_matrix WHERE ${where}`))[0].n),rows:await rows(e,`SELECT id,product_id,category,customer_id,tier,qty_break::VARCHAR quantity_break,price::VARCHAR price,valid_from::VARCHAR valid_from,valid_to::VARCHAR valid_to FROM price_matrix WHERE ${where} ORDER BY valid_to,id LIMIT 50 OFFSET ${offset}`),offset,days,asOf};
+ const q=gridQuery(EXPIRY_GRID,grid);
+ const page=await gridPage(e,`SELECT id,product_id,category,customer_id,tier,qty_break::VARCHAR quantity_break,price::VARCHAR price,valid_from::VARCHAR valid_from,valid_to::VARCHAR valid_to FROM price_matrix WHERE ${where}`,EXPIRY_GRID,q,{fallback:'CAST(g.valid_to AS DATE),g.id',limit:50,offset});
+ return {count:page.grid.total,rows:page.rows as Record<string,any>[],offset,days,asOf,grid:page.grid};
 }

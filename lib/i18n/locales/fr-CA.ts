@@ -26,4 +26,5 @@ export const frCA: Partial<Catalog> = {
   "shell.report.body": "Un PDF de votre cascade et des principales fuites avec leurs lignes justificatives, généré sur cet appareil. Rien n'est téléversé; chaque export est consigné dans le journal d'audit.",
   "report.rebatehqMarginLeakReport2": "RebateHQ - Rapport des fuites de marge - généré sur cet appareil; rien n'a été téléversé",
   "margin.reportCreated": "Rapport des fuites PDF créé sur cet appareil ({bytes} octets); rien n'a été téléversé. L'export figure dans le journal d'audit.",
+  "quotes.linesLabel": "Lignes de la soumission",
 };

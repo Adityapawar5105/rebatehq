@@ -156,6 +156,7 @@ test("7B Quote Desk and Price Check need Professional", async () => {
 // reviewed (it cannot carry cost). Adding a rep-reachable command fails this test until it is classified.
 const SCANNED = ["rebateProgress","status", "home", "checklist", "search", "roleList", "pricingState", "priceCheck", "quoteCreate", "quoteLines", "quoteSubmit", "quoteGet", "quoteList"] as const;
 const REVIEWED: Record<string, string> = {
+  gridTotals: "7V-3a: totals of numbers the caller already holds; returns only sums, counts, minimum and maximum of them",
   init: "vault bootstrap state", create: "creates an empty vault", unlock: "returns status (scanned)", lock: "returns status", touch: "idle timer", cancel: "cancels a job", save: "returns status",
   storage: "browser storage quota", licenceSet: "licence claims", rolePreview: "returns status (scanned) and can only remove capabilities", backupRestore: "replaces the vault, returns status",
   quoteShare: "shares the quote number and price total only (no cost) through the ciphertext relay", quoteRelaySync: "returns the quote view (scanned as quoteGet)",

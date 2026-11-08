@@ -4,10 +4,13 @@ import {VaultError} from '../vault/protocol';
 import {sqlText as Q} from '../spike/exact';
 import {POCKET,rhaSql} from './sql';
 import {msg} from '../i18n/core';
+import {gridPage,gridQuery} from '../grid/sql';
+import type {GridMeta,GridSpec} from '../grid/core';
+export const BRIDGE_GRID:GridSpec={key:'text',before:'money',after:'money',delta:'money',price:'money',volume:'money',mix:'money',cost:'money',unknown:'int'};
 export type BridgeDim='product'|'customer'|'branch';
-export type BridgeInput={month?:string;dim?:BridgeDim;value?:string;offset?:number};
+export type BridgeInput={month?:string;dim?:BridgeDim;value?:string;offset?:number;grid?:unknown};
 export type BridgeAmounts={before:string;after:string;delta:string;price:string;volume:string;mix:string;cost:string;unknown:string};
-export type BridgeView={month:string;previous:string;months:string[];totals:BridgeAmounts;count:string;offset:number;rows:(BridgeAmounts&{key:string})[]};
+export type BridgeView={month:string;previous:string;months:string[];totals:BridgeAmounts;count:string;offset:number;rows:(BridgeAmounts&{key:string})[];grid?:GridMeta};
 const fields=['before','after','delta','price','volume','mix','cost','unknown'] as const;
 export async function bridge(e:Engine,input:BridgeInput={}):Promise<BridgeView>{
  const months=(await e.conn.query("SELECT DISTINCT strftime(sale_date,'%Y-%m') AS m FROM sales_lines ORDER BY m DESC LIMIT 60")).toArray().map(r=>String(r.m));
@@ -35,7 +38,7 @@ export async function bridge(e:Engine,input:BridgeInput={}):Promise<BridgeView>{
  final AS(SELECT *,delta-price-"cost"-volume AS mix FROM effects)`;
  const totalsRow=(await e.conn.query(`${cte} SELECT ${fields.map(f=>`coalesce(sum("${f}"),0)::VARCHAR AS "${f}"`).join(',')} FROM final`)).toArray()[0] as unknown as BridgeAmounts;
  const totals={...totalsRow};
- const rows=(await e.conn.query(`${cte} SELECT ${key} AS key,${fields.map(f=>`sum("${f}")::VARCHAR AS "${f}"`).join(',')} FROM final GROUP BY ${key} ORDER BY abs(sum(delta)) DESC,${key} LIMIT 50 OFFSET ${offset}`)).toArray().map(r=>({...r})) as unknown as BridgeView['rows'];
- const count=String((await e.conn.query(`${cte} SELECT count(DISTINCT ${key})::VARCHAR AS n FROM final`)).toArray()[0].n);
- return {month,previous,months,totals,count,offset,rows};
+ const page=await gridPage(e,`${cte} SELECT ${key} AS key,${fields.map(f=>`sum("${f}")::VARCHAR AS "${f}"`).join(',')},abs(sum(delta)) AS order_n FROM final GROUP BY ${key}`,BRIDGE_GRID,gridQuery(BRIDGE_GRID,input.grid),{fallback:'g.order_n DESC,g.key',limit:50,offset});
+ const rows=page.rows.map(({order_n:_,...r})=>r) as unknown as BridgeView['rows'];
+ return {month,previous,months,totals,count:page.grid.matched,offset,rows,grid:page.grid};
 }

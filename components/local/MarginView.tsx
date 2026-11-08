@@ -20,6 +20,8 @@ import { Badge, Button, ButtonLink, Card, EmptyState, Field, Grid, Notice, Skele
 import { Term } from "./Glossary";
 import { MARGIN_FILTER_EVENT } from "./CommandPalette";
 import styles from "./vault.module.css";
+import { DataGrid } from "@/components/ui/DataGrid";
+import type { GridQuery } from "@/lib/grid/core";
 type Shared = { client: VaultClient; busy: boolean; operation: (work: () => Promise<void>) => Promise<void>; setMessage: (m: string) => void; onStatus: (s: VaultStatus) => void; status: VaultStatus };
 const $ = (cents: string | null | undefined) => cents === null || cents === undefined ? t("common.unknown") : fmt.currency(cents);
 /** Basis points ("1234") as a percent with two decimals, exactly. */
@@ -43,10 +45,11 @@ function waterfallBars(w: Waterfall) {
 
 function WaterfallView({ client, busy, operation, setMessage, onStatus, status }: Shared) {
   const [filters, setFilters] = useState<Filters>(NONE), [w, setW] = useState<Waterfall | null>(null), [dim, setDim] = useState<Dim>("customer"), [sort, setSort] = useState<"pocket" | "margin" | "rate">("pocket");
-  const [d, setD] = useState<Drill | null>(null), [whale, setWhale] = useState<Whale | null>(null), [leaks, setLeaks] = useState<LeaksView | null>(null), [target, setTarget] = useState<MathTarget>(null);
+  const [gq, setGq] = useState<GridQuery>({}), [d, setD] = useState<Drill | null>(null), [whale, setWhale] = useState<Whale | null>(null), [leaks, setLeaks] = useState<LeaksView | null>(null), [target, setTarget] = useState<MathTarget>(null);
   const version = `${status.lines}|${status.generation}`;
   useEffect(() => { let on = true; void client.call("marginWaterfall", { filters }).then(x => { if (on) setW(x); }).catch(() => undefined); void client.call("marginWhale", { filters }).then(x => { if (on) setWhale(x); }).catch(() => undefined); return () => { on = false; }; }, [client, filters, version]);
-  useEffect(() => { let on = true; void client.call("marginDrill", { dim, filters, sort }).then(x => { if (on) setD(x); }).catch(() => undefined); return () => { on = false; }; }, [client, dim, filters, sort, version]);
+  useEffect(() => { setGq({}); }, [dim]);
+  useEffect(() => { let on = true; void client.call("marginDrill", { dim, filters, sort, grid: gq }).then(x => { if (on) setD(x); }).catch(() => undefined); return () => { on = false; }; }, [client, dim, filters, sort, version, gq]);
   useEffect(() => { let on = true; if (status.lines !== "0") void client.call("leaks", {}).then(x => { if (on) setLeaks(x); }).catch(() => undefined); return () => { on = false; }; }, [client, version, status.lines]);
   const addFilter = (dimName: Dim, value: string) => setFilters(f => ({ ...f, by: [...f.by.filter(x => x.dim !== dimName), { dim: dimName, value }] }));
   // The command palette opens Margin filtered to a SKU or customer it found.
@@ -87,18 +90,31 @@ function WaterfallView({ client, busy, operation, setMessage, onStatus, status }
         <Field label={t("margin.sort")}><select value={sort} onChange={e => setSort(e.target.value as typeof sort)}><option value="pocket">{t("margin.sortPocket")}</option><option value="margin">{t("margin.sortMargin")}</option><option value="rate">{t("margin.sortRate")}</option></select></Field>
       </Grid>
       {d && <><p className={styles.small}>{t(Number(d.total) > d.rows.length ? "margin.drillCountShowing" : "margin.drillCount", { count: Number(d.total), dim: dimName(d.dim).toLocaleLowerCase(getLocale()), shown: d.rows.length, ms: d.ms })}</p>
-        <div className={`${ui.tableWrap} ${ui.tall}`}><table className={ui.table} aria-label={t("margin.marginBy", { dim: dimName(d.dim).toLocaleLowerCase(getLocale()) })}>
-          <thead><tr><th scope="col">{dimName(d.dim)}</th><th scope="col" className={numCell}>{t("margin.col.lines")}</th><th scope="col" className={numCell}><Term id="listPrice">{t("margin.col.list")}</Term></th><th scope="col" className={numCell}><Term id="discount">{t("margin.col.discounts")}</Term></th><th scope="col" className={numCell}><Term id="returnsCredits">{t("margin.col.credits")}</Term></th><th scope="col" className={numCell}><Term id="netPocket">{t("margin.col.netPocket")}</Term></th><th scope="col" className={numCell}><Term id="cost">{t("margin.col.cost")}</Term></th><th scope="col" className={numCell}><Term id="pocketMargin">{t("margin.col.margin")}</Term></th><th scope="col" className={numCell}>{t("margin.col.rate")}</th><th scope="col" className={numCell}>{t("margin.col.noCost")}</th><th scope="col"><span className={styles.srOnly}>{t("margin.col.actions")}</span></th></tr></thead>
-          <tbody>{d.rows.map(r => { const f: Filters = { ...filters, by: [...filters.by.filter(x => x.dim !== d.dim), { dim: d.dim, value: r.key }] }, name = r.label ? `${r.key} · ${r.label}` : r.key || t("margin.blank");
-            const cell = (metric: Metric, v: string, label: string) => <td className={numCell}><button className={ui.numLink} aria-label={t("margin.mathForRow", { label, key: r.key })} onClick={() => open(metric, t("margin.rowTitle", { label, name }), f)}>{$(v)}</button></td>;
-            return <tr key={r.key}><td className={styles.wrap} translate="no">{name}</td><td className={numCell}>{fmt.int(r.lines)}</td>{cell("list", r.list, t("margin.col.list"))}{cell("discount", r.discount, t("margin.col.discounts"))}{cell("credits", r.credits, t("margin.returnsAndCredits"))}
-              {cell("netPocket", r.pocket, t("margin.col.netPocket"))}{cell("cost", r.cost, t("margin.col.cost"))}{cell("margin", r.margin, t("margin.col.margin"))}<td className={numCell}>{fmt.percent(r.rate)}</td><td className={numCell}>{fmt.int(r.uncostedLines)}</td>
-              <td><Button size="sm" variant="ghost" icon="chevronRight" aria-label={t("margin.drillInto", { dim: dimName(d.dim), key: r.key })} onClick={() => addFilter(d.dim, r.key)}>{t("margin.drillIn")}</Button></td></tr>; })}</tbody>
-        </table></div></>}
+        <DrillGrid d={d} gq={gq} setGq={setGq} client={client} dim={dim} filters={filters} sort={sort} open={open} addFilter={addFilter}/></>}
     </Card>
     <WhaleCard whale={whale} open={open}/>
     <LeaksCard client={client} leaks={leaks} busy={busy} operation={operation} setMessage={setMessage} onStatus={onStatus} onEvidence={leak => setTarget({ leak })}/>
   </>;
+}
+function DrillGrid({ d, gq, setGq, client, dim, filters, sort, open, addFilter }: { d: Drill; gq: GridQuery; setGq: (q: GridQuery) => void; client: VaultClient; dim: Dim; filters: Filters; sort: "pocket" | "margin" | "rate"; open: (metric: Metric, title: string, f?: Filters) => void; addFilter: (dim: Dim, value: string) => void }) {
+  type Row = Drill["rows"][number];
+  const nameOf = (r: Row) => r.label ? `${r.key} · ${r.label}` : r.key || t("margin.blank");
+  const math = (metric: Metric, label: string, pick: (r: Row) => string) => ({ cell: (r: Row) => { const f: Filters = { ...filters, by: [...filters.by.filter(x => x.dim !== d.dim), { dim: d.dim, value: r.key }] };
+    return <button className={ui.numLink} aria-label={t("margin.mathForRow", { label, key: r.key })} onClick={() => open(metric, t("margin.rowTitle", { label, name: nameOf(r) }), f)}>{$(pick(r))}</button>; } });
+  return <DataGrid label={t("margin.marginBy", { dim: dimName(d.dim).toLocaleLowerCase(getLocale()) })} testId="drill-table" tall rows={d.rows} rowKey={r => r.key}
+    remote={{ query: gq, onQuery: setGq, meta: d.grid, fetch: q => client.call("marginDrill", { dim, filters, sort, grid: q }).then(x => x.grid!) }} columns={[
+      { id: "key", name: dimName(d.dim), value: r => r.key, cell: r => <span className={styles.wrap} translate="no">{nameOf(r)}</span> },
+      { id: "lines", name: t("margin.col.lines"), type: "int", num: true, value: r => r.lines },
+      { id: "list", name: t("margin.col.list"), header: <Term id="listPrice">{t("margin.col.list")}</Term>, type: "money", num: true, value: r => r.list, ...math("list", t("margin.col.list"), r => r.list) },
+      { id: "discount", name: t("margin.col.discounts"), header: <Term id="discount">{t("margin.col.discounts")}</Term>, type: "money", num: true, value: r => r.discount, ...math("discount", t("margin.col.discounts"), r => r.discount) },
+      { id: "credits", name: t("margin.col.credits"), header: <Term id="returnsCredits">{t("margin.col.credits")}</Term>, type: "money", num: true, value: r => r.credits, ...math("credits", t("margin.returnsAndCredits"), r => r.credits) },
+      { id: "pocket", name: t("margin.col.netPocket"), header: <Term id="netPocket">{t("margin.col.netPocket")}</Term>, type: "money", num: true, value: r => r.pocket, ...math("netPocket", t("margin.col.netPocket"), r => r.pocket) },
+      { id: "cost", name: t("margin.col.cost"), header: <Term id="cost">{t("margin.col.cost")}</Term>, type: "money", num: true, value: r => r.cost, ...math("cost", t("margin.col.cost"), r => r.cost) },
+      { id: "margin", name: t("margin.col.margin"), header: <Term id="pocketMargin">{t("margin.col.margin")}</Term>, type: "money", num: true, value: r => r.margin, ...math("margin", t("margin.col.margin"), r => r.margin) },
+      { id: "rate_value", name: t("margin.col.rate"), type: "percent", num: true, value: r => r.rateValue ?? null, cell: r => fmt.percent(r.rate) },
+      { id: "uncosted", name: t("margin.col.noCost"), type: "int", num: true, value: r => r.uncostedLines },
+      { id: "actions", name: t("margin.col.actions"), cell: r => <Button size="sm" variant="ghost" icon="chevronRight" aria-label={t("margin.drillInto", { dim: dimName(d.dim), key: r.key })} onClick={() => addFilter(d.dim, r.key)}>{t("margin.drillIn")}</Button> },
+    ]}/>;
 }
 function WhaleCard({ whale, open }: { whale: Whale | null; open: (m: Metric, t: string) => void }) {
   if (!whale) return null;
@@ -118,19 +134,24 @@ function WhaleCard({ whale, open }: { whale: Whale | null; open: (m: Metric, t: 
       {pts.length > 0 && <circle cx={x(peak.x)} cy={y(peak.y)} r={5} className={ui.peak}/>}
       <text x={0} y={H + 30} className={ui.tick}>{t("margin.whaleAxis")}</text>
     </svg>
-    <div className={ui.tableWrap}><table className={ui.table} aria-label={t("margin.whaleLosers")}><thead><tr><th scope="col">{t("margin.lowestCustomers")}</th><th scope="col" className={numCell}>{t("margin.col.netPocket")}</th><th scope="col" className={numCell}>{t("margin.col.margin")}</th><th scope="col" className={numCell}>{t("margin.col.rate")}</th></tr></thead>
-      <tbody>{whale.bottom.map(r => <tr key={r.key}><td translate="no">{r.key}{r.label ? ` · ${r.label}` : ""}</td><td className={numCell}>{$(r.pocket)}</td><td className={numCell}>{$(r.margin)}</td><td className={numCell}>{fmt.percent(r.rate)}</td></tr>)}</tbody></table></div>
+    <DataGrid label={t("margin.whaleLosers")} testId="whale-losers" rows={whale.bottom} rowKey={r => r.key} columns={[
+      { id: "customer", name: t("margin.lowestCustomers"), value: r => r.label ? `${r.key} · ${r.label}` : r.key, cell: r => <span translate="no">{r.key}{r.label ? ` · ${r.label}` : ""}</span> },
+      { id: "pocket", name: t("margin.col.netPocket"), type: "money", num: true, value: r => r.pocket },
+      { id: "margin", name: t("margin.col.margin"), type: "money", num: true, value: r => r.margin },
+      { id: "rate", name: t("margin.col.rate"), type: "percent", num: true, value: r => r.rate === "n/a" ? null : r.rate.replace("%", ""), cell: r => fmt.percent(r.rate) },
+    ]}/>
   </Card>;
 }
 function LeaksCard({ client, leaks, busy, operation, setMessage, onStatus, onEvidence }: { client: VaultClient; leaks: LeaksView | null; busy: boolean; operation: Shared["operation"]; setMessage: Shared["setMessage"]; onStatus: Shared["onStatus"]; onEvidence: (f: Finding) => void }) {
   return <Card headingId="leaks-heading" title={<Term id="leak">{t("margin.leaks")}</Term>} actions={leaks && <LeakReportButton client={client} busy={busy} operation={operation} setMessage={setMessage} onStatus={onStatus}/>}>
     {!leaks ? <div aria-busy="true"><p className={styles.muted}>{t("margin.lookingForLeaks")}</p><Skeleton/></div> : <>
       <p>{t("margin.leakDollarsFound")}{" "}<strong data-testid="leak-total">{$(leaks.result.dedupedCents)}</strong>{" "}{t(leaks.sample ? "margin.acrossFindingsSample" : "margin.acrossFindings", { count: leaks.result.findings.length })}{leaks.result.overlapLines !== "0" ? " " + t("margin.overlap", { count: Number(leaks.result.overlapLines), overlapCents: $(leaks.result.overlapCents) }) : ""}</p>
-      {leaks.result.findings.length ? <div className={ui.tableWrap}><table className={ui.table} aria-label={t("margin.leakFindings")}>
-        <thead><tr><th scope="col">{t("margin.col.type")}</th><th scope="col">{t("margin.col.finding")}</th><th scope="col" className={numCell}>{t("margin.col.lines")}</th><th scope="col" className={numCell}>{t("margin.col.leak")}</th></tr></thead>
-        <tbody>{leaks.result.findings.map(f => <tr key={f.id}><td><Badge tone="warn">{say(f.label)}</Badge></td><td className={styles.wrap}>{say(f.title)}</td><td className={numCell}>{fmt.int(f.lines)}</td>
-          <td className={numCell}><button className={ui.numLink} aria-label={t("margin.mathForLeak", { title: say(f.title) })} onClick={() => onEvidence(f)}>{$(f.cents)}</button></td></tr>)}</tbody>
-      </table></div> : <EmptyState icon="checkCircle" title={t("margin.noLeaks")}/>}
+      {leaks.result.findings.length ? <DataGrid label={t("margin.leakFindings")} testId="leak-findings" rows={leaks.result.findings} rowKey={f => f.id} columns={[
+        { id: "type", name: t("margin.col.type"), value: f => say(f.label), cell: f => <Badge tone="warn">{say(f.label)}</Badge> },
+        { id: "finding", name: t("margin.col.finding"), value: f => say(f.title), cell: f => <span className={styles.wrap}>{say(f.title)}</span> },
+        { id: "lines", name: t("margin.col.lines"), type: "int", num: true, value: f => f.lines },
+        { id: "leak", name: t("margin.col.leak"), type: "money", num: true, value: f => f.cents, cell: f => <button className={ui.numLink} aria-label={t("margin.mathForLeak", { title: say(f.title) })} onClick={() => onEvidence(f)}>{$(f.cents)}</button> },
+      ]}/> : <EmptyState icon="checkCircle" title={t("margin.noLeaks")}/>}
       <p className={styles.small}>{t("margin.notChecked", { uncosted: fmt.int(leaks.result.checked.uncostedLines), untiered: fmt.int(leaks.result.checked.untieredLines), credits: fmt.int(leaks.result.checked.creditLines), ms: leaks.result.ms })}</p>
     </>}
   </Card>;
@@ -153,13 +174,29 @@ export function RoiCard({ client, version }: { client: VaultClient; version: str
     <a href="#margin">{t("margin.openMargin")}</a>
   </Card>;
 }
+type SourceRow = MathPanel["rows"][number] | LeakRow;
+function MathRows({ leak, lines, list, meta, gq, setGq, fetch }: { leak: boolean; lines: boolean; list: SourceRow[]; meta: import("@/lib/grid/core").GridMeta | undefined; gq: GridQuery; setGq: (q: GridQuery) => void; fetch: (q: GridQuery) => Promise<import("@/lib/grid/core").GridMeta> }) {
+  const money = (k: "list" | "discount" | "freight" | "cost" | "pocket", name: string) => ({ id: k, name, type: "money" as const, num: true, value: (r: SourceRow) => (r[k] as string | null) ?? null, cell: (r: SourceRow) => $(r[k] as string | null) });
+  return <DataGrid label={t("margin.sourceRows")} testId="math-rows" rows={list} rowKey={r => `${r.sourceFile}|${r.sourceRow}`} remote={{ query: gq, onQuery: setGq, meta, fetch }} columns={[
+    { id: "file", name: t("margin.sourceFile"), value: r => r.sourceFile, cell: r => <span className={styles.wrap}><span translate="no">{r.sourceFile}</span>{"recordedRebate" in r && r.recordedRebate !== r.rebate && <p>{t("rebate.booked")}: {$(r.recordedRebate)} · {t("rebate.recognized")}: {$(r.rebate)}</p>}{"fxRate" in r && <><small>{t("fx.provenance", { source: r.sourceCurrency, workspace: r.workspaceCurrency, rate: fmt.decimal(r.fxRate) })}</small>{r.headerFx !== "[]" && <small>{t("fx.headerProvenance", { details: r.headerFx })}</small>}</>}</span> },
+    { id: "source_row", name: t("margin.row"), type: "int", num: true, value: r => r.sourceRow },
+    { id: "invoice", name: t("margin.invoice"), value: r => r.invoice, cell: r => <span translate="no">{r.invoice}</span> },
+    { id: "d", name: t("margin.date"), type: "date", value: r => r.date },
+    { id: "product_id", name: t("margin.product"), value: r => r.product, cell: r => <span translate="no">{r.product}</span> },
+    { id: "customer_id", name: t("margin.customer"), value: r => r.customer, cell: r => <span translate="no">{r.customer}</span> },
+    money("list", t("margin.list")), money("discount", t("margin.discount")), money("freight", t("margin.freight")), money("cost", t("margin.cost")), money("pocket", t("margin.pocket")),
+    leak ? { id: "leak", name: t("margin.leak"), type: "money", num: true, value: r => "leak" in r ? r.leak : null, cell: r => "leak" in r ? $(r.leak) : null }
+      : { id: "contribution", name: t("margin.contributes"), type: "money", num: true, value: r => lines ? null : (r as MathPanel["rows"][number]).contribution, cell: r => lines ? t("margin.lineCount", { count: 1 }) : $((r as MathPanel["rows"][number]).contribution) },
+  ]}/>;
+}
 function MathView({ client, target, onClose }: { client: VaultClient; target: NonNullable<MathTarget>; onClose: () => void }) {
-  const [panel, setPanel] = useState<MathPanel | null>(null), [rows, setRows] = useState<{ rows: LeakRow[]; count: string; sum: string; engineAgrees: boolean } | null>(null), [offset, setOffset] = useState(0), [error, setError] = useState("");
+  const [gq, setGq] = useState<GridQuery>({}), [panel, setPanel] = useState<MathPanel | null>(null), [rows, setRows] = useState<{ rows: LeakRow[]; count: string; sum: string; engineAgrees: boolean; grid?: import("@/lib/grid/core").GridMeta } | null>(null), [offset, setOffset] = useState(0), [error, setError] = useState("");
   const leak = "leak" in target ? target.leak : null;
+  useEffect(() => { setGq({}); setOffset(0); }, [target]);
   useEffect(() => { let on = true; setError("");
-    const work = "leak" in target ? client.call("leakRows", { id: target.leak.id, offset }).then(r => { if (on) setRows(r); }) : client.call("marginMath", { metric: target.metric, filters: target.filters, offset }).then(p => { if (on) setPanel(p); });
-    work.catch(e => { if (on) setError(e instanceof Error && e.message ? e.message : msg("margin.couldNotLoadThe")); }); return () => { on = false; }; }, [client, target, offset, leak]);
-  const title = leak ? say(leak.title) : (target as { title: string }).title, count = Number(leak ? rows?.count ?? 0 : panel?.rowCount ?? 0);
+    const work = "leak" in target ? client.call("leakRows", { id: target.leak.id, offset, grid: gq }).then(r => { if (on) setRows(r); }) : client.call("marginMath", { metric: target.metric, filters: target.filters, offset, grid: gq }).then(p => { if (on) setPanel(p); });
+    work.catch(e => { if (on) setError(e instanceof Error && e.message ? e.message : msg("margin.couldNotLoadThe")); }); return () => { on = false; }; }, [client, target, offset, leak, gq]);
+  const title = leak ? say(leak.title) : (target as { title: string }).title, meta = leak ? rows?.grid : panel?.grid, count = Number(meta?.matched ?? (leak ? rows?.count ?? 0 : panel?.rowCount ?? 0));
   return <section className={`${ui.card} ${ui.focusCard}`} role="dialog" aria-modal="false" aria-labelledby="math-heading">
     <div className={ui.cardHead}><div><h2 id="math-heading">{t("margin.showTheMath", { title })}</h2></div><div className={ui.cardActions}><Button size="sm" icon="close" onClick={onClose}>{t("common.close")}</Button></div></div>
     {error && <Notice tone="bad" role="alert">{t("common.warningMark", { text: say(error) })}</Notice>}
@@ -169,11 +206,8 @@ function MathView({ client, target, onClose }: { client: VaultClient; target: No
       <p className={styles.small}><strong>{t("margin.formula")}</strong> {say(panel.formula)}</p>
       <ul className={styles.small}>{panel.inputs.map(i => <li key={i.label}>{t("margin.input", { label: say(i.label), value: panel.metric === "lines" ? fmt.int(i.cents) : $(i.cents) })}</li>)}</ul>
       <Notice tone={panel.check.agrees && panel.rowsAgree ? "ok" : "warn"}>{panel.check.agrees ? t("margin.recomputedByTheMargin") : t("margin.theMarginEngineGot")} {panel.rowsAgree ? t("margin.sourceLinesAdd", { count: Number(panel.rowCount) }) : t("margin.theSourceLinesDo")}</Notice></>}
-    {(panel?.rows.length || rows?.rows.length) ? <div className={ui.tableWrap}><table className={ui.table} aria-label={t("margin.sourceRows")}>
-      <thead><tr><th scope="col">{t("margin.sourceFile")}</th><th scope="col" className={numCell}>{t("margin.row")}</th><th scope="col">{t("margin.invoice")}</th><th scope="col">{t("margin.date")}</th><th scope="col">{t("margin.product")}</th><th scope="col">{t("margin.customer")}</th><th scope="col" className={numCell}>{t("margin.list")}</th><th scope="col" className={numCell}>{t("margin.discount")}</th><th scope="col" className={numCell}>{t("margin.freight")}</th><th scope="col" className={numCell}>{t("margin.cost")}</th><th scope="col" className={numCell}>{t("margin.pocket")}</th><th scope="col" className={numCell}>{leak ? t("margin.leak") : t("margin.contributes")}</th></tr></thead>
-      <tbody>{(leak ? rows!.rows : panel!.rows).map(r => <tr key={`${r.sourceFile}|${r.sourceRow}`}><td className={styles.wrap}><span translate="no">{r.sourceFile}</span>{'recordedRebate' in r&&r.recordedRebate!==r.rebate&&<p>{t('rebate.booked')}: {$(r.recordedRebate)} · {t('rebate.recognized')}: {$(r.rebate)}</p>}{'fxRate' in r && <><small>{t('fx.provenance',{source:r.sourceCurrency,workspace:r.workspaceCurrency,rate:fmt.decimal(r.fxRate)})}</small>{r.headerFx !== '[]' && <small>{t('fx.headerProvenance',{details:r.headerFx})}</small>}</>}</td><td className={numCell}>{fmt.int(r.sourceRow)}</td><td translate="no">{r.invoice}</td><td>{fmt.date(r.date)}</td><td translate="no">{r.product}</td><td translate="no">{r.customer}</td>
-        <td className={numCell}>{$(r.list)}</td><td className={numCell}>{$(r.discount)}</td><td className={numCell}>{$(r.freight)}</td><td className={numCell}>{$(r.cost)}</td><td className={numCell}>{$(r.pocket)}</td><td className={numCell}>{"leak" in r ? $(r.leak) : target && "metric" in target && target.metric === "lines" ? t("margin.lineCount", { count: 1 }) : $((r as MathPanel["rows"][number]).contribution)}</td></tr>)}</tbody>
-    </table></div> : null}
+    {(panel?.rows.length || rows?.rows.length || gq.filters?.length) ? <MathRows leak={!!leak} lines={!leak && "metric" in target && target.metric === "lines"} list={(leak ? rows?.rows : panel?.rows) ?? []} meta={meta} gq={gq}
+      setGq={q => { setGq(q); setOffset(0); }} fetch={q => leak ? client.call("leakRows", { id: leak.id, offset: 0, grid: q }).then(r => r.grid) : client.call("marginMath", { metric: (target as { metric: Metric }).metric, filters: (target as { filters: Filters }).filters, offset: 0, grid: q }).then(p => p.grid!)}/> : null}
     {count > 25 && <div className={ui.row}><Button size="sm" icon="chevronLeft" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - 25))}>{t("margin.previous25")}</Button><span className={styles.small}>{t("margin.rowsRange", { from: offset + 1, to: Math.min(count, offset + 25), count })}</span><Button size="sm" disabled={offset + 25 >= count} onClick={() => setOffset(offset + 25)}>{t("margin.next25")}</Button></div>}
   </section>;
 }

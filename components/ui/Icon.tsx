@@ -33,6 +33,10 @@ const PATHS = {
   logout: "M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l-5-5 5-5m-5 5h12",
   palette: "M12 21a9 9 0 1 1 9-9c0 2-1.5 3-3.5 3H16a2 2 0 0 0-1.4 3.4A1.6 1.6 0 0 1 12 21ZM7.5 11.5h.01M10 7.5h.01M14.5 7.5h.01M17 11h.01",
   sidebar: "M4 4h16a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Zm5 0v16",
+  sort: "M8 9.5 12 5.5l4 4M8 14.5l4 4 4-4",
+  sortUp: "M12 19V5m-5 5 5-5 5 5",
+  sortDown: "M12 5v14m-5-5 5 5 5-5",
+  filter: "M4 5h16l-6.2 7.4V19l-3.6-1.8v-4.8z",
   flask: "M9 3h6M10 3v6l-5.5 9.5A1.7 1.7 0 0 0 6 21h12a1.7 1.7 0 0 0 1.5-2.5L14 9V3M7.5 15h9",
 } as const;
 export type IconName = keyof typeof PATHS;

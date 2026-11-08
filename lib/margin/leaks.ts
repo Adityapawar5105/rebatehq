@@ -12,6 +12,9 @@ import { atRateSql, discountBpSql, POCKET, MARGIN } from "./sql";
 import { bpText, rha } from "./decimal";
 import { lineFromCents } from "./engine";
 import { msg } from "../i18n/core";
+import { gridPage, gridQuery } from "../grid/sql";
+import type { GridMeta, GridSpec } from "../grid/core";
+export const LEAK_ROWS_GRID: GridSpec = { file: "text", source_row: "int", invoice: "text", d: "date", product_id: "text", customer_id: "text", list: "money", discount: "money", freight: "money", cost: "money", pocket: "money", leak: "money" };
 
 export type LeakType = "small_order_loss" | "free_delivery_loss" | "below_floor" | "discount_outlier" | "unrecovered_freight" | "negative_margin" | "below_lower_tier" | "below_cost";
 export const LEAK_LABELS: Record<LeakType, string> = { small_order_loss:msg("pc2.smallLoss"),free_delivery_loss:msg("pc2.freeLoss"),below_floor: msg("leak.belowTierFloor"), discount_outlier: msg("leak.discountOutlierVsTier"), unrecovered_freight: msg("leak.unrecoveredFreight"),
@@ -138,15 +141,15 @@ export type LeakRow = { sourceFile: string; sourceRow: string; lineId: string; i
   list: string; discount: string; rebate: string; freight: string; cost: string | null; pocket: string; margin: string | null; rate: string; basis: string; leak: string; engineLeak: string };
 /** Evidence rows for one finding (largest first), with the leak recomputed by the JS engine for each row. */
 /** Evidence rows for one finding (largest first), with the leak recomputed by the JS engine for each row. */
-export async function leakRows(engine: Engine, id: string, offset = 0, limit = 25): Promise<{ rows: LeakRow[]; count: string; sum: string; engineAgrees: boolean }> {
+export async function leakRows(engine: Engine, id: string, offset = 0, limit = 25, grid?: unknown): Promise<{ rows: LeakRow[]; count: string; sum: string; engineAgrees: boolean; grid: GridMeta }> {
   const where = `WHERE h.h = hash(${sqlText(id)})`;
   const agg = (await q(engine, `SELECT count(*)::VARCHAR AS n, coalesce(sum(leak),0)::VARCHAR AS c FROM lf_hits h ${where}`))[0];
-  const page = `(SELECT * FROM lf_hits h ${where} ORDER BY h.leak DESC, h.sid, h.line_id LIMIT ${Math.max(1, Math.min(200, limit))} OFFSET ${Math.max(0, Math.floor(offset))})`;
-  const rows = await q(engine, `SELECT f.name AS file, l.source_row::VARCHAR AS source_row, l.line_id::VARCHAR AS line_id, coalesce(l.invoice_id,'') AS invoice, l.sale_date::VARCHAR AS d, l.product_id, l.category, l.customer_id, l.tier,
+  const paged = await gridPage(engine, `SELECT p.leak AS leak_n, p.sid AS sid_n, p.line_id AS line_n, f.name AS file, l.source_row::VARCHAR AS source_row, l.line_id::VARCHAR AS line_id, coalesce(l.invoice_id,'') AS invoice, l.sale_date::VARCHAR AS d, l.product_id, l.category, l.customer_id, l.tier,
  l.list_cents::VARCHAR AS list, l.discount_cents::VARCHAR AS discount, l.rebate_cents::VARCHAR AS rebate, l.freight_cents::VARCHAR AS freight, l.cost_cents::VARCHAR AS cost, l.pocket::VARCHAR AS pocket, l.margin::VARCHAR AS margin,
  l.quantity::VARCHAR AS quantity, g.floor::VARCHAR AS configured_floor, l.rate_bp::VARCHAR AS rate, p.basis_bp::VARCHAR AS basis, p.leak::VARCHAR AS leak, k.type,a.loss::VARCHAR service_loss,a.weight::VARCHAR service_weight,a.total::VARCHAR service_total,a.cumulative::VARCHAR service_cumulative
-FROM ${page} p JOIN lf_keys k ON k.h = p.h JOIN lf_lines l ON l.sid = p.sid AND l.line_id = p.line_id JOIN source_files f ON f.id = l.source_id LEFT JOIN price_guardrails g ON g.tier=l.tier AND g.category=l.category LEFT JOIN lf_service_alloc a ON a.sid=l.sid AND a.line_id=l.line_id
-ORDER BY p.leak DESC, p.sid, p.line_id`);
+FROM lf_hits p JOIN lf_keys k ON k.h = p.h JOIN lf_lines l ON l.sid = p.sid AND l.line_id = p.line_id JOIN source_files f ON f.id = l.source_id LEFT JOIN price_guardrails g ON g.tier=l.tier AND g.category=l.category LEFT JOIN lf_service_alloc a ON a.sid=l.sid AND a.line_id=l.line_id
+WHERE p.h = hash(${sqlText(id)})`, LEAK_ROWS_GRID, gridQuery(LEAK_ROWS_GRID, grid), { fallback: "g.leak_n DESC, g.sid_n, g.line_n", limit: Math.max(1, Math.min(200, limit)), offset: Math.max(0, Math.floor(offset)) });
+  const rows = paged.rows;
   let agrees = true;
   const out = rows.map(r => {
     const n = (k: string) => BigInt(S(r[k])), type = S(r.type) as LeakType;
@@ -157,7 +160,7 @@ ORDER BY p.leak DESC, p.sid, p.line_id`);
       list: S(r.list), discount: S(r.discount), rebate: S(r.rebate), freight: S(r.freight), cost: r.cost === null ? null : S(r.cost), pocket: S(r.pocket), margin: r.margin === null ? null : S(r.margin),
       rate: r.rate===null?msg("common.unknown"):bpText(n("rate")), basis: r.basis === null ? "" : bpText(n("basis")), leak: S(r.leak), engineLeak: String(engineLeak) };
   });
-  return { rows: out, count: S(agg.n), sum: S(agg.c), engineAgrees: agrees };
+  return { rows: out, count: S(agg.n), sum: S(agg.c), engineAgrees: agrees, grid: paged.grid };
 }
 /** All hits of one finding, for tests: source, line, leak and the line's amounts. */
 export async function hitRows(engine: Engine, id: string) {

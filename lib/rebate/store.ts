@@ -8,6 +8,11 @@ import {VaultError} from '../vault/protocol';
 import {msg} from '../i18n/core';
 import {accrueCents,rateInteger,type Agreement} from './engine';
 import {hasRebates,salesInput} from './input';
+import {gridPage,gridQuery,memoryPage} from '../grid/sql';
+import type {ClientColumn,GridMeta,GridSpec} from '../grid/core';
+/** Rebate progress grid: earned and progress only, never cost or margin (decision 16; reps can see it). */
+export const PROGRESS_GRID:GridSpec={reference:'text',customer:'text',from:'date',spend:'money',earned:'money',remaining:'money'};
+export const EVIDENCE_GRID:GridSpec={source:'text',product:'text',date:'date',base:'money',booked:'money',accrued:'money',recognized:'money'};
 export type ProgramInput={id?:string;reference:string;customer:string;mode:Agreement['calculation_mode'];treatment:'additional'|'replace';from:string;to:string;eligible:string;excluded:string;enabled:boolean;tiers:{from:string;to:string;rate:string}[]};
 export type Program={id:string;reference:string;name:string;customer:string;mode:Agreement['calculation_mode'];treatment:'additional'|'replace';from:string;to:string;eligible:string[];excluded:string[];enabled:boolean;source:string|null;sourceRow:string|null;checkedAt:string|null;tiers:{from:string;to:string|null;rate:string}[]};
 export function bad():never{throw new VaultError('REBATE',msg('rebate.invalidProgram'));}
@@ -49,11 +54,14 @@ export async function rebuildAccruals(e:Engine){
  await e.conn.query(`UPDATE rebate_programs SET last_calculated_at=${Q(new Date().toISOString())}`);
 }
 export type Progress={id:string;reference:string;customer:string;from:string;to:string;mode:string;enabled:boolean;spend:string;earned:string;remaining:string|null;nextRate:string|null;checkedAt:string|null;reminder:boolean};
-export async function progress(e:Engine,offset=0){
+export async function progress(e:Engine,offset=0,grid?:unknown){
  const list=await programs(e),out:Progress[]=[];const today=new Date().toISOString().slice(0,10),soon=new Date(Date.parse(today+'T00:00:00Z')+30*86400000).toISOString().slice(0,10);
  for(const p of list){const r=(await rows(e,`SELECT coalesce(sum(base_cents),0)::VARCHAR spend FROM rebate_accruals WHERE program_id=${Q(p.id)}`))[0];const value=accrueCents(BigInt(r.spend),p.mode,p.tiers);
   out.push({id:p.id,reference:p.reference,customer:p.customer,from:p.from,to:p.to,mode:p.mode,enabled:p.enabled,...value,checkedAt:p.checkedAt,reminder:p.enabled&&value.remaining!==null&&BigInt(value.remaining)>BigInt(0)&&p.to>=today&&p.to<=soon});}
- offset=Number.isInteger(offset)?Math.max(0,offset):0;return {currency:await workspaceCurrency(e),rows:out.slice(offset,offset+50),total:String(out.length),offset};
+ offset=Number.isInteger(offset)?Math.max(0,offset):0;
+ const cols:ClientColumn<Progress>[]=[{id:'reference',type:'text',value:r=>r.reference},{id:'customer',type:'text',value:r=>r.customer},{id:'from',type:'date',value:r=>r.from},{id:'spend',type:'money',value:r=>r.spend},{id:'earned',type:'money',value:r=>r.earned},{id:'remaining',type:'money',value:r=>r.remaining}];
+ const page=await memoryPage(e,out,cols,PROGRESS_GRID,gridQuery(PROGRESS_GRID,grid),{limit:50,offset});
+ return {currency:await workspaceCurrency(e),rows:page.rows,total:page.grid.matched,offset,grid:page.grid};
 }
 export async function reconciliation(e:Engine){
  if(!await hasRebates(e))return {booked:'0',expected:'0',recognized:'0',adjustment:'0',programs:'0',valid:true};
@@ -68,11 +76,11 @@ export async function reconciliation(e:Engine){
  valid&&=BigInt(r.booked)+BigInt(r.adjustment)===BigInt(r.recognized);return {booked:r.booked,expected:String(expected),recognized:r.recognized,adjustment:r.adjustment,programs:String(list.filter(p=>p.enabled).length),valid};
 }
 export async function state(e:Engine){return {programs:await programs(e),progress:await progress(e),reconciliation:await reconciliation(e)};}
-export async function evidence(e:Engine,id:string,offset=0){
+export async function evidence(e:Engine,id:string,offset=0,grid?:unknown){
  const p=(await programs(e)).find(p=>p.id===id);if(!p)bad();offset=Number.isInteger(offset)?Math.max(0,offset):0;
- const count=(await rows(e,`SELECT count(*)::VARCHAR n FROM rebate_accruals WHERE program_id=${Q(id)}`))[0].n;
- const data=await rows(e,`SELECT f.name AS "source",s.source_row::VARCHAR AS "row",s.line_id::VARCHAR AS "line",s.product_id AS product,s.sale_date::VARCHAR AS "date",s.line_kind AS kind,a.base_cents::VARCHAR base,a.booked_cents::VARCHAR booked,a.accrued_cents::VARCHAR accrued,v.rebate_cents::VARCHAR recognized
- FROM rebate_accruals a JOIN sales_lines s ON s.source_id=a.source_id AND s.line_id=a.line_id JOIN rebate_sales v ON v.source_id=s.source_id AND v.line_id=s.line_id JOIN source_files f ON f.id=s.source_id WHERE a.program_id=${Q(id)} ORDER BY a.source_id,a.line_id LIMIT 50 OFFSET ${offset}`);
- return {id,offset,count,rows:data as {source:string;row:string;line:string;product:string;date:string;kind:string;base:string;booked:string;accrued:string;recognized:string}[]};
+ const page=await gridPage(e,`SELECT f.name AS "source",s.source_row::VARCHAR AS "row",s.line_id::VARCHAR AS "line",s.product_id AS product,s.sale_date::VARCHAR AS "date",s.line_kind AS kind,a.base_cents::VARCHAR base,a.booked_cents::VARCHAR booked,a.accrued_cents::VARCHAR accrued,v.rebate_cents::VARCHAR recognized,a.source_id AS source_key,a.line_id AS line_key
+ FROM rebate_accruals a JOIN sales_lines s ON s.source_id=a.source_id AND s.line_id=a.line_id JOIN rebate_sales v ON v.source_id=s.source_id AND v.line_id=s.line_id JOIN source_files f ON f.id=s.source_id WHERE a.program_id=${Q(id)}`,EVIDENCE_GRID,gridQuery(EVIDENCE_GRID,grid),{fallback:'g.source_key,g.line_key',limit:50,offset});
+ const count=page.grid.matched,data=page.rows.map(({source_key:_,line_key:__,...r})=>r);
+ return {id,offset,count,grid:page.grid,rows:data as {source:string;row:string;line:string;product:string;date:string;kind:string;base:string;booked:string;accrued:string;recognized:string}[]};
 }
 export async function removeSql(e:Engine,id:string){const p=(await programs(e)).find(p=>p.id===id);if(!p)bad();if(p.source)throw new VaultError('REBATE',msg('rebate.fileOwned'));return `DELETE FROM rebate_accruals WHERE program_id=${Q(id)};DELETE FROM rebate_tiers WHERE program_id=${Q(id)};DELETE FROM rebate_programs WHERE id=${Q(id)};`;}

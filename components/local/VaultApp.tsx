@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { CurrencySettings } from './CurrencySettings';
 import { VaultClient } from "@/lib/vault/client";
 import type { Scope, StorageStatus, Tier, VaultStatus } from "@/lib/vault/protocol";
@@ -7,6 +7,8 @@ import { fmt, msg, say, t, useLocale, setWorkspaceCurrency, type MessageKey } fr
 import { Preferences } from "@/components/Preferences";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { Button, Card, Field, JumpNav, Notice, PageHeader } from "@/components/ui/ui";
+import { GridTotalsProvider } from "@/components/ui/DataGrid";
+import type { GridType } from "@/lib/grid/core";
 import ui from "@/components/ui/ui.module.css";
 import { PricingView } from "./PricingView";
 import { RebatesView } from "./RebatesView";
@@ -35,6 +37,8 @@ const NAV_KEY = "rebatehq.nav";
 export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled = false }: { scope: Scope; email: string; workspace: string; lab?: boolean; legacyEnabled?: boolean }) {
   useLocale(); // re-render every screen when the language changes
   const client = useRef<VaultClient | null>(null);
+  // Every grid totals its selected rows through the worker (DuckDB), never in the page.
+  const gridTotals = useCallback((types: GridType[], values: (string | null)[][]) => { if (!client.current) return Promise.reject(new Error("locked")); return client.current.call("gridTotals", { types, values }); }, []);
   const [status, setStatus] = useState<VaultStatus | null>(null), [section, setSection] = useState<Section>("Home");
   // Status and error text are kept as message references, so a language switch re-renders them.
   useEffect(() => { setWorkspaceCurrency(status?.state === "unlocked" ? status.currency : "USD"); }, [status?.state, status?.currency]);
@@ -80,7 +84,7 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
     <Icon name={status.licence.writable ? "shield" : "alert"} size={15}/>
     <span>{status.licence.writable?(t("shell.licensed", { tier: tierName(status.licence.tier) })+(status.licence.offline?t("shell.offlineGrace"):'')):t("shell.readOnly", { reason: say(status.licence.reason) })}{t("common.listSeparator")}<a href="/account/licence">{t("shell.licenceLink")}</a></span>
   </p>;
-  return <div className={`${styles.shell} ${sh.frame}`} data-nav={collapsed ? "collapsed" : "open"} data-drawer={drawer ? "open" : "closed"}>
+  return <GridTotalsProvider value={gridTotals}><div className={`${styles.shell} ${sh.frame}`} data-nav={collapsed ? "collapsed" : "open"} data-drawer={drawer ? "open" : "closed"}>
     <a className={sh.skip} href="#local-content">{t("shell.skip")}</a>
     <aside className={sh.sidebar} id="app-sidebar" aria-label={t("shell.sidebar")}>
       <a href="/home" className={sh.brand}><span className={sh.mark} aria-hidden="true">{t("shell.brandMark")}</span><span className={sh.label}>{t("app.name")}</span></a>
@@ -181,5 +185,5 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
         </>}
       </main>
     </div>
-  </div>;
+  </div></GridTotalsProvider>;
 }

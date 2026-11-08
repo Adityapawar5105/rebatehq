@@ -23,7 +23,7 @@ the next chunk. It holds what a new session needs without the earlier chat histo
 | 3a | 7C-3a v2.4: multi-currency, Firefox | No | Done: [CI #108](https://github.com/Adityapawar5105/rebatehq/actions/runs/42444422694) on `155188f`, 8 November 2026; 256 unit / 46 authenticated vault / 44 Firefox / 11 authenticated relay checks |
 | 3b | 7C-3b v2.4: health alerts, competitor alternatives, sync status, cash-leak hero | No | Done: [CI #111](https://github.com/Adityapawar5105/rebatehq/actions/runs/42449524974) on `fa93eab`, 8 November 2026; 260 unit / 48 authenticated vault / 46 Firefox / 12 authenticated relay checks |
 | 4 | 7D-1 Customer rebates | No | Done: [CI #114](https://github.com/Adityapawar5105/rebatehq/actions/runs/42470690491) on `585ccf8`, 8 November 2026 |
-| 4a | 7V-3 v2.5: grid filter/sort + selection totals (7V-3a), row notes (7V-3b) | No | **Next** |
+| 4a | 7V-3 v2.5: grid filter/sort + selection totals (7V-3a), row notes (7V-3b) | No | 7V-3a built 8 November 2026, CI pending; 7V-3b next |
 | 4b | 7D-2 Supplier claims, Purchases import, rebate progress, claim generator | No | — |
 | 5 | 7E Vendor review and simulator | No | — |
 | 6 | 7F Reporting and reach | No | — |
@@ -213,6 +213,19 @@ what remains unverified.
 - File-owned terms change only through source replacement/removal. Reject the whole program if any band is invalid; Fix Later must recheck the complete cohort, and a dismissed band cannot activate a partial program. Wholly invalid batches retain the existing review-only rule.
 - All 12 rejected-row slots are used by the agreement role. A future larger role needs a schema change, not silently truncated metadata. Preserve AR sidecar kinds when expanding source_kinds.
 - Preserve the rep-safe rebateProgress projection/classification and signed-tier guard. Never expose the private state/evidence commands to reps. Test currency amount AND symbol/code, and update historical browser section expectations when adding allowed navigation.
+
+### Pitfalls from 7V-3a (grid standard)
+
+- Every new data grid uses components/ui/DataGrid (sort and filter on every column, selection totals). This is a
+  "Done when" item for every chunk from 7V-3b on. Forms, raw previews, legends and show-the-math breakdowns are not grids.
+- A paged grid must sort and filter in the worker: keep the command's SQL as a base query without ORDER BY or LIMIT,
+  add a GridSpec of its output columns and call gridPage (lib/grid/sql.ts); rows the worker holds in memory use
+  memoryPage. Never interpolate a column name from the UI; never sort or filter only the loaded page.
+- Grid column ids must equal the base query's output column names. Rate columns filter on an exact decimal without
+  "%" (bpPercentSql), not on bpText output.
+- Show the empty state only when no grid filter is active, or a filter that matches nothing hides its own Clear button.
+- Header buttons change a column header's accessible name, so DataGrid sets aria-label to the column name; the
+  selection checkbox is the first cell of every row (browser tests must use td:nth-child(2) for the first data column).
 
 ## Block C — close-out prompt (after a green CI run)
 
@@ -492,7 +505,8 @@ Scope:
    - Shown in the workspace currency (7C-3a) and the UI locale; the status bar is a polite live region.
 3. Freeform row notes (7V-3b): notes VARCHAR(1000) on customers and products, with a vault schema bump and a
    forward migration (Block B).
-   - Edited inline in the customer list and the item master; at most 1,000 characters (count Unicode code
+   - The app has no customer list or item master grid yet (checked after 7V-3a): add both to Data Hub as worker
+     grids (gridPage over customers and products) that meet the grid standard, then edit notes inline there; at most 1,000 characters (count Unicode code
      points; enforce in the worker as well as the UI); stored as plain text and rendered as text, never HTML.
    - Local only: never in a relay event, never sent to the server, never in ERP exports. Included in the
      encrypted backup and restore round trip.

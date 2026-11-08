@@ -10,6 +10,14 @@ import { lineFromCents } from "./engine";
 import { POCKET, MARGIN, rateBpSql } from "./sql";
 import { VaultError } from "../vault/protocol";
 import { msg } from "../i18n/core";
+import { gridPage, gridQuery } from "../grid/sql";
+import type { GridMeta, GridSpec } from "../grid/core";
+/** Grid columns (7V-3a). The drill-down returns its top rows; sort and filter run over every group. */
+export const DRILL_GRID: GridSpec = { key: "text", label: "text", lines: "int", list: "money", discount: "money", credits: "money", pocket: "money", cost: "money", margin: "money", rate_value: "percent", uncosted: "int" };
+/** Source-row grids of "show the math" (the leak evidence uses the same columns with "leak"). */
+export const MATH_ROWS_GRID: GridSpec = { file: "text", source_row: "int", invoice: "text", d: "date", product_id: "text", customer_id: "text", list: "money", discount: "money", freight: "money", cost: "money", pocket: "money", contribution: "money" };
+/** Exact percent text ("-0.05") from integer basis points, for sorting and filtering a rate column. */
+export const bpPercentSql = (bp: string) => `CASE WHEN ${bp} IS NULL THEN NULL ELSE (CASE WHEN ${bp} < 0 THEN '-' ELSE '' END) || (abs(${bp}) // 100)::VARCHAR || '.' || lpad((abs(${bp}) % 100)::VARCHAR, 2, '0') END`;
 
 export type Dim = "product" | "category" | "customer" | "branch" | "tier" | "region" | "month";
 export const DIMS: Dim[] = ["product", "category", "customer", "branch", "tier", "region", "month"];
@@ -83,26 +91,28 @@ export async function waterfall(engine: Engine, filters?: Filters): Promise<Wate
   return { rebateReconciliation:await reconciliation(engine),filters: f, lines: String(lines), sales: str(s), credits: str(c), netPocket: String(netPocket), costedLines: String(costedLines), costedPocket: String(costedPocket), cost: String(cost), margin: String(margin),
     rate: bpText(rateBp(margin, costedPocket)), uncostedLines: String(lines - costedLines), uncostedPocket: String(uncostedPocket), steps, ms: Math.round((performance.now() - t0) * 10) / 10 };
 }
-export type DrillRow = { key: string; label: string; lines: string; list: string; discount: string; rebate: string; freight: string; credits: string; pocket: string; costedLines: string; cost: string; margin: string; rate: string; uncostedLines: string };
-export type Drill = { dim: Dim; filters: Filters; rows: DrillRow[]; total: string; ms: number };
-export async function drill(engine: Engine, dim: Dim, filters?: Filters, sort: "margin" | "pocket" | "rate" = "pocket", limit = 100): Promise<Drill> {
+export type DrillRow = { rateValue?: string | null; key: string; label: string; lines: string; list: string; discount: string; rebate: string; freight: string; credits: string; pocket: string; costedLines: string; cost: string; margin: string; rate: string; uncostedLines: string };
+export type Drill = { grid?: GridMeta; dim: Dim; filters: Filters; rows: DrillRow[]; total: string; ms: number };
+export async function drill(engine: Engine, dim: Dim, filters?: Filters, sort: "margin" | "pocket" | "rate" = "pocket", limit = 100, grid?: unknown): Promise<Drill> {
   if (!DIMS.includes(dim)) throw new VaultError("FILTER", msg("waterfall.unsupportedDrillDown"));
   const f = checkFilters(filters), t0 = performance.now(), k = col(dim);
   const pocket = `(sum(a.list_cents) - sum(a.discount_cents) - sum(a.rebate_cents) - sum(a.freight_cents))`, margin = "(sum(a.costed_pocket_cents) - sum(a.cost_cents))";
-  const order = sort === "margin" ? `${margin} ASC` : sort === "rate" ? `${rateBpSql(margin, "sum(a.costed_pocket_cents)")} ASC NULLS LAST` : `${pocket} DESC`;
+  const q = gridQuery(DRILL_GRID, grid), rate = rateBpSql(margin, "sum(a.costed_pocket_cents)");
+  const fallback = sort === "margin" ? "g.margin_n ASC, g.key" : sort === "rate" ? "g.rate_n ASC NULLS LAST, g.key" : "g.pocket_n DESC, g.key";
   // Group on the id first; product/customer labels are joined only for the rows returned.
   const attr = !["product", "customer", "month"].includes(dim), j = needsJoin(f, attr ? [dim] : []), table = aggTable(f, [dim]);
   const from = `${table} a${j.c ? " JOIN customers c ON c.customer_id = a.customer_id" : ""}${j.p ? " JOIN products p ON p.product_id = a.product_id" : ""}`;
-  const label = dim === "product" ? "(SELECT description FROM products x WHERE x.product_id = g.key)" : dim === "customer" ? "(SELECT name FROM customers x WHERE x.customer_id = g.key)" : "''";
-  const sql = `SELECT g.*, ${label} AS label FROM (SELECT ${k} AS key, sum(a.lines)::VARCHAR AS lines, sum(a.list_cents) FILTER (WHERE a.line_kind='sale')::VARCHAR AS list, sum(a.discount_cents) FILTER (WHERE a.line_kind='sale')::VARCHAR AS discount,
- sum(a.rebate_cents) FILTER (WHERE a.line_kind='sale')::VARCHAR AS rebate, sum(a.freight_cents) FILTER (WHERE a.line_kind='sale')::VARCHAR AS freight,
- (sum(a.list_cents - a.discount_cents - a.rebate_cents - a.freight_cents) FILTER (WHERE a.line_kind='credit'))::VARCHAR AS credits, ${pocket}::VARCHAR AS pocket,
- sum(a.costed_lines)::VARCHAR AS costed_lines, sum(a.cost_cents)::VARCHAR AS cost, ${margin}::VARCHAR AS margin, ${rateBpSql(margin, "sum(a.costed_pocket_cents)")}::VARCHAR AS rate_bp, (sum(a.lines) - sum(a.costed_lines))::VARCHAR AS uncosted, count(*) OVER ()::VARCHAR AS total, row_number() OVER (ORDER BY ${order}, 1) AS rn
-FROM ${from} ${where(f)} GROUP BY ${k} ORDER BY ${order}, 1 LIMIT ${Math.max(1, Math.min(500, limit))}) g ORDER BY g.rn`;
-  const rows = (await engine.conn.query(sql)).toArray();
-  return { dim, filters: f, total: rows.length ? String(rows[0].total) : "0", ms: Math.round((performance.now() - t0) * 10) / 10,
-    rows: rows.map(r => ({ key: String(r.key), label: String(r.label ?? ""), lines: String(r.lines), list: String(r.list ?? "0"), discount: String(r.discount ?? "0"), rebate: String(r.rebate ?? "0"), freight: String(r.freight ?? "0"),
-      credits: String(r.credits ?? "0"), pocket: String(r.pocket), costedLines: String(r.costed_lines), cost: String(r.cost), margin: String(r.margin), rate: r.rate_bp === null ? "n/a" : bpText(BigInt(String(r.rate_bp))), uncostedLines: String(r.uncosted) })) };
+  const label = dim === "product" ? "(SELECT description FROM products px WHERE px.product_id = d0.key)" : dim === "customer" ? "(SELECT name FROM customers cx WHERE cx.customer_id = d0.key)" : "''";
+  const base = `SELECT d0.*, ${label} AS label, ${bpPercentSql("d0.rate_n")} AS rate_value FROM (SELECT ${k} AS key, sum(a.lines)::VARCHAR AS lines, coalesce(sum(a.list_cents) FILTER (WHERE a.line_kind='sale'),0)::VARCHAR AS list, coalesce(sum(a.discount_cents) FILTER (WHERE a.line_kind='sale'),0)::VARCHAR AS discount,
+ coalesce(sum(a.rebate_cents) FILTER (WHERE a.line_kind='sale'),0)::VARCHAR AS rebate, coalesce(sum(a.freight_cents) FILTER (WHERE a.line_kind='sale'),0)::VARCHAR AS freight,
+ coalesce(sum(a.list_cents - a.discount_cents - a.rebate_cents - a.freight_cents) FILTER (WHERE a.line_kind='credit'),0)::VARCHAR AS credits, ${pocket}::VARCHAR AS pocket,
+ sum(a.costed_lines)::VARCHAR AS costed_lines, sum(a.cost_cents)::VARCHAR AS cost, ${margin}::VARCHAR AS margin, ${rate} AS rate_n, (sum(a.lines) - sum(a.costed_lines))::VARCHAR AS uncosted, ${pocket} AS pocket_n, ${margin} AS margin_n
+FROM ${from} ${where(f)} GROUP BY ${k}) d0`;
+  const page = await gridPage(engine, base, DRILL_GRID, q, { fallback, limit: Math.max(1, Math.min(500, limit)), offset: 0 });
+  const rows = page.rows;
+  return { dim, filters: f, total: page.grid.matched, grid: page.grid, ms: Math.round((performance.now() - t0) * 10) / 10,
+    rows: rows.map(r => ({ rateValue: r.rate_value === null ? null : String(r.rate_value), key: String(r.key), label: String(r.label ?? ""), lines: String(r.lines), list: String(r.list ?? "0"), discount: String(r.discount ?? "0"), rebate: String(r.rebate ?? "0"), freight: String(r.freight ?? "0"),
+      credits: String(r.credits ?? "0"), pocket: String(r.pocket), costedLines: String(r.costed_lines), cost: String(r.cost), margin: String(r.margin), rate: r.rate_n === null ? "n/a" : bpText(BigInt(String(r.rate_n))), uncostedLines: String(r.uncosted) })) };
 }
 export type Whale = { available: boolean; reason?: string; customers: string; totalMargin: string; peakMargin: string; peakAt: string; peakPct: string; losers: string; loserMargin: string;
   points: Array<{ x: number; y: number }>; top: DrillRow[]; bottom: DrillRow[]; uncostedCustomers: string; ms: number };
@@ -141,10 +151,10 @@ const CONTRIB: Record<Exclude<Metric, "rate">, { expr: string; kind?: "sale" | "
 };
 export type MathRow = { sourceCurrency:string;workspaceCurrency:string;fxRate:string;headerFx:string; sourceFile: string; sourceId: string; sourceRow: string; lineId: string; invoice: string; date: string; product: string; customer: string; kind: string; quantity: string;
   recordedRebate: string; list: string; discount: string; rebate: string; freight: string; cost: string | null; pocket: string; margin: string | null; contribution: string };
-export type MathPanel = { metric: Metric; label: string; value: string; formula: string; inputs: Array<{ label: string; cents: string }>; check: { engine: string; agrees: boolean };
+export type MathPanel = { grid?: GridMeta; metric: Metric; label: string; value: string; formula: string; inputs: Array<{ label: string; cents: string }>; check: { engine: string; agrees: boolean };
   rows: MathRow[]; rowCount: string; rowsSum: string; rowsAgree: boolean; offset: number };
 /** The formula, its inputs (recomputed by the JS engine) and the source rows behind one waterfall number. */
-export async function math(engine: Engine, metric: Metric, filters?: Filters, offset = 0): Promise<MathPanel> {
+export async function math(engine: Engine, metric: Metric, filters?: Filters, offset = 0, grid?: unknown): Promise<MathPanel> {
   const input=await salesInput(engine);
   const f = checkFilters(filters), w = await waterfall(engine, f);
   if (!(metric in CONTRIB) && metric !== "rate") throw new VaultError("FILTER", msg("waterfall.unsupportedNumber"));
@@ -171,15 +181,17 @@ export async function math(engine: Engine, metric: Metric, filters?: Filters, of
   const j = needsJoin(f), base = `FROM ${input} s${j.c ? " JOIN customers c ON c.customer_id = s.customer_id" : ""}${j.p ? " JOIN products p ON p.product_id = s.product_id" : ""} ${conds.length ? "WHERE " + conds.join(" AND ") : ""}`;
   const agg = (await engine.conn.query(`SELECT count(*)::VARCHAR AS n, coalesce(sum(${spec.expr}),0)::VARCHAR AS total ${base}`)).toArray()[0];
   const at = Math.max(0, Math.floor(offset));
-  const rows = (await engine.conn.query(`SELECT (SELECT source_currency FROM import_batches b WHERE b.source_id=s.source_id LIMIT 1) AS source_currency,(SELECT workspace_currency FROM import_batches b WHERE b.source_id=s.source_id LIMIT 1) AS workspace_currency,(SELECT fx_rate FROM import_batches b WHERE b.source_id=s.source_id LIMIT 1) AS fx_rate,(SELECT header_fx FROM import_batches b WHERE b.source_id=s.source_id LIMIT 1) AS header_fx, f.name AS file, s.source_id, s.source_row::VARCHAR AS source_row, s.line_id::VARCHAR AS line_id, coalesce(s.invoice_id,'') AS invoice, s.sale_date::VARCHAR AS d, s.product_id, s.customer_id, s.line_kind, s.quantity::VARCHAR AS q,
+  const mathBase = `SELECT (SELECT source_currency FROM import_batches b WHERE b.source_id=s.source_id LIMIT 1) AS source_currency,(SELECT workspace_currency FROM import_batches b WHERE b.source_id=s.source_id LIMIT 1) AS workspace_currency,(SELECT fx_rate FROM import_batches b WHERE b.source_id=s.source_id LIMIT 1) AS fx_rate,(SELECT header_fx FROM import_batches b WHERE b.source_id=s.source_id LIMIT 1) AS header_fx, f.name AS file, s.source_id, s.source_row::VARCHAR AS source_row, s.line_id::VARCHAR AS line_id, coalesce(s.invoice_id,'') AS invoice, s.sale_date::VARCHAR AS d, s.product_id, s.customer_id, s.line_kind, s.quantity::VARCHAR AS q,
  (SELECT raw.rebate_cents::VARCHAR FROM sales_lines raw WHERE raw.source_id=s.source_id AND raw.line_id=s.line_id) AS recorded_rebate,s.list_cents::VARCHAR AS list, s.discount_cents::VARCHAR AS discount, s.rebate_cents::VARCHAR AS rebate, s.freight_cents::VARCHAR AS freight, s.cost_cents::VARCHAR AS cost, ${POCKET.replaceAll("list_cents", "s.list_cents").replaceAll("discount_cents", "s.discount_cents").replaceAll("rebate_cents", "s.rebate_cents").replaceAll("freight_cents", "s.freight_cents")}::VARCHAR AS pocket,
- (CASE WHEN s.cost_cents IS NULL THEN NULL ELSE s.list_cents - s.discount_cents - s.rebate_cents - s.freight_cents - s.cost_cents END)::VARCHAR AS margin, (${spec.expr})::VARCHAR AS contribution
- ${base.replace(`FROM ${input} s`, `FROM ${input} s JOIN source_files f ON f.id = s.source_id`)} ORDER BY abs(${spec.expr}) DESC, s.source_id, s.source_row LIMIT 25 OFFSET ${at}`)).toArray();
+ (CASE WHEN s.cost_cents IS NULL THEN NULL ELSE s.list_cents - s.discount_cents - s.rebate_cents - s.freight_cents - s.cost_cents END)::VARCHAR AS margin, (${spec.expr})::VARCHAR AS contribution, abs(${spec.expr}) AS order_n, s.source_row AS row_n
+ ${base.replace(`FROM ${input} s`, `FROM ${input} s JOIN source_files f ON f.id = s.source_id`)}`;
+  const paged = await gridPage(engine, mathBase, MATH_ROWS_GRID, gridQuery(MATH_ROWS_GRID, grid), { fallback: "g.order_n DESC, g.source_id, g.row_n", limit: 25, offset: at });
+  const rows = paged.rows;
   const label = w.steps.find(x => x.key === metric)?.label ?? (metric === "rate" ? msg("waterfall.pocketMarginRate") : msg("waterfall.lines"));
   const value = shown[metric];
   return { metric, label, value, formula: metric === "rate" ? msg("waterfall.pocketMarginRatePocket") : spec.formula,
     inputs: inputs[metric].map(([l, v]) => ({ label: l, cents: v })), check: { engine: String(computed), agrees: String(computed) === value },
-    rowCount: String(agg.n), rowsSum: String(agg.total), rowsAgree: metric === "rate" ? String(agg.total) === w.margin : String(agg.total) === value, offset: at,
+    rowCount: String(agg.n), rowsSum: String(agg.total), rowsAgree: metric === "rate" ? String(agg.total) === w.margin : String(agg.total) === value, offset: at, grid: paged.grid,
     rows: rows.map(r => ({ sourceCurrency:String(r.source_currency ?? "USD"),workspaceCurrency:String(r.workspace_currency ?? "USD"),fxRate:String(r.fx_rate ?? "1"),headerFx:String(r.header_fx ?? "[]"), sourceFile: String(r.file), sourceId: String(r.source_id), sourceRow: String(r.source_row), lineId: String(r.line_id), invoice: String(r.invoice), date: String(r.d), product: String(r.product_id), customer: String(r.customer_id), kind: String(r.line_kind), quantity: String(r.q),
       recordedRebate:String(r.recorded_rebate),list: String(r.list), discount: String(r.discount), rebate: String(r.rebate), freight: String(r.freight), cost: r.cost === null ? null : String(r.cost), pocket: String(r.pocket), margin: r.margin === null ? null : String(r.margin), contribution: String(r.contribution) })) };
 }

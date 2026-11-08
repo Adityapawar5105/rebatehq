@@ -1,4 +1,5 @@
 import type {BridgeInput} from "../margin/bridge";
+import type {GridMeta,GridQuery,GridType,Totals} from "../grid/core";
 import type {PlanInput,ExceptionInput} from "../pricing/ops";
 import type { VaultService } from './service';
 import type { RuleInput, GuardInput } from '../pricing/rules';
@@ -47,9 +48,10 @@ export type CleanupUndone = { summary: string; restored: string; skipped: string
 export type StorageStatus = { persistent: boolean; usage: string; quota: string; namedOpfsBytes: string; files: string };
 export type ImportEstimate = { bytes: string; estimatedMemoryBytes: string; maxLines: string; maxProducts: string; warning: string };
 export type Commands = {
-  rebateProgress:{offset?:number};
+  gridTotals:{types:GridType[];values:(string|null)[][]};
+  rebateProgress:{offset?:number;grid?:GridQuery};
   rebateState:Record<string,never>;
-  rebateRows:{id:string;offset?:number};
+  rebateRows:{id:string;offset?:number;grid?:GridQuery};
   rebateSave:{input:import('../rebate/store').ProgramInput};
   rebateDelete:{id:string};
   rebateRecalculate:Record<string,never>;
@@ -57,18 +59,18 @@ export type Commands = {
   currencySet: { currency: string };
   competitorList:{product:string;customer?:string|null};
   competitorAdd:{input:import("../pricing/market").CompetitorInput};
-  priceGrid:{offset?:number;search?:string};
+  priceGrid:{offset?:number;search?:string;grid?:GridQuery};
   priceGridPaste:{text:string;keys:string[];start:number};
   priceGridDraft:{edits:import("../pricing/grid").GridEdit[];revision:string};
   ruleWhatIf:{id:string;increase:string;exact:boolean};
-  priceLandedState:{id?:string;offset?:number};
+  priceLandedState:{id?:string;offset?:number;grid?:GridQuery};
   priceLandedCheck:{receipt:string;file:File};
-  serviceOrders:{offset?:number};
+  serviceOrders:{offset?:number;grid?:GridQuery};
   serviceFlag:{key:string;free:boolean};
   marginBridge:{input?:BridgeInput};
   priceOpsState:Record<string,never>;
   priceExceptions:{input?:ExceptionInput};
-  priceExpiry:{days:number;asOf?:string;offset?:number};
+  priceExpiry:{days:number;asOf?:string;offset?:number;grid?:GridQuery};
   pricePlan:{input:PlanInput};
   priceRollback:{version:string};
   priceLetter:{id:string;locale:import("../i18n/core").Locale};
@@ -94,7 +96,7 @@ export type Commands = {
   guardSet: { input:GuardInput };
   ruleSave: { input:RuleInput };
   ruleSimulate: { id:string };
-  rulePreview: { id:string; offset?:number };
+  rulePreview: { id:string; offset?:number; grid?:GridQuery };
   ruleApprove: { id:string };
   priceExport: { id:string; profile:ErpProfile; format:'csv'|'xlsx' };
   backupStatus: Record<string, never>;
@@ -138,11 +140,11 @@ export type Commands = {
   playgroundRemove: Record<string, never>;
   creditsLoad: { sourceId: string };
   marginWaterfall: { filters?: Filters };
-  marginDrill: { dim: Dim; filters?: Filters; sort?: "margin" | "pocket" | "rate" };
+  marginDrill: { dim: Dim; filters?: Filters; sort?: "margin" | "pocket" | "rate"; grid?: GridQuery };
   marginWhale: { filters?: Filters };
-  marginMath: { metric: Metric; filters?: Filters; offset?: number };
+  marginMath: { metric: Metric; filters?: Filters; offset?: number; grid?: GridQuery };
   leaks: Record<string, never>;
-  leakRows: { id: string; offset?: number };
+  leakRows: { id: string; offset?: number; grid?: GridQuery };
   leakReport: { locale?: string };
   search: { text: string };
   priceCheck: { productId: string; customerId: string | null; quantity: string };
@@ -157,6 +159,7 @@ export type Commands = {
 export type LeaksView = { result: LeakResult; roi: RoiSummary; sample: boolean; recorded: number };
 export type CommitResult = { loaded: string; rejected: string; files: string; cleanup: boolean };
 export type Results = {
+  gridTotals:Totals[];
   rebateProgress:Awaited<ReturnType<VaultService['rebateProgress']>>;
   rebateState:Awaited<ReturnType<VaultService['rebateState']>>;
   rebateRows:Awaited<ReturnType<VaultService['rebateRows']>>;
@@ -216,7 +219,7 @@ export type Results = {
   health: Health; playgroundLoad: { status: VaultStatus; manifest: PlaygroundManifest }; playgroundRemove: { status: VaultStatus; removed: string };
   creditsLoad: { status: VaultStatus; groups: FixGroup[]; loaded: string; stillRejected: string };
   marginWaterfall: Waterfall; marginDrill: Drill; marginWhale: Whale; marginMath: MathPanel;
-  leaks: LeaksView; leakRows: { rows: LeakRow[]; count: string; sum: string; engineAgrees: boolean };
+  leaks: LeaksView; leakRows: { rows: LeakRow[]; count: string; sum: string; engineAgrees: boolean; grid: GridMeta };
   leakReport: { name: string; blob: Blob; bytes: string; status: VaultStatus }; roi: RoiSummary;
   reconcile: ReconSummary; reconAccept: { status: VaultStatus; recon: ReconSummary }; reconRebuild: { status: VaultStatus; recon: ReconSummary };
 };
