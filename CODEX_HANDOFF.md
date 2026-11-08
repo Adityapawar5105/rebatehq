@@ -419,9 +419,15 @@ Scope:
 4. "90-day cash leak" hero number on Home: the exact leak dollars over the last 90 days from the existing leak
    finder (4D), as a prominent figure with "show the math". No calculation change. Cost roles only.
 
+Money: every amount above (the hero figure, alert changes, alternative prices) is stored and computed in the
+workspace currency from 7C-3a (lib/vault/currency.ts) and shown with its currency code or symbol through the
+existing formatters. Never hard-code "$" or USD. Browser assertions check the currency as well as the amount
+(7C-3a pitfall).
+
 Tests: alert thresholds and window boundaries on fixtures, alternatives ranking and tie-breaks, sync-status
-states, the hero figure equal to the leak finder's 90-day total, the decision 16 scan, and the browser gate (Home
-cards, competitor alternatives, relay status, pseudo walk, 375px). Add part b to CHUNK_7C3_VERIFICATION.md.
+states, the hero figure equal to the leak finder's 90-day total (also in a non-USD workspace), the decision 16
+scan, and the browser gate (Home cards, competitor alternatives, relay status, pseudo walk, 375px) on Chrome and
+Edge locally, with Firefox covered by its CI gate. Add part b to CHUNK_7C3_VERIFICATION.md.
 ```
 
 ## 4. Prompt 7D — Rebates
