@@ -60,6 +60,7 @@ export const intersect = (a: Cap[], b: Cap[]) => a.filter(c => b.includes(c));
 export const ACTION_CAP: Record<Action, Cap | null> = {
   currencySet: "roles",
   competitorList:"cost",
+  homeMonitor:"cost",
   competitorAdd:"pricing",
   priceGrid:"pricing",
   priceGridPaste:"pricing",

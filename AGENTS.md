@@ -89,3 +89,6 @@ Do not automatically expand 7C or start 7D from this documentation close-out.
 
 **7C-3a is CI-verified** in [CI #108](https://github.com/Adityapawar5105/rebatehq/actions/runs/42444422694) on `155188f`, 8 November 2026: 256 unit tests (78 JS + 178 TS), **46 authenticated Chromium vault checks**, **44 Firefox lab checks**, and **11 real-authenticated local-Supabase relay checks**. Both required browser steps ran and passed, with nonzero check counts. The fresh 152-check pgTAP suite ran twice with unchanged tenant row counts. Local vault **v13 / 42 tables**; 24 public tenant tables, 11 locked migrations, zero pending. No restore drill was required or run because no Supabase migration/inventory changed.
 See CHUNK_7C3_VERIFICATION.md for every command and remaining unverified limits. Next prompt: 7C-3b. Do not start it or 7D automatically. Blueprint unchanged.
+
+
+7C-3b is implemented and locally verified (260 unit tests; Chrome/Edge 46 vault + 12 local relay checks each). CI remains unverified pending its implementation push. No migration/schema/dependency or blueprint change. See CHUNK_7C3_VERIFICATION.md part b. Do not start 7D.

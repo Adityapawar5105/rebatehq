@@ -1,4 +1,5 @@
 import { workspaceCurrency } from '../vault/currency';
+import {alternatives} from './alternatives';
 import JSZip from 'jszip';
 import {VaultError} from '../vault/protocol';
 import type {Engine} from '../vault/engine';
@@ -23,7 +24,7 @@ export async function competitorSql(e:Engine,input:CompetitorInput,actor:string)
 export async function competitors(e:Engine,product:string,customer:string|null=null){
  const exists=product&&(await rows(e,`SELECT product_id FROM products WHERE product_id=${Q(label(product))}`)).length>0;
  const own=exists?await pricePoint(e,product,customer,'1'):null;
- return {own,rows:await rows(e,`SELECT id,product_id,competitor,price::VARCHAR price,observed_on::VARCHAR date,source FROM competitor_prices ${product?`WHERE product_id=${Q(product)}`:''} ORDER BY observed_on DESC,created_at DESC,id LIMIT 100`)};
+ return {own,alternatives:exists&&customer?await alternatives(e,product,customer):[],rows:await rows(e,`SELECT id,product_id,competitor,price::VARCHAR price,observed_on::VARCHAR date,source FROM competitor_prices ${product?`WHERE product_id=${Q(product)}`:''} ORDER BY observed_on DESC,created_at DESC,id LIMIT 100`)};
 }
 export type ExportRow={product:string;category:string;customer:string;tier:string;quantity:string;from:string;to:string;kind:string;price:string};
 export type Receipt={headers:string[];rows:ExportRow[];currency?:string};

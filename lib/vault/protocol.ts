@@ -47,6 +47,7 @@ export type CleanupUndone = { summary: string; restored: string; skipped: string
 export type StorageStatus = { persistent: boolean; usage: string; quota: string; namedOpfsBytes: string; files: string };
 export type ImportEstimate = { bytes: string; estimatedMemoryBytes: string; maxLines: string; maxProducts: string; warning: string };
 export type Commands = {
+  homeMonitor:{thresholdBp?:string};
   currencySet: { currency: string };
   competitorList:{product:string;customer?:string|null};
   competitorAdd:{input:import("../pricing/market").CompetitorInput};
@@ -150,6 +151,7 @@ export type Commands = {
 export type LeaksView = { result: LeakResult; roi: RoiSummary; sample: boolean; recorded: number };
 export type CommitResult = { loaded: string; rejected: string; files: string; cleanup: boolean };
 export type Results = {
+  homeMonitor:Awaited<ReturnType<VaultService['homeMonitor']>>;
   currencySet: VaultStatus;
   competitorList:Awaited<ReturnType<VaultService["competitorList"]>>;
   competitorAdd:Awaited<ReturnType<VaultService["competitorAdd"]>>;

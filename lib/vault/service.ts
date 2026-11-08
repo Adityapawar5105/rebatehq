@@ -1,4 +1,5 @@
 import { currencyChangeSql, workspaceCurrency } from './currency';
+import {customerHealth} from '../margin/monitor';
 import * as grid from '../pricing/grid';
 import * as market from '../pricing/market';
 import {whatIf} from '../pricing/whatif';
@@ -319,6 +320,16 @@ export class VaultService {
   }
   async leakRows(id: string, offset = 0) { await this.leakResult(); return leakRows(this.requireEngine(), id, offset); }
   async roi() { return roiSummary(this.requireEngine()); }
+  /** Read-only, cost-gated by dispatch. Does not renew the inactivity timer or
+   * write the ROI ledger. Home only requests this while the screen is mounted. */
+  async homeMonitor(thresholdBp='500'){
+    const e=this.requireEngine();
+    try{
+      const health=await customerHealth(e,thresholdBp),leaks=await findLeaks(e,this.licence.tier!=='starter',health.window);
+      return {health,leaks,currency:await workspaceCurrency(e),checkedAt:new Date().toISOString()};
+    }catch(error){if(error instanceof VaultError)throw error;throw new VaultError('QUERY',msg('monitor.failed'));}
+    finally{this.leakCache=null;}
+  }
   // ---------------------------------------------------------------- Quote Desk and Price Check (7B)
   private quoteTier() { if (this.licence.tier === "starter") throw new VaultError("LICENCE", msg("quote.needsProfessional")); }
   private async quoteView(id: string) { const a = await this.access(); return quotes.view(this.requireEngine(), id, this.identity.userId, a.caps.includes("cost")); }

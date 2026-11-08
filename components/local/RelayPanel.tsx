@@ -10,6 +10,7 @@ const relayRole = (r: string) => r in RELAY_ROLE ? t(RELAY_ROLE[r]) : r;
 const KIND: Record<string, MessageKey> = { price_change: "relay.priceChange", quote: "relay.quoteReference", rebate: "relay.rebateReference" };
 const STATUS: Record<string, MessageKey> = { pending: "relay.status.pending", approved: "relay.status.approved", rejected: "relay.status.rejected" };
 import styles from './vault.module.css';
+import {Badge} from '@/components/ui/ui';
 type RelayAction=Extract<Action,`relay${string}`>;
 export function RelayPanel({client,userId,onChange}:{client:VaultClient;userId:string;onChange:()=>Promise<void>}){
  const dialog=useRef<HTMLDialogElement>(null),[open,setOpen]=useState(false),[view,setView]=useState<RelayView|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
@@ -24,7 +25,7 @@ export function RelayPanel({client,userId,onChange}:{client:VaultClient;userId:s
  async function run<K extends RelayAction>(action:K,data:Commands[K],message:string){
   setBusy(true);setError('');setNotice('');
   try{const value=await client.call(action,data) as RelayView;setView(value);setNotice(message);await onChange();return true;}
-  catch(e){setError(e instanceof Error&&e.message?e.message:msg("relay.sharingCouldNotFinish"));return false;}
+  catch(e){setError(e instanceof Error&&e.message?e.message:msg("relay.sharingCouldNotFinish"));try{setView(await client.call('relayView',{}));}catch{/* Keep the last confirmed view when offline. */}return false;}
   finally{setBusy(false);}
  }
  const object=view?.objects.find(o=>o.id===selected),request=object?.approval,canDecide=!!request&&request.status==='pending'&&request.approvers[request.decisions.length]===userId,canRequest=!!object&&!request&&object.author===userId;
@@ -41,6 +42,7 @@ export function RelayPanel({client,userId,onChange}:{client:VaultClient;userId:s
    <p role="status" aria-live="polite">{busy?t("relay.workingInTheEncrypted"):say(notice)}</p>
    {!view&&!busy&&<button onClick={()=>void run('relayView',{},msg("relay.note1"))}>{t("relay.retrySharingStatus")}</button>}
    {view&&<>
+    <p data-testid="relay-sync-status"><Badge tone={view.sync.status==='synced'?'ok':'warn'}>{t(({synced:'monitor.synced',pending:'monitor.pending',conflict:'monitor.conflict'} as const)[view.sync.status])}</Badge> {view.sync.lastSyncedAt?t('monitor.lastSynced',{date:fmt.dateTime(view.sync.lastSyncedAt)}):t('monitor.neverSynced')}</p>
     {!view.registered?<><p>{t("relay.setUpASharing")}</p><button className={styles.primary} disabled={busy} onClick={()=>void run('relayRegister',{},msg("relay.note2"))}>{t("relay.setUpThisSharing")}</button></>:
     !view.joined?<>
      <p>{t("relay.yourDeviceFingerprint")}{" "}<code data-testid="relay-own-fingerprint">{view.fingerprint}</code></p>

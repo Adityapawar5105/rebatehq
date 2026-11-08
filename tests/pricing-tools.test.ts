@@ -83,7 +83,7 @@ test('7C-2 every new privileged command refuses Sales Rep and Pro features refus
  c.query("INSERT INTO role_assignments VALUES('owner','Owner','owner','owner','2026-01-01'),('rep','Rep','sales_rep','owner','2026-01-01')");
  const make=(userId:string,tier:'starter'|'professional')=>{const s=new VaultService(()=>undefined);s.engine=e;Object.assign(s,{identity:{userId,tenantId:'test'},writable:async()=>e,save:async()=>undefined,touch:()=>undefined});const now=Math.floor(Date.now()/1000);s.licence.claims={v:1,sub:userId,workspace:'test',device:'test',tier,state:'active',issued:now,expires:now+3600,offlineUntil:now+86400,reason:''};return s;};
  const call=(s:VaultService,action:string,data:unknown={})=>dispatch(s,{id:'x',action,data} as Request,{signal:()=>new AbortController().signal,progress:()=>undefined});
- const pro=['competitorList','competitorAdd','ruleWhatIf','priceLandedState','priceLandedCheck','serviceOrders','serviceFlag'],all=[...pro,'priceGrid','priceGridPaste','priceGridDraft'];
+ const pro=['competitorList','competitorAdd','ruleWhatIf','priceLandedState','priceLandedCheck','serviceOrders','serviceFlag'],all=[...pro,'homeMonitor','priceGrid','priceGridPaste','priceGridDraft'];
  for(const a of all)await assert.rejects(call(make('rep','professional'),a),e=>e instanceof VaultError&&e.code==='FORBIDDEN',a);
  for(const a of pro)await assert.rejects(call(make('owner','starter'),a),e=>e instanceof VaultError&&e.code==='LICENCE',a);
  const owner=make('owner','professional');await call(owner,'competitorAdd',{input:{product:'A',competitor:'X',price:'1.01',date:'2026-11-07',source:'note'}});await call(owner,'priceGridDraft',{edits:[{key:'l:A',price:'12'}],revision:'0'});

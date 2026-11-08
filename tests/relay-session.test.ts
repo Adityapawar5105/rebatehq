@@ -18,8 +18,10 @@ test('worker session performs share/request/two approvals/comment, retains encry
   },async(value)=>{saved.set(person.actor.deviceId,structuredClone(value));},new AbortController().signal);
   await client(a).register();await client(b).register();await client(c).register();
   const initial=await client(a).view(),confirmations=initial.devices.map(d=>({deviceId:d.deviceId,fingerprint:d.fingerprint}));
+  assert.equal(initial.sync.status,'pending');assert.equal(initial.sync.lastSyncedAt,null);
   await assert.rejects(client(a).rotate([]),/every device/);
   const root=await client(a).rotate(confirmations),pin=root.fingerprint;
+  assert.equal(root.sync.status,'synced');assert.ok(root.sync.lastSyncedAt);assert.equal(saved.get(a.actor.deviceId)!.lastSyncedAt,root.sync.lastSyncedAt);
   await assert.rejects(client(b).join('a'.repeat(64)),/fingerprint/);
   await client(b).join(pin);await client(c).join(pin);
   let view=await client(c).share({objectKind:'quote',title:'RELAY-PRIVATE-SUBJECT-UNIQUE',reference:'PRIVATE-REFERENCE-UNIQUE',amountMinor:'987654321098765432',currency:'USD',preset:'standard'});
@@ -33,8 +35,10 @@ test('worker session performs share/request/two approvals/comment, retains encry
   view=await client(a).sync();assert.equal(view.objects[0].comments[0].text,'@Owner RELAY-PRIVATE-COMMENT-UNIQUE');
   loseAck=true;await assert.rejects(client(c).comment(id,'RELAY-PRIVATE-LOST-ACK-UNIQUE',[]),/lost acknowledgement/);
   assert.ok(saved.get(c.actor.deviceId)!.pending);
+  assert.equal((await client(c).view()).sync.status,'pending');
   const before=(await db.query('SELECT count(*)::integer AS n FROM public.relay_event')).rows[0].n;
   view=await client(c).sync();assert.equal(view.pending,false);assert.equal(view.objects[0].comments.length,2);
+  assert.equal(view.sync.status,'synced');
   assert.equal((await db.query('SELECT count(*)::integer AS n FROM public.relay_event')).rows[0].n,before);
   for(const marker of ['RELAY-PRIVATE-SUBJECT-UNIQUE','PRIVATE-REFERENCE-UNIQUE','987654321098765432','RELAY-PRIVATE-COMMENT-UNIQUE','RELAY-PRIVATE-LOST-ACK-UNIQUE'])assert.ok(network.every(body=>!body.includes(marker)));
   await db.query("UPDATE public.membership SET status='suspended' WHERE tenant_id=$1::uuid AND user_id=$2::uuid",[fixture.tenantId,c.actor.userId]);
@@ -63,6 +67,7 @@ test('relay saves before network, recovers a lost key-publication ack, quarantin
   const bad=await encryptEvent(state.identity!,epoch,base64(crypto.getRandomValues(new Uint8Array(32))),state.head,crypto.randomUUID(),'quote',{kind:'comment',text:'authentic but undecryptable'});
   await asRelay(db,a.actor,()=>relayPost(db,a.actor,{action:'event',event:bad}));
   let result=await client(a).sync();assert.equal(result.rejected.length,1);assert.equal(result.objects.length,0);assert.equal(result.head.hash,bad.hash);
+  assert.equal(result.sync.status,'conflict');
   await client(b).share({objectKind:'quote',title:'valid after quarantined record',reference:'valid',amountMinor:'1',currency:'USD',preset:'standard'});
   const prior=structuredClone(saved.get(a.actor.deviceId));tamper=true;await assert.rejects(client(a).sync(),/verified/);assert.deepEqual(saved.get(a.actor.deviceId),prior);tamper=false;
   result=await client(a).sync();assert.equal(result.objects.length,1);

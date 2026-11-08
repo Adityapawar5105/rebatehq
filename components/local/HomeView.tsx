@@ -5,6 +5,7 @@ import type { HomeData } from "@/lib/vault/protocol";
 import { fmt, msg, say, t } from "@/lib/i18n";
 import { Button, ButtonLink, Card, Field, Grid, Meter, Notice, Skeleton, Split, StatTile, StepList, SrOnly } from "@/components/ui/ui";
 import { Term } from "./Glossary";
+import {HomeMonitor} from './HomeMonitor';
 import styles from "./vault.module.css";
 const money = (cents: string) => fmt.currency(cents);
 /** Home: who you are here, the numbers your role may see, the 7-day setup checklist and the ROI tracker. */
@@ -39,6 +40,7 @@ export function HomeView({ client, userId, version, busy, operation, refresh }: 
       </Grid>
       {!has("cost") && <p className={styles.muted}>{t("home.costAndMarginAre")}</p>}
     </Card>
+    {has('cost')&&<HomeMonitor client={client} version={version}/>}
     <Split>
       <Card headingId="setup-heading" title={t("home.your7DaySetup")} data-testid="setup-checklist" actions={<strong data-testid="setup-progress-text">{t("home.ofStepsDone", { done: Number(list.done), total: Number(list.total) })}</strong>}>
         <Meter value={Number(list.done)} max={Number(list.total)} label={t("home.setupProgress")} detail={t("home.setupDetail", { day: Math.min(list.day, 99) })}/>

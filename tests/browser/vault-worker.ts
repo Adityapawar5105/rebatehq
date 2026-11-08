@@ -621,7 +621,7 @@ async function pricingToolsFlow(){
   const exported=await call('priceExport',{id:draft.id,profile:'generic',format:'xlsx'}),receipts=await call('priceLandedState');
   const checked=await call('priceLandedCheck',{receipt:receipts.receipts[0].id,file:new File([exported.blob],'synthetic-erp.xlsx')});assert(checked.applied==='1','Landed round trip differs');
   const orders=await call('serviceOrders');assert(orders.length===1,'Service invoice missing');await call('serviceFlag',{key:orders[0].invoice_key,free:true});const leaks=await call('leaks');assert(leaks.result.findings.some((f:any)=>f.type==='free_delivery_loss'&&f.cents==='100'),'Free delivery loss missing');
-  await call('rolePreview',{role:'sales_rep'});for(const action of ['competitorList','priceGrid','ruleWhatIf','priceLandedState','serviceOrders']){let denied=false;try{await call(action);}catch(e){denied=(e as {code:string}).code==='FORBIDDEN';}assert(denied,'Rep received pricing tools');}await call('rolePreview',{role:null});
+  await call('rolePreview',{role:'sales_rep'});for(const action of ['homeMonitor','competitorList','priceGrid','ruleWhatIf','priceLandedState','serviceOrders']){let denied=false;try{await call(action);}catch(e){denied=(e as {code:string}).code==='FORBIDDEN';}assert(denied,'Rep received pricing tools');}await call('rolePreview',{role:null});
   assert((await service.verify()).valid,'Tools audit invalid');await service.lock();await service.unlock(secret);
   assert((await call('competitorList',{product:'TOOL-P'})).rows.length===1,'Competitor lost on reload');assert((await call('priceLandedState',{id:checked.checks[0].id})).applied==='1','Landed receipt lost');assert((await call('serviceOrders'))[0].free_delivery,'Confirmation lost');assert((await service.verify()).valid,'Reloaded tools audit invalid');
   return {competitor:true,paste:true,draft:true,approval:true,scopedXlsx:true,landed:true,serviceLoss:true,repDenied:true,audit:true,encryptedReload:true};
@@ -862,6 +862,28 @@ INSERT INTO vendor_costs(id,vendor,product_id,cost,effective_date,source_file) S
   return {lines:'1000000',products:'101000',duplicateGroups:scan.totals.duplicateProducts,cleanupScanMs:scanMs,costBasisMs:basisMs,homeMs,statusMs,mergeOneGroupInclRebuildAndSaveMs:mergeMs,undoMergeInclRebuildAndSaveMs:undoMs,unitFixAllSpellingsInclSaveMs:unitMs,memoryLimit:'512MB'};
  }finally{await service.lock().catch(()=>undefined);await reset(scope);}
 }
+async function monitorFlow(){
+ const scope={userId:'monitor-'+crypto.randomUUID(),tenantId:'monitor-'+crypto.randomUUID()},service=new VaultService(()=>undefined);
+ await service.init(scope);await service.create(secret,'professional','Synthetic Owner');
+ const call=async(action:string,data:Record<string,unknown>={})=>dispatch(service,{id:'monitor',action,data} as any,{signal:()=>new AbortController().signal,progress:()=>undefined}) as Promise<any>;
+ try{
+  await call('currencySet',{currency:'CAD'});const e=service.engine!,today=new Date().toISOString().slice(0,10);
+  await e.conn.query(`INSERT INTO products(product_id,category,list_price) VALUES('MON-P','Synthetic',10000),('MON-A','Synthetic',12000),('MON-B','Synthetic',11000),('MON-C','Synthetic',11000);
+  INSERT INTO customers(customer_id,name,tier) VALUES('MON-U','Synthetic customer','MON-T');INSERT INTO source_files VALUES('MON-S','synthetic-monitor.csv','sales_history',0,'${today}');
+  INSERT INTO sales_lines(source_id,line_id,product_id,customer_id,sale_date,quantity,list_cents,discount_cents,freight_cents,rebate_cents,cost_cents,source_row,invoice_id)
+  SELECT 'MON-S',n,'MON-P','MON-U',DATE '${today}'-INTERVAL '100 days',1,10000,0,0,0,5000,n+1,'BEFORE-'||n::VARCHAR FROM range(1,4)t(n);
+  INSERT INTO sales_lines(source_id,line_id,product_id,customer_id,sale_date,quantity,list_cents,discount_cents,freight_cents,rebate_cents,cost_cents,source_row,invoice_id)
+  VALUES('MON-S',4,'MON-P','MON-U',DATE '${today}',1,10000,1000,2000,0,9000,5,'AFTER'),('MON-S',5,'MON-A','MON-U',DATE '${today}',1,12000,0,0,0,6000,6,'AFTER'),('MON-S',6,'MON-B','MON-U',DATE '${today}',1,11000,0,0,0,6000,7,'AFTER'),('MON-S',7,'MON-C','MON-U',DATE '${today}',1,11000,0,0,0,6000,8,'AFTER');`);
+  await(service as unknown as {derived(value:typeof e):Promise<void>}).derived(e);await service.save();const audit=(await service.status()).auditEntries;
+  const v=await call('homeMonitor');assert(v.currency==='CAD'&&v.leaks.dedupedCents==='2000','CAD hero differs from the scoped finder');
+  assert(v.health.alerts.length===1&&v.health.alerts[0].frequencyDrop,'Frequency alert missing');
+  const a=await call('competitorList',{product:'MON-P',customer:'MON-U'});assert(a.alternatives.map((r:any)=>r.product).join(',')==='MON-A,MON-B,MON-C','Alternative ranking differs');
+  assert((await service.status()).auditEntries===audit,'Monitoring wrote business/audit data');
+  await call('rolePreview',{role:'sales_rep'});for(const action of ['homeMonitor','competitorList']){let blocked=false;try{await call(action,{product:'MON-P',customer:'MON-U'});}catch(e){blocked=(e as {code:string}).code==='FORBIDDEN';}assert(blocked,'Rep received monitoring costs');}await call('rolePreview',{role:null});
+  await service.lock();await call('unlock',{passphrase:secret});assert((await call('homeMonitor')).currency==='CAD','Monitoring currency lost after encrypted reload');
+  return {cadHero:true,health:true,ranking:true,readOnly:true,repDenied:true,encryptedReload:true};
+ }finally{await service.lock();await reset(scope);}
+}
 async function currencyFlow() {
  const scope={userId:'fx-'+crypto.randomUUID(),tenantId:'fx-'+crypto.randomUUID()},service=new VaultService(()=>undefined);
  await service.init(scope);await service.create(secret,'professional','FX Owner');
@@ -895,7 +917,7 @@ self.onmessage = async event => {
       assert(!opened, "Tampered engine asset was executed");
       self.postMessage({ result: { tamperedAssetRejected: true } }); return;
     }
-    const result = action === "currency" ? await currencyFlow() : action === "pricingTools" ? await pricingToolsFlow() : action === "pricingOps" ? await pricingOpsFlow() : action === "phase5aBenchmark" ? await phase5aBenchmark() : action === "phase5a" ? await phase5a() : action === "pricing" ? await pricingFlow() : action === "legacyStorage" ? await legacyStorage() : action === "pricingBenchmark" ? await pricingBenchmark() : action === "fixture" ? await fixture() : action === "v1" ? await testFixture(event.data.bytes) : action === "seed" ? await seed(event.data.rows) : action === "firstChange" ? await firstChange(event.data.rows) : action === "integrity" ? await integrity() : action === "studio" ? await studio() : action === "mapper" ? await mapper() : action === "playground" ? await playground() : action === "margin" ? await margin() : action === "marginBenchmark" ? await marginBenchmark(event.data.rows) : action === "studioBenchmark" ? await studioBenchmark(event.data.rows) : action === "warmup" ? await warmup() : action === "cipherOnly" ? await cipherOnly() : await storageStatus();
+    const result = action === "monitor" ? await monitorFlow() : action === "currency" ? await currencyFlow() : action === "pricingTools" ? await pricingToolsFlow() : action === "pricingOps" ? await pricingOpsFlow() : action === "phase5aBenchmark" ? await phase5aBenchmark() : action === "phase5a" ? await phase5a() : action === "pricing" ? await pricingFlow() : action === "legacyStorage" ? await legacyStorage() : action === "pricingBenchmark" ? await pricingBenchmark() : action === "fixture" ? await fixture() : action === "v1" ? await testFixture(event.data.bytes) : action === "seed" ? await seed(event.data.rows) : action === "firstChange" ? await firstChange(event.data.rows) : action === "integrity" ? await integrity() : action === "studio" ? await studio() : action === "mapper" ? await mapper() : action === "playground" ? await playground() : action === "margin" ? await margin() : action === "marginBenchmark" ? await marginBenchmark(event.data.rows) : action === "studioBenchmark" ? await studioBenchmark(event.data.rows) : action === "warmup" ? await warmup() : action === "cipherOnly" ? await cipherOnly() : await storageStatus();
     self.postMessage({ result });
   } catch (e) { self.postMessage({ error: e instanceof Error ? e.message : "test worker failed" }); }
 };

@@ -131,6 +131,27 @@ async function importFiles(paths, lines, acknowledge = false) {
   await page.locator(`[data-testid="line-count"][data-value="${lines}"]`).waitFor({ timeout: 120000 });
 }
 async function clearBatch() { await page.getByRole("button", { name: "Clear batch" }).click(); await page.getByRole("heading", { name: "Batch report" }).waitFor({ state: "detached" }); }
+async function monitorUi(){
+ const savedContext=context,savedPage=page,active=dataPlaneActive;
+ context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-monitor-')),browserOptions);await configureContext();page=await openPage();
+ try{
+  dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();
+  await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic monitor owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
+  await page.locator('nav a[href="#settings"]').click();await page.locator('section[aria-labelledby="currency-heading"] select').selectOption('CAD');await page.getByRole('button',{name:'Save currency',exact:true}).click();await page.getByText('Current currency: CAD',{exact:true}).waitFor();
+  const today=new Date().toISOString().slice(0,10),before=new Date(Date.now()-100*86400000).toISOString().slice(0,10),sku=marker+'-MON',customer=marker+'-CUSTOMER';
+  const items=Buffer.from('product_id,category,current_cost,list_price\n'+[[sku,'Parts','50.00','100.00'],[sku+'-A','Parts','60.00','120.00'],[sku+'-B','Parts','60.00','110.00'],[sku+'-C','Parts','60.00','110.00']].map(r=>r.join(',')).join('\n')+'\n');
+  const values=[[1,sku,customer,before,1,'100.00','0','0','0','50.00','OLD-1'],[2,sku,customer,before,1,'100.00','0','0','0','50.00','OLD-2'],[3,sku,customer,before,1,'100.00','0','0','0','50.00','OLD-3'],[4,sku,customer,today,1,'100.00','10.00','20.00','0','90.00','NEW'],[5,sku+'-A',customer,today,1,'120.00','0','0','0','60.00','NEW'],[6,sku+'-B',customer,today,1,'110.00','0','0','0','60.00','NEW'],[7,sku+'-C',customer,today,1,'110.00','0','0','0','60.00','NEW']];
+  await page.locator('nav a[href="#data-hub"]').click();await importFiles([{name:'monitor-items.csv',mimeType:'text/csv',buffer:items},{name:'monitor-sales.csv',mimeType:'text/csv',buffer:Buffer.from(header.trim()+',invoice_id\n'+values.map(r=>r.join(',')).join('\n')+'\n')}],'7');
+  await page.locator('nav a[href="#home"]').click();await page.getByTestId('cash-leak-value').filter({hasText:'CA$20.00'}).waitFor();await page.getByTestId('health-last-checked').waitFor();
+  const health=page.getByTestId('customer-health');assert.ok((await health.innerText()).includes('50.00%'),'Health basis points were not formatted as percentages');if(!auth)await page.screenshot({path:'test-results/7c3b-'+channel+'-home-cad.png',fullPage:true});await health.getByRole('button',{name:'Show the math',exact:true}).click();await page.getByRole('dialog').getByRole('table',{name:'Customer health alerts',exact:true}).waitFor();await page.getByRole('dialog').getByRole('button',{name:'Close',exact:true}).click();
+  await page.getByTestId('cash-leak').getByRole('button',{name:'Show the math',exact:true}).click();assert.ok((await page.getByRole('dialog').innerText()).includes('CA$20.00'),'Hero math lost the CAD symbol');await page.getByRole('dialog').getByRole('button',{name:'Close',exact:true}).click();
+  await page.locator('nav a[href="#margin"]').click();await page.getByRole('link',{name:'Competitor prices',exact:true}).click();await page.getByTestId('competitor-product').fill(sku);await page.getByTestId('competitor-log').getByLabel('Customer',{exact:true}).fill(customer);await page.getByLabel('Competitor',{exact:true}).fill(marker+'-MON-COMP');await page.getByLabel('New unit price',{exact:true}).fill('99.00');await page.getByLabel('Source (plain text; never fetched)',{exact:true}).fill(marker+'-MON-SOURCE');await page.getByRole('button',{name:'Save observation locally',exact:true}).click();await page.getByTestId('competitor-alternative').first().waitFor();
+  const alts=page.getByTestId('competitor-alternative');assert.equal(await alts.count(),3);assert.ok((await alts.first().innerText()).includes(sku+'-A'));assert.ok((await alts.first().innerText()).includes('CA$60.00'),'Alternative amount/currency differs');assert.ok((await alts.first().innerText()).includes('CA$120.00'));
+  for(const hash of ['#home','#margin-competitors']){await page.evaluate(h=>{location.hash=h;},hash);await page.setViewportSize({width:375,height:812});await page.waitForTimeout(500);await page.waitForFunction(()=>!document.querySelector('main [aria-busy="true"]'));assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Monitor UI overflow at 375px');}
+  await page.evaluate(()=>localStorage.setItem('rebatehq.locale','pseudo'));await page.reload();await page.locator('form input[type="password"]').fill(secret);await page.locator('form:has(input[type="password"]) button').click();await page.getByTestId('line-count').waitFor();await page.evaluate(()=>{location.hash='#home';});await page.getByTestId('health-last-checked').waitFor();assert.ok((await health.innerText()).includes('⟦'),'Home monitoring did not translate');await page.evaluate(()=>{location.hash='#margin-competitors';});await page.getByTestId('competitor-log').waitFor();assert.ok((await page.getByTestId('competitor-log').innerText()).includes('⟦'),'Alternatives did not translate');
+  results.checks.monitorUi={cadHero:'CA$20.00',cadAlternative:'CA$60.00',showMath:true,rankedThree:true,pseudo:true,phone375:true};
+ }finally{await context.close();context=savedContext;page=savedPage;dataPlaneActive=active;}
+}
 // Synthetic multi-format fixtures (TSV, JSON, XML, XLSX) with the private marker in product_id.
 await build({ entryPoints: ["tests/helpers/studio-fixtures.ts"], outfile: "test-results/studio-fixtures.mjs", bundle: true, platform: "node", format: "esm" });
 const fixtures = await import(new URL("../test-results/studio-fixtures.mjs", import.meta.url).href);
@@ -182,6 +203,7 @@ try {
   results.checks.integrity = await worker("integrity");
   results.checks.studio = await worker("studio");
   results.checks.currency = await worker("currency");
+  results.checks.monitor = await worker("monitor");
   results.checks.warmup = await worker("warmup");
   results.checks.mapper = await worker("mapper");
   results.checks.playground = await worker("playground");
@@ -531,6 +553,7 @@ try {
       console.log(`First change at ${rows} lines: background warm-up ${change.warmupMs} ms (read during warm-up ${change.readDuringWarmupMs} ms), post-warm-up first change committed/encrypted ${change.postWarmupFirstChangeMs} ms, max observed UI long task ${Math.max(0, ...changeTasks)} ms.`);
     }
   }
+  await monitorUi();
   if(auth){
     const device=await page.evaluate(()=>{const key=Object.keys(localStorage).find(k=>k.startsWith('rebatehq-device-v1:'));return localStorage.getItem(key);});assert.ok(device);
     const revoked=await context.request.post(base+'/api/licence/devices',{data:{id:device,status:'revoked'}});assert.equal(revoked.status(),200);

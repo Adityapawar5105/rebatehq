@@ -33,10 +33,13 @@ export type LeakResult = { findings: Finding[]; totalCents: string; overlapCents
   checked: { saleLines: string; creditLines: string; uncostedLines: string; untieredLines: string; tiers: string }; ms: number };
 const q = async (engine: Engine, sql: string) => (await engine.conn.query(sql)).toArray().map(r => ({ ...r }) as Record<string, unknown>);
 const S = (v: unknown) => v === null || v === undefined ? "" : String(v);
-export async function findLeaks(engine: Engine,costToServe=true): Promise<LeakResult> {
+export async function findLeaks(engine: Engine,costToServe=true,window?:{from:string;to:string}): Promise<LeakResult> {
   const t0 = performance.now(), R = RULES;
+  // Scope the input, never the rules or final amounts. The default remains the
+  // original full-history finder. Service-order rules use the same scoped input.
+  await engine.conn.query(`CREATE OR REPLACE TEMP VIEW lf_input AS SELECT * FROM sales_lines ${window?`WHERE sale_date>=DATE ${sqlText(window.from)} AND sale_date<DATE ${sqlText(window.to)}`:''}`);
   // Statement by statement, so an engine failure names the step (SQL text only, never values).
-  const run = async (sql: string) => { for (const stmt of sql.split(/;\s*\n/)) if (stmt.trim()) { try { await engine.conn.query(stmt); } catch (e) { throw new Error(`Leak finder step "${stmt.trim().slice(0, 48)}" failed: ${(e as Error).message.split("\n")[0]}`); } } };
+  const run = async (sql: string) => { for (const stmt of sql.replaceAll(/\bsales_lines\b/g,'lf_input').split(/;\s*\n/)) if (stmt.trim()) { try { await engine.conn.query(stmt); } catch { throw new Error(msg('monitor.finderFailed')); } } };
   // Memory: lf_lines and lf_excess are views (never materialised) and a hit is five numbers
   // (finding hash, source number, line, leak, basis), so a 2M-line vault fits the 512 MB guardrail.
   await run(`DROP VIEW IF EXISTS temp.lf_excess; DROP VIEW IF EXISTS temp.lf_lines; DROP TABLE IF EXISTS temp.lf_tiers; DROP TABLE IF EXISTS temp.lf_hits; DROP TABLE IF EXISTS temp.lf_keys; DROP TABLE IF EXISTS temp.lf_shift; DROP TABLE IF EXISTS temp.lf_shift0; DROP TABLE IF EXISTS temp.lf_floor; DROP TABLE IF EXISTS temp.lf_scatter; DROP TABLE IF EXISTS temp.lf_src;
@@ -97,7 +100,7 @@ SELECT k.finding, k.type, g.n, g.cents, g.basis, pc.products, pc.customers FROM 
   const findings = groups.map(g => describe(S(g.finding), g, shift, tiers, rise[0]));
   const tot = (await q(engine, `SELECT coalesce(sum(leak),0)::VARCHAR AS total FROM lf_hits`))[0];
   const ov = (await q(engine, `SELECT coalesce(sum(t - mx),0)::VARCHAR AS c, count(*)::VARCHAR AS n FROM (SELECT sum(leak) AS t, max(leak) AS mx FROM lf_hits GROUP BY sid, line_id HAVING count(*) > 1)`))[0];
-  const checked = (await q(engine, `SELECT (SELECT count(*) FROM sales_lines WHERE line_kind='sale')::VARCHAR AS sale, (SELECT count(*) FROM sales_lines WHERE line_kind='credit')::VARCHAR AS credit,
+  const checked = (await q(engine, `SELECT (SELECT count(*) FROM lf_input WHERE line_kind='sale')::VARCHAR AS sale, (SELECT count(*) FROM lf_input WHERE line_kind='credit')::VARCHAR AS credit,
  (SELECT count(*) FROM lf_lines WHERE cost_cents IS NULL)::VARCHAR AS uncosted, (SELECT count(*) FROM lf_lines WHERE tier NOT IN (SELECT tier FROM lf_tiers))::VARCHAR AS untiered, (SELECT count(*) FROM lf_tiers)::VARCHAR AS tiers`))[0];
   const total = BigInt(S(tot.total)), overlap = BigInt(S(ov.c));
   return { findings, totalCents: String(total), overlapCents: String(overlap), overlapLines: S(ov.n), dedupedCents: String(total - overlap),

@@ -128,3 +128,59 @@ Implementation commit and push: git commit -F test-results/7c3-commit.txt and gi
 Documentation only: AGENTS.md, ASSUMPTIONS.md, BLUEPRINT_EXECUTION_PLAN.md, CHUNK_7C3_VERIFICATION.md, CODEX_HANDOFF.md, README.md, SECURITY_CHECK.md, SECURITY_WHITEPAPER.md.
 
 After these updates, the table’s exact local typecheck, full JS tests (78/78), full TS tests (178/178), migration lock (11/11), schema and source scan commands all passed again. git diff --check passed. The controller invokes node scripts/build-spike.mjs, node node_modules/next/dist/bin/next build and a loopback-only next start; all final Chrome/Edge/Firefox production builds passed and each server was stopped by its controller. Native storage/clipboard probes and the single forced Firefox reinstall are documented above. The shutdown backup remains in ignored test-results/wip-7c3a/. The pre-existing .claude/ folder is untouched.
+
+
+## Part b — 7C-3b (8 November 2026)
+
+Status: locally verified; CI unverified pending the implementation push. Precondition: part a CI #108 above. No blueprint, dependency, local schema, locked migration or migrations.lock changes.
+
+### Scope
+
+- Cost-gated Home health rules over exact adjacent 90-day windows, session-configurable strict margin-drop threshold, weighted discount plus distinct-order rule, last-checked and open-Home-only copy. Full-month agg_cm plus boundary lines avoid monthly-window drift.
+- Cost-gated cash-leak hero uses the existing finder on the windowed input, including service-order rules. Deduplicated cents, overlap and formulas are visible; no new ROI ledger writes.
+- Top-three same-category alternatives resolve the current customer price matrix and use complete customer/SKU cost, rebate and freight history. Stable SKU ties; no zero-cost guesses, no second book-discount subtraction.
+- Relay synced/pending/conflict plus last successful sync timestamp, derived from the encrypted session. No relay protocol/server change.
+- English, Spanish, French and fr-CA fallback; shared UI, workspace-currency formatters, cost gating and decision-16 regression retained.
+
+### Commands and results
+
+| Command | Result |
+|---|---|
+| git status --short; git diff --stat | Started clean except pre-existing untracked .claude/; old 7C-3a backup preserved |
+| node node_modules/.pnpm/tsx@4.23.15/node_modules/tsx/dist/cli.mjs --test --test-concurrency=1 tests/monitor.test.ts | Initial reserved SQL alias errors fixed with explicit AS; all four passed in actual pinned DuckDB-Wasm |
+| Same TS runner: tests/monitor.test.ts tests/pricing-tools.test.ts tests/quotes.test.ts tests/i18n.test.ts | 31/31 passed |
+| node --test --test-concurrency=1 tests/*.test.js | Initial fixture-count guard expected old relay count 11; updated to 12 for added status check; final rerun 78/78 passed |
+| node node_modules/.pnpm/tsx@4.23.15/node_modules/tsx/dist/cli.mjs --test --test-concurrency=1 tests/*.test.ts | 182/182 passed |
+| node node_modules/typescript/bin/tsc --noEmit | Early type errors corrected; final rerun passed |
+| node scripts/check-migrations-lock.mjs | Passed, 11 locked / 0 pending unchanged |
+| node scripts/check-schema.mjs | Passed, 24 public tenant tables unchanged |
+| node scripts/check-service-role.mjs | Passed, 223 source files; existing absent src/pages warnings |
+| VAULT_TEST_PORT=3106; node scripts/test-control-vault.mjs | Production build passed; first new browser fixture failed because CURRENT_DATE needs disabled ICU. Fixture now uses explicit DATE; Chrome and Edge full rerun passed, 46 vault + 12 local relay checks each |
+
+Every new production SQL query has executed in pinned DuckDB-Wasm 1.32.0, including both windows/thresholds, alternatives, the scoped full leak finder (with and without service-cost tier gating through the unit/browser suites), and default full-history golden tests. No new Postgres SQL. Local tests are not CI evidence.
+
+### Unverified
+
+CI and authenticated local-Supabase browser checks for part b remain unverified pending a green run. Hosted sign-in/restore, native permission dialogs, physical recovery, large-vault monitoring latency and customer ERP systems are not exercised by these local checks. No restore drill needed: no Supabase schema/inventory change.
+
+### Final local evidence
+
+On Ryzen 5 5600H, approximately 8 GB RAM, Windows: Chrome 156.0.8078.80 and Edge 157.0.4341.42 each passed 46 vault checks and 12 relay checks (PGlite transport, authentication unverified locally). Both assert CA$20.00 hero, CA$60.00 margin / CA$120.00 alternative price, exact rate display, show-math dialogs, ranking, role denial, encrypted reload, read-only monitoring, pseudo-locale and 375px. Chrome screenshot inspected at test-results/7c3b-chrome-home-cad.png. New context selectors use the concrete currency select and structural pseudo-locale unlock controls.
+
+Measured 100k import/save: 6,157 ms Chrome / 6,132 ms Edge; no main-thread task above 50 ms recorded. These are local observations, not new monitoring latency guarantees.
+
+After final source refinements, all 78 JS and 182 TS tests passed again; typecheck, lock/schema/source scans passed. The final node scripts/test-control-vault.mjs --relay-only --browser=chrome rebuild invokes node scripts/build-spike.mjs and node node_modules/next/dist/bin/next build with disposable keys and a loopback-only server, then repeats all 12 relay checks. Each controller stops its own server. No pnpm on PATH; direct Node commands are the package-script equivalents, with no dependency/lockfile change.
+
+Additional commands: git diff --check passed; git diff --numstat -- supabase/migrations migrations.lock BLUEPRINT.md was empty. Read-only rg/Get-Content/Get-ChildItem and process inspection diagnosed fixtures and gate progress. No customer or secret files were read or committed.
+
+### Part b files changed
+
+- UI: components/local/HomeMonitor.tsx (new), HomeView.tsx, PricingTools.tsx, RelayPanel.tsx.
+- Worker math: lib/margin/monitor.ts (new), leaks.ts; lib/pricing/alternatives.ts (new), market.ts.
+- Relay: lib/relay/sync-status.ts (new), session.ts (encrypted metadata / view only).
+- Worker boundary: lib/vault/service.ts, protocol.ts, dispatch.ts, licence.ts; lib/roles/access.ts.
+- Catalogs: lib/i18n/locales/en.ts, es.ts, fr.ts (fr-CA inherits).
+- Tests/gates: tests/monitor.test.ts (new), pricing-tools.test.ts, relay-session.test.ts, relay-privacy.test.js, browser/vault-worker.ts; scripts/test-vault-browser.mjs, test-relay-browser.mjs.
+- Documentation: ASSUMPTIONS.md, CHUNK_7C3_VERIFICATION.md, AGENTS.md, BLUEPRINT_EXECUTION_PLAN.md; further CI close-out docs listed after a passing run.
+
+Blueprint unchanged; 11 locked migrations and migrations.lock unchanged; 7D and later work unstarted.
