@@ -1,6 +1,6 @@
 # Chunk 7V-3 — verification
 
-Blueprint v2.5, section 22 items 26-27. Part a is the grid standard; part b (row notes) has not started.
+Blueprint v2.5, section 22 items 26-27. Part a is the grid standard; part b is row notes.
 
 ## Part a — grid standard: sort, filter, selection totals
 
@@ -92,4 +92,43 @@ Fixes found by the local gates before the first push: the filter panel opened un
 
 ### CI proof
 
-**7V-3a is CI-verified** in [CI #118](https://github.com/Adityapawar5105/rebatehq/actions/runs/42480527882) on `027a14d`, 8 November 2026: 278 unit tests (78 JS + 200 TS), **51 authenticated Chromium vault checks** (including `gridsUi`), **49 Firefox lab checks**, **12 real-authenticated local-Supabase relay checks**, and the fresh 152-check pgTAP suite twice. Local vault v14 / 45 tables, 11 locked migrations, zero pending; no restore drill needed (no Supabase change). Every step of the job passed, including "Required authenticated local-vault privacy gate" and "Required Firefox local-vault lab gate"; their result lists include `gridsUi` and `rebatesUi`. Part b (row notes) has not started.
+**7V-3a is CI-verified** in [CI #118](https://github.com/Adityapawar5105/rebatehq/actions/runs/42480527882) on `027a14d`, 8 November 2026: 278 unit tests (78 JS + 200 TS), **51 authenticated Chromium vault checks** (including `gridsUi`), **49 Firefox lab checks**, **12 real-authenticated local-Supabase relay checks**, and the fresh 152-check pgTAP suite twice. Local vault v14 / 45 tables, 11 locked migrations, zero pending; no restore drill needed (no Supabase change). Every step of the job passed, including "Required authenticated local-vault privacy gate" and "Required Firefox local-vault lab gate"; their result lists include `gridsUi` and `rebatesUi`. 
+## Part b — freeform row notes
+
+**Status: built here 8 November 2026; CI result: pending.** Local vault schema **v15** (45 tables): `notes` on `customers` and `products`. No Supabase migration, no locked-hash change, no dependency change. Blueprint unchanged by this part.
+
+### What was built
+
+- `lib/notes/notes.ts` and `lib/notes/limit.ts`: note validation (plain text, at most 1,000 Unicode code points, control characters refused, an empty note is no note), the save SQL, the customer list and item master worker grids, and the count of notes a file removal would delete.
+- Commands, all needing capability `data`: `customerList` and `productList` (read-only worker grids; current cost only for a `cost` role), `noteSet` (audited with the row kind and ID, never the text) and `sourceRemovePreview` (read-only). `search` matches and returns note excerpts only for `data` roles.
+- Data Hub: new **Customers** and **Item master** cards on the grid standard, with an inline note editor showing "N of 1,000 characters"; the note is rendered as text. Removing an imported file now warns how many product and customer notes will be deleted with the rows only that file used.
+- Item master merge: the kept product keeps its note and appends the duplicates' notes; a combined note over 1,000 characters refuses the merge; undo restores every note.
+- Message keys `notes.*` in en, es and fr; theme tokens only.
+
+### Inventory change
+
+Two new data grids, both meeting the standard: Data Hub · Customers (worker, 50 per page) and Data Hub · Item master (worker, 50 per page). Total: 31 data grids, 9 tables that are not grids.
+
+### Local checks (not CI proof)
+
+| Command | Result |
+| --- | --- |
+| `node node_modules/typescript/bin/tsc --noEmit` | passed |
+| `node --test tests/*.test.js` | 78 of 78 passed |
+| `node …/tsx/dist/cli.mjs --test --test-concurrency=2 tests/*.test.ts` | 208 of 208 passed (8 new in `tests/notes.test.ts`; schema-version expectations in the vault, currency and rebate-local tests moved to v15) |
+| `node scripts/check-migrations-lock.mjs` | 11 applied, 0 pending, unchanged |
+| `scripts/test-vault-browser.mjs --browser=chrome` on a production build (lab mode) | passed, 50 checks (Chrome 156.0.8078.80), including `notesUi` and the worker backup/export note check |
+| Same, `--browser=msedge` | passed, 50 checks (Edge 157.0.4341.42) |
+| Relay and Firefox gates | not run locally; CI runs both |
+
+`tests/notes.test.ts` covers: the v14 to v15 upgrade keeps every row and adds no note; the limit (an emoji counts once, 1,001 refused); literal storage of quotes, formulas and markup; the two grids (filter by note, blanks, sort, no cost column without `cost`); re-import and removal SQL never write notes, removal deletes notes only with rows nothing else uses, and the preview count matches; merge and undo; an over-limit merge changes nothing; capabilities.
+
+`tests/quotes.test.ts` (decision 16): a Sales Rep's search neither returns nor matches a note, the Pricing Owner's does, and every note command is refused to a rep. The worker browser test saves a note, checks that the CSV ERP export and change log do not contain it, and checks it after an encrypted backup restore. The page gate (`notesUi`) writes notes containing the privacy marker under the request and console sensors, and checks the 1,000-character limit, plain-text rendering, filtering by note after the grid reloads, palette search, and that the Sales Rep preview cannot find the note.
+
+Fix found by the local gate before the first push: the filter panel of a grid low on the page opened below the viewport (a fixed panel cannot be scrolled to). It now opens above its column when there is no room below, stays inside the viewport and re-places itself as its value list loads.
+
+### Unverified
+
+- Passing CI for this part, until linked.
+- Headed screen-reader use of the inline note editor.
+- Native-language review of the new labels.

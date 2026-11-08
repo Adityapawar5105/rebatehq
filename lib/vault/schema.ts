@@ -1,5 +1,5 @@
 import { msg } from "../i18n/core";
-export const SCHEMA_VERSION = 14;
+export const SCHEMA_VERSION = 15;
 const V1_TABLES = ["vault_meta", "products", "customers", "price_matrix", "price_guardrails", "source_files", "import_batches", "sales_lines", "vendor_costs", "cost_basis_settings", "rules", "rule_runs", "price_versions", "roi_ledger", "audit_log", "import_issues", "converter_recipes"] as const;
 const V4_TABLES = [...V1_TABLES, "rejected_rows"] as const;
 const V5_TABLES = [...V4_TABLES, "agg_cpm", "agg_cm", "agg_p", "recon_issues"] as const;
@@ -157,7 +157,11 @@ CREATE TABLE rebate_accruals(program_id VARCHAR NOT NULL,source_id VARCHAR NOT N
 CREATE INDEX rebate_accrual_program ON rebate_accruals(program_id);
 CREATE OR REPLACE VIEW rebate_sales AS SELECT s.* REPLACE(CASE WHEN p.id IS NULL OR NOT p.enabled THEN s.rebate_cents WHEN p.booking_mode='replace' THEN a.accrued_cents ELSE s.rebate_cents+a.accrued_cents END AS rebate_cents)
 FROM sales_lines s LEFT JOIN rebate_accruals a ON a.source_id=s.source_id AND a.line_id=s.line_id LEFT JOIN rebate_programs p ON p.id=a.program_id;`;
-const STEPS = [V1_SQL, V2_SQL, V3_SQL, V4_SQL, V5_SQL, V6_SQL, V7_SQL, V8_SQL, V9_SQL, V10_SQL, V11_SQL, V12_SQL, V13_SQL,V14_SQL];
+// V15 (7V-3b, blueprint v2.5 item 26): plain-text row notes, local only. Existing rows get no note (NULL).
+// The 1,000-character limit (Unicode code points) is enforced in the worker, where it is measured.
+export const V15_SQL = `ALTER TABLE products ADD COLUMN notes VARCHAR;
+ALTER TABLE customers ADD COLUMN notes VARCHAR;`;
+const STEPS = [V1_SQL, V2_SQL, V3_SQL, V4_SQL, V5_SQL, V6_SQL, V7_SQL, V8_SQL, V9_SQL, V10_SQL, V11_SQL, V12_SQL, V13_SQL,V14_SQL,V15_SQL];
 function checkVersion(version: number) {
   if (!Number.isInteger(version) || version < 1 || version > SCHEMA_VERSION) throw new Error(msg("vault.schema.unsupportedVaultSchemaVersion"));
 }

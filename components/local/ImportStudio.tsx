@@ -43,7 +43,7 @@ const statusText = (f: FileView) => f.loadable ? t("studio.readyToLoad") : f.rol
 export function ImportStudio({ client, status, busy, operation, onStatus, setMessage }: Props) {
   const [studio, setStudio] = useState<StudioState | null>(null), [sources, setSources] = useState<SourceView[]>([]);
   const [open, setOpen] = useState<string | null>(null), [ack, setAck] = useState(false), [over, setOver] = useState(false);
-  const [recipeName, setRecipeName] = useState(""), [removing, setRemoving] = useState<string | null>(null);
+  const [recipeName, setRecipeName] = useState(""), [removing, setRemoving] = useState<string | null>(null), [losing, setLosing] = useState<{ products: string; customers: string } | null>(null);
   useEffect(() => {
     let active = true;
     void Promise.all([client.call("studioState", {}), client.call("sources", {})]).then(([s, list]) => { if (active) { setStudio(s); setSources(list); } }).catch(() => undefined);
@@ -156,7 +156,8 @@ export function ImportStudio({ client, status, busy, operation, onStatus, setMes
             <label className={styles.linkish}>{t("studio.replace2")}<input type="file" aria-label={t("studio.replace", { name: s.name })} accept={ACCEPT} disabled={busy} style={{ display: "none" }} onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void add([file], s.id); }}/></label>
             {removing === s.id
               ? <><button className={styles.linkish} disabled={busy} onClick={() => void operation(async () => { const out = await client.call("sourceRemove", { id: s.id }); onStatus(out.status); setRemoving(null); await refreshSources(); bump(); setMessage(msg("studio.removedAndExactlyIts", { name: s.name })); })}>{t("studio.confirmRemove")}</button><button className={styles.linkish} onClick={() => setRemoving(null)}>{t("studio.keep")}</button></>
-              : <button className={styles.linkish} aria-label={t("studio.removeImported", { name: s.name })} disabled={busy} onClick={() => setRemoving(s.id)}>{t("studio.remove")}</button>}
+              : <button className={styles.linkish} aria-label={t("studio.removeImported", { name: s.name })} disabled={busy} onClick={() => { setRemoving(s.id); setLosing(null); void client.call("sourceRemovePreview", { id: s.id }).then(setLosing).catch(() => setLosing(null)); }}>{t("studio.remove")}</button>}
+            {removing === s.id && losing && (losing.products !== "0" || losing.customers !== "0") && <p className={styles.warning} role="alert" data-testid="remove-notes-warning">{t("notes.removeWarning", { products: fmt.int(losing.products), customers: fmt.int(losing.customers) })}</p>}
           </div> },
       ]}/>}
     </section>

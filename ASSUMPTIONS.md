@@ -759,3 +759,14 @@ This proves the tested authenticated local-vault flow, not deployed/hosted authe
 - Footer rows (the cost basis "All groups" row) are not sorted or filtered and keep their totals of every row.
 - Decision 16: a grid never adds a column. Worker grids accept only their own code-defined columns; the rep-reachable rebate progress grid has no cost or margin column. `gridTotals` is read-only, needs only `view` and returns only sums, counts, minimum and maximum of numbers the caller sent.
 - From 7V-3a on, the grid standard is a "Done when" item for every new data grid.
+
+
+## 7V-3b — freeform row notes (8 November 2026)
+
+- Scope: blueprint v2.5 item 26's row notes, with the customer list and item master grids they need (the app had neither). Local vault schema v15 adds `notes` to `customers` and `products` (still 45 tables); existing rows get no note. No Supabase migration, no dependency change.
+- A note is plain text: line breaks kept, leading and trailing spaces trimmed, control characters refused, at most 1,000 characters counted as Unicode code points (an emoji is one). An empty note is no note. The limit is enforced in the worker as well as the page. Notes are rendered as text, never HTML or formulas.
+- Who sees notes: roles with the `data` capability (Owner, Pricing Owner, Pricing Manager), in the Data Hub grids and in command-palette results. A Sales Rep never receives a note: the grids and note commands need `data`, and the palette searches and returns notes only for `data` roles (decision 16 test). Sales Managers and Accountants do not see notes in this version.
+- Local only: notes are in the encrypted vault and its encrypted backups; they are never in a relay event, a server request, an ERP export or a change log. Saving a note is audited with the row kind and ID, never the text.
+- Imports update customer and product columns by name, so re-importing a file never changes a note. Removing a source file deletes customers and products that only that file used; their notes go with them, and the removal confirmation says how many notes will be deleted before you confirm.
+- Merging duplicate SKUs keeps the kept product's note and appends the duplicates' notes (largest duplicate first, one per line). If the combined note would pass 1,000 characters the merge is refused until the notes are shortened ("merge all" skips that group). Undo restores every note, including the deleted duplicates' notes.
+- The item master grid shows current cost only to a role with the `cost` capability.

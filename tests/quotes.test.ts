@@ -193,7 +193,14 @@ test("decision 16: no Sales Rep payload contains cost or margin", async (context
     for(const action of ['rebateState','rebateRows','rebateSave','rebateDelete','rebateRecalculate'] as const)await assert.rejects(call(s,action,{id:plan.id} as never),code('FORBIDDEN'));
     payloads.priceCheck = await call(s, "priceCheck", { productId: "P1", customerId: "C1", quantity: "1" });
     payloads.pricingState = await call(s, "pricingState", {});
+    // 7V-3b row notes never reach a Sales Rep: not in a search result, and not searchable by them.
+    c.query("UPDATE products SET notes='Private NOTE-SENTINEL-7Q item' WHERE product_id='P1'; UPDATE customers SET notes='NOTE-SENTINEL-7Q customer' WHERE customer_id='C1'");
     payloads.search = await call(s, "search", { text: "P1" });
+    assert.ok(!JSON.stringify(payloads.search).includes('NOTE-SENTINEL-7Q'), 'A Sales Rep search result carries a row note');
+    assert.deepEqual(await call(s, 'search', { text: 'SENTINEL-7Q' }), [], 'A Sales Rep can search inside row notes');
+    const ownerHits = await call(serviceFor(c, 'po'), 'search', { text: 'SENTINEL-7Q' }) as { kind: string; note?: string }[];
+    assert.deepEqual(ownerHits.map(h => h.kind).sort(), ['customer', 'product'], 'The Pricing Owner finds rows by their notes');
+    for (const action of ['customerList', 'productList', 'noteSet', 'sourceRemovePreview'] as const) await assert.rejects(call(s, action, { kind: 'product', id: 'P1', text: 'x' } as never), code('FORBIDDEN'));
     payloads.roleList = await call(s, "roleList", {});
     payloads.checklist = await call(s, "checklist", {});
     payloads.home = await call(s, "home", {});

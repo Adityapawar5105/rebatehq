@@ -47,7 +47,7 @@ export function CommandPalette({ client, caps, sections, go, commands }: { clien
     for (const th of THEMES) list.push({ id: "theme:" + th, group: "command", label: t("palette.theme", { theme: t(THEME_KEY[th as Theme]) }), run: () => { applyTheme(th); close(); } });
     const q = query.trim().toLocaleLowerCase();
     const shown = q ? list.filter(i => i.label.toLocaleLowerCase().includes(q)) : list;
-    const lookup = (h: SearchHit): Item => ({ id: `${h.kind}:${h.id}`, group: h.kind, label: h.id, detail: [h.label, h.detail].filter(Boolean).join(" · "), run: () => {
+    const lookup = (h: SearchHit): Item => ({ id: `${h.kind}:${h.id}`, group: h.kind, label: h.id, detail: [h.label, h.detail, h.note ? t("notes.paletteNote", { text: h.note }) : ""].filter(Boolean).join(" · "), run: () => {
       if (caps.includes("cost") && sections.includes("Margin")) { go("Margin"); close(); window.dispatchEvent(new CustomEvent(MARGIN_FILTER_EVENT, { detail: { dim: h.kind, value: h.id } })); }
       else setPicked(h);
     } });

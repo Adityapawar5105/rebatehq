@@ -58,3 +58,10 @@
 .table{overflow-wrap:normal}
 .shell td.wrap{white-space:normal;min-width:220px;overflow-wrap:anywhere}
 .card>button+button,.card>p>button+button,.card form>button+button{margin-left:var(--space-2)}
+
+/* 7V-3b row notes: plain text, wrapped, edited inline */
+.noteCell{display:flex;flex-direction:column;gap:var(--space-1);min-width:220px;max-width:420px;white-space:normal}
+.noteText{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--text)}
+.noteInput{width:100%;min-height:72px;padding:var(--space-2);font:inherit;color:var(--text);background:var(--surface);border:1px solid var(--control-border);border-radius:var(--radius-sm);resize:vertical}
+.noteInput:focus-visible{outline:3px solid var(--focus);outline-offset:1px}
+.noteOver{font-size:var(--fs-xs);font-weight:600;color:var(--bad-text)}

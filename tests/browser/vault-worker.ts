@@ -61,7 +61,7 @@ async function testFixture(bytes: Uint8Array) {
   await closeMemory(probe);
   const service = new VaultService(() => undefined); await service.init(fixtureScope);
   const result = await service.unlock(secret);
-  assert(result.schemaVersion === "14" && result.lines === "1", "V1 snapshot did not upgrade with its row intact");
+  assert(result.schemaVersion === "15" && result.lines === "1", "V1 snapshot did not upgrade with its row intact");
   const agg = (await service.engine!.conn.query("SELECT count(*)::VARCHAR AS n, sum(list_cents)::VARCHAR AS l, max(line_kind) AS k FROM agg_cpm")).toArray()[0];
   assert(agg.n === "1" && agg.l === "1250" && agg.k === "sale", "V1 upgrade must build the margin pre-aggregate from existing lines");
   assert((await service.marginWaterfall()).margin === "375", "Upgraded v1 line waterfall wrong");
@@ -405,7 +405,7 @@ async function margin() {
   const service = new VaultService(() => undefined); await service.init(scope); await service.create(secret, "professional");
   const result: Record<string, unknown> = {};
   const out = await service.playgroundLoad(noop), manifest = out.manifest;
-  assert((await service.status()).schemaVersion === "14", "New vaults must be schema v14");
+  assert((await service.status()).schemaVersion === "15", "New vaults must be schema v15");
   // 1. The waterfall equals the imported lines recomputed one by one with the JS engine.
   const raw = await rowsOf(service, "SELECT invoice_id, customer_id, strftime(sale_date, '%Y-%m') AS m, list_cents::VARCHAR AS l, discount_cents::VARCHAR AS d, rebate_cents::VARCHAR AS r, freight_cents::VARCHAR AS f, cost_cents::VARCHAR AS c, line_kind AS k FROM sales_lines");
   let list = Z, discount = Z, rebate = Z, freight = Z, pocket = Z, costedPocket = Z, cost = Z, marginJs = Z;
@@ -673,7 +673,10 @@ async function pricingFlow() {
   const root=await navigator.storage.getDirectory(),dir=await root.getDirectoryHandle('test-price-backup-'+crypto.randomUUID(),{create:true});
   await service.backupConfigure(dir,1);await service.ruleApprove(sim.id);
   assert((await service.backupStatus()).last!==null,'Approval did not write auto-backup');
-  for(const format of ['csv','xlsx'] as const){const file=await service.priceExport(sim.id,'netsuite',format);assert(file.blob.size>100&&(await file.log.text()).includes('Before'),'Export missing price rows or change log');}
+  // 7V-3b: a row note stays out of ERP exports and survives the encrypted backup and restore.
+  const noteProduct=String((await service.engine!.conn.query('SELECT product_id FROM products ORDER BY product_id LIMIT 1')).toArray()[0].product_id),noteText='Backup round-trip note '+crypto.randomUUID();
+  await service.noteSet('product',noteProduct,noteText);
+  for(const format of ['csv','xlsx'] as const){const file=await service.priceExport(sim.id,'netsuite',format);assert(file.blob.size>100&&(await file.log.text()).includes('Before'),'Export missing price rows or change log');if(format==='csv')assert(!(await file.blob.text()).includes(noteText)&&!(await file.log.text()).includes(noteText),'ERP export or change log contains a row note');}
   // Save the audit of exports in the final backup too.
   const cfg=await backupConfig(service.storage.scope);await storeBackupConfig(service.storage.scope,{...cfg,last:'2020-01-01T00:00:00Z'});await service.backupDue();assert((await service.backupStatus()).last!=='2020-01-01T00:00:00Z','Due scheduled backup did not run');
   await service.backupNow();const backup=await (await dir.getFileHandle('rebatehq-backup.enc')).getFile();
@@ -694,9 +697,10 @@ async function pricingFlow() {
   assert(restoredLeaks.result.totalCents===leaks.result.totalCents&&restoredLeaks.result.dedupedCents===leaks.result.dedupedCents,'Restored leak totals differ');
   assert(JSON.stringify((await service.engine!.conn.query('SELECT product_id,tier,price::VARCHAR AS price FROM price_matrix ORDER BY product_id,tier,id')).toArray().map(r=>({...r})))===expected,'Restored prices differ to the cent');
   assert((await service.verify()).valid,'Restored audit chain invalid');
+  assert((await service.productList(0,{filters:[{col:'product_id',values:[noteProduct]}]})).rows[0]?.notes===noteText,'Restored vault lost a row note');
   const audit=(await service.engine!.conn.query(`SELECT hash FROM audit_log WHERE sequence=${tip.n}`)).toArray()[0];assert(audit.hash===tip.audit_tip,'Backup audit prefix changed');
   let refused=false;try{await service.backupRestore(backup,secret);}catch{refused=true;}assert(refused,'Restore overwrote an existing vault');
-  return {manifestLeaks:5,simulationNoWrites:true,staleConflict:true,configuredFloor:true,automaticBackup:true,csvAndXlsx:true,originOpfsAndHandleStorageWiped:true,exactRestore:true,wrongPassphrase:true,auditPrefixIntact:true};
+  return {rowNoteRestoredNotExported:true,manifestLeaks:5,simulationNoWrites:true,staleConflict:true,configuredFloor:true,automaticBackup:true,csvAndXlsx:true,originOpfsAndHandleStorageWiped:true,exactRestore:true,wrongPassphrase:true,auditPrefixIntact:true};
  }finally{await service.lock();await reset(scope);}
 }
 async function legacyStorage() {
@@ -748,7 +752,7 @@ async function phase5a() {
   let refusedNoOwner=false;try{await call(service,'create',{passphrase:secret,tier:'professional',ownerName:'  '});}catch(e){refusedNoOwner=(e as Error).message.includes('Pricing Owner');}
   assert(refusedNoOwner&&!(await service.status()).exists,'A vault was created without a named Pricing Owner');
   const created=await call(service,'create',{passphrase:secret,tier:'professional',ownerName:'Synthetic Pricing Owner'});
-  assert(created.schemaVersion==='14'&&created.access.role==='owner'&&created.access.ownerNamed&&created.access.caps.includes('approve'),'The creator is not the Owner and named Pricing Owner');
+  assert(created.schemaVersion==='15'&&created.access.role==='owner'&&created.access.ownerNamed&&created.access.caps.includes('approve'),'The creator is not the Owner and named Pricing Owner');
   assert((await call(service,'pricingState')).owner.name==='Synthetic Pricing Owner','Pricing Owner was not stored at setup');
   // Sample data never completes setup steps; it still feeds every view.
   await service.playgroundLoad(()=>undefined);

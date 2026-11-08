@@ -201,9 +201,12 @@ function FilterPanel({ anchor, name, type, label, current, distinct, onClose, on
   // Fixed to the viewport beside its button, so the table's scroll box cannot clip it.
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   useEffect(() => {
-    const place = () => { const r = anchor.current?.getBoundingClientRect(); if (!r) return; const width = Math.min(320, window.innerWidth - 32); setPos({ top: Math.round(r.bottom + 4), left: Math.round(Math.max(16, Math.min(r.left, window.innerWidth - width - 16))) }); };
-    place(); window.addEventListener("resize", place); window.addEventListener("scroll", place, true);
-    return () => { window.removeEventListener("resize", place); window.removeEventListener("scroll", place, true); };
+    // Below the button when it fits, otherwise above it; always inside the viewport (a fixed panel cannot be scrolled to).
+    const place = () => { const r = anchor.current?.getBoundingClientRect(); if (!r) return; const width = Math.min(320, window.innerWidth - 32), height = Math.min(box.current?.offsetHeight || 360, window.innerHeight - 16);
+      const below = r.bottom + 4, above = r.top - 4 - height, top = below + height <= window.innerHeight - 8 ? below : above >= 8 ? above : Math.max(8, window.innerHeight - 8 - height);
+      setPos({ top: Math.round(top), left: Math.round(Math.max(16, Math.min(r.left, window.innerWidth - width - 16))) }); };
+    place(); const again = requestAnimationFrame(place), grow = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(place); if (box.current) grow?.observe(box.current); window.addEventListener("resize", place); window.addEventListener("scroll", place, true);
+    return () => { cancelAnimationFrame(again); grow?.disconnect(); window.removeEventListener("resize", place); window.removeEventListener("scroll", place, true); };
   }, [anchor]);
   useEffect(() => { searchRef.current?.focus(); }, []);
   useEffect(() => { let on = true; setError(false); const timer = setTimeout(() => { distinct(search).then(v => { if (on) setList(v); }).catch(() => { if (on) setError(true); }); }, search ? 200 : 0); return () => { on = false; clearTimeout(timer); }; }, [search]); // eslint-disable-line react-hooks/exhaustive-deps

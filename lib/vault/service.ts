@@ -3,6 +3,7 @@ import {salesInput} from '../rebate/input';
 import { currencyChangeSql, workspaceCurrency } from './currency';
 import {customerHealth} from '../margin/monitor';
 import {valuesTotals} from '../grid/sql';
+import * as notes from '../notes/notes';
 import * as grid from '../pricing/grid';
 import * as market from '../pricing/market';
 import {whatIf} from '../pricing/whatif';
@@ -345,6 +346,12 @@ export class VaultService {
    * write the ROI ledger. Home only requests this while the screen is mounted. */
   /** Selection totals for a grid held in the browser (7V-3a): DuckDB sums only the values the caller already
    * shows, so it reveals nothing the role cannot see. Read-only; no audit row. */
+  // ---- 7V-3b: row notes and the customer list / item master grids (capability `data`) ----
+  async customerList(offset=0,grid?:unknown){return notes.customerList(this.requireEngine(),offset,grid);}
+  async productList(offset=0,grid?:unknown){return notes.productList(this.requireEngine(),(await this.access()).caps.includes("cost"),offset,grid);}
+  /** Saves one note. The audit records the kind and row ID, never the note text. */
+  async noteSet(kind:unknown,id:unknown,text:unknown){let saved:string|null=null;await this.write("data.note_saved",{kind:String(kind),id:String(id)},async e=>{await e.conn.query(await notes.noteSql(e,kind,id,text));saved=notes.checkNote(text);});return {kind,id,notes:saved};}
+  async sourceRemovePreview(id:string){return notes.removalNotes(this.requireEngine(),id);}
   async gridTotals(types:unknown,values:unknown){return valuesTotals(this.requireEngine(),types,values);}
   async homeMonitor(thresholdBp='500'){
     const e=this.requireEngine();
@@ -429,9 +436,11 @@ export class VaultService {
     const q = query.trim(); if (q.length < 2) return [];
     // ILIKE with an explicit escape character, so % and _ typed by the user match literally.
     const like = sqlText("%" + q.replace(/[!%_]/g, c => "!" + c) + "%");
-    const products = (await e.conn.query(`SELECT product_id AS id, description AS label, category AS detail FROM products WHERE product_id ILIKE ${like} ESCAPE '!' OR description ILIKE ${like} ESCAPE '!' ORDER BY product_id LIMIT 8`)).toArray();
-    const customers = (await e.conn.query(`SELECT customer_id AS id, name AS label, tier AS detail FROM customers WHERE customer_id ILIKE ${like} ESCAPE '!' OR name ILIKE ${like} ESCAPE '!' ORDER BY customer_id LIMIT 8`)).toArray();
-    const hit = (kind: SearchHit["kind"]) => (r: Record<string, unknown>): SearchHit => ({ kind, id: String(r.id), label: String(r.label ?? ""), detail: String(r.detail ?? "") });
+    // Notes are searched and returned only for a role with `data` (7V-3b); a Sales Rep's search never reads them.
+    const withNotes = (await this.access()).caps.includes("data"), note = (col: string) => withNotes ? `, CASE WHEN ${col} ILIKE ${like} ESCAPE '!' THEN left(${col}, 120) END AS note` : "", inNote = (col: string) => withNotes ? ` OR ${col} ILIKE ${like} ESCAPE '!'` : "";
+    const products = (await e.conn.query(`SELECT product_id AS id, description AS label, category AS detail${note("notes")} FROM products WHERE product_id ILIKE ${like} ESCAPE '!' OR description ILIKE ${like} ESCAPE '!'${inNote("notes")} ORDER BY product_id LIMIT 8`)).toArray();
+    const customers = (await e.conn.query(`SELECT customer_id AS id, name AS label, tier AS detail${note("notes")} FROM customers WHERE customer_id ILIKE ${like} ESCAPE '!' OR name ILIKE ${like} ESCAPE '!'${inNote("notes")} ORDER BY customer_id LIMIT 8`)).toArray();
+    const hit = (kind: SearchHit["kind"]) => (r: Record<string, unknown>): SearchHit => ({ kind, id: String(r.id), label: String(r.label ?? ""), detail: String(r.detail ?? ""), ...(withNotes && r.note !== null && r.note !== undefined ? { note: String(r.note) } : {}) });
     return [...products.map(hit("product")), ...customers.map(hit("customer"))];
   }
   /** Build the Margin Leak Report PDF in this worker (no upload), in the user's language; the export is audited. */

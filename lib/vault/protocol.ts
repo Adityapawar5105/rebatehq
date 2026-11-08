@@ -48,6 +48,10 @@ export type CleanupUndone = { summary: string; restored: string; skipped: string
 export type StorageStatus = { persistent: boolean; usage: string; quota: string; namedOpfsBytes: string; files: string };
 export type ImportEstimate = { bytes: string; estimatedMemoryBytes: string; maxLines: string; maxProducts: string; warning: string };
 export type Commands = {
+  customerList:{offset?:number;grid?:GridQuery};
+  productList:{offset?:number;grid?:GridQuery};
+  noteSet:{kind:"customer"|"product";id:string;text:string};
+  sourceRemovePreview:{id:string};
   gridTotals:{types:GridType[];values:(string|null)[][]};
   rebateProgress:{offset?:number;grid?:GridQuery};
   rebateState:Record<string,never>;
@@ -159,6 +163,10 @@ export type Commands = {
 export type LeaksView = { result: LeakResult; roi: RoiSummary; sample: boolean; recorded: number };
 export type CommitResult = { loaded: string; rejected: string; files: string; cleanup: boolean };
 export type Results = {
+  customerList:Awaited<ReturnType<VaultService["customerList"]>>;
+  productList:Awaited<ReturnType<VaultService["productList"]>>;
+  noteSet:Awaited<ReturnType<VaultService["noteSet"]>>;
+  sourceRemovePreview:Awaited<ReturnType<VaultService["sourceRemovePreview"]>>;
   gridTotals:Totals[];
   rebateProgress:Awaited<ReturnType<VaultService['rebateProgress']>>;
   rebateState:Awaited<ReturnType<VaultService['rebateState']>>;
@@ -232,7 +240,8 @@ export type Response = { [K in Action]: { id: string; action: K; result: Results
   | { event: "writable" }
   | { event: "licence"; status:VaultStatus };
 /** Command palette hit: IDs and names only, never cost or price (chunk 7U). */
-export type SearchHit = { kind: "product" | "customer"; id: string; label: string; detail: string };
+/** `note` is an excerpt of a matching note, only for a role allowed to see notes (never a Sales Rep). */
+export type SearchHit = { kind: "product" | "customer"; id: string; label: string; detail: string; note?: string };
 export class VaultError extends Error {
   constructor(public code: string, message: string) { super(message); }
 }

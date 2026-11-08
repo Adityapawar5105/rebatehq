@@ -19,6 +19,7 @@ import { MarginView, LeakReportButton } from "./MarginView";
 import { HomeView } from "./HomeView";
 import { CleanupView } from "./CleanupView";
 import { CostBasisView } from "./CostBasisView";
+import { RecordsView } from "./RecordsView";
 import { RolesView } from "./RolesView";
 import { RelayPanel } from './RelayPanel';
 import { CommandPalette, OPEN_PALETTE_EVENT } from "./CommandPalette";
@@ -156,10 +157,12 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
               { id: "recon-heading", label: t("studio.reconciliation"), icon: "report" }, { id: "health-heading", label: t("studio.dataHealth"), icon: "checkCircle" },
               { id: "sources-heading", label: t("studio.importedFiles"), icon: "database" }, { id: "cleanup-heading", label: t("cleanup.itemMasterCleanup"), icon: "sparkle" },
               ...(caps.includes("cost") ? [{ id: "basis-heading", label: t("basis.costBasis"), icon: "coins" as const }] : []),
+              ...(caps.includes("data") ? [{ id: "customers-heading", label: t("notes.customers"), icon: "users" as const }, { id: "items-heading", label: t("notes.items"), icon: "tag" as const }] : []),
             ]}/>
             <ImportStudio client={client.current} status={status} busy={busy} operation={operation} onStatus={setStatus} setMessage={setMessage}/>
             <CleanupView client={client.current} version={`${status.lines}|${status.generation}`} busy={busy} operation={operation} onStatus={setStatus} setMessage={setMessage}/>
             {caps.includes("cost") && <CostBasisView client={client.current} version={`${status.lines}|${status.generation}`} busy={busy} operation={operation} canChoose={caps.includes("data")}/>}
+            {caps.includes("data") && <RecordsView client={client.current} version={`${status.lines}|${status.generation}`}/>}
             <details className={styles.card}><summary>{t("shell.columns.summary")}</summary>
               <p className={styles.small}><strong>{t("shell.columns.salesLabel")}</strong> <span translate="no">{t("shell.columns.sales")}</span></p>
               <p className={styles.small}><strong>{t("shell.columns.itemsLabel")}</strong> <span translate="no">{t("shell.columns.items")}</span> <strong>{t("shell.columns.customersLabel")}</strong> <span translate="no">{t("shell.columns.customers")}</span></p>

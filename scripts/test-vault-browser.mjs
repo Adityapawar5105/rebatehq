@@ -479,6 +479,24 @@ try {
   await page.locator('nav a[href="#pricing"]').click();await page.getByRole('link',{name:'Price grid',exact:true}).click();await page.getByLabel('Filter product, category or customer',{exact:true}).fill('');await page.getByRole('button',{name:'Load local rows',exact:true}).click();
   const priceTable=page.getByTestId('price-grid-table');await priceTable.waitFor();await priceTable.getByTestId('grid-sort-price').click();await priceTable.getByTestId('grid-sort-price').click();await priceTable.locator('th[aria-sort="descending"]').waitFor();
   await until(async()=>{const v=(await gridColumn(priceTable,4)).map(centsOf);return v.length>1&&ordered(v,'desc');},'Price grid did not sort by price in the worker');
+  // 7V-3b row notes: written under the same request/console marker sensors, so a note never leaves the device.
+  const pickOnly=async(grid,col,value)=>{await grid.getByTestId('grid-filter-'+col).click();const panel=page.getByRole('dialog',{name:/^Filter /});await panel.getByTestId('grid-filter-search').fill(value);await panel.getByRole('checkbox',{name:new RegExp('^'+value+'\\b')}).first().waitFor();await panel.getByRole('button',{name:'Select none',exact:true}).click();await panel.getByRole('checkbox',{name:new RegExp('^'+value+'\\b')}).first().check();await panel.getByTestId('grid-filter-apply').click();await grid.getByTestId('grid-count').filter({hasText:/^1 of /}).waitFor();};
+  await page.getByRole('link',{name:'Data Hub',exact:true}).click();const customerGrid=page.getByTestId('customer-grid');await customerGrid.waitFor({timeout:60000});
+  await pickOnly(customerGrid,'customer_id','E-CUSTOMER');const customerNote=marker+' prefers email, call before quoting';
+  await customerGrid.getByTestId('note-edit').click();await customerGrid.getByTestId('note-input').fill(customerNote);await customerGrid.getByTestId('note-save').click();await customerGrid.getByTestId('note-text').filter({hasText:customerNote}).waitFor();
+  const itemGrid=page.getByTestId('item-grid');await itemGrid.waitFor();await pickOnly(itemGrid,'product_id',priceSku);await itemGrid.getByTestId('note-edit').click();
+  await itemGrid.getByTestId('note-input').fill('x'.repeat(1001));await itemGrid.getByText('1,001 of 1,000 characters',{exact:true}).waitFor();assert.ok(await itemGrid.getByTestId('note-save').isDisabled(),'A note over 1,000 characters can be saved');
+  const itemNote='Fragile '+marker+' <b>plain text</b> =SUM(A1)';await itemGrid.getByTestId('note-input').fill(itemNote);await itemGrid.getByTestId('note-save').click();await itemGrid.getByTestId('note-text').filter({hasText:itemNote}).waitFor();
+  assert.equal(await itemGrid.locator('[data-testid="note-text"] b').count(),0,'A note was rendered as HTML');
+  await page.getByRole('link',{name:'Home',exact:true}).click();await page.getByRole('link',{name:'Data Hub',exact:true}).click();await page.getByTestId('customer-grid').waitFor({timeout:60000});
+  await pickOnly(page.getByTestId('customer-grid'),'notes',marker);await page.getByTestId('customer-grid').getByTestId('note-text').filter({hasText:customerNote}).waitFor();
+  await page.keyboard.press('Control+k');await page.getByTestId('command-palette').waitFor();await page.getByTestId('command-palette').getByRole('combobox').fill(marker);
+  await page.getByRole('option',{name:/E-CUSTOMER/}).waitFor({timeout:15000});await page.keyboard.press('Escape');await page.getByTestId('command-palette').waitFor({state:'hidden'});
+  await page.getByRole('link',{name:'Settings',exact:true}).click();await page.getByLabel('Preview as').selectOption('sales_rep');await page.getByTestId('preview-banner').waitFor();
+  await page.keyboard.press('Control+k');await page.getByTestId('command-palette').waitFor();await page.getByTestId('command-palette').getByRole('combobox').fill(marker);await page.waitForTimeout(1500);
+  assert.equal(await page.getByRole('option',{name:/E-CUSTOMER/}).count(),0,'A Sales Rep can find a customer by its private note');assert.ok(!(await page.getByTestId('command-palette').innerText()).includes('prefers email'),'A Sales Rep sees a row note');
+  await page.keyboard.press('Escape');await page.getByRole('button',{name:'Return to my own view'}).click();await page.getByTestId('preview-banner').waitFor({state:'detached'});
+  results.checks.notesUi={customerNote:true,itemNote:true,limit1000:true,plainText:true,persistsAndFilters:true,paletteSearch:true,repCannotSearchNotes:true,markerSensorsActive:true};
   results.checks.gridsUi={pagedWorkerSort:true,workerFilterOneOfN:true,totalsAllMatching:true,shiftRangeTotals:true,browserGridSort:true,browserGridTotals:true,priceGridSort:true,rebateTotalsInCurrency:'checked in rebatesUi'};
 
   // 7B: Price Check answers on Enter (barcode scanners send Enter), a below-floor quote asks for a
