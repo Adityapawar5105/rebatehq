@@ -65,6 +65,8 @@ Detailed findings, owners and review dates: [security review](./SECURITY_REVIEW.
 
 ## Browser and currency scope — 7C-3a
 
-Chrome and Edge remain primary desktop targets. Firefox support is gated by the full required Firefox lab/privacy suite in CI; **unverified for this chunk until that run passes**. Safari is not supported. The Firefox fault checks use worker termination and test-only OPFS quota errors because CDP is Chromium-only; they do not prove physical crash or disk-full recovery. A Windows SideBySide/mozglue launch issue was fixed by one browser-package reinstall; application verification is recorded separately in the chunk record.
+Chrome and Edge remain primary desktop targets. Firefox is supported: its required 44-check lab/privacy gate passed in [CI #108](https://github.com/Adityapawar5105/rebatehq/actions/runs/42444422694) on `155188f`, 8 November 2026. The authenticated Chromium vault gate passed 46 checks and the authenticated local-Supabase relay gate passed 11. Safari is not supported. The Firefox fault checks use worker termination and test-only OPFS quota errors because CDP is Chromium-only; they do not prove physical crash or disk-full recovery. A Windows SideBySide/mozglue launch issue was fixed by one browser-package reinstall; application verification is recorded separately in the chunk record.
 
 Workspace currency and per-batch manually supplied FX live only in the encrypted local vault and worker. Rates are not fetched or uploaded. Exact conversion produces integer cents; existing vaults default to USD without rewriting numbers. Currency changes with business data are blocked to prevent relabelling. See [part a verification](./CHUNK_7C3_VERIFICATION.md) for evidence and unverified limits.
+
+These results cover the local vault/relay flows, not hosted sign-in or an unqualified app-wide privacy claim. Headed browser and native prompt checks, physical recovery and real ERP round trips remain unverified.

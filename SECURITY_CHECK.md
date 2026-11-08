@@ -1,5 +1,11 @@
 # RebateHQ security verification
 
+## Chunk 7C-3a — CI-verified
+
+**7C-3a is CI-verified** in [CI #108](https://github.com/Adityapawar5105/rebatehq/actions/runs/42444422694) on `155188f`, 8 November 2026: 256 unit tests (78 JS + 178 TS), **46 authenticated Chromium vault checks**, **44 Firefox lab checks**, and **11 real-authenticated local-Supabase relay checks**. Both required browser steps ran and passed, with nonzero check counts. The fresh 152-check pgTAP suite ran twice with unchanged tenant row counts. Local vault **v13 / 42 tables**; 24 public tenant tables, 11 locked migrations, zero pending. No restore drill was required or run because no Supabase migration/inventory changed.
+
+Currency and rate data stay in the encrypted local vault. Currency changes with business data are blocked; quote approvals bind currency as well as amount. Decision 16 remains enforced. The Firefox gate retains quota/recovery, encrypted OPFS, source-math, layout and privacy assertions with documented test-only fault/prompt controls. Hosted sign-in/restore, headed prompts, real ERP imports, physical recovery and historical storage-estimate issues remain unverified. No new app-wide privacy claim. Details: [part a record](./CHUNK_7C3_VERIFICATION.md). Historical records below retain their original scope.
+
 ## Chunk 7A — pending verification
 
 Implementation and evidence ledger: [CHUNK_7A_VERIFICATION.md](./CHUNK_7A_VERIFICATION.md).

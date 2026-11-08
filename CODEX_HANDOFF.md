@@ -18,8 +18,8 @@ the next chunk. It holds what a new session needs without the earlier chat histo
 | 1 | 7V-1 UI redesign: design system, shell, Home | No | Done: approved by the user; [CI #95](https://github.com/Adityapawar5105/rebatehq/actions/runs/42264359487) green on `108d427` |
 | 2 | 7V-2 UI redesign: every other screen | No | Done: [CI #96](https://github.com/Adityapawar5105/rebatehq/actions/runs/42269867429) green on `9063e73` |
 | 3 | 7C Pricing ops (7C-1, 7C-2) | No | Done: [CI #100](https://github.com/Adityapawar5105/rebatehq/actions/runs/42284900986), [#102](https://github.com/Adityapawar5105/rebatehq/actions/runs/42397030001), [#104](https://github.com/Adityapawar5105/rebatehq/actions/runs/42406059786) |
-| 3a | 7C-3a v2.4: multi-currency, Firefox | No | **Next** |
-| 3b | 7C-3b v2.4: health alerts, competitor alternatives, sync status, cash-leak hero | No | — |
+| 3a | 7C-3a v2.4: multi-currency, Firefox | No | Done: [CI #108](https://github.com/Adityapawar5105/rebatehq/actions/runs/42444422694) on `155188f`, 8 November 2026; 256 unit / 46 authenticated vault / 44 Firefox / 11 authenticated relay checks |
+| 3b | 7C-3b v2.4: health alerts, competitor alternatives, sync status, cash-leak hero | No | **Next** |
 | 4 | 7D Rebates | No | — |
 | 5 | 7E Vendor review and simulator | No | — |
 | 6 | 7F Reporting and reach | No | — |
@@ -41,16 +41,16 @@ Adityapawar5105/rebatehq (private).
 
 Read before doing anything, in this order:
 1. AGENTS.md — project direction and the status of every chunk (which are CI-verified, with run links).
-2. BLUEPRINT.md (v2.3 governs; section 22 lists every change) and BLUEPRINT_EXECUTION_PLAN.md (chunk order and preamble).
+2. BLUEPRINT.md (v2.4 governs; section 22 lists every change) and BLUEPRINT_EXECUTION_PLAN.md (chunk order and preamble).
 3. ARCHITECTURE_TRANSITION.md, MIGRATION_RULES.md, ASSUMPTIONS.md, RETIREMENT_PROPOSAL.md (for 8R).
 4. CODEX_HANDOFF.md Block B (pitfalls) — every item there caused a real failure before.
 5. The latest verification records: CHUNK_7V_VERIFICATION.md (UI components and layout rules), CHUNK_7B_VERIFICATION.md,
    CHUNK_7U_VERIFICATION.md, CHUNK_7A_VERIFICATION.md.
 
-Where things stand: chunks 4.0 through 7C-2 and the 7V UI redesign are done and CI-verified (local vault v12, 42 tables).
+Where things stand: chunks 4.0 through 7C-3a and the 7V UI redesign are CI-verified (local vault v13, 42 tables). 7C-3a: [CI #108](https://github.com/Adityapawar5105/rebatehq/actions/runs/42444422694) on `155188f`, 8 November 2026. Next: 7C-3b, only on explicit instruction.
 Blueprint v2.4 (section 22, items 24-25) added work: 7C-3 covers its Phase 2 items before 7D. New screens use the
 shared components in components/ui (ui.tsx, Icon.tsx, ui.module.css) inside the shell in components/local/VaultApp.tsx. The local vault is DuckDB-Wasm in a Web
-Worker with encrypted OPFS snapshots, schema v12 (42 tables; lib/vault/schema.ts). Supabase holds only identity,
+Worker with encrypted OPFS snapshots, schema v13 (42 tables; lib/vault/schema.ts). Supabase holds only identity,
 licences/seats, public data and a ciphertext-only relay (11 applied migrations, all locked).
 
 Hard rules (from the execution plan preamble; they override convenience):
@@ -89,7 +89,7 @@ Toolchain on this Windows machine (no pnpm on PATH; run scripts directly):
        (also --browser=msedge). The relay gate is node scripts/test-relay-browser.mjs --browser=chrome.
 - CI (.github/workflows/ci.yml) runs typecheck, unit tests, build, local Supabase, pgTAP twice, then the
   authenticated privacy gate (pnpm test:vault:privacy --browser=chromium) and the relay gate on real Supabase.
-  A normal run takes about 11 minutes; the job stops at 45.
+  Recent runs take 11–22 minutes; the job stops at 60, with bounded Chromium/Firefox installs and browser gates.
 - To see the app by hand: .env.local (git-ignored) already turns on lab mode; run build-spike with those
   variables, then next dev, and open http://localhost:3000/ (it redirects to /lab/vault). There is no Supabase
   project or Docker on this machine, so sign-in pages cannot run locally.
@@ -184,6 +184,14 @@ what remains unverified.
 - Lab-only behaviour must check `VAULT_LAB_ENABLED === "true"` and stay bound to the synthetic lab scope.
 
 ---
+
+### Pitfalls from 7C-3a
+
+- FX settings and mapping confirmation can arrive in one command: apply both before returning. Do not disable/blur the rate field per keystroke; queue metadata edits before review.
+- Monetary UI assertions must check currency as well as the amount; generic ERP exports/receipts carry the workspace code.
+- Gecko discards constructor-supplied clipboard data on untrusted ClipboardEvent objects. The harness supplies DataTransfer on a bubbling paste Event and still runs the real parser. It never accesses the OS clipboard.
+- Firefox has no CDP. Keep equivalent quota/worker-termination assertions; use Gecko storage-prompt test preferences for headless Allow and require native persisted()=true. Do not skip the gate or call these physical recovery evidence.
+- The Firefox CI lab uses its own loopback Node server on port 3001. Never reuse the authenticated port-3000 server without lab mode.
 
 ## Block C — close-out prompt (after a green CI run)
 

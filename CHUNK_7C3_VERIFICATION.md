@@ -1,6 +1,6 @@
 # Chunk 7C-3 verification — part a: currencies and Firefox
 
-8 November 2026. Implementation and local checks are **unverified in CI** until a passing run is linked here. Part b and 7D have not started. Blueprint unchanged.
+**7C-3a is CI-verified** in [CI #108](https://github.com/Adityapawar5105/rebatehq/actions/runs/42444422694) on `155188f`, 8 November 2026: 256 unit tests (78 JS + 178 TS), **46 authenticated Chromium vault checks**, **44 Firefox lab checks**, and **11 real-authenticated local-Supabase relay checks**. Both required browser steps ran and passed, with nonzero check counts. The fresh 152-check pgTAP suite ran twice with unchanged tenant row counts. Local vault **v13 / 42 tables**; 24 public tenant tables, 11 locked migrations, zero pending. No restore drill was required or run because no Supabase migration/inventory changed. Part b and 7D have not started. Blueprint unchanged.
 
 ## Done when
 
@@ -54,13 +54,12 @@ Firefox has no Chromium DevTools crash or origin-quota API. The same recovery as
 
 ## Unverified
 
-- Passing CI for this chunk, including nonzero required Firefox and authenticated Chromium gates, until linked.
 - Headed manual browser behavior, including the native permission dialog.
 - Hosted Supabase sign-in, hosted restore, real ERP write-back/round trips, native-language review, physical crash/full-disk/quota recovery and real multi-user deployment.
 - New large-vault performance measurements and performance on other hardware; no capacity increase is claimed.
 - Zero- and three-decimal ISO currencies are intentionally rejected by this cent-based engine; no live FX or historical FX lookup is implemented.
 
-Browser evidence is measured headlessly on this Windows machine (Ryzen 5 5600H, 7,887,220,736 bytes RAM). Chrome 156.0.8078.80 and Edge 157.0.4341.42 each passed 44 lab checks and 11 local-PGlite relay checks; Firefox 157.0 passed the full 44-check lab gate. The actual non-USD PDF and currency-bound relay approval are covered. Real authenticated local-Supabase evidence awaits CI. The source files used in every test are synthetic.
+Browser evidence is measured headlessly on this Windows machine (Ryzen 5 5600H, 7,887,220,736 bytes RAM). Chrome 156.0.8078.80 and Edge 157.0.4341.42 each passed 44 lab checks and 11 local-PGlite relay checks; Firefox 157.0 passed the full 44-check lab gate. The actual non-USD PDF and currency-bound relay approval are covered. Real authenticated local-Supabase evidence is verified in CI #108; this is not hosted-deployment evidence. The source files used in every test are synthetic.
 
 CI runs Firefox against a loopback-only lab server directly with Node on port 3001, separate from authenticated port 3000. It owns the server PID and cannot accidentally reuse a server without lab mode. Firefox uses Gecko's official storage-prompt test preferences to choose Allow; the actual persist() and persisted() APIs must return true. Playwright grantPermissions alone left permission=prompt and persist() unresolved in an isolated native API probe. With dom.storageManager.prompt.testing=true and its .allow preference true, that same probe completed and persisted() returned true. No application API is mocked. See [Gecko StorageManager](https://searchfox.org/firefox-main/source/dom/quota/StorageManager.cpp) and [Mozilla's test-prompt discussion](https://bugzilla.mozilla.org/show_bug.cgi?id=1837282). Native manual permission UI remains unverified.
 
@@ -113,3 +112,19 @@ Measured headlessly on this machine: 100k import plus save was 6,207 ms (Chrome)
 - components/local/CurrencySettings.tsx
 - lib/vault/currency.ts
 - tests/currency.test.ts
+
+## CI proof and close-out
+
+**7C-3a is CI-verified** in [CI #108](https://github.com/Adityapawar5105/rebatehq/actions/runs/42444422694) on `155188f`, 8 November 2026: 256 unit tests (78 JS + 178 TS), **46 authenticated Chromium vault checks**, **44 Firefox lab checks**, and **11 real-authenticated local-Supabase relay checks**. Both required browser steps ran and passed, with nonzero check counts. The fresh 152-check pgTAP suite ran twice with unchanged tenant row counts. Local vault **v13 / 42 tables**; 24 public tenant tables, 11 locked migrations, zero pending. No restore drill was required or run because no Supabase migration/inventory changed.
+
+Step 21 (Required authenticated local-vault privacy gate) and step 23 (Required Firefox local-vault lab gate) concluded success. Authenticated Chromium 156.0.8078.4 reported 46 checks; Firefox 157.0 reported 44, including browserSupport, currency, currencyUi, quotesUi and privacy. The relay log explicitly reports 11 checks on real authenticated local Supabase. Unit logs report 78/78 JS and 178/178 TS; the database plan prints 1..152 twice. CI passed on the first implementation push; no CI fix attempt was needed.
+
+The committed-version Chrome/Edge repeat also passed 44 vault + 11 local-PGlite relay checks each after the portable paste change. The Windows Firefox gate passed all 44. CI install --frozen-lockfile, advisory gate, typecheck, tests, production builds, lock/schema/service-role gates, runtime app-role check, real database suite and both required browser gates passed. CI timing observations: 100k import/save 7,322 ms (Chromium) and 8,045 ms (Firefox), with no long task/delay over 50 ms recorded. These are shared-runner observations, not latency guarantees.
+
+Implementation commit and push: git commit -F test-results/7c3-commit.txt and git push origin main succeeded (155188f). Close-out runs the same local typecheck, full JS/TS tests and lock check before its documentation-only commit and push. Blueprint unchanged; 7C-3b and 7D remain unstarted.
+
+## Close-out files and final checks
+
+Documentation only: AGENTS.md, ASSUMPTIONS.md, BLUEPRINT_EXECUTION_PLAN.md, CHUNK_7C3_VERIFICATION.md, CODEX_HANDOFF.md, README.md, SECURITY_CHECK.md, SECURITY_WHITEPAPER.md.
+
+After these updates, the table’s exact local typecheck, full JS tests (78/78), full TS tests (178/178), migration lock (11/11), schema and source scan commands all passed again. git diff --check passed. The controller invokes node scripts/build-spike.mjs, node node_modules/next/dist/bin/next build and a loopback-only next start; all final Chrome/Edge/Firefox production builds passed and each server was stopped by its controller. Native storage/clipboard probes and the single forced Firefox reinstall are documented above. The shutdown backup remains in ignored test-results/wip-7c3a/. The pre-existing .claude/ folder is untouched.

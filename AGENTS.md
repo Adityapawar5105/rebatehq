@@ -2,17 +2,7 @@
 
 ## Governing blueprint
 
-Read `BLUEPRINT.md` before planning or implementing RebateHQ work. It is the
-user-approved **RebateHQ Blueprint v2.4**: v2.1 (Final) was adopted by the user on
-2 November 2026, v2.2 corrections were made on 2 November 2026 with the
-user's standing permission, v2.3 (UX foundations chunk 7U, languages, mobile
-in Professional built last as 9A, new Phase 2 items; drafted 5 November 2026 at the user's request)
-is not yet built, and v2.4 (multi-currency, Firefox support, customer health alerts in Phase 2,
-competitor log alternatives, supplier claim generator, dead-stock carrying costs, sync status,
-cash-leak hero number; 8 November 2026) is not yet built; all are listed in its section 22. It supersedes earlier
-product plans where they conflict. Later explicit user instructions still take
-precedence. Any later blueprint edit must add an entry to that changes section and
-be reported to the user.
+Read `BLUEPRINT.md` before planning or implementing RebateHQ work. The user-approved **Blueprint v2.4** governs. Section 22 records its approved changes. v2.3 UX/quoting/pricing and v2.4 multi-currency/Firefox work have been implemented only as the verified chunks below state; other roadmap items remain future work. Later explicit user instructions take precedence. Any blueprint edit must add a section 22 entry and be reported to the user.
 
 `BLUEPRINT_EXECUTION_PLAN.md` sequences the work into repo chunks (4.0, 4A-4E,
 5A-5B, 6A, 6R, 6B, 7A, 7U, 7B, 7V, 7C (7C-1, 7C-2, 7C-3), 7D-7F, 8A-8D, 8R, 9A) with a standard preamble and "Done when" criteria.
@@ -28,7 +18,7 @@ Key decisions:
 - Keep the cloud control plane limited to identity, licences/seats, public index
   data, app updates and a ciphertext-only collaboration relay. Supabase is not
   the target store for customer pricing data.
-- Support Chrome and Edge, persistent-storage requests, folder auto-backups and
+- Support Chrome and Edge as primary targets and Firefox (CI #108), persistent-storage requests, folder auto-backups where the native picker exists and
   an encrypted export fallback. Use decimal/integer money, streaming imports,
   versioned vault migrations and the blueprint's capacity/memory guardrails.
 - Launch with local multi-file conversion/import and ERP-ready file exports.
@@ -91,9 +81,11 @@ cost-to-serve loss findings and immutable export-receipt landed checks) is
 on `05ff468`, 8 November 2026 (Asia/Kolkata): 249 unit tests, 43 authenticated
 vault checks and 11 real-authenticated local-Supabase relay checks. Local v12,
 42 tables; no Supabase, dependency or locked-hash change. Blueprint unchanged.
-See CHUNK_7C2_VERIFICATION.md. Do not start 7D without a new user task. **Next chunk: 7C-3a** (v2.4 catch-up: multi-currency and Firefox; blueprint section 22, item 25), then 7C-3b, then 7D. Prompts are in `CODEX_HANDOFF.md`.
+See CHUNK_7C2_VERIFICATION.md. Do not start 7D without a new user task. **Next chunk: 7C-3b**, only on explicit instruction (7C-3a is verified below), then 7D. Prompts are in `CODEX_HANDOFF.md`.
 
 Scope note: 7C-2 verification covers the original v2.3 items 6–10. The separate
-blueprint v2.4 commit 51001c0 was preserved after the code was committed; its new
-requirements are not claimed implemented. See ASSUMPTIONS.md for the boundary.
+blueprint v2.4 commit 51001c0 was preserved after the code was committed; its requirements are not covered by 7C-2 alone. 7C-3a now covers currencies and Firefox; the other v2.4 requirements remain future work. See ASSUMPTIONS.md for the boundary.
 Do not automatically expand 7C or start 7D from this documentation close-out.
+
+**7C-3a is CI-verified** in [CI #108](https://github.com/Adityapawar5105/rebatehq/actions/runs/42444422694) on `155188f`, 8 November 2026: 256 unit tests (78 JS + 178 TS), **46 authenticated Chromium vault checks**, **44 Firefox lab checks**, and **11 real-authenticated local-Supabase relay checks**. Both required browser steps ran and passed, with nonzero check counts. The fresh 152-check pgTAP suite ran twice with unchanged tenant row counts. Local vault **v13 / 42 tables**; 24 public tenant tables, 11 locked migrations, zero pending. No restore drill was required or run because no Supabase migration/inventory changed.
+See CHUNK_7C3_VERIFICATION.md for every command and remaining unverified limits. Next prompt: 7C-3b. Do not start it or 7D automatically. Blueprint unchanged.
