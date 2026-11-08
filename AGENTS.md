@@ -5,7 +5,7 @@
 Read `BLUEPRINT.md` before planning or implementing RebateHQ work. The user-approved **Blueprint v2.5** governs. Section 22 records its approved changes. v2.3 UX/quoting/pricing, v2.4 multi-currency/Firefox, and v2.5 selection aggregates/row notes/grid filter-sort work have been implemented only as the verified chunks below state; other roadmap items remain future work. Later explicit user instructions take precedence. Any blueprint edit must add a section 22 entry and be reported to the user.
 
 `BLUEPRINT_EXECUTION_PLAN.md` sequences the work into repo chunks (4.0, 4A-4E,
-5A-5B, 6A, 6R, 6B, 7A, 7U, 7B, 7V, 7C (7C-1, 7C-2, 7C-3), 7D-7F, 8A-8D, 8R, 9A) with a standard preamble and "Done when" criteria.
+5A-5B, 6A, 6R, 6B, 7A, 7U, 7B, 7V (7V-1, 7V-2, 7V-3), 7C (7C-1, 7C-2, 7C-3), 7D (7D-1, 7D-2), 7E-7F, 8A-8D, 8R, 9A) with a standard preamble and "Done when" criteria.
 `ARCHITECTURE_TRANSITION.md` classifies every existing route, module and table
 as control plane, logic to port to the browser, server path to retire, or legacy.
 
@@ -96,4 +96,4 @@ See CHUNK_7C3_VERIFICATION.md part b. Cost-derived monitoring is worker-gated; n
 
 
 **7D-1 is CI-verified** in [CI #114](https://github.com/Adityapawar5105/rebatehq/actions/runs/42470690491) on `585ccf8`, 8 November 2026: 269 unit tests (78 JS + 191 TS), **50 authenticated Chromium vault checks**, **48 Firefox lab checks**, **12 real-authenticated local-Supabase relay checks**, and the fresh 152-check pgTAP suite twice with unchanged tenant row counts. Both required browser gates ran and passed with nonzero counts. Local vault **v14 / 45 tables**; 24 public tenant tables, 11 locked migrations, zero pending. No restore drill needed or run: no Supabase schema/inventory change.
-See CHUNK_7D_VERIFICATION.md part 1. Customer agreement loading, exact tier accruals, progress/reminders and source-linked waterfall reconciliation are local-only. rebateProgress is the only new rep projection and is exhaustively classified/scanned; full evidence and writes are worker-gated. **7D-2 remains unstarted; next prompt: 7D-2, only in a separate explicitly authorized session.** The concurrent v2.5 additions are not covered by this v2.4-scoped task and need separate catch-up scope. Blueprint unchanged by this chunk.
+See CHUNK_7D_VERIFICATION.md part 1. Customer agreement loading, exact tier accruals, progress/reminders and source-linked waterfall reconciliation are local-only. rebateProgress is the only new rep projection and is exhaustively classified/scanned; full evidence and writes are worker-gated. **7D-2 remains unstarted.** The v2.5 additions were not covered by this v2.4-scoped task; blueprint section 22 item 27 places them in **chunk 7V-3, the next prompt**, before 7D-2. Start each only on explicit instruction. Blueprint unchanged by this chunk.

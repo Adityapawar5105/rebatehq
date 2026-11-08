@@ -652,12 +652,6 @@ Corrections after reviewing the repository and build history against v2.1. Produ
     - **"90-day cash leak" hero number (Home spec):** the Home dashboard prominently shows the exact cash left on the table over the last 90 days from the existing leak finder data, not just a margin percentage. No schema or calculation change; a UX framing requirement on the already-built leak finder (4D). Added as a Home dashboard spec note.
     - Scope, tiers ($299 / $599 / $999) and prices are unchanged.
 
-25. **8 Nov 2026 — v2.5: selection aggregate status bar, freeform row notes, column filter/sort standard (section 6).**
-    - **Selection aggregate status bar (Phase 2):** when rows are selected in any data grid, a status bar shows SUM, AVG, COUNT, MIN and MAX for numeric columns, computed by DuckDB over the visible filtered set. This is not formula evaluation and does not violate the "never evaluate workbook formulas or macros" rule; it is a view-layer aggregate. Added to Phase 2 feature list.
-    - **Freeform row notes (Phase 2):** a plain-text notes field (max 1,000 characters) on `customers` and `products` vault tables, editable inline in the customer list and item master; local vault only, never relayed; not visible to Sales Reps; searchable via the command palette. Requires a vault schema bump (`notes VARCHAR(1000)` on both tables). Added to Phase 2 feature list.
-    - **Column header filter and sort (table component standard):** sort (A-Z / Z-A) and a multi-value filter dropdown on every column header, built into the shared `components/ui` table component (established in 7V) and applied to all grids. This is a done-when criterion for every grid going forward, not a separately shipped feature. Added to Phase 2 feature list as a component spec note.
-    - **Not added:** multi-tab workbooks (conflicts with the app's screen-per-module navigation and opinionated defaults) and a user-defined conditional formatting rules builder (conflicts with the guardrail signal system; users can apply custom formatting in exported files).
-    - Scope, tiers and prices are unchanged.
 25. **8 Nov 2026 — where the v2.4 items are built (execution plan section 9).** Item 24 said multi-currency was in "chunk 7C/7D scope", but 7C was already CI-verified without it, and several items had no chunk. They are placed as follows:
     - **New chunk 7C-3**, after 7C-2 and before 7D:
       - **7C-3a:** multi-currency and Firefox support. Multi-currency lands before rebates, which also handle money.
@@ -666,5 +660,18 @@ Corrections after reviewing the repository and build history against v2.1. Produ
     - **7F:** health alerts in the weekly digest.
     - **8B:** dead-stock carrying costs and substitute SKUs.
     - **8C:** the Safari desktop verification spike.
+
+    No feature, tier or price changes.
+
+26. **8 Nov 2026 — v2.5: selection aggregate status bar, freeform row notes, column filter/sort standard (section 6).**
+    - **Selection aggregate status bar (Phase 2):** when rows are selected in any data grid, a status bar shows SUM, AVG, COUNT, MIN and MAX for numeric columns, computed by DuckDB over the visible filtered set. This is not formula evaluation and does not violate the "never evaluate workbook formulas or macros" rule; it is a view-layer aggregate. Added to Phase 2 feature list.
+    - **Freeform row notes (Phase 2):** a plain-text notes field (max 1,000 characters) on `customers` and `products` vault tables, editable inline in the customer list and item master; local vault only, never relayed; not visible to Sales Reps; searchable via the command palette. Requires a vault schema bump (`notes VARCHAR(1000)` on both tables). Added to Phase 2 feature list.
+    - **Column header filter and sort (table component standard):** sort (A-Z / Z-A) and a multi-value filter dropdown on every column header, built into the shared `components/ui` table component (established in 7V) and applied to all grids. This is a done-when criterion for every grid going forward, not a separately shipped feature. Added to Phase 2 feature list as a component spec note.
+    - **Not added:** multi-tab workbooks (conflicts with the app's screen-per-module navigation and opinionated defaults) and a user-defined conditional formatting rules builder (conflicts with the guardrail signal system; users can apply custom formatting in exported files).
+    - Scope, tiers and prices are unchanged.
+
+27. **8 Nov 2026 — numbering fix and where the v2.5 items are built (execution plan section 9).** The v2.5 entry was first added as a second item 25; it is renumbered 26 with no change to its text. Its items had no chunk, and 7D-1 was built under v2.4 without them. They are placed in a **new chunk 7V-3**, after 7D-1 and before 7D-2:
+    - the column header filter and sort standard and the selection aggregate status bar are built once into the shared `components/ui` table and applied to every existing grid. 7D-2 and later chunks then meet the standard in their own grids without a retrofit;
+    - freeform row notes on customers and products, with the vault schema bump the item requires.
 
     No feature, tier or price changes.

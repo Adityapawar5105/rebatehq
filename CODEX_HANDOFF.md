@@ -3,7 +3,7 @@
 Written 6 November 2026, after 7B (CI #89, #90, #91 green); updated 7 November 2026 after 7V (CI #95, #96 green). This file is the starting point for whoever builds
 the next chunk. It holds what a new session needs without the earlier chat history.
 
-**Current status (8 November 2026): 7D-1 done and CI-verified in [CI #114](https://github.com/Adityapawar5105/rebatehq/actions/runs/42470690491) on `585ccf8`, 8 November 2026.** Local v14 / 45 tables. Part 2 is unstarted; start it only in a separate explicitly authorized session. The concurrent v2.5 selection aggregates/row notes/all-grid filter-sort additions are not covered by 7D-1. See CHUNK_7D_VERIFICATION.md.
+**Current status (8 November 2026): 7D-1 done and CI-verified in [CI #114](https://github.com/Adityapawar5105/rebatehq/actions/runs/42470690491) on `585ccf8`, 8 November 2026.** Local v14 / 45 tables. Next: **7V-3** (v2.5 grid standard and row notes; blueprint section 22, items 26-27), then 7D-2, each only on explicit instruction. See CHUNK_7D_VERIFICATION.md.
 
 ## How to use this file
 1. Work **one chunk per session**, in the order below. Paste **Block A (shared context)** first, then that
@@ -22,7 +22,9 @@ the next chunk. It holds what a new session needs without the earlier chat histo
 | 3 | 7C Pricing ops (7C-1, 7C-2) | No | Done: [CI #100](https://github.com/Adityapawar5105/rebatehq/actions/runs/42284900986), [#102](https://github.com/Adityapawar5105/rebatehq/actions/runs/42397030001), [#104](https://github.com/Adityapawar5105/rebatehq/actions/runs/42406059786) |
 | 3a | 7C-3a v2.4: multi-currency, Firefox | No | Done: [CI #108](https://github.com/Adityapawar5105/rebatehq/actions/runs/42444422694) on `155188f`, 8 November 2026; 256 unit / 46 authenticated vault / 44 Firefox / 11 authenticated relay checks |
 | 3b | 7C-3b v2.4: health alerts, competitor alternatives, sync status, cash-leak hero | No | Done: [CI #111](https://github.com/Adityapawar5105/rebatehq/actions/runs/42449524974) on `fa93eab`, 8 November 2026; 260 unit / 48 authenticated vault / 46 Firefox / 12 authenticated relay checks |
-| 4 | 7D Rebates | No | — |
+| 4 | 7D-1 Customer rebates | No | Done: [CI #114](https://github.com/Adityapawar5105/rebatehq/actions/runs/42470690491) on `585ccf8`, 8 November 2026 |
+| 4a | 7V-3 v2.5: grid filter/sort + selection totals (7V-3a), row notes (7V-3b) | No | **Next** |
+| 4b | 7D-2 Supplier claims, Purchases import, rebate progress, claim generator | No | — |
 | 5 | 7E Vendor review and simulator | No | — |
 | 6 | 7F Reporting and reach | No | — |
 | 7 | 8A Deal guidance and cross-sell | No | — |
@@ -43,16 +45,17 @@ Adityapawar5105/rebatehq (private).
 
 Read before doing anything, in this order:
 1. AGENTS.md — project direction and the status of every chunk (which are CI-verified, with run links).
-2. BLUEPRINT.md (v2.4 governs; section 22 lists every change) and BLUEPRINT_EXECUTION_PLAN.md (chunk order and preamble).
+2. BLUEPRINT.md (v2.5 governs; section 22 lists every change) and BLUEPRINT_EXECUTION_PLAN.md (chunk order and preamble).
 3. ARCHITECTURE_TRANSITION.md, MIGRATION_RULES.md, ASSUMPTIONS.md, RETIREMENT_PROPOSAL.md (for 8R).
 4. CODEX_HANDOFF.md Block B (pitfalls) — every item there caused a real failure before.
 5. The latest verification records: CHUNK_7V_VERIFICATION.md (UI components and layout rules), CHUNK_7B_VERIFICATION.md,
    CHUNK_7U_VERIFICATION.md, CHUNK_7A_VERIFICATION.md.
 
-Where things stand: chunks 4.0 through 7C-3b and the 7V UI redesign are CI-verified (local vault v13, 42 tables). 7C-3b: [CI #111](https://github.com/Adityapawar5105/rebatehq/actions/runs/42449524974) on `fa93eab`, 8 November 2026. Next: 7D, only on explicit instruction.
-Blueprint v2.4 (section 22, items 24-25) added work: 7C-3 covers its Phase 2 items before 7D. New screens use the
+Where things stand: chunks 4.0 through 7D-1 and the 7V UI redesign are CI-verified (local vault v14, 45 tables). 7D-1: [CI #114](https://github.com/Adityapawar5105/rebatehq/actions/runs/42470690491) on `585ccf8`, 8 November 2026. Next: 7V-3, then 7D-2, each only on explicit instruction.
+Blueprint v2.4 (section 22, items 24-25) added work that 7C-3 covered. Blueprint v2.5 (items 26-27) adds a grid standard and row
+notes, built in 7V-3; from then on every new grid must meet that standard. New screens use the
 shared components in components/ui (ui.tsx, Icon.tsx, ui.module.css) inside the shell in components/local/VaultApp.tsx. The local vault is DuckDB-Wasm in a Web
-Worker with encrypted OPFS snapshots, schema v13 (42 tables; lib/vault/schema.ts). Supabase holds only identity,
+Worker with encrypted OPFS snapshots, schema v14 (45 tables; lib/vault/schema.ts). Supabase holds only identity,
 licences/seats, public data and a ciphertext-only relay (11 applied migrations, all locked).
 
 Hard rules (from the execution plan preamble; they override convenience):
@@ -448,6 +451,67 @@ scan, and the browser gate (Home cards, competitor alternatives, relay status, p
 Edge locally, with Firefox covered by its CI gate. Add part b to CHUNK_7C3_VERIFICATION.md.
 ```
 
+## 3c. Prompt 7V-3 — v2.5: grid filter/sort, selection totals, row notes
+
+```
+[Block A]
+Chunk 7V-3 (blueprint v2.5, section 22, items 26-27; BLUEPRINT_EXECUTION_PLAN.md section 9). Precondition: 7D-1
+is CI-verified. 7D-2 has not started and is not part of this chunk. No Supabase migration.
+
+Size: two parts, each committed, pushed and green in CI before the next: 7V-3a = items 1-2 (grid standard),
+7V-3b = item 3 (row notes). Stop after 7V-3a and report; the user starts 7V-3b in a new session with Block A and
+this same prompt, saying "continue with 7V-3b". Record both parts in CHUNK_7V3_VERIFICATION.md.
+
+Starting point (checked 8 November 2026): components/ui DataTable is only a styled <table> wrapper, and screens
+build their own tables (CleanupView, CostBasisView, ImportStudio, MarginView, PricingView, QuotesView, RolesView,
+the rebate screens from 7D-1 and others). Some grids hold every row; others page rows from the worker.
+
+Scope:
+1. Column header sort and filter, built once into the shared components/ui table, then applied to every data grid.
+   - First write an inventory in CHUNK_7V3_VERIFICATION.md: every table in the local app (components/local and
+     what it renders), each marked "data grid" (a list of records) or "not a grid" (a fixed show-the-math
+     breakdown, key/value summary or legend) with the reason. Every data grid must meet the standard; legacy
+     /legacy pages and server account pages are out of scope.
+   - Sort: click a header for A-Z, Z-A, then off; keyboard operable; aria-sort set. Typed comparisons: money and
+     decimals numerically and exactly (never via float or string order), dates chronologically, text with the
+     UI locale's collation; ties broken by the row key so the order is stable.
+   - Filter: a multi-value dropdown per column (checkbox list of distinct values, a search box, "(Blanks)",
+     select all/none), keyboard accessible (Escape closes and returns focus), shows "N of M rows" and a
+     "Clear filters" action. Values containing commas, quotes or leading = + - @ are plain text.
+   - Paged grids sort and filter in the worker over the whole result, not just the loaded page: a whitelisted
+     column map per grid (never interpolate a column name from the UI), quoted values, the existing paging. The
+     distinct-value list is computed in the worker and capped (for example 500 values plus search) so a
+     1,000,000-row sales grid never loads into the main thread.
+   - A grid shows only the columns the role may see today; filter and sort must not add a cost or margin column
+     or value for a role without the cost capability (decision 16). Classify any new rep-reachable command.
+2. Selection aggregate status bar: selecting one or more rows (checkbox column, shift-click range, select all
+   matching the filter) shows SUM, AVG, COUNT, MIN and MAX for each numeric column the user can see.
+   - Computed by DuckDB in the worker, exactly: money in integer cents, decimals as exact decimals; document the
+     AVG rounding rule in ASSUMPTIONS.md. Never formula evaluation. "Select all matching" aggregates the
+     filtered set in the worker without loading it.
+   - Shown in the workspace currency (7C-3a) and the UI locale; the status bar is a polite live region.
+3. Freeform row notes (7V-3b): notes VARCHAR(1000) on customers and products, with a vault schema bump and a
+   forward migration (Block B).
+   - Edited inline in the customer list and the item master; at most 1,000 characters (count Unicode code
+     points; enforce in the worker as well as the UI); stored as plain text and rendered as text, never HTML.
+   - Local only: never in a relay event, never sent to the server, never in ERP exports. Included in the
+     encrypted backup and restore round trip.
+   - Hidden from Sales Reps: no rep projection or rep search result may contain a note. Add notes to the
+     decision 16 payload scan, and to the relay privacy test.
+   - Searchable in the command palette for roles that can see them.
+   - Preserve notes through every path that rewrites customers or products: re-import, Fix Later commits,
+     source-file removal (lib/studio/load.ts deletes rows no longer referenced; its preview must say how many
+     notes would be lost), and the 5A item master merge with undo (keep the surviving row's note, append the
+     merged rows' notes within the limit or ask the user to edit first; undo restores every note).
+
+Done when: every data grid in the inventory meets the standard (the browser gate checks sort, filter, "N of M",
+and the status bar on at least the item master, a paged sales grid, the price grid and a rebate grid);
+aggregates equal fixtures computed independently; notes survive re-import, removal of an unrelated file, merge,
+undo and backup/restore; the decision 16 and relay scans pass; 375px and pseudo-locale walks pass; Chrome and
+Edge gates pass locally and CI's authenticated Chromium and Firefox gates pass. From now on, the grid standard
+is a "Done when" item for every new grid: add that sentence to Block B.
+```
+
 ## 4. Prompt 7D — Rebates
 
 ```
@@ -462,6 +526,9 @@ rebate_programs, rebate_tiers and rebate_accruals); 7D-2 = items 2, 3 and 5 (sup
 import role, rebate progress, supplier claim generator; a second schema bump with supplier_claims and purchases).
 Stop after 7D-1 and report; the user starts 7D-2 in a new session with Block A and this same prompt, saying
 "continue with 7D-2". Record both parts in CHUNK_7D_VERIFICATION.md (part 1, part 2).
+7D-1 is done (CI #114). 7D-2 starts only after 7V-3 is CI-verified: its new grids (supplier claims, purchases,
+supplier progress) use the shared grid standard from 7V-3 (column sort and filter, selection totals), and its
+schema bump comes after 7V-3's.
 
 Money and browsers (from 7C-3): show every amount through the existing formatters with the workspace currency;
 never hard-code "$" or USD, and browser assertions check the currency as well as the amount. Run the Chrome and
