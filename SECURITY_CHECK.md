@@ -424,3 +424,14 @@ full Chrome/Edge lab privacy gates pass locally. The required authenticated loca
 privacy gate ran and passed 43 named checks in [CI #104](https://github.com/Adityapawar5105/rebatehq/actions/runs/42406059786) on `05ff468`, with 11 real-authenticated
 local-Supabase relay checks. This proves the exercised local flow, not hosted deployment
 or app-wide absence of legacy paths. See CHUNK_7C2_VERIFICATION.md.
+
+
+## 7C-3b — local monitoring and relay status
+
+**7C-3b is CI-verified** in [CI #111](https://github.com/Adityapawar5105/rebatehq/actions/runs/42449524974) on `fa93eab`, 8 November 2026: 260 unit tests (78 JS + 182 TS), **48 authenticated Chromium vault checks**, **46 Firefox lab checks**, and **12 real-authenticated local-Supabase relay checks**. Both required browser steps ran and passed with nonzero check counts. The fresh 152-check pgTAP suite ran twice with unchanged tenant row counts. Local vault **v13 / 42 tables**; 24 public tenant tables, 11 locked migrations, zero pending. No restore drill was needed or run: no Supabase migration or inventory changed.
+
+- homeMonitor is a read-only cost-capability command in protocol, dispatch, ACTION_CAP and the licence read set. Competitor alternatives remain under the existing cost-gated competitorList command. No new rep-reachable command; the exhaustive decision-16 scan and explicit forbidden-command tests passed. The worker never sends these figures to a server.
+- Exact integer/fixed-decimal SQL uses agg_cm plus boundary lines, the shared book resolver and unchanged scoped finder rules. Margin alerts require complete costs; missing alternative costs are excluded. Query failures use fixed message keys instead of business values. Tests prove CAD amounts/symbols, date edges, strict thresholds, deterministic ties and read-only audit behavior.
+- Relay status derives from verified session heads, pending outbox/key state, rejected entries and an encrypted optional lastSyncedAt. Only successful inbox verification sets that timestamp. Same-sequence divergent heads are conflicts. No server/event/HTTP protocol or permission change. Session tests retain failed-send and signature/replay protections.
+- CI steps 21 and 23 actually ran, with 48 authenticated Chromium / 46 Firefox lab checks; the authenticated relay gate passed all 12. This proves these tested local flows only, not a deployed or app-wide privacy claim. No restore drill required and no locked migration/hash change.
+- Still unverified: hosted/deployed authentication and restore, headed native permission UI, physical crash/quota/multi-tab recovery, historical storage-estimate discrepancy, native-language/ERP acceptance and new large-vault monitoring latency.

@@ -710,7 +710,7 @@ Headed permission UI, hosted sign-in/restore, physical crash/quota/multi-tab rec
 
 ## 7C-3b — monitoring and relay presentation (8 November 2026)
 
-Status: locally verified; all new CI claims unverified until its own green run. Local vault v13 / 42 tables, no schema or Supabase changes.
+**7C-3b is CI-verified** in [CI #111](https://github.com/Adityapawar5105/rebatehq/actions/runs/42449524974) on `fa93eab`, 8 November 2026: 260 unit tests (78 JS + 182 TS), **48 authenticated Chromium vault checks**, **46 Firefox lab checks**, and **12 real-authenticated local-Supabase relay checks**. Both required browser steps ran and passed with nonzero check counts. The fresh 152-check pgTAP suite ran twice with unchanged tenant row counts. Local vault **v13 / 42 tables**; 24 public tenant tables, 11 locked migrations, zero pending. No restore drill was needed or run: no Supabase migration or inventory changed. Local vault v13 / 42 tables, no schema or Supabase changes.
 
 - Home checks run on mounting the unlocked Home screen and on explicit Check now. No timer, background runner, notifications or inactivity-timer renewal. Last checked is the successful worker completion time.
 - Windows are UTC calendar dates: today plus the preceding 89 days, compared with the preceding 90. Start inclusive/end exclusive, not anchored to the newest imported invoice. Exact partial months read lines; complete months read agg_cm. Sales only; credits are not orders.
@@ -720,3 +720,5 @@ Status: locally verified; all new CI claims unverified until its own green run. 
 - New homeMonitor command and existing competitorList are cost-gated in worker dispatch; neither is rep-reachable. No new rep command; the exhaustive decision-16 payload scan remains in force. New amounts and displayed symbols follow the encrypted workspace currency.
 - Relay status is local presentation over verified session heads, durable pending outbox/key state and rejected entries. The optional encrypted lastSyncedAt is set only on successful inbox verification. Conflict means a stale pending event, a divergent same-sequence head or rejected signed content; pending includes an unsynced head or no successful sync. No HTTP/event protocol or server change. No promise of continuous background sync.
 - Real hosted authentication/restore, headed/manual permission checks, physical crash/quota/multi-tab recovery, real ERP round trips, native-language review and new large-vault monitoring performance remain unverified. 7D and later work remain unstarted. Blueprint unchanged.
+
+The 7C-3b proof covers the authenticated local vault flow only. It does not prove deployed/hosted behavior, native permission UI, physical recovery, language suitability for pilots or large-vault monitoring performance. Next prompt: 7D, only on explicit instruction.

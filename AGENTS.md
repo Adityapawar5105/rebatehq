@@ -81,14 +81,15 @@ cost-to-serve loss findings and immutable export-receipt landed checks) is
 on `05ff468`, 8 November 2026 (Asia/Kolkata): 249 unit tests, 43 authenticated
 vault checks and 11 real-authenticated local-Supabase relay checks. Local v12,
 42 tables; no Supabase, dependency or locked-hash change. Blueprint unchanged.
-See CHUNK_7C2_VERIFICATION.md. Do not start 7D without a new user task. **Next chunk: 7C-3b**, only on explicit instruction (7C-3a is verified below), then 7D. Prompts are in `CODEX_HANDOFF.md`.
+See CHUNK_7C2_VERIFICATION.md. Do not start 7D without a new user task. **Next chunk: 7D**, only on explicit instruction (7C-3a and 7C-3b are verified below). Prompts are in `CODEX_HANDOFF.md`.
 
 Scope note: 7C-2 verification covers the original v2.3 items 6–10. The separate
-blueprint v2.4 commit 51001c0 was preserved after the code was committed; its requirements are not covered by 7C-2 alone. 7C-3a now covers currencies and Firefox; the other v2.4 requirements remain future work. See ASSUMPTIONS.md for the boundary.
+blueprint v2.4 commit 51001c0 was preserved after the code was committed; its requirements are not covered by 7C-2 alone. 7C-3a covers currencies and Firefox; 7C-3b now covers health alerts, competitor alternatives, relay sync status and the cash-leak hero. See ASSUMPTIONS.md for the boundary.
 Do not automatically expand 7C or start 7D from this documentation close-out.
 
 **7C-3a is CI-verified** in [CI #108](https://github.com/Adityapawar5105/rebatehq/actions/runs/42444422694) on `155188f`, 8 November 2026: 256 unit tests (78 JS + 178 TS), **46 authenticated Chromium vault checks**, **44 Firefox lab checks**, and **11 real-authenticated local-Supabase relay checks**. Both required browser steps ran and passed, with nonzero check counts. The fresh 152-check pgTAP suite ran twice with unchanged tenant row counts. Local vault **v13 / 42 tables**; 24 public tenant tables, 11 locked migrations, zero pending. No restore drill was required or run because no Supabase migration/inventory changed.
 See CHUNK_7C3_VERIFICATION.md for every command and remaining unverified limits. Next prompt: 7C-3b. Do not start it or 7D automatically. Blueprint unchanged.
 
 
-7C-3b is implemented and locally verified (260 unit tests; Chrome/Edge 46 vault + 12 local relay checks each). CI remains unverified pending its implementation push. No migration/schema/dependency or blueprint change. See CHUNK_7C3_VERIFICATION.md part b. Do not start 7D.
+**7C-3b is CI-verified** in [CI #111](https://github.com/Adityapawar5105/rebatehq/actions/runs/42449524974) on `fa93eab`, 8 November 2026: 260 unit tests (78 JS + 182 TS), **48 authenticated Chromium vault checks**, **46 Firefox lab checks**, and **12 real-authenticated local-Supabase relay checks**. Both required browser steps ran and passed with nonzero check counts. The fresh 152-check pgTAP suite ran twice with unchanged tenant row counts. Local vault **v13 / 42 tables**; 24 public tenant tables, 11 locked migrations, zero pending. No restore drill was needed or run: no Supabase migration or inventory changed.
+See CHUNK_7C3_VERIFICATION.md part b. Cost-derived monitoring is worker-gated; no new rep command. Hosted auth/restore, headed/manual and physical recovery, native-language review and new large-vault monitoring performance remain unverified. Blueprint unchanged. **Next prompt: 7D**, only on explicit instruction.

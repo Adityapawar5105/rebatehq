@@ -132,7 +132,7 @@ After these updates, the table’s exact local typecheck, full JS tests (78/78),
 
 ## Part b — 7C-3b (8 November 2026)
 
-Status: locally verified; CI unverified pending the implementation push. Precondition: part a CI #108 above. No blueprint, dependency, local schema, locked migration or migrations.lock changes.
+**7C-3b is CI-verified** in [CI #111](https://github.com/Adityapawar5105/rebatehq/actions/runs/42449524974) on `fa93eab`, 8 November 2026: 260 unit tests (78 JS + 182 TS), **48 authenticated Chromium vault checks**, **46 Firefox lab checks**, and **12 real-authenticated local-Supabase relay checks**. Both required browser steps ran and passed with nonzero check counts. The fresh 152-check pgTAP suite ran twice with unchanged tenant row counts. Local vault **v13 / 42 tables**; 24 public tenant tables, 11 locked migrations, zero pending. No restore drill was needed or run: no Supabase migration or inventory changed. Precondition: part a CI #108 above. No blueprint, dependency, local schema, locked migration or migrations.lock changes.
 
 ### Scope
 
@@ -161,7 +161,7 @@ Every new production SQL query has executed in pinned DuckDB-Wasm 1.32.0, includ
 
 ### Unverified
 
-CI and authenticated local-Supabase browser checks for part b remain unverified pending a green run. Hosted sign-in/restore, native permission dialogs, physical recovery, large-vault monitoring latency and customer ERP systems are not exercised by these local checks. No restore drill needed: no Supabase schema/inventory change.
+Part b CI and authenticated local-Supabase browser checks are verified in CI #111 above. Hosted sign-in/restore, native permission dialogs, physical recovery, large-vault monitoring latency and customer ERP systems are not exercised by these local checks. No restore drill needed: no Supabase schema/inventory change.
 
 ### Final local evidence
 
@@ -171,7 +171,7 @@ Measured 100k import/save: 6,157 ms Chrome / 6,132 ms Edge; no main-thread task 
 
 After final source refinements, all 78 JS and 182 TS tests passed again; typecheck, lock/schema/source scans passed. The final node scripts/test-control-vault.mjs --relay-only --browser=chrome rebuild invokes node scripts/build-spike.mjs and node node_modules/next/dist/bin/next build with disposable keys and a loopback-only server, then repeats all 12 relay checks. Each controller stops its own server. No pnpm on PATH; direct Node commands are the package-script equivalents, with no dependency/lockfile change.
 
-Additional commands: git diff --check passed; git diff --numstat -- supabase/migrations migrations.lock BLUEPRINT.md was empty. Read-only rg/Get-Content/Get-ChildItem and process inspection diagnosed fixtures and gate progress. No customer or secret files were read or committed.
+Additional commands: git diff --check passed; git diff --numstat -- supabase/migrations migrations.lock BLUEPRINT.md was empty. Read-only rg/Get-Content/Get-ChildItem and process inspection diagnosed fixtures and gate progress. No customer files or secrets were committed. Only synthetic fixtures were used for the new checks.
 
 ### Part b files changed
 
@@ -184,3 +184,17 @@ Additional commands: git diff --check passed; git diff --numstat -- supabase/mig
 - Documentation: ASSUMPTIONS.md, CHUNK_7C3_VERIFICATION.md, AGENTS.md, BLUEPRINT_EXECUTION_PLAN.md; further CI close-out docs listed after a passing run.
 
 Blueprint unchanged; 11 locked migrations and migrations.lock unchanged; 7D and later work unstarted.
+
+### CI proof and close-out (part b)
+
+**7C-3b is CI-verified** in [CI #111](https://github.com/Adityapawar5105/rebatehq/actions/runs/42449524974) on `fa93eab`, 8 November 2026: 260 unit tests (78 JS + 182 TS), **48 authenticated Chromium vault checks**, **46 Firefox lab checks**, and **12 real-authenticated local-Supabase relay checks**. Both required browser steps ran and passed with nonzero check counts. The fresh 152-check pgTAP suite ran twice with unchanged tenant row counts. Local vault **v13 / 42 tables**; 24 public tenant tables, 11 locked migrations, zero pending. No restore drill was needed or run: no Supabase migration or inventory changed.
+
+The completed job 128635547231 logs confirm 78/78 JS and 182/182 TS tests, step 21 success (48 authenticated Chromium 156.0.8078.4 checks), step 23 success (46 Firefox 157.0 lab checks), and 12 real-authenticated local-Supabase relay checks. Both monitor and monitorUi are present in each browser result, alongside currency/currencyUi/privacy. Plan 1..152 printed twice and the repeatability step passed. CI install, advisory, hashes, source/schema/type checks, build, runtime role and real database checks all passed. First implementation push passed; zero CI-fix attempts.
+
+Shared-runner observations only: 100k import/save 7,155 ms Chromium and 8,018 ms Firefox; no UI task/delay above 50 ms recorded. These do not establish new large-vault monitoring performance or deployed latency.
+
+Implementation: git commit -F test-results/7c3b-commit.txt and git push origin main succeeded (`fa93eab0d321954d23a5249c33d99f5db6b2eba0`). The documentation-only close-out updates AGENTS.md, ASSUMPTIONS.md, BLUEPRINT_EXECUTION_PLAN.md, CHUNK_7C3_VERIFICATION.md, CODEX_HANDOFF.md, README.md and SECURITY_CHECK.md; it reruns all unit tests, typecheck and the migration-lock check before commit/push. The previous 7C-3a backup and pre-existing .claude/ folder remain untouched.
+
+Blueprint unchanged. All 11 locked migrations and migrations.lock unchanged. No new schema/table/dependency. Next prompt: 7D, only on explicit instruction. Hosted/deployed auth/restore, headed permission checks, physical recovery, storage-estimate discrepancy, language/ERP acceptance and large-vault monitoring performance remain unverified.
+
+After the close-out edits, the exact JS command passed 78/78, the TS command passed 182/182, typecheck and check-migrations-lock passed, and git diff --check plus the protected-file diff passed. This close-out changes documentation only; the CI-verified implementation remains fa93eab.

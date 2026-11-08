@@ -19,7 +19,7 @@ the next chunk. It holds what a new session needs without the earlier chat histo
 | 2 | 7V-2 UI redesign: every other screen | No | Done: [CI #96](https://github.com/Adityapawar5105/rebatehq/actions/runs/42269867429) green on `9063e73` |
 | 3 | 7C Pricing ops (7C-1, 7C-2) | No | Done: [CI #100](https://github.com/Adityapawar5105/rebatehq/actions/runs/42284900986), [#102](https://github.com/Adityapawar5105/rebatehq/actions/runs/42397030001), [#104](https://github.com/Adityapawar5105/rebatehq/actions/runs/42406059786) |
 | 3a | 7C-3a v2.4: multi-currency, Firefox | No | Done: [CI #108](https://github.com/Adityapawar5105/rebatehq/actions/runs/42444422694) on `155188f`, 8 November 2026; 256 unit / 46 authenticated vault / 44 Firefox / 11 authenticated relay checks |
-| 3b | 7C-3b v2.4: health alerts, competitor alternatives, sync status, cash-leak hero | No | **Next** |
+| 3b | 7C-3b v2.4: health alerts, competitor alternatives, sync status, cash-leak hero | No | Done: [CI #111](https://github.com/Adityapawar5105/rebatehq/actions/runs/42449524974) on `fa93eab`, 8 November 2026; 260 unit / 48 authenticated vault / 46 Firefox / 12 authenticated relay checks |
 | 4 | 7D Rebates | No | — |
 | 5 | 7E Vendor review and simulator | No | — |
 | 6 | 7F Reporting and reach | No | — |
@@ -47,7 +47,7 @@ Read before doing anything, in this order:
 5. The latest verification records: CHUNK_7V_VERIFICATION.md (UI components and layout rules), CHUNK_7B_VERIFICATION.md,
    CHUNK_7U_VERIFICATION.md, CHUNK_7A_VERIFICATION.md.
 
-Where things stand: chunks 4.0 through 7C-3a and the 7V UI redesign are CI-verified (local vault v13, 42 tables). 7C-3a: [CI #108](https://github.com/Adityapawar5105/rebatehq/actions/runs/42444422694) on `155188f`, 8 November 2026. Next: 7C-3b, only on explicit instruction.
+Where things stand: chunks 4.0 through 7C-3b and the 7V UI redesign are CI-verified (local vault v13, 42 tables). 7C-3b: [CI #111](https://github.com/Adityapawar5105/rebatehq/actions/runs/42449524974) on `fa93eab`, 8 November 2026. Next: 7D, only on explicit instruction.
 Blueprint v2.4 (section 22, items 24-25) added work: 7C-3 covers its Phase 2 items before 7D. New screens use the
 shared components in components/ui (ui.tsx, Icon.tsx, ui.module.css) inside the shell in components/local/VaultApp.tsx. The local vault is DuckDB-Wasm in a Web
 Worker with encrypted OPFS snapshots, schema v13 (42 tables; lib/vault/schema.ts). Supabase holds only identity,
@@ -192,6 +192,14 @@ what remains unverified.
 - Gecko discards constructor-supplied clipboard data on untrusted ClipboardEvent objects. The harness supplies DataTransfer on a bubbling paste Event and still runs the real parser. It never accesses the OS clipboard.
 - Firefox has no CDP. Keep equivalent quota/worker-termination assertions; use Gecko storage-prompt test preferences for headless Allow and require native persisted()=true. Do not skip the gate or call these physical recovery evidence.
 - The Firefox CI lab uses its own loopback Node server on port 3001. Never reuse the authenticated port-3000 server without lab mode.
+
+### 7C-3b pitfalls
+
+- Exact rolling dates cannot use whole boundary months: health uses agg_cm for complete months and raw lines for partial months. Order count is distinct file + invoice + customer + date, not line count. Missing IDs require visible fallback disclosure.
+- The hero is the finder’s deduplicated total, not the sum of overlapping findings. Scope its service-order input too. Invalidate full-history evidence caches after a windowed run; never write the lifetime ROI ledger during a read-only Home check.
+- Health rates are integer basis points. Convert with basisPointsDecimal before fmt.percent, whose input unit is percent. Currency assertions must include CA$ or the currency code, not digits alone.
+- CURRENT_DATE needs the disabled ICU extension in this pinned Wasm build. Tests use an explicit UTC DATE literal. Execute new SQL in the pinned engine before pushing.
+- Workspace currency is both a card name and a field: select the concrete currency-heading select in browser tests. Pseudo-locale unlock uses structural form selectors. The extra monitoring test profile is isolated and remains under the request/header/body/console sensors.
 
 ## Block C — close-out prompt (after a green CI run)
 
