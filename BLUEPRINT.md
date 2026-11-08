@@ -1,7 +1,7 @@
-# RebateHQ Blueprint v2.4
+# RebateHQ Blueprint v2.5
 
 *Local-first pricing and margin software for wholesale distributors.*
-*Last updated: 8 Nov 2026 (v2.1 adopted 2 Nov 2026; v2.2, v2.3 and v2.4 changes listed in section 22)*
+*Last updated: 8 Nov 2026 (v2.1 adopted 2 Nov 2026; v2.2, v2.3, v2.4 and v2.5 changes listed in section 22)*
 
 ---
 
@@ -205,6 +205,11 @@ Goals, not promises. Benchmark on an 8 GB office laptop. "100M rows in a tab" cl
 - **Supplier claim generator:** generate a claim-ready CSV/XLSX export from the supplier rebate tracker for direct submission to the supplier (part of chunk 7D)
 - **Sync status indicator:** last-synced timestamp and synced / pending / conflict status in the relay UI, so users understand that each device holds its own local copy and sync happens via approved relay events
 - **"90-day cash leak" hero number on Home:** the Home dashboard prominently shows the exact cash left on the table over the last 90 days from the existing leak finder data, not just a margin percentage; no schema or calculation change, a UX framing requirement on the Home spec
+
+**Phase 2 additions (v2.5)**
+- **Selection aggregate status bar:** when one or more rows are selected in any data grid (price grid, customer list, product list, waterfall detail), a status bar shows SUM, AVG, COUNT, MIN and MAX for every numeric column in the selection; computed by DuckDB over the visible filtered set, never formula evaluation, never macros
+- **Freeform row notes:** a plain-text notes field (max 1,000 characters) on every customer and product row, editable inline in the customer list and item master grids; local vault only, never relayed, never visible to Sales Reps; searchable via the command palette; `notes VARCHAR(1000)` added to `customers` and `products` vault tables in the next vault schema version
+- **Column header filter and sort (table component standard):** every data grid in the app exposes sort (A-Z / Z-A, click the column header) and a multi-value filter dropdown (Excel-style checkbox list of distinct values) on every column; built once into the shared `components/ui` table component established in 7V and applied to all existing and future grids; this is a done-when criterion for every grid, not a separate shipped feature
 
 ### Phase 3
 - Explainable deal guidance (shows the why) and cross-sell suggestions ("customers like X also buy Y")
@@ -646,6 +651,13 @@ Corrections after reviewing the repository and build history against v2.1. Produ
     - **Dead-stock carrying cost inputs (Phase 3):** the dead-stock optimiser gains user-entered carrying-cost parameters (cost of capital % and storage cost per unit per month), showing total capital tied up per SKU in cash terms. Updated in the Phase 3 feature list.
     - **"90-day cash leak" hero number (Home spec):** the Home dashboard prominently shows the exact cash left on the table over the last 90 days from the existing leak finder data, not just a margin percentage. No schema or calculation change; a UX framing requirement on the already-built leak finder (4D). Added as a Home dashboard spec note.
     - Scope, tiers ($299 / $599 / $999) and prices are unchanged.
+
+25. **8 Nov 2026 — v2.5: selection aggregate status bar, freeform row notes, column filter/sort standard (section 6).**
+    - **Selection aggregate status bar (Phase 2):** when rows are selected in any data grid, a status bar shows SUM, AVG, COUNT, MIN and MAX for numeric columns, computed by DuckDB over the visible filtered set. This is not formula evaluation and does not violate the "never evaluate workbook formulas or macros" rule; it is a view-layer aggregate. Added to Phase 2 feature list.
+    - **Freeform row notes (Phase 2):** a plain-text notes field (max 1,000 characters) on `customers` and `products` vault tables, editable inline in the customer list and item master; local vault only, never relayed; not visible to Sales Reps; searchable via the command palette. Requires a vault schema bump (`notes VARCHAR(1000)` on both tables). Added to Phase 2 feature list.
+    - **Column header filter and sort (table component standard):** sort (A-Z / Z-A) and a multi-value filter dropdown on every column header, built into the shared `components/ui` table component (established in 7V) and applied to all grids. This is a done-when criterion for every grid going forward, not a separately shipped feature. Added to Phase 2 feature list as a component spec note.
+    - **Not added:** multi-tab workbooks (conflicts with the app's screen-per-module navigation and opinionated defaults) and a user-defined conditional formatting rules builder (conflicts with the guardrail signal system; users can apply custom formatting in exported files).
+    - Scope, tiers and prices are unchanged.
 25. **8 Nov 2026 — where the v2.4 items are built (execution plan section 9).** Item 24 said multi-currency was in "chunk 7C/7D scope", but 7C was already CI-verified without it, and several items had no chunk. They are placed as follows:
     - **New chunk 7C-3**, after 7C-2 and before 7D:
       - **7C-3a:** multi-currency and Firefox support. Multi-currency lands before rebates, which also handle money.
