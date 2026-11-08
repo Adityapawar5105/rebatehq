@@ -646,3 +646,13 @@ Corrections after reviewing the repository and build history against v2.1. Produ
     - **Dead-stock carrying cost inputs (Phase 3):** the dead-stock optimiser gains user-entered carrying-cost parameters (cost of capital % and storage cost per unit per month), showing total capital tied up per SKU in cash terms. Updated in the Phase 3 feature list.
     - **"90-day cash leak" hero number (Home spec):** the Home dashboard prominently shows the exact cash left on the table over the last 90 days from the existing leak finder data, not just a margin percentage. No schema or calculation change; a UX framing requirement on the already-built leak finder (4D). Added as a Home dashboard spec note.
     - Scope, tiers ($299 / $599 / $999) and prices are unchanged.
+25. **8 Nov 2026 — where the v2.4 items are built (execution plan section 9).** Item 24 said multi-currency was in "chunk 7C/7D scope", but 7C was already CI-verified without it, and several items had no chunk. They are placed as follows:
+    - **New chunk 7C-3**, after 7C-2 and before 7D:
+      - **7C-3a:** multi-currency and Firefox support. Multi-currency lands before rebates, which also handle money.
+      - **7C-3b:** customer health alerts, competitor log alternatives, the relay sync-status indicator and the 90-day cash-leak hero number.
+    - **7D:** the supplier claim generator.
+    - **7F:** health alerts in the weekly digest.
+    - **8B:** dead-stock carrying costs and substitute SKUs.
+    - **8C:** the Safari desktop verification spike.
+
+    No feature, tier or price changes.

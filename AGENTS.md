@@ -15,7 +15,7 @@ precedence. Any later blueprint edit must add an entry to that changes section a
 be reported to the user.
 
 `BLUEPRINT_EXECUTION_PLAN.md` sequences the work into repo chunks (4.0, 4A-4E,
-5A-5B, 6A, 6R, 6B, 7A, 7U, 7B, 7V, 7C-7F, 8A-8D, 8R, 9A) with a standard preamble and "Done when" criteria.
+5A-5B, 6A, 6R, 6B, 7A, 7U, 7B, 7V, 7C (7C-1, 7C-2, 7C-3), 7D-7F, 8A-8D, 8R, 9A) with a standard preamble and "Done when" criteria.
 `ARCHITECTURE_TRANSITION.md` classifies every existing route, module and table
 as control plane, logic to port to the browser, server path to retire, or legacy.
 
@@ -91,7 +91,7 @@ cost-to-serve loss findings and immutable export-receipt landed checks) is
 on `05ff468`, 8 November 2026 (Asia/Kolkata): 249 unit tests, 43 authenticated
 vault checks and 11 real-authenticated local-Supabase relay checks. Local v12,
 42 tables; no Supabase, dependency or locked-hash change. Blueprint unchanged.
-See CHUNK_7C2_VERIFICATION.md. Do not start 7D without a new user task.
+See CHUNK_7C2_VERIFICATION.md. Do not start 7D without a new user task. **Next chunk: 7C-3a** (v2.4 catch-up: multi-currency and Firefox; blueprint section 22, item 25), then 7C-3b, then 7D. Prompts are in `CODEX_HANDOFF.md`.
 
 Scope note: 7C-2 verification covers the original v2.3 items 6–10. The separate
 blueprint v2.4 commit 51001c0 was preserved after the code was committed; its new

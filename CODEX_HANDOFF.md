@@ -17,7 +17,9 @@ the next chunk. It holds what a new session needs without the earlier chat histo
 |---|---|---|---|
 | 1 | 7V-1 UI redesign: design system, shell, Home | No | Done: approved by the user; [CI #95](https://github.com/Adityapawar5105/rebatehq/actions/runs/42264359487) green on `108d427` |
 | 2 | 7V-2 UI redesign: every other screen | No | Done: [CI #96](https://github.com/Adityapawar5105/rebatehq/actions/runs/42269867429) green on `9063e73` |
-| 3 | 7C Pricing ops | No | Next |
+| 3 | 7C Pricing ops (7C-1, 7C-2) | No | Done: [CI #100](https://github.com/Adityapawar5105/rebatehq/actions/runs/42284900986), [#102](https://github.com/Adityapawar5105/rebatehq/actions/runs/42397030001), [#104](https://github.com/Adityapawar5105/rebatehq/actions/runs/42406059786) |
+| 3a | 7C-3a v2.4: multi-currency, Firefox | No | **Next** |
+| 3b | 7C-3b v2.4: health alerts, competitor alternatives, sync status, cash-leak hero | No | — |
 | 4 | 7D Rebates | No | — |
 | 5 | 7E Vendor review and simulator | No | — |
 | 6 | 7F Reporting and reach | No | — |
@@ -45,7 +47,8 @@ Read before doing anything, in this order:
 5. The latest verification records: CHUNK_7V_VERIFICATION.md (UI components and layout rules), CHUNK_7B_VERIFICATION.md,
    CHUNK_7U_VERIFICATION.md, CHUNK_7A_VERIFICATION.md.
 
-Where things stand: chunks 4.0 through 7B and the 7V UI redesign are done and CI-verified. New screens use the
+Where things stand: chunks 4.0 through 7C-2 and the 7V UI redesign are done and CI-verified (local vault v12, 42 tables).
+Blueprint v2.4 (section 22, items 24-25) added work: 7C-3 covers its Phase 2 items before 7D. New screens use the
 shared components in components/ui (ui.tsx, Icon.tsx, ui.module.css) inside the shell in components/local/VaultApp.tsx. The local vault is DuckDB-Wasm in a Web
 Worker with encrypted OPFS snapshots, schema v12 (42 tables; lib/vault/schema.ts). Supabase holds only identity,
 licences/seats, public data and a ciphertext-only relay (11 applied migrations, all locked).
@@ -344,12 +347,82 @@ Extend the browser gate with a 7C UI flow and add the new sections to the pseudo
 CHUNK_7C_VERIFICATION.md with a "Done when" table and the unverified list.
 ```
 
+## 3a. Prompt 7C-3a — v2.4: multi-currency and Firefox
+
+```
+[Block A]
+Chunk 7C-3a (blueprint v2.4, section 22, items 24-25; BLUEPRINT_EXECUTION_PLAN.md section 9). Build UI on the 7V
+components. No Supabase migration is expected.
+
+Scope:
+1. Multi-currency.
+   - A workspace display currency (ISO 4217, e.g. USD, CAD, AUD, GBP, EUR) chosen in Settings and stored in the
+     vault.
+   - Each import batch records its source currency and a user-entered FX rate to the workspace currency. Amounts
+     are converted exactly (decimal arithmetic, round half away from zero to the cent, the same rule as the
+     engine), and the original currency and rate are kept per batch for audit and show-the-math.
+   - Never fetch exchange rates from the browser. The rate is typed by the user.
+   - Existing vaults: default currency USD, no conversion, identical numbers. Every margin golden case and the
+     playground manifest must reproduce unchanged.
+   - Changing the workspace currency after data exists must not silently relabel amounts: either block it with a
+     clear message, or require re-import. Document the choice in ASSUMPTIONS.md.
+   - Every amount in the app uses the workspace currency through fmt.currency: margins, waterfall, leaks, quotes,
+     pricing previews, reports and PDFs. Replace the 7U/7B "USD assumed" spots, including the relay share
+     currency in quoteShare.
+   - ERP price exports stay in the workspace currency, with a currency column only where the generic layout can
+     carry it.
+2. Official Firefox support (decision 5).
+   - The vault browser gate (scripts/test-vault-browser.mjs) passes with --browser=firefox: OPFS, the worker,
+     COOP/COEP, encrypted save and reload, and the lab flows. Fix incompatibilities in code, not by skipping checks.
+   - Add a CI step that installs Playwright Firefox the same bounded, retried way as Chromium and runs the
+     unauthenticated lab gate in Firefox, with its own timeout-minutes. Keep the whole job under its limit; raise
+     the job limit only if needed, and say so.
+   - Update the browser-support wording in README.md and SECURITY_WHITEPAPER.md. Chrome and Edge remain the
+     primary targets.
+
+Data: bump the vault schema (workspace currency setting; per-batch currency and rate) per Block B.
+Tests: exact conversion and rounding, golden cases unchanged at USD, a non-USD import round trip, the
+currency-change rule, the formatting of every amount type, and the Firefox gate. Write
+CHUNK_7C3_VERIFICATION.md (part a), with a "Done when" table and the unverified list.
+```
+
+## 3b. Prompt 7C-3b — v2.4: health alerts, competitor alternatives, sync status, cash-leak hero
+
+```
+[Block A]
+Chunk 7C-3b (blueprint v2.4, section 22, items 24-25). Precondition: 7C-3a is CI-verified. Build on the 7V
+components. No Supabase migration.
+
+Scope:
+1. Customer health alerts (Home cards).
+   - SQL threshold rules on agg_cm, run in the worker. Two rules:
+     - pocket-margin rate dropped more than a configurable threshold (default 5 percentage points) over a rolling
+       90-day window against the previous 90 days;
+     - order frequency dropped while the average discount deepened.
+   - Each card shows the customer, the change and a "show the math" link. The UI says the checks run only while
+     the app is open, and shows "last checked".
+   - Label them "Customer health alerts", never AI. Cost-derived figures go only to roles with the cost
+     capability (decision 16); classify any rep-reachable command.
+2. Competitor log alternatives: when a competitor price is logged on a SKU for a customer, show the top 3
+   highest-pocket-margin SKUs in the same category for that customer (SQL on the price matrix and margin
+   aggregates, no ML). Cost roles only.
+3. Relay sync-status indicator (7A UX): a last-synced timestamp and a synced / pending / conflict status in the
+   relay panel, derived from the existing relay session state. No relay protocol or server change.
+4. "90-day cash leak" hero number on Home: the exact leak dollars over the last 90 days from the existing leak
+   finder (4D), as a prominent figure with "show the math". No calculation change. Cost roles only.
+
+Tests: alert thresholds and window boundaries on fixtures, alternatives ranking and tie-breaks, sync-status
+states, the hero figure equal to the leak finder's 90-day total, the decision 16 scan, and the browser gate (Home
+cards, competitor alternatives, relay status, pseudo walk, 375px). Add part b to CHUNK_7C3_VERIFICATION.md.
+```
+
 ## 4. Prompt 7D — Rebates
 
 ```
 [Block A]
 Chunk 7D. Professional and Scale. Build screens on the 7V components (a new "Rebates & Contracts" section;
-blueprint section 9).
+blueprint section 9). Precondition: 7C-3a (multi-currency) is CI-verified; all rebate and claim amounts use the
+workspace currency.
 
 Scope:
 1. Customer rebate engine: programs with thresholds, rates and period; accruals; tier progress; reminders.
@@ -365,6 +438,9 @@ Scope:
      synonyms, load and commit SQL, removal with its source file). If a CHECK list blocks a new role, use the
      source_kinds side table as 7B did.
 4. Accrual figures in the margin waterfall's rebate step must agree with the engine (reconcile, as 4D does).
+5. Supplier claim generator (blueprint v2.4): a claim-ready CSV/XLSX export from the supplier tracker (supplier,
+   program, period, qualifying purchases, rate, amount, currency, references), built locally, formula-safe cells,
+   recorded in the audit log with codes and IDs only.
 
 Data: new local tables (rebate_programs, rebate_tiers, rebate_accruals, supplier_claims, purchases); bump the
 schema per Block B. Reps: only rebate progress that reveals no cost or margin, and classify their commands for
@@ -375,6 +451,7 @@ Tests:
 - accrual reconciliation with the waterfall;
 - Purchases import (mapping, validation, removal);
 - claim status rules;
+- the claim export (exact amounts, currency, formula-injection-safe cells);
 - the browser gate flow and the pseudo walk.
 Write CHUNK_7D_VERIFICATION.md. Note for 8R: after 7D the legacy rebate tables are retired in wave 2; don't drop
 them here.
@@ -437,6 +514,7 @@ Tests:
 - each converter on fixtures, including malformed ones;
 - the folder re-import permission flow (as far as automation allows; say what is unverified).
 Write CHUNK_7F_VERIFICATION.md. This completes blueprint Phase 2 except mobile.
+v2.4: the weekly digest includes the customer health alerts built in 7C-3b (same "runs while the app is open" note).
 ```
 
 ## 7. Prompt 8A — Explainable deal guidance and cross-sell
@@ -483,6 +561,9 @@ Tests:
 - the dead-stock floor;
 - if a migration is added: pgTAP, the RLS tests and the privacy gate (the feed holds no customer data).
 Write CHUNK_8B_VERIFICATION.md. This is a precondition for 8R (the legacy alert table).
+v2.4 additions: the dead-stock optimiser takes user-entered carrying costs (cost of capital %, storage cost per
+unit per month), shows the capital tied up per SKU in cash terms, and suggests substitute SKUs. Margin Drain agents
+build on the 7C-3b customer health alerts rather than duplicating them.
 ```
 
 ## 9. Prompt 8C — Win/loss, desktop offline mode, audit pack, templates
@@ -507,6 +588,8 @@ Tests:
 - audit pack verification;
 - the template content.
 Write CHUNK_8C_VERIFICATION.md.
+v2.4 addition: a Safari desktop verification spike (OPFS persistence, DuckDB-Wasm threading, COOP/COEP). Record
+the results; do not claim or advertise Safari desktop support unless the spike passes.
 ```
 
 ## 10. Prompt 8D — Opt-in anonymous benchmarks
