@@ -4,7 +4,7 @@ Blueprint v2.5, section 22 items 26-27. Part a is the grid standard; part b (row
 
 ## Part a — grid standard: sort, filter, selection totals
 
-**Status: built here 8 November 2026; CI result: pending.** Local vault schema unchanged (v14, 45 tables). No Supabase migration, no locked-hash change, no dependency change. Blueprint unchanged by this part.
+**7V-3a is CI-verified** in [CI #118](https://github.com/Adityapawar5105/rebatehq/actions/runs/42480527882) on `027a14d`, 8 November 2026: 278 unit tests (78 JS + 200 TS), **51 authenticated Chromium vault checks** (including `gridsUi`), **49 Firefox lab checks**, **12 real-authenticated local-Supabase relay checks**, and the fresh 152-check pgTAP suite twice. Local vault v14 / 45 tables, 11 locked migrations, zero pending; no restore drill needed (no Supabase change). Local vault schema unchanged (v14, 45 tables). No Supabase migration, no locked-hash change, no dependency change. Blueprint unchanged by this part.
 
 ### What was built
 
@@ -86,7 +86,10 @@ Fixes found by the local gates before the first push: the filter panel opened un
 
 ### Unverified
 
-- Passing CI for this part, until linked.
 - Headed screen-reader use of the header buttons and filter panel; only automated keyboard and role checks ran.
 - Large-vault timings of filter and distinct-value queries; no capacity claim is made.
 - Native-language review of the new es, fr and fr-CA labels.
+
+### CI proof
+
+**7V-3a is CI-verified** in [CI #118](https://github.com/Adityapawar5105/rebatehq/actions/runs/42480527882) on `027a14d`, 8 November 2026: 278 unit tests (78 JS + 200 TS), **51 authenticated Chromium vault checks** (including `gridsUi`), **49 Firefox lab checks**, **12 real-authenticated local-Supabase relay checks**, and the fresh 152-check pgTAP suite twice. Local vault v14 / 45 tables, 11 locked migrations, zero pending; no restore drill needed (no Supabase change). Every step of the job passed, including "Required authenticated local-vault privacy gate" and "Required Firefox local-vault lab gate"; their result lists include `gridsUi` and `rebatesUi`. Part b (row notes) has not started.

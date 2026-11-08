@@ -1,5 +1,9 @@
 # RebateHQ security verification
 
+## Chunk 7V-3a — grid standard (CI-verified)
+
+Verified in [CI #118](https://github.com/Adityapawar5105/rebatehq/actions/runs/42480527882) on `027a14d`, 8 November 2026 (51 authenticated Chromium, 49 Firefox, 12 relay checks; 278 unit tests). Grid sort, filter and totals run locally; nothing new leaves the device. Worker grids accept only their own code-defined columns and quote every filter value (unit test with an injection attempt). The new `gridTotals` command is read-only, needs only `view`, accepts at most 5,000 rows of plain numbers (formulas and text are rejected) and returns only sums, counts, minimum and maximum of numbers the caller already holds; it is classified for decision 16. A grid never adds a column, and the rep-reachable rebate progress grid has no cost or margin column. Details: [CHUNK_7V3_VERIFICATION.md](./CHUNK_7V3_VERIFICATION.md).
+
 ## Chunk 7C-3a — CI-verified
 
 **7C-3a is CI-verified** in [CI #108](https://github.com/Adityapawar5105/rebatehq/actions/runs/42444422694) on `155188f`, 8 November 2026: 256 unit tests (78 JS + 178 TS), **46 authenticated Chromium vault checks**, **44 Firefox lab checks**, and **11 real-authenticated local-Supabase relay checks**. Both required browser steps ran and passed, with nonzero check counts. The fresh 152-check pgTAP suite ran twice with unchanged tenant row counts. Local vault **v13 / 42 tables**; 24 public tenant tables, 11 locked migrations, zero pending. No restore drill was required or run because no Supabase migration/inventory changed.

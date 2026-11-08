@@ -3,7 +3,7 @@
 Written 6 November 2026, after 7B (CI #89, #90, #91 green); updated 7 November 2026 after 7V (CI #95, #96 green). This file is the starting point for whoever builds
 the next chunk. It holds what a new session needs without the earlier chat history.
 
-**Current status (8 November 2026): 7D-1 done and CI-verified in [CI #114](https://github.com/Adityapawar5105/rebatehq/actions/runs/42470690491) on `585ccf8`, 8 November 2026.** Local v14 / 45 tables. Next: **7V-3** (v2.5 grid standard and row notes; blueprint section 22, items 26-27), then 7D-2, each only on explicit instruction. See CHUNK_7D_VERIFICATION.md.
+**Current status (8 November 2026): 7V-3a (grid standard) done and CI-verified in [CI #118](https://github.com/Adityapawar5105/rebatehq/actions/runs/42480527882) on `027a14d`.** Local v14 / 45 tables. Next: **7V-3b** (row notes; prompt 3c, "continue with 7V-3b"), then 7D-2, each only on explicit instruction. See CHUNK_7V3_VERIFICATION.md.
 
 ## How to use this file
 1. Work **one chunk per session**, in the order below. Paste **Block A (shared context)** first, then that
@@ -23,7 +23,7 @@ the next chunk. It holds what a new session needs without the earlier chat histo
 | 3a | 7C-3a v2.4: multi-currency, Firefox | No | Done: [CI #108](https://github.com/Adityapawar5105/rebatehq/actions/runs/42444422694) on `155188f`, 8 November 2026; 256 unit / 46 authenticated vault / 44 Firefox / 11 authenticated relay checks |
 | 3b | 7C-3b v2.4: health alerts, competitor alternatives, sync status, cash-leak hero | No | Done: [CI #111](https://github.com/Adityapawar5105/rebatehq/actions/runs/42449524974) on `fa93eab`, 8 November 2026; 260 unit / 48 authenticated vault / 46 Firefox / 12 authenticated relay checks |
 | 4 | 7D-1 Customer rebates | No | Done: [CI #114](https://github.com/Adityapawar5105/rebatehq/actions/runs/42470690491) on `585ccf8`, 8 November 2026 |
-| 4a | 7V-3 v2.5: grid filter/sort + selection totals (7V-3a), row notes (7V-3b) | No | 7V-3a built 8 November 2026, CI pending; 7V-3b next |
+| 4a | 7V-3 v2.5: grid filter/sort + selection totals (7V-3a), row notes (7V-3b) | No | 7V-3a done: [CI #118](https://github.com/Adityapawar5105/rebatehq/actions/runs/42480527882) on `027a14d`; **7V-3b next** |
 | 4b | 7D-2 Supplier claims, Purchases import, rebate progress, claim generator | No | — |
 | 5 | 7E Vendor review and simulator | No | — |
 | 6 | 7F Reporting and reach | No | — |
@@ -51,7 +51,7 @@ Read before doing anything, in this order:
 5. The latest verification records: CHUNK_7V_VERIFICATION.md (UI components and layout rules), CHUNK_7B_VERIFICATION.md,
    CHUNK_7U_VERIFICATION.md, CHUNK_7A_VERIFICATION.md.
 
-Where things stand: chunks 4.0 through 7D-1 and the 7V UI redesign are CI-verified (local vault v14, 45 tables). 7D-1: [CI #114](https://github.com/Adityapawar5105/rebatehq/actions/runs/42470690491) on `585ccf8`, 8 November 2026. Next: 7V-3, then 7D-2, each only on explicit instruction.
+Where things stand: chunks 4.0 through 7D-1, the 7V UI redesign and 7V-3a (grid standard) are CI-verified (local vault v14, 45 tables). 7V-3a: [CI #118](https://github.com/Adityapawar5105/rebatehq/actions/runs/42480527882) on `027a14d`, 8 November 2026. Next: 7V-3b, then 7D-2, each only on explicit instruction.
 Blueprint v2.4 (section 22, items 24-25) added work that 7C-3 covered. Blueprint v2.5 (items 26-27) adds a grid standard and row
 notes, built in 7V-3; from then on every new grid must meet that standard. New screens use the
 shared components in components/ui (ui.tsx, Icon.tsx, ui.module.css) inside the shell in components/local/VaultApp.tsx. The local vault is DuckDB-Wasm in a Web
