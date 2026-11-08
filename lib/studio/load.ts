@@ -1,4 +1,5 @@
 import { convertAmountSql } from '../vault/currency';
+import {validateRebateGroups,rebateCommitSql} from '../rebate/import';
 // DuckDB side of the Import Studio: stage converted files, validate exactly, find
 // duplicates, then commit or remove with source tracking. Only row/column
 // locations and fixed messages leave this module; engine errors (which can embed
@@ -22,7 +23,7 @@ const stage = (role: Role) => `st_${role}`, typed = (role: Role) => `ty_${role}`
 /** Output column name and SQL type for a canonical field (amounts become whole cents). */
 export function output(field: Field) {
   if (field.type === "amount") return { name: field.name.replace(/_amount$/, "") + (field.name.endsWith("_amount") ? "_cents" : ""), type: "BIGINT" };
-  return { name: field.name, type: field.type === "line_id" ? "BIGINT" : field.type === "date" ? "DATE" : field.type.startsWith("quantity") ? "DECIMAL(18,4)" : "VARCHAR" };
+  return { name: field.name, type: field.type === "line_id" ? "BIGINT" : field.type === "date" ? "DATE" : field.type==='rate'?'DECIMAL(6,3)':field.type.startsWith("quantity") ? "DECIMAL(18,4)" : "VARCHAR" };
 }
 function fieldSql(field: Field, settings: Pick<Settings, "decimal" | "dateFormat">, rate = "1") {
   const x = q(field.name), sep = settings.decimal === "comma" ? "," : "\\.", fmt = sqlText(STRPTIME[settings.dateFormat]);
@@ -35,10 +36,15 @@ function fieldSql(field: Field, settings: Pick<Settings, "decimal" | "dateFormat
     case "date": return { ok: `year(try_strptime(${x},${fmt})) BETWEEN 1900 AND 2100`, value: `CAST(try_strptime(${x},${fmt}) AS DATE)` };
     case "quantity": return { ok: `${num(13, 4)} AND ${dec(4)}>0`, value: dec(4) };
     case "quantity0": return { ok: num(13, 4), value: dec(4) };
+    case 'rate':return {ok:`${num(2,3)} AND ${dec(3)}<=100`,value:dec(3)};
     case "amount": { const value = convertAmountSql(x, rate); return {ok: `${num(12, rate === "1" ? 2 : 6)} AND ${value} IS NOT NULL`, value}; }
   }
 }
 export function issueMessage(code: string, settings: Settings) {
+  if(code==='calculation_mode:invalid')return msg('rebate.modeIssue');
+  if(code==='rebate_treatment:invalid')return msg('rebate.treatmentIssue');
+  if(code==='party_type:invalid')return msg('rebate.partyIssue');
+  if(code.startsWith('program_id:')&&!['program_id:required','program_id:invalid'].includes(code)||['calculation_mode:invalid','rebate_treatment:invalid','party_type:invalid','period_end:range','threshold_amount:required','rate_percent:invalid'].includes(code))return msg('rebate.agreementIssue');
   const [name, kind] = code.split(":"), field = Object.values(ROLE_FIELDS).flat().find(f => f.name === name);
   if (code === "duplicate_row") return msg("issue.exactCopyOfAn");
   if (code === "duplicate_key") return msg("issue.repeatsTheKeyOf");
@@ -66,8 +72,9 @@ export function issueColumn(code: string, file: StagedFile) {
   if (!at) return "";
   return file.keyed ? file.headers[at.index] : columnLetter(file.colOffset + at.index);
 }
-export const CODES = (role: Role) => [...ROLE_FIELDS[role].flatMap(f => [`${f.name}:required`, `${f.name}:invalid`, `${f.name}:negative`]), "duplicate_row", "duplicate_key", "exists", "scope", "valid_to:range", "no_header"];
-const KEYS: Record<Exclude<Role, "rebate_agreement">, string[]> = {
+export const CODES = (role: Role) => [...ROLE_FIELDS[role].flatMap(f => [`${f.name}:required`, `${f.name}:invalid`, `${f.name}:negative`]), "duplicate_row", "duplicate_key", "exists", "scope", "valid_to:range", "no_header",...(role==='rebate_agreement'?['program_id:incomplete','program_id:overlap','program_id:metadata','program_id:tiers','period_end:range']:[])];
+const KEYS: Record<Role, string[]> = {
+  rebate_agreement:['program_id','threshold_amount'],
   sales_history: ["line_id"], item_master: ["product_id"], customer_list: ["customer_id"], order_header: ["invoice_id"],
   vendor_cost: ["vendor", "product_id", "effective_date"], price_list: ["product_id", "category", "customer_id", "tier", "qty_break", "valid_from"],
   ar_aging: ["customer_id"],
@@ -91,7 +98,7 @@ export async function stageFile(engine: Engine, file: StagedFile, blob: Blob) {
   } finally { await engine.db.dropFile(path); }
 }
 /** Build typed rows with the first failing field per row, then mark duplicates. */
-export async function validate(engine: Engine, role: Exclude<Role, "rebate_agreement">, files: StagedFile[], replaces: string | null) {
+export async function validate(engine: Engine, role: Role, files: StagedFile[], replaces: string | null) {
   const fields = ROLE_FIELDS[role];
   const parts = files.filter(f => f.role === role).map(file => {
     const sql = fields.map(f => ({ f, ...fieldSql(f, CANONICAL, file.settings.fxRate ?? "1"), out: output(f) }));
@@ -129,6 +136,7 @@ WHERE ${t}.file_ord=d.file_ord AND ${t}.src_row=d.src_row`);
   // Rows of the file being replaced do not count as existing.
   const other = (alias = "") => replaces ? `${alias}source_id IS DISTINCT FROM ${sqlText(replaces)}` : "true";
   const exists: Record<typeof role, string> = {
+    rebate_agreement:'false',
     sales_history: `line_id IN (SELECT line_id FROM sales_lines WHERE ${other()})`,
     item_master: `product_id IN (SELECT product_id FROM products WHERE source_id IS NOT NULL AND ${other()})`,
     customer_list: `customer_id IN (SELECT customer_id FROM customers WHERE source_id IS NOT NULL AND ${other()})`,
@@ -139,6 +147,7 @@ WHERE ${t}.file_ord=d.file_ord AND ${t}.src_row=d.src_row`);
     ar_aging: `customer_id IN (SELECT customer_id FROM credit_profiles WHERE ${other()})`,
   };
   await engine.conn.query(`UPDATE ${t} SET err='exists' WHERE err IS NULL AND ${exists[role]}`);
+  if(role==='rebate_agreement')await validateRebateGroups(engine,t,replaces);
 }
 const SALES = stage("sales_history"), TY_SALES = typed("sales_history");
 /**
@@ -242,11 +251,12 @@ const CUSTOMER_RESET = "name='',tier='',branch='',region='',payment_terms='',sou
  * cannot delete a parent row in the transaction that deleted its children, so the
  * source row and now-unused products/customers go in step 2 (finishRemoval).
  */
-export function removeChildrenSql(source: string) {
+export function removeChildrenSql(source: string,rebates=false) {
   const s = sqlText(source);
   return `CREATE TEMP TABLE IF NOT EXISTS studio_affected(kind VARCHAR, id VARCHAR);
 INSERT INTO studio_affected SELECT DISTINCT 'p', product_id FROM sales_lines WHERE source_id=${s} UNION SELECT 'p', product_id FROM products WHERE source_id=${s}
  UNION SELECT DISTINCT 'c', customer_id FROM sales_lines WHERE source_id=${s} UNION SELECT 'c', customer_id FROM customers WHERE source_id=${s} UNION SELECT 'c', customer_id FROM credit_profiles WHERE source_id=${s};
+${rebates?`DELETE FROM rebate_accruals WHERE source_id=${s} OR program_id IN(SELECT id FROM rebate_programs WHERE source_id=${s});DELETE FROM rebate_tiers WHERE program_id IN(SELECT id FROM rebate_programs WHERE source_id=${s});DELETE FROM rebate_programs WHERE source_id=${s};`:''}
 DELETE FROM sales_lines WHERE source_id=${s}; DELETE FROM vendor_costs WHERE source_id=${s}; DELETE FROM price_matrix WHERE source_id=${s}; DELETE FROM credit_profiles WHERE source_id=${s}; DELETE FROM source_kinds WHERE source_id=${s};
 UPDATE products SET ${PRODUCT_RESET} WHERE source_id=${s}; UPDATE customers SET ${CUSTOMER_RESET} WHERE source_id=${s};
 DELETE FROM import_issues WHERE source_id=${s}; DELETE FROM import_batches WHERE source_id=${s}; DELETE FROM rejected_rows WHERE source_id=${s};`;
@@ -261,6 +271,7 @@ DROP TABLE studio_affected;`;
 export function commitSql(roles: Set<Role>) {
   const v = (role: Role) => `(SELECT t.*, m.source_id FROM ${typed(role)} t JOIN studio_files m USING(file_ord) WHERE t.err IS NULL)`;
   const out: string[] = [];
+  if(roles.has('rebate_agreement'))out.push(rebateCommitSql(v('rebate_agreement')));
   if (roles.has("sales_history")) out.push(`INSERT INTO products(product_id) SELECT DISTINCT product_id FROM ${v("sales_history")} WHERE product_id NOT IN (SELECT product_id FROM products);
 INSERT INTO customers(customer_id) SELECT DISTINCT customer_id FROM ${v("sales_history")} WHERE customer_id NOT IN (SELECT customer_id FROM customers);
 INSERT INTO sales_lines(source_id,line_id,product_id,customer_id,sale_date,quantity,list_cents,discount_cents,freight_cents,rebate_cents,cost_cents,source_row,invoice_id)

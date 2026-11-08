@@ -1,4 +1,6 @@
 import { batchFx, workspaceCurrency } from '../vault/currency';
+import {rebuildAccruals} from '../rebate/store';
+import {hasRebates} from '../rebate/input';
 import { fitsLicenceCapacity } from "../licence-policy";
 // Import Studio orchestration inside the vault worker. Files stay in worker memory
 // (File handles; bounded grids for spreadsheets/JSON/XML) and nothing is uploaded.
@@ -37,7 +39,7 @@ export type FileView = {
   range: { from: string | null; to: string | null };
 };
 export type FileReport = { id: string; name: string; role: Role; rowsRead: string; rowsLoaded: string; rowsRejected: string; rowsSkipped: string; issueCount: string; issues: StudioIssue[]; dateRange: { from: string; to: string } | null; fx: {sourceCurrency:string;workspaceCurrency:string;fxRate:string}; cleaned: { field: string; note: string; count: string }[] };
-export type BatchReport = { files: FileReport[]; warnings: string[]; loaded: string; rejected: string; capOk: boolean; capMessage: string | null; replaces: string | null };
+export type BatchReport = { rebateTerms?:boolean; files: FileReport[]; warnings: string[]; loaded: string; rejected: string; capOk: boolean; capMessage: string | null; replaces: string | null };
 export type StudioState = { files: FileView[]; report: BatchReport | null; recipes: { id: string; name: string; role: Role | null }[] };
 export type SourceView = { id: string; name: string; role: string; importedAt: string; rowsLoaded: string; rowsRejected: string; issues: string; sourceCurrency: string; workspaceCurrency: string; fxRate: string; headerFx: string };
 export type Progress = (stage: string, done: string, total: string) => void;
@@ -59,7 +61,7 @@ function note(notes: Notes, field: string, list: CleanNote[]) {
   for (const n of list) m.set(n, (m.get(n) ?? 0) + 1);
 }
 function clean(type: FieldType, value: string, settings: Settings, notes: Notes, field: string) {
-  const r = type === "date" ? cleanDate(value, settings.dateFormat) : type === "amount" || type.startsWith("quantity") ? cleanNumber(value, settings.decimal) : type === "id" || type === "line_id" ? cleanId(value) : { value, notes: [] };
+  const r = type === "date" ? cleanDate(value, settings.dateFormat) : type === "amount" || type === "rate" || type.startsWith("quantity") ? cleanNumber(value, settings.decimal) : type === "id" || type === "line_id" ? cleanId(value) : { value, notes: [] };
   note(notes, field, r.notes); return r.value;
 }
 /**
@@ -475,9 +477,10 @@ export class Studio {
           ...(normalizer.longCellsIgnored ? [{ field: "rows", note: msg("import.loadedRowsWithA"), count: String(normalizer.longCellsIgnored) }] : [])];
         files.push(staged); stats.set(ord, normalizer.stats); cleanups.set(ord, [...structure, ...[...notes].flatMap(([field, m]) => [...m].map(([n, count]) => ({ field, note: NOTE_TEXT[n], count: String(count) })))]);
       }
+      if(roles.has("rebate_agreement"))warnings.push(msg("rebate.importWarning"));
       progress(msg("import.checkingValuesDuplicatesAnd"), "0", "1");
       // Headers and item lists first: sales lines take customer, date and freight from the one and cost from the other.
-      const sequence = (["order_header", "item_master", "customer_list", "ar_aging", "vendor_cost", "price_list", "sales_history"] as const).filter(r => roles.has(r));
+      const sequence = (["order_header", "item_master", "customer_list", "ar_aging", "vendor_cost", "price_list", "sales_history", "rebate_agreement"] as const).filter(r => roles.has(r));
       for (const role of sequence) {
         signal.throwIfAborted();
         if (role === "sales_history") {
@@ -533,7 +536,7 @@ export class Studio {
         warnings.push(msg("import.looksIdenticalToA", { name: String(r.name), value: String(r.imported_at).slice(0, 10) }));
       const usage = await capUsage(engine, roles, replaces), cap = CAPS[tier];
       const capOk = fitsLicenceCapacity(tier,usage.products,usage.lines);
-      this.report = { files: reports.sort((a, b) => load.findIndex(e => e.id === a.id) - load.findIndex(e => e.id === b.id)), warnings, loaded: loaded.toString(), rejected: rejected.toString(), capOk,
+      this.report = { rebateTerms:roles.has("rebate_agreement"),files: reports.sort((a, b) => load.findIndex(e => e.id === a.id) - load.findIndex(e => e.id === b.id)), warnings, loaded: loaded.toString(), rejected: rejected.toString(), capOk,
         capMessage: capOk ? null : msg("import.thisImportExceedsYour", { tier: tierRef(tier), lines: cap.lines, products: cap.products, lines2: usage.lines.toString(), products2: usage.products.toString() }), replaces };
       this.staged = { files, stats, entries: load, replaces, roles };
       return this.report;
@@ -545,6 +548,7 @@ export class Studio {
     if (!staged || !report) throw new StudioError(msg("import.reviewTheBatchAgain"));
     if (report.loaded === "0") throw new StudioError(msg("import.noValidRowsTo"));
     if (report.rejected !== "0" && !acknowledge) throw new StudioError(msg("import.confirmThatRejectedRows"));
+    if(staged.roles.has("rebate_agreement")&&!acknowledge)throw new StudioError(msg("rebate.importWarning"));
     if (!report.capOk) throw new StudioError(report.capMessage!);
     // Order header files only filled in sales lines during review; they are not stored as sources.
     const kept = staged.files.filter(f => f.role !== "order_header"), headerNames = staged.files.filter(f => f.role === "order_header").map(f => f.name).join(", ");
@@ -553,15 +557,16 @@ export class Studio {
     const messages = kept.flatMap(f => CODES(f.role).map(code => `(${f.ord},${sqlText(code)},${sqlText(issueColumn(code, f))},${sqlText(issueMessage(code, f.settings))})`)).join(",");
     await engine.conn.query("BEGIN");
     try {
-      if (staged.replaces) await engine.conn.query(removeChildrenSql(staged.replaces));
+      if (staged.replaces) await engine.conn.query(removeChildrenSql(staged.replaces,await hasRebates(engine)));
       await engine.conn.query(`CREATE TEMP TABLE studio_files AS SELECT * FROM (VALUES ${values}) v(file_ord, source_id, name);
 CREATE TEMP TABLE studio_messages AS SELECT * FROM (VALUES ${messages}) v(file_ord, code, column_name, message)`);
       for (const [i, f] of kept.entries()) {
         const r = report.files.find(x => x.id === staged.entries[f.ord].id)!;
-        await engine.conn.query(`INSERT INTO source_files VALUES (${sqlText(sources[i])},${sqlText(f.name)},${sqlText(f.role === "ar_aging" ? "customer_list" : f.role)},${f.bytes},${sqlText(now)});${f.role === "ar_aging" ? `INSERT INTO source_kinds VALUES (${sqlText(sources[i])},'ar_aging');` : ""}
+        await engine.conn.query(`INSERT INTO source_files VALUES (${sqlText(sources[i])},${sqlText(f.name)},${sqlText(["ar_aging","rebate_agreement"].includes(f.role) ? "customer_list" : f.role)},${f.bytes},${sqlText(now)});${["ar_aging","rebate_agreement"].includes(f.role) ? `INSERT INTO source_kinds VALUES (${sqlText(sources[i])},${sqlText(f.role)});` : ""}
 INSERT INTO import_batches(id,source_id,rows_loaded,rows_rejected,imported_at,content_sha256,fingerprint,rows_skipped,source_currency,workspace_currency,fx_rate,header_fx) VALUES (${sqlText(id())},${sqlText(sources[i])},${r.rowsLoaded},${r.rowsRejected},${sqlText(now)},NULL,${sqlText(f.fingerprint)},${r.rowsSkipped},${sqlText(f.settings.sourceCurrency ?? "USD")},${sqlText(await workspaceCurrency(engine))},${sqlText(f.settings.fxRate ?? "1")},${sqlText(JSON.stringify(staged.files.filter(h=>h.role === "order_header").map(h=>({sourceCurrency:h.settings.sourceCurrency,fxRate:h.settings.fxRate}))))})`);
       }
       await engine.conn.query(commitSql(new Set([...staged.roles].filter(r => r !== "order_header"))));
+      await rebuildAccruals(engine);
       for (const [i, f] of kept.entries()) {
         const issues = staged.stats.get(f.ord)!.issues;
         for (let at = 0; at < issues.length; at += 500) await engine.conn.query(`INSERT INTO import_issues(id,source_id,row_number,column_name,message,status,code) VALUES ${issues.slice(at, at + 500).map(x => `(${sqlText(id())},${sqlText(sources[i])},${Math.max(1, x.row)},${sqlText(x.column)},${sqlText(x.message)},'open','structure')`).join(",")}`);
@@ -569,7 +574,7 @@ INSERT INTO import_batches(id,source_id,rows_loaded,rows_rejected,imported_at,co
         const rows = staged.stats.get(f.ord)!.rejectedRows;
         for (let at = 0; at < rows.length; at += 500) await engine.conn.query(`INSERT INTO rejected_rows VALUES ${rows.slice(at, at + 500).map(r => `(${sqlText(sources[i])},${Math.max(1, r)},${sqlText(f.role)},'structure',${Array(12).fill("NULL").join(",")},'open')`).join(",")} ON CONFLICT DO NOTHING`);
         const r = report.files.find(x => x.id === staged.entries[f.ord].id)!;
-        await appendAudit(engine, "import.committed", { source_id: sources[i], file_name: f.name, role: f.role, rows_loaded: r.rowsLoaded, rows_rejected: r.rowsRejected, ...(staged.replaces ? { replaces: staged.replaces } : {}), ...(f.fromHeader?.length && headerNames ? { header_files: headerNames } : {}), ...(f.itemCost ? { cost_source: msg("import.itemListCurrentCost") } : {}) });
+        await appendAudit(engine, "import.committed", { source_id: sources[i], ...(f.role!=="rebate_agreement"?{file_name:f.name}:{}), role: f.role, rows_loaded: r.rowsLoaded, rows_rejected: r.rowsRejected, ...(staged.replaces ? { replaces: staged.replaces } : {}), ...(f.fromHeader?.length && headerNames ? { header_files: headerNames } : {}), ...(f.itemCost ? { cost_source: msg("import.itemListCurrentCost") } : {}) });
       }
       await engine.conn.query("COMMIT");
     } catch (error) { await engine.conn.query("ROLLBACK").catch(() => undefined); throw error; }
@@ -584,12 +589,13 @@ INSERT INTO import_batches(id,source_id,rows_loaded,rows_rejected,imported_at,co
 }
 /** Remove one imported file and exactly its rows (two transactions; see finishRemovalSql). */
 export async function removeSource(engine: Engine, source: string) {
-  const row = (await engine.conn.query(`SELECT name FROM source_files WHERE id=${sqlText(source)}`)).toArray()[0];
+  const row = (await engine.conn.query(`SELECT s.name,coalesce(k.kind,s.role) AS role FROM source_files s LEFT JOIN source_kinds k ON k.source_id=s.id WHERE s.id=${sqlText(source)}`)).toArray()[0];
   if (!row) throw new StudioError(msg("import.thatFileIsNo"));
   await engine.conn.query("BEGIN");
   try {
-    await engine.conn.query(removeChildrenSql(source));
-    await appendAudit(engine, "import.removed", { source_id: source, file_name: String(row.name) });
+    await engine.conn.query(removeChildrenSql(source,await hasRebates(engine)));
+    await rebuildAccruals(engine);
+    await appendAudit(engine, "import.removed", { source_id: source, ...(row.role!=="rebate_agreement"?{file_name:String(row.name)}:{}) });
     await engine.conn.query("COMMIT");
   } catch (error) { await engine.conn.query("ROLLBACK").catch(() => undefined); throw error; }
   try { await engine.conn.query(`BEGIN; ${finishRemovalSql(source)} COMMIT`); return true; }

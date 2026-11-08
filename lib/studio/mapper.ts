@@ -25,6 +25,7 @@ export type MappedField = { field: string; source: FieldSource; confidence: numb
 
 /** Alternatives each field may use when no column holds it. */
 export const ALTERNATIVES: Partial<Record<Role, Record<string, FieldSource["kind"][]>>> = {
+  rebate_agreement:{threshold_amount:['zero']},
   sales_history: { line_id: ["generate"], customer_id: ["header"], sale_date: ["header"], list_amount: ["unit"], discount_amount: ["zero", "percent", "fraction"], freight_amount: ["zero", "header"], rebate_amount: ["zero"], cost_amount: ["unit", "none", "item_cost"] },
 };
 /** Sources that are not read from the file's own columns. */
@@ -32,6 +33,7 @@ export const DERIVED_KINDS: FieldSource["kind"][] = ["unit", "zero", "generate",
 const n = (...names: string[]) => names.map(normalizeHeader);
 /** Generic synonyms seen in distributor exports, per canonical field (normalized). */
 const SYNONYMS: Record<string, { column: string[]; unit?: string[] }> = {
+  program_id:{column:n('program id','program','agreement id','rebate program','contract id')},party:{column:n('party','customer id','customer','customer no','account')},rate_percent:{column:n('rate percent','rebate rate','rebate percent','rebate pct')},threshold_amount:{column:n('threshold amount','threshold','from amount','tier from','minimum spend')},period_start:{column:n('period start','start date','effective from')},period_end:{column:n('period end','end date','expires')},calculation_mode:{column:n('calculation mode','rebate mode','mode')},to_amount:{column:n('to amount','tier to','upper bound')},eligible_skus:{column:n('eligible skus','eligible products')},excluded_skus:{column:n('excluded skus','excluded products')},party_type:{column:n('party type','agreement type')},rebate_treatment:{column:n('rebate treatment','booking mode','invoice rebate treatment')},
   line_id: { column: n("line id", "line uid", "invoice line id", "detail id", "transaction line id", "line key") },
   invoice_id: { column: n("invoice id", "invoice", "invoice no", "invoice number", "invoice num", "inv no", "document no", "document number", "doc no", "order no", "transaction id", "num") },
   product_id: { column: n("product id", "sku", "item", "item no", "item number", "item id", "item code", "stock code", "stock no", "part", "part no", "part number", "product", "product code", "material") },

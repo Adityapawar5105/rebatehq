@@ -68,7 +68,7 @@ export function ImportStudio({ client, status, busy, operation, onStatus, setMes
       ? work().catch(error => operation(async () => { throw error; })) : operation(work);
   };
   const files = studio?.files ?? [], report = studio?.report ?? null, current = files.find(f => f.id === open) ?? null;
-  const canCommit = !!report && report.loaded !== "0" && report.capOk && (report.rejected === "0" || ack);
+  const canCommit = !!report && report.loaded !== "0" && report.capOk && ((report.rejected === "0" && !report.rebateTerms) || ack);
   return <>
     <section className={styles.card} aria-labelledby="studio-heading">
       <h2 id="studio-heading">{t("studio.importStudio")}</h2>
@@ -128,7 +128,7 @@ export function ImportStudio({ client, status, busy, operation, onStatus, setMes
         <ul className={styles.small}>{r.issues.map((i, n) => <li key={n}>{t(i.column ? "studio.issueAtCell" : "studio.issueAtRow", { row: Number(i.row), column: i.column, message: say(i.message) })}</li>)}</ul>
         {Number(r.issueCount) > r.issues.length && <p className={styles.small}>{t("studio.showingTheFirstAll", { count: r.issues.length })}</p>}
       </details>)}
-      {report.rejected !== "0" && report.loaded !== "0" && <label className={styles.row}><input type="checkbox" style={{ width: "auto" }} checked={ack} onChange={event => setAck(event.target.checked)}/>{" "}{t("studio.ackRejected", { loaded: fmt.int(report.loaded), rejected: fmt.int(report.rejected) })}</label>}
+      {(report.rejected !== "0" || report.rebateTerms) && report.loaded !== "0" && <label className={styles.row}><input type="checkbox" style={{ width: "auto" }} checked={ack} onChange={event => setAck(event.target.checked)}/>{" "}<span>{report.rejected!=="0"&&<span>{t("studio.ackRejected", { loaded: fmt.int(report.loaded), rejected: fmt.int(report.rejected) })} </span>}{report.rebateTerms&&<span>{t("rebate.confirm")}</span>}</span></label>}
       {report.loaded === "0" && <p role="alert" className={styles.error}>{t("studio.noValidRowsTo")}</p>}
       <button className={styles.primary} disabled={busy || !canCommit || status.dirty} onClick={() => void operation(async () => {
         const out = await client.call("studioCommit", { acknowledge: ack }); onStatus(out.status); setStudio(out.studio); setAck(false); setOpen(null); await refreshSources(); bump();

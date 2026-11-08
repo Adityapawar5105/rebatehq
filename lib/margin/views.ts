@@ -1,3 +1,5 @@
+import {salesInput} from '../rebate/input';
+import {reconciliation} from '../rebate/store';
 // Margin views read the agg_cpm pre-aggregate: waterfall (list -> pocket -> margin),
 // drill-down by product/category/customer/branch/tier/region/month, the whale curve,
 // and "show me the math" for any number (formula, inputs and the source rows).
@@ -52,7 +54,7 @@ function fromAgg(f: Filters, extra: Dim[] = []) {
 export type Comp = { lines: string; list: string; discount: string; rebate: string; freight: string; pocket: string };
 export type Step = { key: Metric; label: string; cents: string; kind: "start" | "minus" | "plus" | "subtotal" | "excluded" | "end" };
 export type Waterfall = { filters: Filters; lines: string; sales: Comp; credits: Comp; netPocket: string; costedLines: string; costedPocket: string; cost: string; margin: string; rate: string;
-  uncostedLines: string; uncostedPocket: string; steps: Step[]; ms: number };
+  uncostedLines: string; uncostedPocket: string; steps: Step[]; ms: number; rebateReconciliation?:Awaited<ReturnType<typeof reconciliation>> };
 export type Metric = "list" | "discount" | "rebate" | "freight" | "salesPocket" | "credits" | "netPocket" | "uncostedPocket" | "costedPocket" | "cost" | "margin" | "rate" | "lines";
 const SUMS = "sum(a.lines) AS lines, sum(a.list_cents) AS list, sum(a.discount_cents) AS discount, sum(a.rebate_cents) AS rebate, sum(a.freight_cents) AS freight, sum(a.costed_lines) AS costed_lines, sum(a.costed_pocket_cents) AS costed_pocket, sum(a.cost_cents) AS cost";
 export async function waterfall(engine: Engine, filters?: Filters): Promise<Waterfall> {
@@ -78,7 +80,7 @@ export async function waterfall(engine: Engine, filters?: Filters): Promise<Wate
     { key: "cost", label: msg("waterfall.cost2"), cents: String(-cost), kind: "minus" },
     { key: "margin", label: msg("waterfall.pocketMargin2"), cents: String(margin), kind: "end" },
   ];
-  return { filters: f, lines: String(lines), sales: str(s), credits: str(c), netPocket: String(netPocket), costedLines: String(costedLines), costedPocket: String(costedPocket), cost: String(cost), margin: String(margin),
+  return { rebateReconciliation:await reconciliation(engine),filters: f, lines: String(lines), sales: str(s), credits: str(c), netPocket: String(netPocket), costedLines: String(costedLines), costedPocket: String(costedPocket), cost: String(cost), margin: String(margin),
     rate: bpText(rateBp(margin, costedPocket)), uncostedLines: String(lines - costedLines), uncostedPocket: String(uncostedPocket), steps, ms: Math.round((performance.now() - t0) * 10) / 10 };
 }
 export type DrillRow = { key: string; label: string; lines: string; list: string; discount: string; rebate: string; freight: string; credits: string; pocket: string; costedLines: string; cost: string; margin: string; rate: string; uncostedLines: string };
@@ -138,11 +140,12 @@ const CONTRIB: Record<Exclude<Metric, "rate">, { expr: string; kind?: "sale" | "
   lines: { expr: "1", formula: msg("waterfall.linesNumberOfInvoice") },
 };
 export type MathRow = { sourceCurrency:string;workspaceCurrency:string;fxRate:string;headerFx:string; sourceFile: string; sourceId: string; sourceRow: string; lineId: string; invoice: string; date: string; product: string; customer: string; kind: string; quantity: string;
-  list: string; discount: string; rebate: string; freight: string; cost: string | null; pocket: string; margin: string | null; contribution: string };
+  recordedRebate: string; list: string; discount: string; rebate: string; freight: string; cost: string | null; pocket: string; margin: string | null; contribution: string };
 export type MathPanel = { metric: Metric; label: string; value: string; formula: string; inputs: Array<{ label: string; cents: string }>; check: { engine: string; agrees: boolean };
   rows: MathRow[]; rowCount: string; rowsSum: string; rowsAgree: boolean; offset: number };
 /** The formula, its inputs (recomputed by the JS engine) and the source rows behind one waterfall number. */
 export async function math(engine: Engine, metric: Metric, filters?: Filters, offset = 0): Promise<MathPanel> {
+  const input=await salesInput(engine);
   const f = checkFilters(filters), w = await waterfall(engine, f);
   if (!(metric in CONTRIB) && metric !== "rate") throw new VaultError("FILTER", msg("waterfall.unsupportedNumber"));
   const s = w.sales, c = w.credits, n = (v: string) => BigInt(v);
@@ -165,19 +168,19 @@ export async function math(engine: Engine, metric: Metric, filters?: Filters, of
   const computed = engineValue[metric]();
   const spec = metric === "rate" ? CONTRIB.margin : CONTRIB[metric];
   const conds = [where(f, true).replace(/^WHERE /, ""), spec.kind ? `s.line_kind='${spec.kind}'` : "", spec.cost === "known" ? "s.cost_cents IS NOT NULL" : spec.cost === "unknown" ? "s.cost_cents IS NULL" : ""].filter(Boolean);
-  const j = needsJoin(f), base = `FROM sales_lines s${j.c ? " JOIN customers c ON c.customer_id = s.customer_id" : ""}${j.p ? " JOIN products p ON p.product_id = s.product_id" : ""} ${conds.length ? "WHERE " + conds.join(" AND ") : ""}`;
+  const j = needsJoin(f), base = `FROM ${input} s${j.c ? " JOIN customers c ON c.customer_id = s.customer_id" : ""}${j.p ? " JOIN products p ON p.product_id = s.product_id" : ""} ${conds.length ? "WHERE " + conds.join(" AND ") : ""}`;
   const agg = (await engine.conn.query(`SELECT count(*)::VARCHAR AS n, coalesce(sum(${spec.expr}),0)::VARCHAR AS total ${base}`)).toArray()[0];
   const at = Math.max(0, Math.floor(offset));
   const rows = (await engine.conn.query(`SELECT (SELECT source_currency FROM import_batches b WHERE b.source_id=s.source_id LIMIT 1) AS source_currency,(SELECT workspace_currency FROM import_batches b WHERE b.source_id=s.source_id LIMIT 1) AS workspace_currency,(SELECT fx_rate FROM import_batches b WHERE b.source_id=s.source_id LIMIT 1) AS fx_rate,(SELECT header_fx FROM import_batches b WHERE b.source_id=s.source_id LIMIT 1) AS header_fx, f.name AS file, s.source_id, s.source_row::VARCHAR AS source_row, s.line_id::VARCHAR AS line_id, coalesce(s.invoice_id,'') AS invoice, s.sale_date::VARCHAR AS d, s.product_id, s.customer_id, s.line_kind, s.quantity::VARCHAR AS q,
- s.list_cents::VARCHAR AS list, s.discount_cents::VARCHAR AS discount, s.rebate_cents::VARCHAR AS rebate, s.freight_cents::VARCHAR AS freight, s.cost_cents::VARCHAR AS cost, ${POCKET.replaceAll("list_cents", "s.list_cents").replaceAll("discount_cents", "s.discount_cents").replaceAll("rebate_cents", "s.rebate_cents").replaceAll("freight_cents", "s.freight_cents")}::VARCHAR AS pocket,
+ (SELECT raw.rebate_cents::VARCHAR FROM sales_lines raw WHERE raw.source_id=s.source_id AND raw.line_id=s.line_id) AS recorded_rebate,s.list_cents::VARCHAR AS list, s.discount_cents::VARCHAR AS discount, s.rebate_cents::VARCHAR AS rebate, s.freight_cents::VARCHAR AS freight, s.cost_cents::VARCHAR AS cost, ${POCKET.replaceAll("list_cents", "s.list_cents").replaceAll("discount_cents", "s.discount_cents").replaceAll("rebate_cents", "s.rebate_cents").replaceAll("freight_cents", "s.freight_cents")}::VARCHAR AS pocket,
  (CASE WHEN s.cost_cents IS NULL THEN NULL ELSE s.list_cents - s.discount_cents - s.rebate_cents - s.freight_cents - s.cost_cents END)::VARCHAR AS margin, (${spec.expr})::VARCHAR AS contribution
- ${base.replace("FROM sales_lines s", "FROM sales_lines s JOIN source_files f ON f.id = s.source_id")} ORDER BY abs(${spec.expr}) DESC, s.source_id, s.source_row LIMIT 25 OFFSET ${at}`)).toArray();
+ ${base.replace(`FROM ${input} s`, `FROM ${input} s JOIN source_files f ON f.id = s.source_id`)} ORDER BY abs(${spec.expr}) DESC, s.source_id, s.source_row LIMIT 25 OFFSET ${at}`)).toArray();
   const label = w.steps.find(x => x.key === metric)?.label ?? (metric === "rate" ? msg("waterfall.pocketMarginRate") : msg("waterfall.lines"));
   const value = shown[metric];
   return { metric, label, value, formula: metric === "rate" ? msg("waterfall.pocketMarginRatePocket") : spec.formula,
     inputs: inputs[metric].map(([l, v]) => ({ label: l, cents: v })), check: { engine: String(computed), agrees: String(computed) === value },
     rowCount: String(agg.n), rowsSum: String(agg.total), rowsAgree: metric === "rate" ? String(agg.total) === w.margin : String(agg.total) === value, offset: at,
     rows: rows.map(r => ({ sourceCurrency:String(r.source_currency ?? "USD"),workspaceCurrency:String(r.workspace_currency ?? "USD"),fxRate:String(r.fx_rate ?? "1"),headerFx:String(r.header_fx ?? "[]"), sourceFile: String(r.file), sourceId: String(r.source_id), sourceRow: String(r.source_row), lineId: String(r.line_id), invoice: String(r.invoice), date: String(r.d), product: String(r.product_id), customer: String(r.customer_id), kind: String(r.line_kind), quantity: String(r.q),
-      list: String(r.list), discount: String(r.discount), rebate: String(r.rebate), freight: String(r.freight), cost: r.cost === null ? null : String(r.cost), pocket: String(r.pocket), margin: r.margin === null ? null : String(r.margin), contribution: String(r.contribution) })) };
+      recordedRebate:String(r.recorded_rebate),list: String(r.list), discount: String(r.discount), rebate: String(r.rebate), freight: String(r.freight), cost: r.cost === null ? null : String(r.cost), pocket: String(r.pocket), margin: r.margin === null ? null : String(r.margin), contribution: String(r.contribution) })) };
 }
 export { centsText };

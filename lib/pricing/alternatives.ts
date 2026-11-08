@@ -1,3 +1,4 @@
+import {salesInput} from '../rebate/input';
 import type {Engine} from '../vault/engine';
 import {rows} from './rules';
 import {resolvedBook} from './book';
@@ -15,7 +16,7 @@ export async function alternatives(e:Engine,product:string,customer:string,today
  WHERE p.product_id<>${Q(product)} AND p.category<>'' AND p.category=(SELECT category FROM products WHERE product_id=${Q(product)})`;
  const result=await rows(e,`WITH book AS(${resolvedBook(inputs)}),pieces AS(
  SELECT product_id,quantity,lines,costed_lines,cost_cents,freight_cents,rebate_cents FROM agg_cpm WHERE customer_id=${Q(customer)} AND line_kind='sale' AND month<date_trunc('month',DATE ${Q(today)})
- UNION ALL SELECT product_id,sum(quantity),count(*),count(cost_cents),sum(cost_cents),sum(freight_cents),sum(rebate_cents) FROM sales_lines WHERE customer_id=${Q(customer)} AND line_kind='sale' AND sale_date>=date_trunc('month',DATE ${Q(today)}) AND sale_date<=DATE ${Q(today)} GROUP BY product_id),hist AS(
+ UNION ALL SELECT product_id,sum(quantity),count(*),count(cost_cents),sum(cost_cents),sum(freight_cents),sum(rebate_cents) FROM ${await salesInput(e)} WHERE customer_id=${Q(customer)} AND line_kind='sale' AND sale_date>=date_trunc('month',DATE ${Q(today)}) AND sale_date<=DATE ${Q(today)} GROUP BY product_id),hist AS(
  SELECT product_id,sum(quantity) qty,sum(lines) lines,sum(costed_lines) costed,sum(cost_cents) AS cost,sum(freight_cents) AS freight,sum(rebate_cents) AS rebate FROM pieces GROUP BY product_id),
  units AS(SELECT b.product_id product,b.description,b.uom unit,coalesce(b.book_price,b.list_price) price,h.lines,
  ${rhaSql('CAST(h.freight AS HUGEINT)*10000','CAST(h.qty*10000 AS HUGEINT)')} freight,

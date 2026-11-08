@@ -1,3 +1,4 @@
+import {salesInput} from '../rebate/input';
 import type {Engine} from '../vault/engine';
 import {VaultError} from '../vault/protocol';
 import {sqlText as Q} from '../spike/exact';
@@ -25,7 +26,7 @@ export async function bridge(e:Engine,input:BridgeInput={}):Promise<BridgeView>{
  coalesce(sum(cost_cents) FILTER(WHERE strftime(sale_date,'%Y-%m')=${Q(previous)}),0)::HUGEINT c0,
  coalesce(sum(cost_cents) FILTER(WHERE strftime(sale_date,'%Y-%m')=${Q(month)}),0)::HUGEINT c1,
  count(*) FILTER(WHERE cost_cents IS NULL)::HUGEINT "unknown"
- FROM sales_lines s JOIN customers c USING(customer_id) WHERE strftime(sale_date,'%Y-%m') IN (${Q(previous)},${Q(month)})${filter} GROUP BY s.product_id,s.customer_id,c.branch),
+ FROM ${await salesInput(e)} s JOIN customers c USING(customer_id) WHERE strftime(sale_date,'%Y-%m') IN (${Q(previous)},${Q(month)})${filter} GROUP BY s.product_id,s.customer_id,c.branch),
  q AS(SELECT coalesce(sum(q0),0)::HUGEINT t0,coalesce(sum(q1),0)::HUGEINT t1 FROM b),
  effects AS(SELECT b.*,p0-c0 AS before,p1-c1 AS after,(p1-c1)-(p0-c0) AS delta,
  CASE WHEN q0>0 AND q1>0 THEN ${rhaSql('p1*q0-q1*p0','q0')} ELSE 0 END price,

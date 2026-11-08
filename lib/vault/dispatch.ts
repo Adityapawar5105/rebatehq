@@ -13,6 +13,12 @@ export async function dispatch(service: VaultService, request: Request, hooks: H
   service.licenceGuard(request.action);
   const { progress } = hooks;
   switch (request.action) {
+    case "rebateProgress":return service.rebateProgress(request.data.offset);
+    case "rebateState":return service.rebateState();
+    case "rebateRows":return service.rebateRows(request.data.id,request.data.offset);
+    case "rebateSave":return service.rebateSave(request.data.input);
+    case "rebateDelete":return service.rebateDelete(request.data.id);
+    case "rebateRecalculate":return service.rebateRecalculate();
     case "currencySet": return service.currencySet(request.data.currency);
     case "homeMonitor": return service.homeMonitor(request.data.thresholdBp);
     case "competitorList": return service.competitorList(request.data.product,request.data.customer);

@@ -1,3 +1,5 @@
+import * as rebates from '../rebate/store';
+import {salesInput} from '../rebate/input';
 import { currencyChangeSql, workspaceCurrency } from './currency';
 import {customerHealth} from '../margin/monitor';
 import * as grid from '../pricing/grid';
@@ -23,7 +25,7 @@ import { dismissSql, fixGroups, fixRows, fixSetSql, recheck } from "../studio/fi
 import { health } from "../studio/health";
 import { PLAYGROUND_PREFIX, generatePlayground } from "../studio/playground";
 import { AUTO_LOCK_MS, LEASE_WAIT_MS, VaultError, type LeaksView, type Scope, type Tier, type VaultStatus } from "./protocol";
-import { REBUILD_SQL, findDifferences, reconSummary, recordSql } from "../margin/aggregate";
+import { REBUILD_SQL, effectiveRebuildSql, findDifferences, reconSummary, recordSql } from "../margin/aggregate";
 import { drill, math, waterfall, whale, type Dim, type Filters, type Metric } from "../margin/views";
 import { findLeaks, leakRows, type LeakResult } from "../margin/leaks";
 import { REMOVE_SAMPLE_SQL, ledgerSql, roiSummary } from "../margin/roi";
@@ -200,8 +202,14 @@ export class VaultService {
   }
   async studioDrop(id: string) { this.requireEngine(); this.studio.drop(id); return this.studioState(); }
   async studioClear() { this.requireEngine(); this.studio.clear(); return this.studioState(); }
-  async studioPlan(signal: AbortSignal, progress: Progress) { await this.studio.plan(this.requireEngine(), this.tier, signal, progress); return this.studioState(); }
+  private rebateTier(){if(this.licence.tier==='starter')throw new VaultError('LICENCE',msg('rebate.proRequired'));}
+  private async rebateImportGuard(source?:string){
+    const agreement=source?(await this.requireEngine().conn.query(`SELECT coalesce(k.kind,s.role) AS role FROM source_files s LEFT JOIN source_kinds k ON k.source_id=s.id WHERE s.id=${sqlText(source)}`)).toArray()[0]?.role==='rebate_agreement':(await this.studioState()).files.some(f=>f.role==='rebate_agreement');
+    if(agreement){this.rebateTier();await this.guard('rebateManage');}
+  }
+  async studioPlan(signal: AbortSignal, progress: Progress) { await this.rebateImportGuard();await this.studio.plan(this.requireEngine(), this.tier, signal, progress); return this.studioState(); }
   async studioCommit(acknowledge: boolean, progress: Progress) {
+    await this.rebateImportGuard();
     const engine = await this.writable(progress);
     progress(msg("vault.loadingRowsIntoThe"), "0", "1");
     const result = await this.studio.commit(engine, acknowledge);
@@ -249,6 +257,7 @@ export class VaultService {
     this.dirty = true; await this.save(); this.touch(); return { status: await this.status(), groups: await fixGroups(engine) };
   }
   async fixRecheck(sourceId: string, code: string) {
+    await this.rebateImportGuard(sourceId);
     const engine = await this.writable(), out = await recheck(engine, sourceId, code, this.tier);
     if (out.loaded !== "0") { this.dirty = true; await this.derived(engine); await this.save(); }
     this.touch(); return { status: await this.status(), groups: await fixGroups(engine), ...out };
@@ -281,14 +290,25 @@ export class VaultService {
   private async derived(engine: Engine) {
     await engine.conn.query("BEGIN");
     try {
-      await engine.conn.query(REBUILD_SQL);
-      await engine.conn.query("UPDATE vault_meta SET pricing_revision=pricing_revision+1 WHERE id=1");
-      const d = await findDifferences(engine);
-      await engine.conn.query(await recordSql(d.found, new Date().toISOString()));
+      await this.financialBody(engine);
       await engine.conn.query("COMMIT");
     } catch (error) { await engine.conn.query("ROLLBACK").catch(() => undefined); throw error; }
     finally { this.dataVersion++; this.leakCache = null; this.dirty = true; }
   }
+  private async financialBody(engine:Engine){
+    await rebates.rebuildAccruals(engine);await engine.conn.query(await effectiveRebuildSql(engine));
+    await engine.conn.query('UPDATE vault_meta SET pricing_revision=pricing_revision+1 WHERE id=1');
+    const d=await findDifferences(engine);await engine.conn.query(await recordSql(d.found,new Date().toISOString()));
+  }
+  async rebateProgress(offset=0){this.rebateTier();return rebates.progress(this.requireEngine(),offset);}
+  async rebateState(){this.rebateTier();return rebates.state(this.requireEngine());}
+  async rebateRows(id:string,offset=0){this.rebateTier();return rebates.evidence(this.requireEngine(),id,offset);}
+  async rebateSave(input:rebates.ProgramInput){
+    this.rebateTier();const plan=await rebates.saveSql(this.requireEngine(),input,this.identity.userId);
+    await this.write('rebate.program_saved',{id:plan.id,actor:this.identity.userId},async e=>{await e.conn.query(plan.sql);await this.financialBody(e);});return this.rebateState();
+  }
+  async rebateDelete(id:string){this.rebateTier();const sql=await rebates.removeSql(this.requireEngine(),id);await this.write('rebate.program_removed',{id,actor:this.identity.userId},async e=>{await e.conn.query(sql);await this.financialBody(e);});return this.rebateState();}
+  async rebateRecalculate(){this.rebateTier();await this.write('rebate.recalculated',{actor:this.identity.userId},e=>this.financialBody(e));return this.rebateState();}
   async creditsLoad(sourceId: string) {
     const engine = await this.writable(), out = await loadCredits(engine, sourceId, this.tier);
     if (out.loaded !== "0") { this.dirty = true; await this.derived(engine); await this.save(); }
@@ -688,7 +708,7 @@ export class VaultService {
     const data = (await this.engine.conn.query(`SELECT (SELECT count(*) FROM sales_lines)::VARCHAR AS lines,(SELECT count(*) FROM products)::VARCHAR AS products,(SELECT count(*) FROM customers)::VARCHAR AS customers,audit_count::VARCHAR AS entries,schema_version::VARCHAR AS version FROM vault_meta WHERE id=1`)).toArray()[0];
     // A role without cost access never has cost or margin selected: the query itself leaves them out.
     const access = await this.access(), cost = access.caps.includes("cost");
-    const totals = (await this.engine.conn.query(`SELECT coalesce(sum(list_cents),0)::VARCHAR AS list,coalesce(sum(discount_cents),0)::VARCHAR AS discounts,coalesce(sum(freight_cents),0)::VARCHAR AS freight,coalesce(sum(rebate_cents),0)::VARCHAR AS rebates,coalesce(sum(list_cents-discount_cents-freight_cents-rebate_cents),0)::VARCHAR AS pocket${cost ? `,coalesce(sum(cost_cents),0)::VARCHAR AS cost,coalesce(sum(list_cents-discount_cents-freight_cents-rebate_cents-cost_cents),0)::VARCHAR AS margin` : ""} FROM sales_lines`)).toArray()[0];
+    const totals = (await this.engine.conn.query(`SELECT coalesce(sum(list_cents),0)::VARCHAR AS list,coalesce(sum(discount_cents),0)::VARCHAR AS discounts,coalesce(sum(freight_cents),0)::VARCHAR AS freight,coalesce(sum(rebate_cents),0)::VARCHAR AS rebates,coalesce(sum(list_cents-discount_cents-freight_cents-rebate_cents),0)::VARCHAR AS pocket${cost ? `,coalesce(sum(cost_cents),0)::VARCHAR AS cost,coalesce(sum(list_cents-discount_cents-freight_cents-rebate_cents-cost_cents),0)::VARCHAR AS margin` : ""} FROM ${await salesInput(this.engine)}`)).toArray()[0];
     return { ...base, currency: await workspaceCurrency(this.requireEngine()), lines: String(data.lines), products: String(data.products), customers: String(data.customers), auditEntries: String(data.entries), schemaVersion: String(data.version), totals: { cost: null, margin: null, ...totals } as VaultStatus["totals"], access };
   }
 }

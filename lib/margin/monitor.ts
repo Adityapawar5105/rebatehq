@@ -1,3 +1,4 @@
+import {salesInput} from '../rebate/input';
 import type {Engine} from '../vault/engine';
 import {sqlText as Q,validDate} from '../spike/exact';
 import {rows} from '../pricing/rules';
@@ -20,11 +21,12 @@ export type CustomerHealth={window:ReturnType<typeof monitoringWindow>;threshold
 export async function customerHealth(e:Engine,thresholdBp='500',today?:string):Promise<CustomerHealth>{
  if(typeof thresholdBp!=='string'||!/^\d{1,5}$/.test(thresholdBp)||BigInt(thresholdBp)>BigInt(10000))throw new VaultError('INPUT',msg('monitor.badThreshold'));
  const window=monitoringWindow(today),w=`SELECT 'before' period,DATE ${Q(window.priorFrom)} lo,DATE ${Q(window.from)} hi UNION ALL SELECT 'after',DATE ${Q(window.from)},DATE ${Q(window.to)}`;
+ const input=await salesInput(e);
  const raw=await rows(e,`WITH windows AS(${w}), pieces AS(
  SELECT a.customer_id,w.period,a.lines,a.costed_lines,a.costed_pocket_cents pocket,a.cost_cents AS cost,a.list_cents AS list,a.discount_cents discount
  FROM agg_cm a JOIN windows w ON a.month>=w.lo AND a.month+INTERVAL '1 month'<=w.hi WHERE a.line_kind='sale'
  UNION ALL SELECT s.customer_id,w.period,count(*),count(s.cost_cents),coalesce(sum(${POCKET}) FILTER(WHERE s.cost_cents IS NOT NULL),0),coalesce(sum(s.cost_cents),0),sum(s.list_cents),sum(s.discount_cents)
- FROM sales_lines s JOIN windows w ON s.sale_date>=w.lo AND s.sale_date<w.hi
+ FROM ${input} s JOIN windows w ON s.sale_date>=w.lo AND s.sale_date<w.hi
  WHERE s.line_kind='sale' AND NOT(date_trunc('month',s.sale_date)>=w.lo AND date_trunc('month',s.sale_date)+INTERVAL '1 month'<=w.hi) GROUP BY s.customer_id,w.period),
  totals AS(SELECT customer_id,period,sum(lines) lines,sum(costed_lines) costed,sum(pocket) pocket,sum(cost) AS cost,sum(list) AS list,sum(discount) AS discount FROM pieces GROUP BY customer_id,period),
  orders AS(SELECT s.customer_id,w.period,count(DISTINCT ${invoiceKey()}) orders FROM sales_lines s JOIN windows w ON s.sale_date>=w.lo AND s.sale_date<w.hi WHERE s.line_kind='sale' GROUP BY s.customer_id,w.period),

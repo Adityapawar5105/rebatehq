@@ -43,7 +43,7 @@ export function correction(role: Role, field: string, value: string) {
   if (!type) throw new StudioError(msg("fixlater.unknownFieldForThis"));
   const v = value.trim();
   if (v.length > 500) throw new StudioError(msg("fixlater.keepCorrectionsUnder500"));
-  return type === "date" ? cleanDate(v, "YYYY-MM-DD").value : type === "amount" || type.startsWith("quantity") ? cleanNumber(v, "dot").value : type === "id" || type === "line_id" ? cleanId(v).value : v;
+  return type === "date" ? cleanDate(v, "YYYY-MM-DD").value : type === "amount" || type === 'rate' || type.startsWith("quantity") ? cleanNumber(v, "dot").value : type === "id" || type === "line_id" ? cleanId(v).value : v;
 }
 /** Set one field on all open rows of a group (or the listed rows). Returns the SQL to run in a transaction. */
 export async function fixSetSql(engine: Engine, sourceId: string, code: string, field: string, value: string, rows: number[] | null) {
@@ -70,8 +70,10 @@ export async function recheck(engine: Engine, sourceId: string, code: string, ti
   const fields = ROLE_FIELDS[role], s = sqlText(sourceId), name = String((await engine.conn.query(`SELECT name FROM source_files WHERE id=${s}`)).toArray()[0].name);
   const file: StagedFile = { ord: 0, role, name, bytes: 0, fingerprint: "", alignment: fields.map((f, index) => ({ field: f.name, index })), settings: { ...CANONICAL, ...(await sourceFx(engine, sourceId)) }, keyed: true, headers: fields.map(f => f.name), colOffset: 0 };
   await resetStage(engine); await createStage(engine, role);
-  await engine.conn.query(`INSERT INTO st_${role} SELECT 0, source_row, ${fields.map((_, i) => `v${i}`).join(",")} FROM rejected_rows WHERE source_id=${s} AND status='open' AND code=${sqlText(code)}`);
-  await validate(engine, role as Exclude<Role, "rebate_agreement">, [file], null);
+  const cohort=role==='rebate_agreement'?`(code=${sqlText(code)} OR v0 IN(SELECT v0 FROM rejected_rows WHERE source_id=${s} AND status='open' AND code=${sqlText(code)}))`:`code=${sqlText(code)}`;
+  await engine.conn.query(`INSERT INTO st_${role} SELECT 0, source_row, ${fields.map((_, i) => `v${i}`).join(",")} FROM rejected_rows WHERE source_id=${s} AND status='open' AND ${cohort}`);
+  await validate(engine, role, [file], null);
+  if(role==='rebate_agreement')await engine.conn.query(`UPDATE ty_rebate_agreement SET err='program_id:incomplete' WHERE program_id IN(SELECT v0 FROM rejected_rows WHERE source_id=${s} AND status='dismissed')`);
   const counts = (await engine.conn.query(`SELECT count(*) FILTER (WHERE err IS NULL)::VARCHAR AS ok, count(*) FILTER (WHERE err IS NOT NULL)::VARCHAR AS bad FROM ty_${role}`)).toArray()[0];
   const ok = String(counts.ok), bad = String(counts.bad);
   if (ok === "0") { await resetStage(engine); return { loaded: "0", stillRejected: bad }; }
@@ -84,12 +86,14 @@ export async function recheck(engine: Engine, sourceId: string, code: string, ti
 CREATE TEMP TABLE studio_files AS SELECT * FROM (VALUES (0, ${s}, ${sqlText(name)})) v(file_ord, source_id, name);
 CREATE TEMP TABLE studio_messages AS SELECT * FROM (VALUES ${messages}) v(file_ord, code, column_name, message)`);
     await engine.conn.query(commitSql(new Set([role])));
+    await rebuildAccruals(engine);
     await engine.conn.query(`UPDATE rejected_rows SET status='loaded' WHERE source_id=${s} AND status='open' AND source_row IN (SELECT src_row FROM ty_${role} WHERE err IS NULL);
 UPDATE rejected_rows SET code=t.err FROM ty_${role} t WHERE rejected_rows.source_id=${s} AND rejected_rows.source_row=t.src_row AND rejected_rows.status='open' AND t.err IS NOT NULL;
 UPDATE import_batches SET rows_loaded=rows_loaded+${ok}, rows_rejected=greatest(0, rows_rejected-${ok}) WHERE source_id=${s}`);
-    await appendAudit(engine, "fixlater.loaded", { source_id: sourceId, file_name: name, code, rows_loaded: ok, still_rejected: bad });
+    await appendAudit(engine, "fixlater.loaded", { source_id: sourceId, ...(role!=="rebate_agreement"?{file_name:name}:{}), code, rows_loaded: ok, still_rejected: bad });
     await engine.conn.query("COMMIT");
   } catch (error) { await engine.conn.query("ROLLBACK").catch(() => undefined); throw error; }
   finally { await resetStage(engine).catch(() => undefined); }
   return { loaded: ok, stillRejected: bad };
 }
+import {rebuildAccruals} from '../rebate/store';

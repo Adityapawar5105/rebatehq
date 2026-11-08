@@ -154,7 +154,7 @@ test("7B Quote Desk and Price Check need Professional", async () => {
 // Decision 16 (blueprint section 22, item 21). Every command a Sales Rep can reach is listed here and
 // either scanned (its real payload is checked for cost and margin keys and for the cost value) or
 // reviewed (it cannot carry cost). Adding a rep-reachable command fails this test until it is classified.
-const SCANNED = ["status", "home", "checklist", "search", "roleList", "pricingState", "priceCheck", "quoteCreate", "quoteLines", "quoteSubmit", "quoteGet", "quoteList"] as const;
+const SCANNED = ["rebateProgress","status", "home", "checklist", "search", "roleList", "pricingState", "priceCheck", "quoteCreate", "quoteLines", "quoteSubmit", "quoteGet", "quoteList"] as const;
 const REVIEWED: Record<string, string> = {
   init: "vault bootstrap state", create: "creates an empty vault", unlock: "returns status (scanned)", lock: "returns status", touch: "idle timer", cancel: "cancels a job", save: "returns status",
   storage: "browser storage quota", licenceSet: "licence claims", rolePreview: "returns status (scanned) and can only remove capabilities", backupRestore: "replaces the vault, returns status",
@@ -183,6 +183,13 @@ test("decision 16: no Sales Rep payload contains cost or margin", async (context
     payloads.quoteSubmit = await call(s, "quoteSubmit", { id: created.id, reason: "Competitor" });
     payloads.quoteGet = await call(s, "quoteGet", { id: created.id });
     payloads.quoteList = await call(s, "quoteList", {});
+    const rebate = await import('../lib/rebate/store');
+    c.query("INSERT INTO source_files VALUES('rebate-test','synthetic.csv','sales_history',0,'2026-01-01'); INSERT INTO sales_lines(source_id,line_id,product_id,customer_id,sale_date,quantity,list_cents,discount_cents,freight_cents,rebate_cents,cost_cents,source_row) VALUES('rebate-test',1,'P1','C1','2026-03-31',1,2950000,0,0,35000,4321,2)");
+    const plan=await rebate.saveSql({conn:c} as unknown as Engine,{reference:'Customer program',customer:'C1',mode:'retroactive',treatment:'replace',from:'2026-01-01',to:'2026-12-31',eligible:'',excluded:'',enabled:true,tiers:[{from:'0',to:'',rate:'2'},{from:'40000',to:'',rate:'3'}].slice(0,1)},'owner1');
+    c.query(plan.sql);await rebate.rebuildAccruals({conn:c} as unknown as Engine);
+    payloads.rebateProgress=await call(s,'rebateProgress',{});
+    assert.equal((payloads.rebateProgress as {rows:{earned:string}[]}).rows[0].earned,'59000');
+    for(const action of ['rebateState','rebateRows','rebateSave','rebateDelete','rebateRecalculate'] as const)await assert.rejects(call(s,action,{id:plan.id} as never),code('FORBIDDEN'));
     payloads.priceCheck = await call(s, "priceCheck", { productId: "P1", customerId: "C1", quantity: "1" });
     payloads.pricingState = await call(s, "pricingState", {});
     payloads.search = await call(s, "search", { text: "P1" });
@@ -286,4 +293,12 @@ test("7B relay approvers need an explicit role: an empty roles table or an unkno
     assert.deepEqual(await assignedCaps(e, "stranger"), []); assert.deepEqual(await assignedCaps(e, "sm"), []);
     assert.ok((await assignedCaps(e, "po")).includes("quoteApprove"), "the named Pricing Owner still counts");
   } finally { c.close(); }
+});
+
+test('7D-1 signed licence tier gates all rebate operations and import activation; Accountant keeps no general data access',async()=>{
+ const {c}=await vault();try{const starter=serviceFor(c,'owner1','starter');
+ for(const action of ['rebateProgress','rebateState','rebateRows','rebateSave','rebateDelete','rebateRecalculate'] as const)await assert.rejects(call(starter,action,{id:'missing'} as never),code('LICENCE'));
+ starter.studioState=async()=>({files:[{role:'rebate_agreement'}]} as never);await assert.rejects(call(starter,'studioPlan',{}),code('LICENCE'));await assert.rejects(call(starter,'studioCommit',{acknowledge:true}),code('LICENCE'));
+ const acct=serviceFor(c,'acct');assert.ok((await acct.access()).caps.includes('rebateManage'));await assert.rejects(call(acct,'studioAdd',{files:[]}),code('FORBIDDEN'));assert.deepEqual((await call(acct,'rebateState',{}) as {programs:unknown[]}).programs,[]);
+ }finally{c.close();}
 });

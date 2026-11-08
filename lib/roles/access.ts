@@ -27,17 +27,17 @@ export const isRole = (value: unknown): value is RoleId => typeof value === "str
  * quoteApprove (7B): decide a below-floor quote exception (Sales Manager, Pricing Owner, Owner / CFO). It is
  * separate from "approve", which approves price changes and belongs to the named Pricing Owner only.
  */
-export type Cap = "view" | "guards" | "cost" | "data" | "pricing" | "approve" | "export" | "reconcile" | "audit" | "roles" | "backup" | "collaborate" | "quote" | "quoteApprove";
-export const CAPS_ALL: Cap[] = ["view", "guards", "cost", "data", "pricing", "approve", "export", "reconcile", "audit", "roles", "backup", "collaborate", "quote", "quoteApprove"];
+export type Cap = "view" | "guards" | "cost" | "data" | "pricing" | "approve" | "export" | "reconcile" | "audit" | "roles" | "backup" | "collaborate" | "quote" | "quoteApprove" | "rebates" | "rebateManage";
+export const CAPS_ALL: Cap[] = ["view", "guards", "cost", "data", "pricing", "approve", "export", "reconcile", "audit", "roles", "backup", "collaborate", "quote", "quoteApprove", "rebates", "rebateManage"];
 const PRICING_OWNER: Cap[] = CAPS_ALL;
-const BASE: Cap[] = ["view", "guards", "collaborate"];
+const BASE: Cap[] = ["view", "guards", "collaborate","rebates"];
 const BY_ROLE: Record<RoleId, Cap[]> = {
   owner: CAPS_ALL.filter(c => c !== "approve"), // approval belongs to the named Pricing Owner
   pricing_owner: PRICING_OWNER,
-  pricing_manager: [...BASE, "cost", "data", "pricing", "export", "reconcile", "audit", "quote"],
+  pricing_manager: [...BASE, "cost", "data", "pricing", "export", "reconcile", "audit", "quote","rebateManage"],
   sales_manager: [...BASE, "cost", "quote", "quoteApprove"],
   sales_rep: [...BASE, "quote"],
-  accountant: [...BASE, "cost", "reconcile", "audit"],
+  accountant: [...BASE, "cost", "reconcile", "audit","rebateManage"],
   admin: ["view", "guards", "roles", "backup", "audit"],
 };
 /**
@@ -58,6 +58,7 @@ export const intersect = (a: Cap[], b: Cap[]) => a.filter(c => b.includes(c));
  * fail when a new command is added without a decision.
  */
 export const ACTION_CAP: Record<Action, Cap | null> = {
+  rebateProgress:'rebates',rebateState:'cost',rebateRows:'cost',rebateSave:'rebateManage',rebateDelete:'rebateManage',rebateRecalculate:'rebateManage',
   currencySet: "roles",
   competitorList:"cost",
   homeMonitor:"cost",
@@ -92,5 +93,5 @@ export const ACTION_CAP: Record<Action, Cap | null> = {
 /** Sections of the app a role can open (the worker still checks every command). */
 export function sectionsFor(caps: Cap[]): string[] {
   const has = (c: Cap) => caps.includes(c);
-  return ["Home", ...(has("data") ? ["Data Hub"] : []), ...(has("cost") ? ["Margin"] : []), ...(has("guards") ? ["Pricing"] : []), ...(has("quote") ? ["Quotes"] : []), ...(has("cost") || has("reconcile") || has("audit") ? ["Reports"] : []), ...(has("roles") || has("backup") || has("audit") ? ["Settings"] : [])];
+  return ["Home", ...(has("data") ? ["Data Hub"] : []), ...(has("cost") ? ["Margin"] : []), ...(has("guards") ? ["Pricing"] : []), ...(has("quote") ? ["Quotes"] : []), ...(has("rebates") ? ["Rebates & Contracts"] : []), ...(has("cost") || has("reconcile") || has("audit") ? ["Reports"] : []), ...(has("roles") || has("backup") || has("audit") ? ["Settings"] : [])];
 }

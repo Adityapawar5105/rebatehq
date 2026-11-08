@@ -47,6 +47,12 @@ export type CleanupUndone = { summary: string; restored: string; skipped: string
 export type StorageStatus = { persistent: boolean; usage: string; quota: string; namedOpfsBytes: string; files: string };
 export type ImportEstimate = { bytes: string; estimatedMemoryBytes: string; maxLines: string; maxProducts: string; warning: string };
 export type Commands = {
+  rebateProgress:{offset?:number};
+  rebateState:Record<string,never>;
+  rebateRows:{id:string;offset?:number};
+  rebateSave:{input:import('../rebate/store').ProgramInput};
+  rebateDelete:{id:string};
+  rebateRecalculate:Record<string,never>;
   homeMonitor:{thresholdBp?:string};
   currencySet: { currency: string };
   competitorList:{product:string;customer?:string|null};
@@ -151,6 +157,12 @@ export type Commands = {
 export type LeaksView = { result: LeakResult; roi: RoiSummary; sample: boolean; recorded: number };
 export type CommitResult = { loaded: string; rejected: string; files: string; cleanup: boolean };
 export type Results = {
+  rebateProgress:Awaited<ReturnType<VaultService['rebateProgress']>>;
+  rebateState:Awaited<ReturnType<VaultService['rebateState']>>;
+  rebateRows:Awaited<ReturnType<VaultService['rebateRows']>>;
+  rebateSave:Awaited<ReturnType<VaultService['rebateSave']>>;
+  rebateDelete:Awaited<ReturnType<VaultService['rebateDelete']>>;
+  rebateRecalculate:Awaited<ReturnType<VaultService['rebateRecalculate']>>;
   homeMonitor:Awaited<ReturnType<VaultService['homeMonitor']>>;
   currencySet: VaultStatus;
   competitorList:Awaited<ReturnType<VaultService["competitorList"]>>;

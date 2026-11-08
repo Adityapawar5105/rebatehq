@@ -102,6 +102,7 @@ async function diagnose() {
   return diagnostics;
 }
 async function worker(action, data = {}, deadline = 180000) {
+  console.log("Worker gate: "+action);
   return page.evaluate(({ action, data, deadline }) => new Promise((resolve, reject) => {
     const w = new Worker("/spike/vault-tests.js", { type: "module" });
     const timeout = setTimeout(() => { w.terminate(); reject(new Error("Test worker deadline exceeded")); }, deadline);
@@ -131,6 +132,29 @@ async function importFiles(paths, lines, acknowledge = false) {
   await page.locator(`[data-testid="line-count"][data-value="${lines}"]`).waitFor({ timeout: 120000 });
 }
 async function clearBatch() { await page.getByRole("button", { name: "Clear batch" }).click(); await page.getByRole("heading", { name: "Batch report" }).waitFor({ state: "detached" }); }
+
+async function rebatesUi(){
+ const savedContext=context,savedPage=page,active=dataPlaneActive;
+ context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-rebates-')),browserOptions);await configureContext();page=await openPage();
+ try{
+  dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();
+  await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic rebate owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
+  await page.locator('nav a[href="#settings"]').click();await page.locator('section[aria-labelledby="currency-heading"] select').selectOption('CAD');await page.getByRole('button',{name:'Save currency',exact:true}).click();await page.getByText('Current currency: CAD',{exact:true}).waitFor();
+  const customer=marker+'-RC',sku=marker+'-RP',ref=marker+'-NORTH';
+  const sales=Buffer.from('line_id,product_id,customer_id,sale_date,quantity,list_amount,discount_amount,freight_amount,rebate_amount,cost_amount\n1,'+sku+','+customer+',2026-03-31,1,29500.00,0,0,350.00,10000.00\n');
+  const agreement=Buffer.from('program_id,party,rate_percent,threshold_amount,period_start,period_end,calculation_mode,to_amount,eligible_skus,excluded_skus,party_type,rebate_treatment\n'+ref+','+customer+',2,0,2026-01-01,2026-03-31,retroactive,,,,customer,replace\n');
+  await page.locator('nav a[href="#data-hub"]').click();await importFiles([{name:'synthetic-customer-rebate-agreement.csv',mimeType:'text/csv',buffer:agreement},{name:'synthetic-rebate-sales.csv',mimeType:'text/csv',buffer:sales}],'1',true);
+  await page.locator('nav a[href="#rebates"]').click();const progress=page.getByTestId('rebate-progress');await page.getByTestId('rebate-earned').filter({hasText:'CA$590.00'}).waitFor();assert.ok((await progress.innerText()).includes('CA$29,500.00'),'Rebate spend lost CAD denomination');assert.ok((await progress.innerText()).includes('CA$240.00'),'Adjustment differs');
+  await progress.getByRole('button',{name:'Show the math',exact:true}).click();const dialog=page.getByRole('dialog');await dialog.getByRole('cell',{name:'CA$350.00',exact:true}).waitFor();assert.equal(await dialog.getByRole('cell',{name:'CA$590.00',exact:true}).count(),2);await dialog.getByRole('button',{name:'Close',exact:true}).click();
+  await page.locator('nav a[href="#margin"]').click();await page.getByTestId('wf-rebate').filter({hasText:'-CA$590.00'}).waitFor();await page.getByTestId('wf-rebate').click();await page.getByTestId('math-value').filter({hasText:'CA$590.00'}).waitFor();await page.getByRole('dialog').getByText('CA$350.00',{exact:false}).waitFor();
+  await page.locator('nav a[href="#rebates"]').click();await page.getByTestId('rebate-reference').fill(marker+'-MANUAL');await page.getByTestId('rebate-customer').fill(marker+'-OTHER');await page.getByTestId('rebate-confirm').check();await page.getByRole('button',{name:'Save approved terms',exact:true}).click();await page.getByTestId('rebate-program-row').filter({hasText:marker+'-MANUAL'}).waitFor();const row=page.getByTestId('rebate-program-row').filter({hasText:marker+'-MANUAL'});await row.getByRole('button',{name:'Edit terms',exact:true}).click();await page.getByLabel('Program active',{exact:true}).uncheck();await page.getByTestId('rebate-confirm').check();await page.getByRole('button',{name:'Save approved terms',exact:true}).click();await row.getByText('Paused',{exact:true}).waitFor();await row.getByRole('button',{name:'Remove manual program',exact:true}).click();await row.waitFor({state:'detached'});
+  for(const theme of ['light','dark','contrast']){await page.evaluate(v=>{document.documentElement.dataset.theme=v;},theme);await page.setViewportSize({width:375,height:812});await page.waitForTimeout(400);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Rebates overflow at 375px');await page.screenshot({path:'test-results/rebates-'+channel+'-'+theme+'.png',fullPage:true});}await page.setViewportSize({width:1280,height:800});
+  await page.locator('nav a[href="#settings"]').click();await page.getByLabel('Preview as').selectOption('sales_rep');await page.getByTestId('preview-banner').waitFor();await page.locator('nav a[href="#rebates"]').click();await page.getByTestId('rebate-earned').filter({hasText:'CA$590.00'}).waitFor();assert.equal(await page.getByTestId('rebate-form').count(),0);assert.equal(await page.getByRole('button',{name:'Show the math',exact:true}).count(),0);assert.ok(!/cost|margin/i.test(await progress.innerText()),'Rep UI exposed margin or cost');await page.getByRole('button',{name:'Return to my own view'}).click();
+  await page.evaluate(()=>localStorage.setItem('rebatehq.locale','pseudo'));await page.reload();await page.locator('form input[type="password"]').fill(secret);await page.locator('form:has(input[type="password"]) button').click();await page.getByTestId('line-count').waitFor();await page.evaluate(()=>{location.hash='#rebates';});await page.getByTestId('rebate-program-row').waitFor();assert.ok((await progress.innerText()).includes('⟦'));assert.ok((await page.getByTestId('rebate-form').innerText()).includes('⟦'));
+  results.checks.rebatesUi={cadAmount:'CA$590.00',cadSpend:'CA$29,500.00',cadAdjustment:'CA$240.00',sourceMath:true,manualCrud:true,repProgressOnly:true,encryptedReload:true,pseudo:true,themes:true,phone375:true};
+ }finally{await context.close();context=savedContext;page=savedPage;dataPlaneActive=active;}
+}
+
 async function monitorUi(){
  const savedContext=context,savedPage=page,active=dataPlaneActive;
  context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-monitor-')),browserOptions);await configureContext();page=await openPage();
@@ -204,6 +228,7 @@ try {
   results.checks.studio = await worker("studio");
   results.checks.currency = await worker("currency");
   results.checks.monitor = await worker("monitor");
+  results.checks.rebates = await worker("rebates",{},180000);
   results.checks.warmup = await worker("warmup");
   results.checks.mapper = await worker("mapper");
   results.checks.playground = await worker("playground");
@@ -457,7 +482,7 @@ try {
     await page.getByTestId('theme').first().selectOption(theme);
     for(const size of [{width:1366,height:768},{width:375,height:812}]){
       await page.setViewportSize(size);
-      for(const hash of ['#home','#data-hub','#margin','#margin-bridge','#pricing','#pricing-planner','#pricing-versions','#pricing-exceptions','#pricing-expiry','#quotes','#reports','#settings']){
+      for(const hash of ['#home','#data-hub','#margin','#margin-bridge','#pricing','#pricing-planner','#pricing-versions','#pricing-exceptions','#pricing-expiry','#quotes','#rebates','#reports','#settings']){
         await page.evaluate(h=>{location.hash=h;},hash);await page.waitForTimeout(300);await page.waitForFunction(()=>!document.querySelector('main [aria-busy="true"]'),null,{timeout:60000});if(hash==='#pricing-versions'&&theme==='dark'&&size.width===375)await opsShot('versions-dark-mobile');
         if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1))overflowed.push(`${hash} ${theme} ${size.width}px`);
       }
@@ -554,6 +579,7 @@ try {
     }
   }
   await monitorUi();
+  await rebatesUi();
   if(auth){
     const device=await page.evaluate(()=>{const key=Object.keys(localStorage).find(k=>k.startsWith('rebatehq-device-v1:'));return localStorage.getItem(key);});assert.ok(device);
     const revoked=await context.request.post(base+'/api/licence/devices',{data:{id:device,status:'revoked'}});assert.equal(revoked.status(),200);

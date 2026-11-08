@@ -18,7 +18,7 @@ export const ROLE_LABELS: Record<Role, string> = {
 export const DATE_FORMATS: DateFormat[] = ["YYYY-MM-DD", "MM/DD/YYYY", "DD/MM/YYYY", "DD.MM.YYYY", "DD-MM-YYYY"];
 export const DELIMITERS: Delimiter[] = [",", ";", "\t", "|"];
 
-export type FieldType = "line_id" | "id" | "text" | "code" | "date" | "quantity" | "quantity0" | "amount";
+export type FieldType = "line_id" | "id" | "text" | "code" | "date" | "quantity" | "quantity0" | "amount" | "rate";
 export type Field = { name: string; type: FieldType; required: boolean; max?: number };
 const f = (name: string, type: FieldType, required = false, max?: number): Field => ({ name, type, required, max });
 /**
@@ -33,15 +33,15 @@ export const ROLE_FIELDS: Record<Role, Field[]> = {
   customer_list: [f("customer_id", "id", true), f("name", "text", false, 300), f("tier", "text", false, 100), f("branch", "text", false, 100), f("region", "text", false, 100), f("payment_terms", "text", false, 100)],
   vendor_cost: [f("vendor", "text", true, 200), f("product_id", "id", true), f("cost", "amount", true), f("effective_date", "date", true)],
   price_list: [f("product_id", "id"), f("category", "text", false, 200), f("customer_id", "id"), f("tier", "text", false, 100), f("qty_break", "quantity0"), f("price", "amount", true), f("valid_from", "date", true), f("valid_to", "date")],
-  rebate_agreement: [f("program_id", "text", true, 100), f("party", "text", true, 200), f("rate_percent", "quantity0", true), f("threshold_amount", "amount"), f("period_start", "date", true), f("period_end", "date", true)],
+  rebate_agreement: [f("program_id", "text", true, 100), f("party", "id", true), f("rate_percent", "rate", true), f("threshold_amount", "amount"), f("period_start", "date", true), f("period_end", "date", true),f('calculation_mode','text',false,16),f('to_amount','amount'),f('eligible_skus','text',false,500),f('excluded_skus','text',false,500),f('party_type','text',false,16),f('rebate_treatment','text',false,16)],
   // 6A: an order-header export (customer, date, freight per invoice) joined to a lines file by invoice number. Never stored on its own.
   order_header: [f("invoice_id", "text", true, 64), f("customer_id", "id", true), f("sale_date", "date", true), f("freight_amount", "amount")],
   // 7B: accounts-receivable aging per customer, for the Quote Desk credit signal. Balances are line totals in the
   // workspace currency; a credit (negative) balance is rejected to Fix Later rather than guessed.
   ar_aging: [f("customer_id", "id", true), f("as_of_date", "date"), f("current_amount", "amount"), f("due_1_30_amount", "amount"), f("due_31_60_amount", "amount"), f("due_61_90_amount", "amount"), f("due_over_90_amount", "amount"), f("credit_limit_amount", "amount"), f("dso_days", "quantity0")],
 };
-/** Roles whose rows load into the vault in Phase 1. Rebate agreements load in Phase 2. */
-export const LOADABLE: Role[] = ["sales_history", "item_master", "customer_list", "vendor_cost", "price_list", "ar_aging"];
+/** Roles whose rows load into the vault; customer rebate agreements are enabled in 7D-1. */
+export const LOADABLE: Role[] = ["sales_history", "item_master", "customer_list", "vendor_cost", "price_list", "ar_aging","rebate_agreement"];
 /** Roles a batch can use: the loadable ones plus order headers, which fill in sales lines and are not stored themselves. */
 export const USABLE: Role[] = [...LOADABLE, "order_header"];
 export const FILE_HINTS: Array<[Role, RegExp]> = [

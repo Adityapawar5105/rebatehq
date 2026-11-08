@@ -1,3 +1,4 @@
+import {salesInput} from '../rebate/input';
 import {SERVICE_LEAK_SQL} from './service-cost';
 import { rhaSql } from "./sql";
 import { dec, rescale } from "./decimal";
@@ -37,7 +38,7 @@ export async function findLeaks(engine: Engine,costToServe=true,window?:{from:st
   const t0 = performance.now(), R = RULES;
   // Scope the input, never the rules or final amounts. The default remains the
   // original full-history finder. Service-order rules use the same scoped input.
-  await engine.conn.query(`CREATE OR REPLACE TEMP VIEW lf_input AS SELECT * FROM sales_lines ${window?`WHERE sale_date>=DATE ${sqlText(window.from)} AND sale_date<DATE ${sqlText(window.to)}`:''}`);
+  await engine.conn.query(`CREATE OR REPLACE TEMP VIEW lf_input AS SELECT * FROM ${await salesInput(engine)} ${window?`WHERE sale_date>=DATE ${sqlText(window.from)} AND sale_date<DATE ${sqlText(window.to)}`:''}`);
   // Statement by statement, so an engine failure names the step (SQL text only, never values).
   const run = async (sql: string) => { for (const stmt of sql.replaceAll(/\bsales_lines\b/g,'lf_input').split(/;\s*\n/)) if (stmt.trim()) { try { await engine.conn.query(stmt); } catch { throw new Error(msg('monitor.finderFailed')); } } };
   // Memory: lf_lines and lf_excess are views (never materialised) and a hit is five numbers

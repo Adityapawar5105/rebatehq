@@ -61,7 +61,7 @@ async function testFixture(bytes: Uint8Array) {
   await closeMemory(probe);
   const service = new VaultService(() => undefined); await service.init(fixtureScope);
   const result = await service.unlock(secret);
-  assert(result.schemaVersion === "13" && result.lines === "1", "V1 snapshot did not upgrade with its row intact");
+  assert(result.schemaVersion === "14" && result.lines === "1", "V1 snapshot did not upgrade with its row intact");
   const agg = (await service.engine!.conn.query("SELECT count(*)::VARCHAR AS n, sum(list_cents)::VARCHAR AS l, max(line_kind) AS k FROM agg_cpm")).toArray()[0];
   assert(agg.n === "1" && agg.l === "1250" && agg.k === "sale", "V1 upgrade must build the margin pre-aggregate from existing lines");
   assert((await service.marginWaterfall()).margin === "375", "Upgraded v1 line waterfall wrong");
@@ -268,8 +268,9 @@ async function studio() {
   const roles = Object.fromEntries(state.files.map(f => [f.kind, f.role]));
   assert(roles.xls === "item_master" && roles.ods === "customer_list" && roles.xlsb === "vendor_cost" && roles.json === "price_list" && roles.xml === "rebate_agreement", `Role detection wrong: ${JSON.stringify(roles)}`);
   report = (await service.studioPlan(signal(), noop)).report!;
-  assert(report.loaded === "9" && report.rejected === "0" && report.warnings.some(w => /rebates.xml: Rebate agreement files are converted only/.test(w)), `Mixed batch report wrong: ${report.loaded}/${report.rejected}`);
-  out = await service.studioCommit(false, noop);
+  assert(report.loaded === "9" && report.rejected === "2" && report.warnings.some(w => /Confirm the calculation mode/.test(w)), `Mixed batch report wrong: ${report.loaded}/${report.rejected}`);
+  out = await service.studioCommit(true, noop);
+  assert((await service.rebateState()).programs.length===0&&(await service.fixGroups()).some(g=>g.role==='rebate_agreement'&&g.code==='calculation_mode:invalid'),'Old six-column terms must stay in Fix Later, not activate with guessed treatment');
   const p1 = (await rowsOf(service, "SELECT description, uom, current_cost::VARCHAR AS cost, list_price::VARCHAR AS price, source_id IS NOT NULL AS owned FROM products WHERE product_id='P-1'"))[0];
   assert(p1.description === "Brass gate valve 1in" && p1.cost === "6120" && p1.price === "12550" && p1.owned === true, "Item master did not update the derived product exactly");
   assert(out.status.products === "8" && out.status.customers === "3", "Item master or customer counts wrong");
@@ -281,7 +282,7 @@ async function studio() {
   const reset1 = (await rowsOf(service, "SELECT description, current_cost IS NULL AS blank, source_id IS NULL AS derived FROM products WHERE product_id='P-1'"))[0];
   assert(reset1.description === "" && reset1.blank === true && reset1.derived === true && out.status.products === "7", "Item master removal did not restore the derived products exactly");
   await audited("mixed formats and item removal");
-  result.formats = { xls: true, ods: true, xlsb: true, json: true, xml: "converted only" };
+  result.formats = { xls: true, ods: true, xlsb: true, json: true, xml: "missing mode/treatment in Fix Later" };
   // 7. Windows-1252 and UTF-16 text.
   state = await service.studioAdd([fx.customers1252(), fx.salesUtf16()].map(fx.toFile));
   const enc = Object.fromEntries(state.files.map(f => [f.name, `${f.settings.encoding}/${f.settings.delimiter}/${f.role}`]));
@@ -309,8 +310,8 @@ async function studio() {
   const audit = await rowsOf(service, "SELECT action, count(*)::VARCHAR AS n FROM audit_log GROUP BY action ORDER BY action");
   result.audit = Object.fromEntries(audit.map(a => [a.action, a.n]));
   await service.lock(); await service.unlock(secret);
-  // 13 + messy-checks - March + (April replaced) + 4 mixed - item master + 2 encoded = 18 sources.
-  assert((await service.status()).lines === "120" && (await service.sources()).length === 18, "Studio results did not survive encrypted reopen");
+  // 13 + messy-checks - March + (April replaced) + 5 mixed (including rejected agreement) - item master + 2 encoded = 19 sources.
+  assert((await service.status()).lines === "120" && (await service.sources()).length === 19, "Studio results did not survive encrypted reopen");
   await service.lock(); await reset(scope);
   return result;
 }
@@ -404,7 +405,7 @@ async function margin() {
   const service = new VaultService(() => undefined); await service.init(scope); await service.create(secret, "professional");
   const result: Record<string, unknown> = {};
   const out = await service.playgroundLoad(noop), manifest = out.manifest;
-  assert((await service.status()).schemaVersion === "13", "New vaults must be schema v13");
+  assert((await service.status()).schemaVersion === "14", "New vaults must be schema v14");
   // 1. The waterfall equals the imported lines recomputed one by one with the JS engine.
   const raw = await rowsOf(service, "SELECT invoice_id, customer_id, strftime(sale_date, '%Y-%m') AS m, list_cents::VARCHAR AS l, discount_cents::VARCHAR AS d, rebate_cents::VARCHAR AS r, freight_cents::VARCHAR AS f, cost_cents::VARCHAR AS c, line_kind AS k FROM sales_lines");
   let list = Z, discount = Z, rebate = Z, freight = Z, pocket = Z, costedPocket = Z, cost = Z, marginJs = Z;
@@ -747,7 +748,7 @@ async function phase5a() {
   let refusedNoOwner=false;try{await call(service,'create',{passphrase:secret,tier:'professional',ownerName:'  '});}catch(e){refusedNoOwner=(e as Error).message.includes('Pricing Owner');}
   assert(refusedNoOwner&&!(await service.status()).exists,'A vault was created without a named Pricing Owner');
   const created=await call(service,'create',{passphrase:secret,tier:'professional',ownerName:'Synthetic Pricing Owner'});
-  assert(created.schemaVersion==='13'&&created.access.role==='owner'&&created.access.ownerNamed&&created.access.caps.includes('approve'),'The creator is not the Owner and named Pricing Owner');
+  assert(created.schemaVersion==='14'&&created.access.role==='owner'&&created.access.ownerNamed&&created.access.caps.includes('approve'),'The creator is not the Owner and named Pricing Owner');
   assert((await call(service,'pricingState')).owner.name==='Synthetic Pricing Owner','Pricing Owner was not stored at setup');
   // Sample data never completes setup steps; it still feeds every view.
   await service.playgroundLoad(()=>undefined);
@@ -806,7 +807,7 @@ INSERT INTO sales_lines(source_id,line_id,product_id,customer_id,sale_date,quant
   assert(!('margin' in repHome)&&!('roi' in repHome)&&repPricing.rules.length===0&&repPricing.runs.length===0,'The Sales Rep home or pricing view carries cost-derived data');
   const seen=JSON.stringify([repStatus,repHome,repPricing,await call(service,'checklist'),await call(service,'roleList')]);
   assert(!seen.includes('8123457')&&!seen.includes('"cost":"'),'A cost value reached the Sales Rep view');
-  assert(repStatus.access.sections.join()==='Home,Pricing,Quotes','The Sales Rep sees more sections than Home, Pricing and Quotes');
+  assert(repStatus.access.sections.join()==='Home,Pricing,Quotes,Rebates & Contracts','The Sales Rep section allowlist differs (progress-only Rebates & Contracts is allowed)');
   await call(service,'rolePreview',{role:null});assert((await call(service,'status')).access.role==='owner','Leaving the preview did not restore the Owner view');
   // 7B: the 5A "reps may see cost" switch is gone. A vault that still stores it "on" gives a rep nothing (decision 16).
   await rowsOf(service,"DELETE FROM access_settings; INSERT INTO access_settings VALUES(1,true)");await call(service,'rolePreview',{role:'sales_rep'});
@@ -907,6 +908,32 @@ async function currencyFlow() {
   return {sourceFx:true,showMath:true,encryptedReload:true,changeBlocked:true,quotePrice:true,pdf:true};
  }finally{await service.lock().catch(()=>undefined);await reset(scope);}
 }
+
+async function rebatesFlow(){
+ const scope={userId:'rebates-'+crypto.randomUUID(),tenantId:'rebates-'+crypto.randomUUID()},service=new VaultService(()=>undefined);
+ await service.init(scope);await service.create(secret,'professional','Synthetic rebate owner');
+ const call=async(action:string,data:Record<string,unknown>={})=>dispatch(service,{id:'rebates',action,data} as any,{signal:()=>new AbortController().signal,progress:()=>undefined}) as Promise<any>;
+ try{
+  await call('currencySet',{currency:'CAD'});
+  const terms=(rate='2')=>'program_id,party,rate_percent,threshold_amount,period_start,period_end,calculation_mode,to_amount,eligible_skus,excluded_skus,party_type,rebate_treatment\nNORTH,C,'+rate+',0,2026-01-01,2026-03-31,retroactive,,,,customer,replace\n';
+  const sales='line_id,product_id,customer_id,sale_date,quantity,list_amount,discount_amount,freight_amount,rebate_amount,cost_amount,invoice_id\n1,P,C,2026-03-31,1,29500.00,0,0,350.00,10000.00,I\n';
+  await call('studioAdd',{files:[new File([terms()],'customer-rebate-agreement.csv'),new File([sales],'rebate-sales.csv')]});
+  let st=await call('studioState');assert(st.files.some((f:any)=>f.role==='rebate_agreement'&&f.loadable),'Agreement is not recognized/loadable');
+  st=await call('studioPlan');assert(st.report.rejected==='0'&&st.report.rebateTerms,'Complete customer terms rejected or confirmation missing');let unconfirmed=false;try{await call('studioCommit',{acknowledge:false});}catch{unconfirmed=true;}assert(unconfirmed,'Program activates without explicit term acknowledgement');await call('studioCommit',{acknowledge:true});
+  let value=await call('rebateState'),p=value.programs[0];assert(value.progress.currency==='CAD'&&value.progress.rows[0].earned==='59000','CAD NorthStar accrual differs');assert(value.reconciliation.booked==='35000'&&value.reconciliation.adjustment==='24000'&&value.reconciliation.recognized==='59000'&&value.reconciliation.valid,'Waterfall rebate does not reconcile');
+  assert((await call('marginWaterfall')).sales.rebate==='59000','Waterfall bypassed the shared accruals');const math=await call('marginMath',{metric:'rebate'});assert(math.rows[0].recordedRebate==='35000'&&math.rows[0].rebate==='59000'&&math.rowsAgree&&math.check.agrees,'Show the math lost imported/recognized amounts');
+  const proof=await call('rebateRows',{id:p.id});assert(proof.rows[0].row==='2'&&proof.rows[0].booked==='35000'&&proof.rows[0].accrued==='59000','Source-linked rebate evidence differs');
+  let blocked=false;try{await call('rebateDelete',{id:p.id});}catch(e){blocked=(e as {code:string}).code==='REBATE';}assert(blocked,'File terms can be deleted outside source tracking');
+  await call('rolePreview',{role:'sales_rep'});const rep=await call('rebateProgress');assert(rep.rows[0].earned==='59000'&&!/cost|margin/i.test(JSON.stringify(rep)),'Rep progress leaks costs');for(const action of ['rebateState','rebateRows','rebateSave','rebateDelete','rebateRecalculate']){blocked=false;try{await call(action,{id:p.id});}catch(e){blocked=(e as {code:string}).code==='FORBIDDEN';}assert(blocked,'Rep reached privileged rebate command');}await call('rolePreview',{role:null});
+  await service.lock();await call('unlock',{passphrase:secret});assert((await call('rebateState')).reconciliation.recognized==='59000','Encrypted reload lost accrued rebate view');
+  const manual={reference:'MANUAL',customer:'OTHER',from:'2026-01-01',to:'2026-12-31',mode:'incremental',treatment:'additional',eligible:'P',excluded:'',enabled:true,tiers:[{from:'1000',to:'2000',rate:'2'},{from:'2000',to:'',rate:'3'}]};
+  const saved=await call('rebateSave',{input:manual}),m=saved.programs.find((r:any)=>r.reference==='MANUAL');await call('rebateSave',{input:{...manual,id:m.id,enabled:false}});await call('rebateDelete',{id:m.id});assert((await call('verify')).valid,'Manual changes damaged audit chain');
+  await call('studioClear');await call('studioAdd',{files:[new File([terms('3')],'customer-rebate-agreement.csv')],replaces:p.source});await call('studioPlan');await call('studioCommit',{acknowledge:true});value=await call('rebateState');assert(value.programs.length===1&&value.progress.rows[0].earned==='88500','Agreement replace did not recalculate');
+  await call('sourceRemove',{id:value.programs[0].source});assert((await call('marginWaterfall')).sales.rebate==='35000'&&(await call('rebateState')).programs.length===0,'Source removal did not restore original invoice rebates');assert((await call('verify')).valid,'Source tracking damaged audit chain');
+  return {currency:'CAD',northStar590:true,adjustment240:true,sourceEvidence:true,importReplaceRemove:true,repSafe:true,encryptedReload:true,manualCrud:true,audit:true};
+ }finally{await service.lock();await reset(scope);}
+}
+
 self.onmessage = async event => {
   try {
     const { action } = event.data;
@@ -917,7 +944,7 @@ self.onmessage = async event => {
       assert(!opened, "Tampered engine asset was executed");
       self.postMessage({ result: { tamperedAssetRejected: true } }); return;
     }
-    const result = action === "monitor" ? await monitorFlow() : action === "currency" ? await currencyFlow() : action === "pricingTools" ? await pricingToolsFlow() : action === "pricingOps" ? await pricingOpsFlow() : action === "phase5aBenchmark" ? await phase5aBenchmark() : action === "phase5a" ? await phase5a() : action === "pricing" ? await pricingFlow() : action === "legacyStorage" ? await legacyStorage() : action === "pricingBenchmark" ? await pricingBenchmark() : action === "fixture" ? await fixture() : action === "v1" ? await testFixture(event.data.bytes) : action === "seed" ? await seed(event.data.rows) : action === "firstChange" ? await firstChange(event.data.rows) : action === "integrity" ? await integrity() : action === "studio" ? await studio() : action === "mapper" ? await mapper() : action === "playground" ? await playground() : action === "margin" ? await margin() : action === "marginBenchmark" ? await marginBenchmark(event.data.rows) : action === "studioBenchmark" ? await studioBenchmark(event.data.rows) : action === "warmup" ? await warmup() : action === "cipherOnly" ? await cipherOnly() : await storageStatus();
+    const result = action === "rebates" ? await rebatesFlow() : action === "monitor" ? await monitorFlow() : action === "currency" ? await currencyFlow() : action === "pricingTools" ? await pricingToolsFlow() : action === "pricingOps" ? await pricingOpsFlow() : action === "phase5aBenchmark" ? await phase5aBenchmark() : action === "phase5a" ? await phase5a() : action === "pricing" ? await pricingFlow() : action === "legacyStorage" ? await legacyStorage() : action === "pricingBenchmark" ? await pricingBenchmark() : action === "fixture" ? await fixture() : action === "v1" ? await testFixture(event.data.bytes) : action === "seed" ? await seed(event.data.rows) : action === "firstChange" ? await firstChange(event.data.rows) : action === "integrity" ? await integrity() : action === "studio" ? await studio() : action === "mapper" ? await mapper() : action === "playground" ? await playground() : action === "margin" ? await margin() : action === "marginBenchmark" ? await marginBenchmark(event.data.rows) : action === "studioBenchmark" ? await studioBenchmark(event.data.rows) : action === "warmup" ? await warmup() : action === "cipherOnly" ? await cipherOnly() : await storageStatus();
     self.postMessage({ result });
   } catch (e) { self.postMessage({ error: e instanceof Error ? e.message : "test worker failed" }); }
 };

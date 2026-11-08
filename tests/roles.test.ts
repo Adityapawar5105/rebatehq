@@ -38,13 +38,16 @@ test("every role has the capabilities the blueprint gives it; reps never get cos
   assert.ok(!has("admin", "collaborate"), "Admin/IT cannot receive decrypted business collaboration");
   assert.ok(!has("admin", "cost") && !has("admin", "pricing") && has("admin", "roles") && has("admin", "backup") && has("admin", "audit"));
   assert.ok(has("accountant", "cost") && has("accountant", "reconcile") && !has("accountant", "pricing") && !has("accountant", "data"));
+  for(const role of ['owner','pricing_owner','pricing_manager','accountant'] as RoleId[])assert.ok(has(role,'rebateManage'));
+  for(const role of ['sales_rep','sales_manager','admin'] as RoleId[])assert.ok(!has(role,'rebateManage'));
+  assert.ok(!has('admin','rebates'));
   for (const role of ["owner", "pricing_owner", "pricing_manager", "sales_manager", "sales_rep"] as RoleId[]) assert.ok(has(role, "quote"), `${role} uses Quote Desk`);
   assert.ok(!has("accountant", "quote") && !has("admin", "quote"));
   assert.ok(has("sales_manager", "quoteApprove") && has("owner", "quoteApprove") && has("pricing_owner", "quoteApprove") && !has("pricing_manager", "quoteApprove") && !has("sales_rep", "quoteApprove") && !has("sales_manager", "approve"));
-  assert.deepEqual(sectionsFor(capsFor("sales_rep", false)), ["Home", "Pricing", "Quotes"]);
+  assert.deepEqual(sectionsFor(capsFor("sales_rep", false)), ["Home", "Pricing", "Quotes", "Rebates & Contracts"]);
   assert.ok(!sectionsFor(capsFor("sales_rep", false)).includes("Margin"));
   assert.deepEqual(sectionsFor(capsFor("admin", false)), ["Home", "Pricing", "Reports", "Settings"]); // Reports holds the audit log for Admin / IT
-  assert.deepEqual(intersect(capsFor("owner", false), capsFor("sales_rep", false)), ["view", "guards", "collaborate", "quote"]);
+  assert.deepEqual(intersect(capsFor("owner", false), capsFor("sales_rep", false)), ["view", "guards", "collaborate", "quote", "rebates"]);
 });
 test("every command is classified, and the dispatcher handles exactly the classified commands", () => {
   const source = readFileSync(new URL("../lib/vault/dispatch.ts", import.meta.url), "utf8");
@@ -84,10 +87,10 @@ test("7B: a stored 5A 'reps may see cost' switch is ignored; a preview can only 
     assert.ok(!("repSeesCost" in rep), "the switch is no longer part of the access state");
     const s = serviceFor(c, "owner1"); assert.ok((await s.access()).caps.includes("cost"));
     s.viewAs = "sales_rep"; s.accessCache = null; const view = await s.access();
-    assert.equal(view.role, "sales_rep"); assert.equal(view.viewAs, "sales_rep"); assert.deepEqual(view.caps, ["view", "guards", "collaborate", "quote"]);
+    assert.equal(view.role, "sales_rep"); assert.equal(view.viewAs, "sales_rep"); assert.deepEqual(view.caps, ["view", "guards", "collaborate", "quote", "rebates"]);
     await assert.rejects(s.guard("cost"), /cannot do this/); await s.guard(ACTION_CAP.rolePreview); // leaving a preview is always allowed
     const rep2 = serviceFor(c, "rep"); rep2.viewAs = "owner"; rep2.accessCache = null; // a rep "previewing" Owner gains nothing
-    assert.deepEqual((await rep2.access()).caps, ["view", "guards", "collaborate", "quote"]);
+    assert.deepEqual((await rep2.access()).caps, ["view", "guards", "collaborate", "quote", "rebates"]);
   } finally { c.close(); }
 });
 test("an unassigned person is a Sales Rep; a vault with no roles at all belongs to whoever opens it", async () => {

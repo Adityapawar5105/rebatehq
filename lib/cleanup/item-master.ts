@@ -2,6 +2,7 @@
 // IDs, spells units one way and fills missing categories, and every fix keeps the cells it
 // changed in cleanup_changes so it can be undone. Fixes are computed here as SQL; the service
 // runs them in a transaction with an audit entry, then rebuilds the margin pre-aggregate.
+import { programs as rebatePrograms } from "../rebate/store";
 import type { Engine } from "../vault/engine";
 import { sqlText as Q } from "../spike/exact";
 import { VaultError } from "../vault/protocol";
@@ -102,6 +103,8 @@ UPDATE products SET category = ${Q(category)} WHERE ${where}; ${BUMP}` };
   const group = (await duplicateGroups(e, key)).groups[0];
   if (!group || group.members.length < 2) return bad(msg("itemfix.thatGroupNoLonger"));
   const canon = group.canonical, dups = group.members.map(m => m.product).filter(p => p !== canon), list = dups.map(Q).join(","), canonQ = Q(canon);
+  const involved = new Set(group.members.map(m=>m.product));
+  if((await rebatePrograms(e)).some(p=>[...p.eligible,...p.excluded].some(s=>involved.has(s))))return bad(msg('rebate.skuMergeBlocked'));
   const moved = Number((await rows(e, `SELECT count(*) AS n FROM sales_lines WHERE product_id IN (${list})`))[0].n);
   if (moved > MAX_MERGE_LINES) return bad(msg("itemfix.thisMergeWouldMove", { moved, maxmergelines: MAX_MERGE_LINES }));
   const vendor = Number((await rows(e, `SELECT count(*) AS n FROM vendor_costs WHERE product_id IN (${list})`))[0].n), price = Number((await rows(e, `SELECT count(*) AS n FROM price_matrix WHERE product_id IN (${list})`))[0].n);
