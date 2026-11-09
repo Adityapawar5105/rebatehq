@@ -44,6 +44,7 @@ export const fr: Catalog = {
   "supplier.claimed":"Montant réclamé enregistré",
   "supplier.preview":"Examiner le dossier",
   "supplier.reviewHeading":"Examen et export",
+  "supplier.download":"Télécharger le fichier {format} préparé",
   "supplier.exportCsv":"Préparer le CSV",
   "supplier.exportXlsx":"Préparer le XLSX",
   "supplier.exportHelp":"Fichier local, pas un envoi. Un résumé, paliers et justificatifs. Montants en texte exact ; retours en valeur absolue avec type explicite. Vérifiez le format fournisseur.",

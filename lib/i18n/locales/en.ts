@@ -2177,6 +2177,7 @@ const supplier={
   "supplier.claimed":"Recorded claimed amount",
   "supplier.preview":"Review claim",
   "supplier.reviewHeading":"Claim review and export",
+  "supplier.download":"Download prepared {format}",
   "supplier.exportCsv":"Prepare claim CSV",
   "supplier.exportXlsx":"Prepare claim XLSX",
   "supplier.exportHelp":"A local file, not a supplier submission. One claim summary, tier rows and receipt evidence. Amounts are exact text; returns use absolute magnitudes with an explicit kind. Check the supplier’s required layout before submitting.",

@@ -16,5 +16,5 @@ const server=spawn(process.execPath,['node_modules/next/dist/bin/next','start','
 let serverFailed=false;server.once('exit',()=>{serverFailed=true;});
 try{
  let ready=false;for(let i=0;i<60;i++){if(serverFailed)throw Error('Local harness server exited before becoming ready');try{if((await fetch(env.VAULT_TEST_URL+'/lab/vault')).ok){ready=true;break;}}catch{}await new Promise(r=>setTimeout(r,1000));}if(!ready)throw Error('Local lab server did not start.');
- for(const browser of (process.argv.find(v=>v.startsWith('--browser='))?[process.argv.find(v=>v.startsWith('--browser=')).split('=')[1]]:['chrome','msedge'])){if(!process.argv.includes('--relay-only'))await run(['scripts/test-vault-browser.mjs','--browser='+browser]);if(!process.argv.includes('--vault-only'))await run(['scripts/test-relay-browser.mjs','--browser='+browser]);}
+ for(const browser of (process.argv.find(v=>v.startsWith('--browser='))?[process.argv.find(v=>v.startsWith('--browser=')).split('=')[1]]:['chrome','msedge'])){if(!process.argv.includes('--relay-only'))await run(['scripts/test-vault-browser.mjs','--browser='+browser,...(process.argv.includes('--suppliers-ui-only')?['--suppliers-ui-only']:[])]);if(!process.argv.includes('--vault-only'))await run(['scripts/test-relay-browser.mjs','--browser='+browser]);}
 }finally{server.kill();}

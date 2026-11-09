@@ -44,6 +44,7 @@ export const es: Catalog = {
   "supplier.claimed":"Importe reclamado registrado",
   "supplier.preview":"Revisar reclamo",
   "supplier.reviewHeading":"Revisión y exportación",
+  "supplier.download":"Descargar {format} preparado",
   "supplier.exportCsv":"Preparar CSV del reclamo",
   "supplier.exportXlsx":"Preparar XLSX del reclamo",
   "supplier.exportHelp":"Archivo local, no envío. Un resumen, niveles y pruebas. Importes como texto exacto; devoluciones en magnitud absoluta y tipo explícito. Verifique el formato del proveedor.",
