@@ -1,4 +1,5 @@
 "use client";
+import {ReportsView} from './ReportsView';
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CurrencySettings } from './CurrencySettings';
 import { VaultClient } from "@/lib/vault/client";
@@ -70,7 +71,7 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
     const touch = () => { if (Date.now() - lastActivity > 5000) { lastActivity = Date.now(); void c.call("touch", {}).catch(() => undefined); } };
     const leaving = () => { void c.call("lock", {}).catch(() => undefined); };
     window.addEventListener("pointerdown", touch); window.addEventListener("keydown", touch); window.addEventListener("pagehide", leaving);
-    const hash = () => { const raw = location.hash.slice(1); const value=raw.startsWith('pricing-')?'pricing':raw.startsWith('margin-')?'margin':raw.startsWith('rebates-')?'rebates':raw.startsWith('vendors-')?'vendors':raw; const match = sections.find(s => sectionHash(s) === value); if (match) setSection(match); };
+    const hash = () => { const raw = location.hash.slice(1); const value=raw.startsWith('pricing-')?'pricing':raw.startsWith('margin-')?'margin':raw.startsWith('rebates-')?'rebates':raw.startsWith('vendors-')?'vendors':raw.startsWith('reports-')?'reports':raw; const match = sections.find(s => sectionHash(s) === value); if (match) setSection(match); };
     hash(); window.addEventListener("hashchange", hash);
     return () => { active = false; window.removeEventListener("pointerdown", touch); window.removeEventListener("keydown", touch); window.removeEventListener("pagehide", leaving); window.removeEventListener("hashchange", hash); c.close(); client.current = null; };
   }, [scope.userId, scope.tenantId]);
@@ -121,7 +122,7 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
         {error && <Notice tone="bad" role="alert">{t("common.warningMark", { text: say(error) })}</Notice>}
         {status?.preparing && <Notice tone="info" data-testid="preparing">{t("shell.preparing")}</Notice>}
         {status?.recovered && <Notice tone="warn">{t("shell.recovered")}</Notice>}
-        {progress && <div className={sh.progress}><label htmlFor="vault-progress">{say(progress.stage)}</label><progress id="vault-progress" value={Number(progress.done)} max={Math.max(1, Number(progress.total))}/>{!progress.stage.startsWith("Saving") && !progress.stage.startsWith("Saved") && <Button size="sm" onClick={() => void client.current!.call("cancel", {})}>{t(progress.stage.startsWith("Replaying") ? "sim.cancel" : "shell.cancelImport")}</Button>}</div>}
+        {progress && <div className={sh.progress}><label htmlFor="vault-progress">{say(progress.stage)}</label><progress id="vault-progress" value={Number(progress.done)} max={Math.max(1, Number(progress.total))}/>{!progress.stage.startsWith("Saving") && !progress.stage.startsWith("Saved") && <Button size="sm" onClick={() => void client.current!.call("cancel", {})}>{t(progress.stage.startsWith("Replaying") ? "sim.cancel" : progress.stage.startsWith("Checking") ? "cadence.cancel" : "shell.cancelImport")}</Button>}</div>}
         {!status ? <section className={ui.card} aria-busy="true">{t("shell.startingWorker")}</section> : !unlocked ? <div className={sh.auth}>
           <section className={`${ui.card} ${sh.authCard}`} aria-labelledby="auth-heading">
             <span className={sh.authIcon}><Icon name="lock" size={24}/></span>
@@ -176,7 +177,8 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
           {shown === "Quotes" && client.current && <QuotesView client={client.current} userId={scope.userId} caps={caps} tier={status.licence?.tier} busy={busy} operation={operation}/>}
           {shown === "Vendors" && client.current && <VendorsView client={client.current} tier={status.licence?.tier} version={`${status.lines}|${status.generation}`} canImport={caps.includes("data")} canSimulate={caps.includes("pricing")} operation={operation}/>}
           {shown === "Rebates & Contracts" && client.current && <RebatesView client={client.current} caps={caps} tier={status.licence?.tier} busy={busy} version={status.generation} operation={operation} refresh={async()=>setStatus(await client.current!.call("status",{}))}/>}
-          {shown === "Reports" && caps.includes("cost") && client.current && <Card headingId="report-card-heading" title={t("shell.report.heading")} description={t("shell.report.body")}><LeakReportButton client={client.current} busy={busy || status.lines === "0"} operation={operation} setMessage={setMessage} onStatus={setStatus}/></Card>}
+          {shown === "Reports" && client.current && <ReportsView client={client.current} caps={caps} tier={status.licence?.tier} busy={busy} version={`${status.lines}|${status.generation}`} operation={operation} refresh={async()=>setStatus(await client.current!.call("status",{}))}/>}
+            {shown === "Reports" && caps.includes("cost") && client.current && <Card headingId="report-card-heading" title={t("shell.report.heading")} description={t("shell.report.body")}><LeakReportButton client={client.current} busy={busy || status.lines === "0"} operation={operation} setMessage={setMessage} onStatus={setStatus}/></Card>}
           {shown === "Reports" && caps.includes("audit") && <Card headingId="audit-heading" title={t("shell.audit.heading")} description={t("shell.audit.body", { entries: Number(status.auditEntries), version: status.schemaVersion })}><Button variant="primary" icon="shield" disabled={busy} onClick={() => void operation(async () => { const result = await client.current!.call("verify", {}); if (!result.valid) throw new Error(msg("shell.audit.failed")); setMessage(msg("shell.audit.verified", { entries: Number(result.entries) })); })}>{t("shell.audit.button")}</Button><p className={styles.muted}>{t("shell.audit.note")}</p></Card>}
           {shown === "Settings" && <JumpNav label={t("shell.onThisPage")} jumpLabel={name => t("shell.jumpTo", { name })} items={[
             { id: "prefs-heading", label: t("shell.prefs.heading"), icon: "palette" }, ...(caps.includes("backup") ? [{ id: "backup-heading", label: t("backup.encryptedBackupAndRestore"), icon: "download" as const }] : []),

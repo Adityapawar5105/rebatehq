@@ -58,6 +58,7 @@ export const intersect = (a: Cap[], b: Cap[]) => a.filter(c => b.includes(c));
  * fail when a new command is added without a decision.
  */
 export const ACTION_CAP: Record<Action, Cap | null> = {
+  reportState:'cost',reportCheck:'cost',reportExport:'cost',roiV2:'cost',roiRows:'cost',roiRecord:'reconcile',roiVoid:'reconcile',scorecard:'quote',scorecardOptIn:'quote',
   vendorSheets:'cost',vendorReview:'cost',vendorReviewQuotes:'cost',vendorPpv:'cost',vendorPpvLines:'cost',
   // 7E-2: the historical simulator is a pricing simulation (every role with "pricing" also has "cost"); Scale only.
   simOptions:'pricing',simRun:'pricing',simRows:'pricing',
@@ -99,5 +100,5 @@ export const ACTION_CAP: Record<Action, Cap | null> = {
 /** Sections of the app a role can open (the worker still checks every command). */
 export function sectionsFor(caps: Cap[]): string[] {
   const has = (c: Cap) => caps.includes(c);
-  return ["Home", ...(has("data") ? ["Data Hub"] : []), ...(has("cost") ? ["Margin"] : []), ...(has("guards") ? ["Pricing"] : []), ...(has("quote") ? ["Quotes"] : []), ...(has("rebates") ? ["Rebates & Contracts"] : []), ...(has("cost") ? ["Vendors"] : []), ...(has("cost") || has("reconcile") || has("audit") ? ["Reports"] : []), ...(has("roles") || has("backup") || has("audit") ? ["Settings"] : [])];
+  return ["Home", ...(has("data") ? ["Data Hub"] : []), ...(has("cost") ? ["Margin"] : []), ...(has("guards") ? ["Pricing"] : []), ...(has("quote") ? ["Quotes"] : []), ...(has("rebates") ? ["Rebates & Contracts"] : []), ...(has("cost") ? ["Vendors"] : []), ...(has("cost") || has("reconcile") || has("audit") || has("quote") ? ["Reports"] : []), ...(has("roles") || has("backup") || has("audit") ? ["Settings"] : [])];
 }

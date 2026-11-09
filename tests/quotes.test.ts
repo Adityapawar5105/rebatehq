@@ -154,7 +154,7 @@ test("7B Quote Desk and Price Check need Professional", async () => {
 // Decision 16 (blueprint section 22, item 21). Every command a Sales Rep can reach is listed here and
 // either scanned (its real payload is checked for cost and margin keys and for the cost value) or
 // reviewed (it cannot carry cost). Adding a rep-reachable command fails this test until it is classified.
-const SCANNED = ["rebateProgress","status", "home", "checklist", "search", "roleList", "pricingState", "priceCheck", "quoteCreate", "quoteLines", "quoteSubmit", "quoteGet", "quoteList"] as const;
+const SCANNED = ["scorecard","scorecardOptIn","rebateProgress","status", "home", "checklist", "search", "roleList", "pricingState", "priceCheck", "quoteCreate", "quoteLines", "quoteSubmit", "quoteGet", "quoteList"] as const;
 const REVIEWED: Record<string, string> = {
   gridTotals: "7V-3a: totals of numbers the caller already holds; returns only sums, counts, minimum and maximum of them",
   init: "vault bootstrap state", create: "creates an empty vault", unlock: "returns status (scanned)", lock: "returns status", touch: "idle timer", cancel: "cancels a job", save: "returns status",
@@ -201,6 +201,7 @@ test("decision 16: no Sales Rep payload contains cost or margin", async (context
     const ownerHits = await call(serviceFor(c, 'po'), 'search', { text: 'SENTINEL-7Q' }) as { kind: string; note?: string }[];
     assert.deepEqual(ownerHits.map(h => h.kind).sort(), ['customer', 'product'], 'The Pricing Owner finds rows by their notes');
     for (const action of ['customerList', 'productList', 'noteSet', 'sourceRemovePreview'] as const) await assert.rejects(call(s, action, { kind: 'product', id: 'P1', text: 'x' } as never), code('FORBIDDEN'));
+    payloads.scorecard=await call(s,'scorecard',{});payloads.scorecardOptIn=await call(s,'scorecardOptIn',{optIn:true});
     payloads.roleList = await call(s, "roleList", {});
     payloads.checklist = await call(s, "checklist", {});
     payloads.home = await call(s, "home", {});

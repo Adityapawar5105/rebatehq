@@ -1,3 +1,7 @@
+import * as recovery from '../reports/roi';
+import * as cadence from '../reports/pack';
+import * as compliance from '../reports/scorecard';
+import {reportPdf} from '../reports/pdf';
 import * as suppliers from '../rebate/supplier';
 import {claimExport} from '../rebate/claim-export';
 import * as rebates from '../rebate/store';
@@ -372,6 +376,23 @@ export class VaultService {
   async simOptions(){this.scaleTier();const e=this.requireEngine();return {...await sim.simOptions(e),last:this.simCurrent()?.result??null};}
   async simRun(scenario:unknown,signal:AbortSignal,progress:Progress){this.scaleTier();const e=this.requireEngine();this.simLast=null;const result=await sim.simulate(e,scenario,signal,progress);this.simLast={engine:e,version:this.dataVersion,result};this.touch();return result;}
   async simRows(dim:unknown,offset=0,grid?:unknown){this.scaleTier();const l=this.simCurrent();if(!l)throw new VaultError('SIM',msg('sim.runFirst'));return sim.simRows(l.engine,dim,offset,grid);}
+
+  private packLast:{engine:Engine;version:number;data:cadence.Pack}|null=null;
+  private currentPack(){const p=this.packLast;return p&&p.engine===this.engine&&p.version===this.dataVersion?p.data:null;}
+  async reportState(){this.opsTier();return {...await cadence.state(this.requireEngine()),ready:this.currentPack()};}
+  async reportCheck(kind:cadence.PackKind,month:string|undefined,signal:AbortSignal,progress:Progress){
+    this.opsTier();const e=await this.writable(progress);this.packLast=null;
+    try{const {stamp,...data}=await cadence.check(e,kind,month,signal,progress);if(signal.aborted)throw cadence.cancelled();progress(msg('vault.savingEncryptedSnapshot'),'0','1');await this.write('report.checked',{id:data.id,kind},engine=>engine.conn.query(stamp).then(()=>undefined));this.packLast={engine:e,version:this.dataVersion,data};return data;}
+    catch(error){if(signal.aborted)throw cadence.cancelled();if(error instanceof VaultError)throw error;throw new VaultError('REPORT',msg('cadence.failed'));}finally{this.leakCache=null;}
+  }
+  async reportExport(id:string,locale?:string){this.opsTier();const p=this.currentPack();if(!p||p.id!==id)throw new VaultError('REPORT',msg('cadence.stale'));if(!isLocale(locale))throw new VaultError('REPORT',msg('cadence.invalid'));const bytes=reportPdf(p,locale);await this.write('report.cadence_pdf',{id:p.id,kind:p.kind,locale},async()=>undefined);this.packLast={engine:this.requireEngine(),version:this.dataVersion,data:p};return {name:'rebatehq-'+p.kind+'-'+p.window.from+'.pdf',blob:new Blob([bytes as Uint8Array<ArrayBuffer>],{type:'application/pdf'})};}
+  async roiV2(){return recovery.summary(this.requireEngine());}
+  async roiRows(kind:recovery.RoiKind,offset=0,grid?:unknown){return recovery.page(this.requireEngine(),kind,offset,grid);}
+  async roiRecord(input:recovery.RecoveryInput){await this.guard('cost');const p=await recovery.recordSql(this.requireEngine(),input,this.identity.userId);await this.write('roi.recovery_recorded',{id:p.id,ledger:input.ledger,run:input.run},e=>e.conn.query(p.sql).then(()=>undefined));return this.roiV2();}
+  async roiVoid(id:string){await this.guard('cost');const sql=await recovery.voidSql(this.requireEngine(),id,this.identity.userId);await this.write('roi.recovery_voided',{id},e=>e.conn.query(sql).then(()=>undefined));return this.roiV2();}
+  async scorecard(input:compliance.ScoreInput={}){this.quoteTier();return compliance.scorecard(this.requireEngine(),this.identity.userId,input);}
+  async scorecardOptIn(optIn:boolean){this.quoteTier();const sql=compliance.consentSql(this.identity.userId,optIn);await this.write('scorecard.consent',{actor:this.identity.userId},e=>e.conn.query(sql).then(()=>undefined));return {optIn};}
+
   async vendorSheets(){this.opsTier();return vendor.vendorSheets(this.requireEngine());}
   async vendorReview(sheet:unknown,window?:unknown,offset=0,grid?:unknown){this.opsTier();return vendor.vendorReview(this.requireEngine(),sheet,window,offset,grid);}
   async vendorReviewQuotes(sheet:unknown,offset=0,grid?:unknown){this.opsTier();return vendor.vendorReviewQuotes(this.requireEngine(),sheet,offset,grid);}
@@ -730,7 +751,7 @@ export class VaultService {
   }
   private async dispose() {
     if (this.timer) clearTimeout(this.timer); this.timer = null;
-    const engine = this.engine; this.engine = null; this.key = null; this.studio.clear(); this.leakCache = null; this.accessCache = null; this.viewAs = null;
+    const engine = this.engine; this.engine = null; this.key = null; this.packLast=null; this.studio.clear(); this.leakCache = null; this.accessCache = null; this.viewAs = null;
     if (engine) await closeMemory(engine).catch(() => undefined);
     this.releaseLease?.(); this.releaseLease = null; this.dirty = false;
   }

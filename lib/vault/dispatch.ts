@@ -13,6 +13,15 @@ export async function dispatch(service: VaultService, request: Request, hooks: H
   service.licenceGuard(request.action);
   const { progress } = hooks;
   switch (request.action) {
+    case "reportState":return service.reportState();
+    case "reportCheck":return service.reportCheck(request.data.kind,request.data.month,hooks.signal(),progress);
+    case "reportExport":return service.reportExport(request.data.id,request.data.locale);
+    case "roiV2":return service.roiV2();
+    case "roiRows":return service.roiRows(request.data.kind,request.data.offset,request.data.grid);
+    case "roiRecord":return service.roiRecord(request.data.input);
+    case "roiVoid":return service.roiVoid(request.data.id);
+    case "scorecard":return service.scorecard(request.data);
+    case "scorecardOptIn":return service.scorecardOptIn(request.data.optIn);
     case "vendorSheets":return service.vendorSheets();
     case "vendorReview":return service.vendorReview(request.data.sheet,request.data.window,request.data.offset,request.data.grid);
     case "vendorReviewQuotes":return service.vendorReviewQuotes(request.data.sheet,request.data.offset,request.data.grid);

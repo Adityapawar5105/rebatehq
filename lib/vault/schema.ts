@@ -1,5 +1,5 @@
 import { msg } from "../i18n/core";
-export const SCHEMA_VERSION = 16;
+export const SCHEMA_VERSION = 17;
 const V1_TABLES = ["vault_meta", "products", "customers", "price_matrix", "price_guardrails", "source_files", "import_batches", "sales_lines", "vendor_costs", "cost_basis_settings", "rules", "rule_runs", "price_versions", "roi_ledger", "audit_log", "import_issues", "converter_recipes"] as const;
 const V4_TABLES = [...V1_TABLES, "rejected_rows"] as const;
 const V5_TABLES = [...V4_TABLES, "agg_cpm", "agg_cm", "agg_p", "recon_issues"] as const;
@@ -10,9 +10,10 @@ const V10_TABLES = [...V9_TABLES, "source_kinds", "credit_profiles", "quotes", "
 const V11_TABLES = [...V10_TABLES, "price_changesets", "price_changeset_rows"] as const;
 const V12_TABLES = [...V11_TABLES, "competitor_prices", "price_grid_drafts", "price_export_receipts", "price_landed_checks", "sales_service_flags"] as const;
 const V15_TABLES = [...V12_TABLES,"rebate_programs","rebate_tiers","rebate_accruals"] as const;
-export const TABLES = [...V15_TABLES,"supplier_claims","purchases"] as const;
+const V16_TABLES = [...V15_TABLES,"supplier_claims","purchases"] as const;
+export const TABLES = [...V16_TABLES,"roi_recoveries","scorecard_consent","report_checks"] as const;
 /** Tables that exist at a schema version (in creation order, so copy-on-write inserts parents first). */
-export function tablesFor(version: number): readonly string[] { return version >= 16 ? TABLES : version >= 14 ? V15_TABLES : version >= 12 ? V12_TABLES : version >= 11 ? V11_TABLES : version >= 10 ? V10_TABLES : version >= 9 ? V9_TABLES : version >= 7 ? V7_TABLES : version >= 6 ? V6_TABLES : version >= 5 ? V5_TABLES : version >= 4 ? V4_TABLES : V1_TABLES; }
+export function tablesFor(version: number): readonly string[] { return version >= 17 ? TABLES : version >= 16 ? V16_TABLES : version >= 14 ? V15_TABLES : version >= 12 ? V12_TABLES : version >= 11 ? V11_TABLES : version >= 10 ? V10_TABLES : version >= 9 ? V9_TABLES : version >= 7 ? V7_TABLES : version >= 6 ? V6_TABLES : version >= 5 ? V5_TABLES : version >= 4 ? V4_TABLES : V1_TABLES; }
 // These are local DuckDB migrations, not Supabase migrations. V1 stays frozen
 // so the committed encrypted compatibility fixture exercises a real upgrade.
 export const V1_SQL = `
@@ -170,7 +171,11 @@ CREATE TABLE purchases(source_id VARCHAR NOT NULL,line_id BIGINT NOT NULL CHECK(
 CREATE INDEX purchase_supplier_period ON purchases(supplier,receipt_date);
 CREATE TABLE supplier_claims(id VARCHAR PRIMARY KEY,reference VARCHAR NOT NULL UNIQUE,supplier VARCHAR NOT NULL,program VARCHAR NOT NULL,claim_type VARCHAR NOT NULL CHECK(claim_type IN ('rebate','ship_and_debit')),period_start DATE NOT NULL,period_end DATE NOT NULL CHECK(period_end>=period_start),due_date DATE NOT NULL,mode VARCHAR NOT NULL CHECK(mode IN ('retroactive','incremental')),tiers_json VARCHAR NOT NULL,eligible_skus VARCHAR NOT NULL,excluded_skus VARCHAR NOT NULL,requested_cents BIGINT CHECK(requested_cents>=0),authorization_ref VARCHAR NOT NULL,status VARCHAR NOT NULL CHECK(status IN ('draft','prepared','submitted','approved','rejected','paid','cancelled')),amount_claimed BIGINT CHECK(amount_claimed>=0),snapshot_json VARCHAR,created_by VARCHAR NOT NULL,created_at VARCHAR NOT NULL,updated_at VARCHAR NOT NULL);
 CREATE INDEX supplier_claim_program_period ON supplier_claims(supplier,program,period_start,period_end);`;
-const STEPS = [V1_SQL, V2_SQL, V3_SQL, V4_SQL, V5_SQL, V6_SQL, V7_SQL, V8_SQL, V9_SQL, V10_SQL, V11_SQL, V12_SQL, V13_SQL,V14_SQL,V15_SQL,V16_SQL];
+export const V17_SQL = `CREATE TABLE roi_recoveries(id VARCHAR PRIMARY KEY,ledger_id VARCHAR NOT NULL,run_id VARCHAR NOT NULL,amount_cents BIGINT NOT NULL CHECK(amount_cents>0),evidence_ref VARCHAR NOT NULL UNIQUE CHECK(length(evidence_ref) BETWEEN 1 AND 100),period_start DATE NOT NULL,period_end DATE NOT NULL CHECK(period_end>=period_start),recorded_by VARCHAR NOT NULL,recorded_at VARCHAR NOT NULL,voided_by VARCHAR,voided_at VARCHAR);
+CREATE INDEX roi_recovery_ledger ON roi_recoveries(ledger_id);
+CREATE TABLE scorecard_consent(user_id VARCHAR PRIMARY KEY,opted_in BOOLEAN NOT NULL,updated_at VARCHAR NOT NULL);
+CREATE TABLE report_checks(kind VARCHAR PRIMARY KEY CHECK(kind IN ('monthly','weekly')),checked_at VARCHAR NOT NULL,period_start DATE NOT NULL,period_end DATE NOT NULL CHECK(period_end>=period_start),revision BIGINT NOT NULL CHECK(revision>=0));`;
+const STEPS = [V1_SQL, V2_SQL, V3_SQL, V4_SQL, V5_SQL, V6_SQL, V7_SQL, V8_SQL, V9_SQL, V10_SQL, V11_SQL, V12_SQL, V13_SQL,V14_SQL,V15_SQL,V16_SQL,V17_SQL];
 function checkVersion(version: number) {
   if (!Number.isInteger(version) || version < 1 || version > SCHEMA_VERSION) throw new Error(msg("vault.schema.unsupportedVaultSchemaVersion"));
 }

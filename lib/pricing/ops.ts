@@ -95,9 +95,10 @@ export async function increaseLetter(e:Engine,run:string,locale:Locale){
  const body=translate(locale,'ops.letterBody',{segment:m.segment_value,rate:decimal(locale,bpText(BigInt(String(m.increase_bp)))),date:new Intl.DateTimeFormat(locale==='pseudo'?'en-US':locale,{dateStyle:'long',timeZone:'UTC'}).format(new Date())});
  return {name:'rebatehq-price-increase.txt',blob:new Blob([body],{type:'text/plain;charset=utf-8'})};
 }
-export type ExceptionInput={customer?:string;product?:string;offset?:number;grid?:unknown};
+export type ExceptionInput={customer?:string;product?:string;from?:string;to?:string;offset?:number;grid?:unknown};
 export async function exceptions(e:Engine,input:ExceptionInput={}){
- const where=[input.customer?`AND l.customer_id=${Q(id(input.customer))}`:'',input.product?`AND l.product_id=${Q(id(input.product))}`:''].join(' '),offset=Math.max(0,Math.min(10000000,Math.floor(input.offset??0)));
+ try{if(input.from)validDate(input.from);if(input.to)validDate(input.to);if(input.from&&input.to&&input.from>=input.to)bad();}catch{bad();}
+ const where=[input.from?`AND l.sale_date>=DATE ${Q(input.from)}`:'',input.to?`AND l.sale_date<DATE ${Q(input.to)}`:'',input.customer?`AND l.customer_id=${Q(id(input.customer))}`:'',input.product?`AND l.product_id=${Q(id(input.product))}`:''].join(' '),offset=Math.max(0,Math.min(10000000,Math.floor(input.offset??0)));
  const inputSql=`SELECT row_number() OVER()::VARCHAR lookup_id,l.*,p.category,c.tier,c.branch,f.name AS source_file,g.floor,l.sale_date AS as_of FROM sales_lines l JOIN products p USING(product_id) JOIN customers c USING(customer_id) JOIN source_files f ON f.id=l.source_id
  LEFT JOIN price_guardrails g ON g.tier=c.tier AND g.category=p.category WHERE l.line_kind='sale' ${where}`;
  const cte=`WITH b AS(SELECT *,book_price AS contract,matrix_id AS contract_id,(list_cents-discount_cents) AS selling,CAST(quantity*10000 AS HUGEINT) AS qty FROM (${resolvedBook(inputSql,true)})),x AS(SELECT *,floor IS NOT NULL AND CAST(selling AS HUGEINT)*10000<CAST(floor AS HUGEINT)*qty AS below_floor,contract IS NOT NULL AND CAST(selling AS HUGEINT)*10000<CAST(contract AS HUGEINT)*qty AS below_contract,

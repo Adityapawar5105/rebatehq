@@ -61,7 +61,7 @@ async function testFixture(bytes: Uint8Array) {
   await closeMemory(probe);
   const service = new VaultService(() => undefined); await service.init(fixtureScope);
   const result = await service.unlock(secret);
-  assert(result.schemaVersion === "16" && result.lines === "1", "V1 snapshot did not upgrade with its row intact");
+  assert(result.schemaVersion === "17" && result.lines === "1", "V1 snapshot did not upgrade with its row intact");
   const agg = (await service.engine!.conn.query("SELECT count(*)::VARCHAR AS n, sum(list_cents)::VARCHAR AS l, max(line_kind) AS k FROM agg_cpm")).toArray()[0];
   assert(agg.n === "1" && agg.l === "1250" && agg.k === "sale", "V1 upgrade must build the margin pre-aggregate from existing lines");
   assert((await service.marginWaterfall()).margin === "375", "Upgraded v1 line waterfall wrong");
@@ -405,7 +405,7 @@ async function margin() {
   const service = new VaultService(() => undefined); await service.init(scope); await service.create(secret, "professional");
   const result: Record<string, unknown> = {};
   const out = await service.playgroundLoad(noop), manifest = out.manifest;
-  assert((await service.status()).schemaVersion === "16", "New vaults must be schema v16");
+  assert((await service.status()).schemaVersion === "17", "New vaults must be schema v17");
   // 1. The waterfall equals the imported lines recomputed one by one with the JS engine.
   const raw = await rowsOf(service, "SELECT invoice_id, customer_id, strftime(sale_date, '%Y-%m') AS m, list_cents::VARCHAR AS l, discount_cents::VARCHAR AS d, rebate_cents::VARCHAR AS r, freight_cents::VARCHAR AS f, cost_cents::VARCHAR AS c, line_kind AS k FROM sales_lines");
   let list = Z, discount = Z, rebate = Z, freight = Z, pocket = Z, costedPocket = Z, cost = Z, marginJs = Z;
@@ -752,7 +752,7 @@ async function phase5a() {
   let refusedNoOwner=false;try{await call(service,'create',{passphrase:secret,tier:'professional',ownerName:'  '});}catch(e){refusedNoOwner=(e as Error).message.includes('Pricing Owner');}
   assert(refusedNoOwner&&!(await service.status()).exists,'A vault was created without a named Pricing Owner');
   const created=await call(service,'create',{passphrase:secret,tier:'professional',ownerName:'Synthetic Pricing Owner'});
-  assert(created.schemaVersion==='16'&&created.access.role==='owner'&&created.access.ownerNamed&&created.access.caps.includes('approve'),'The creator is not the Owner and named Pricing Owner');
+  assert(created.schemaVersion==='17'&&created.access.role==='owner'&&created.access.ownerNamed&&created.access.caps.includes('approve'),'The creator is not the Owner and named Pricing Owner');
   assert((await call(service,'pricingState')).owner.name==='Synthetic Pricing Owner','Pricing Owner was not stored at setup');
   // Sample data never completes setup steps; it still feeds every view.
   await service.playgroundLoad(()=>undefined);
@@ -811,7 +811,7 @@ INSERT INTO sales_lines(source_id,line_id,product_id,customer_id,sale_date,quant
   assert(!('margin' in repHome)&&!('roi' in repHome)&&repPricing.rules.length===0&&repPricing.runs.length===0,'The Sales Rep home or pricing view carries cost-derived data');
   const seen=JSON.stringify([repStatus,repHome,repPricing,await call(service,'checklist'),await call(service,'roleList')]);
   assert(!seen.includes('8123457')&&!seen.includes('"cost":"'),'A cost value reached the Sales Rep view');
-  assert(repStatus.access.sections.join()==='Home,Pricing,Quotes,Rebates & Contracts','The Sales Rep section allowlist differs (progress-only Rebates & Contracts is allowed)');
+  assert(repStatus.access.sections.join()==='Home,Pricing,Quotes,Rebates & Contracts,Reports','The Sales Rep section allowlist differs (progress-only Rebates & Contracts is allowed)');
   await call(service,'rolePreview',{role:null});assert((await call(service,'status')).access.role==='owner','Leaving the preview did not restore the Owner view');
   // 7B: the 5A "reps may see cost" switch is gone. A vault that still stores it "on" gives a rep nothing (decision 16).
   await rowsOf(service,"DELETE FROM access_settings; INSERT INTO access_settings VALUES(1,true)");await call(service,'rolePreview',{role:'sales_rep'});
@@ -955,11 +955,29 @@ async function suppliersFlow(){
  p=await call('supplierClaimPreview',{id});assert(p.claim.status==='prepared'&&p.claim.claimed==='59000','Export did not freeze amount');const xlsx=await call('supplierClaimExport',{id,format:'xlsx',fingerprint:p.fingerprint});assert(xlsx.blob.size>1000,'XLSX export is empty');
  for(const status of ['submitted','approved','paid'])p=await call('supplierClaimStatus',{id,status});assert(p.claim.status==='paid','Claim status flow failed');
  await call('rolePreview',{role:'sales_rep'});for(const action of ['supplierClaims','supplierPurchases','supplierProgress','supplierClaimPreview','supplierClaimSave','supplierClaimStatus','supplierClaimExport']){let blocked=false;try{await call(action,{id});}catch(e){blocked=(e as {code:string}).code==='FORBIDDEN';}assert(blocked,'Rep reached a supplier command');}await call('rolePreview',{role:null});
- await service.lock();await call('unlock',{passphrase:secret});p=await call('supplierClaimPreview',{id});assert(p.claim.status==='paid'&&p.claim.claimed==='59000'&&(await call('status')).schemaVersion==='16','Encrypted v16 snapshot lost claim');
+ await service.lock();await call('unlock',{passphrase:secret});p=await call('supplierClaimPreview',{id});assert(p.claim.status==='paid'&&p.claim.claimed==='59000'&&(await call('status')).schemaVersion==='17','Encrypted v16 snapshot lost claim');
  const source=(await call('sources')).find((s:any)=>s.role==='purchases');assert(source,'Purchase source kind missing');await call('studioClear');await call('studioAdd',{files:[new File([csv.replace('30000.00','31000.00')],'po-receipts.csv')],replaces:source.id});await call('studioPlan');await call('studioCommit',{acknowledge:true});p=await call('supplierClaimPreview',{id});assert(p.claim.claimed==='59000'&&p.live.earned==='61000','Replacement rewrote frozen claim or failed to update live attainment');let blocked=false;try{await call('supplierClaimExport',{id,format:'csv',fingerprint:p.fingerprint});}catch{blocked=true;}assert(blocked,'Changed evidence silently re-exported');
  await call('sourceRemove',{id:(await call('sources')).find((s:any)=>s.role==='purchases').id});assert((await call('supplierPurchases')).grid.total==='0','Purchase removal left rows');assert((await call('verify')).valid,'Supplier changes damaged audit');
  const audit=JSON.stringify((await service.engine!.conn.query('SELECT details FROM audit_log')).toArray());assert(!audit.includes('SUPPLIER-NORTH')&&!audit.includes('PRIVATE-SUPPLIER-NOTE'),'Supplier audit carries business terms');
  return {currency:'CAD',spend29500:true,earned590:true,returnsCredits:true,workerGrid:true,exactExports:true,noNotes:true,statusFlow:true,repDenied:true,encryptedV16:true,replacementFrozen:true,sourceRemoval:true,audit:true};
+ }finally{await service.lock();await reset(scope);}
+}
+
+
+async function reportsFlow(){
+ const scope={userId:'reports-'+crypto.randomUUID(),tenantId:'reports-'+crypto.randomUUID()},service=new VaultService(()=>undefined);await service.init(scope);await service.create(secret,'professional','Synthetic reporting owner');
+ const call=async(action:string,data:Record<string,unknown>={})=>dispatch(service,{id:'reports',action,data} as any,{signal:()=>new AbortController().signal,progress:()=>undefined}) as Promise<any>;
+ try{await call('currencySet',{currency:'CAD'});const csv='line_id,product_id,customer_id,sale_date,quantity,list_amount,discount_amount,freight_amount,rebate_amount,cost_amount,invoice_id\n1,P,C,2026-11-01,1,100.00,10.00,20.00,0,80.00,NOV\n2,P,C,2026-10-01,1,100.00,0,0,0,70.00,OCT\n3,P,C,2026-07-01,1,100.00,0,0,0,10.00,JUL\n';const items='product_id,description,category,uom,current_cost,list_price\nP,Valve,Valves,EA,80.00,120.00\n',customers='customer_id,name,tier\nC,Synthetic,T\n';
+ await call('studioAdd',{files:[new File([csv],'reports-sales.csv'),new File([items],'reports-items.csv'),new File([customers],'reports-customers.csv')]});await call('studioPlan');await call('studioCommit',{acknowledge:true});await call('guardSet',{input:{tier:'T',category:'Valves',start:'12000',target:'10000',floor:'8000'}});await call('noteSet',{kind:'product',id:'P',text:'NEVER-EXPORT-REPORT-NOTE'});
+ const run=await call('pricePlan',{input:{segment:'category',value:'Valves',increase:'10'}});await call('ruleApprove',{id:run.id});await call('priceExport',{id:run.id,profile:'generic',format:'csv'});await call('leaks');const finding=(await call('roiRows',{kind:'findings'})).rows[0];assert(finding,'Real ROI findings absent');assert((await call('roiV2')).recoveredCents==='0','An export became recovery');
+ await call('roiRecord',{input:{ledger:finding.id,run:run.id,amount:'1.25',reference:'PRIVATE-RECOVERY-REF',from:'2026-11-01',to:'2026-11-09',confirmed:true}});assert((await call('roiV2')).recoveredCents==='125','Recovery is not exact cents');
+ let p=await call('reportCheck',{kind:'monthly',month:'2026-11'});assert(p.currency==='CAD'&&p.bridge.delta==='-4000'&&p.roi.recoveredCents==='125','Monthly pack lost currency or shared-engine numbers');
+ for(const locale of ['en','es','fr']){const file=await call('reportExport',{id:p.id,locale}),text=await file.blob.text();assert(text.startsWith('%PDF-1.4')&&text.includes('CAD')&&!text.includes('NEVER-EXPORT-REPORT-NOTE'),'Localized PDF invalid or contains notes');}
+ p=await call('reportCheck',{kind:'weekly'});assert(p.health&&p.health.thresholdBp==='500','Weekly digest omitted existing health checks');await call('reportExport',{id:p.id,locale:'fr'});
+ let quote=await call('quoteCreate',{customerId:'C'});quote=await call('quoteLines',{id:quote.id,lines:[{productId:'P',quantity:'1',unitCents:'11000'}]});await call('quoteSubmit',{id:quote.id,reason:null});
+ await call('rolePreview',{role:'sales_rep'});let sc=await call('scorecard',{from:'2026-11-01',to:'2026-12-31'});assert(sc.view==='team'&&sc.total.protectedPoints==='2'&&!/cost|margin|8000/.test(JSON.stringify(sc)),'Scorecard leaks or points differ');await call('scorecardOptIn',{optIn:true});sc=await call('scorecard',{view:'mine',from:'2026-11-01',to:'2026-12-31'});assert(sc.optIn&&sc.total.protectedPoints==='2','Self opt-in failed');for(const action of ['reportState','reportCheck','reportExport','roiV2','roiRows','roiRecord','roiVoid']){let denied=false;try{await call(action,{});}catch(e){denied=(e as any).code==='FORBIDDEN';}assert(denied,'Rep received reporting money');}await call('rolePreview',{role:null});
+ const r=(await call('roiRows',{kind:'recoveries'})).rows[0];await call('roiVoid',{id:r.id});assert((await call('roiV2')).recoveredCents==='0','Void lost exact reconciliation');await service.lock();await call('unlock',{passphrase:secret});const state=await call('reportState');assert(state.checks.length===2&&state.ready===null,'Last-check persistence or cache clearing failed');assert((await call('scorecard')).optIn,'Consent did not survive encrypted reload');assert((await call('verify')).valid,'Report/recovery/consent writes damaged audit');const audit=JSON.stringify((await service.engine!.conn.query('SELECT details FROM audit_log')).toArray());assert(!audit.includes('PRIVATE-RECOVERY-REF')&&!audit.includes('NEVER-EXPORT-REPORT-NOTE'),'Reporting audit contains private text');
+ return {schema:'17',currency:'CAD',monthlySharedMath:true,weeklyHealth:true,localizedPdfs:true,noNotes:true,exactRecoveryVoid:true,noExportAsRecovery:true,teamDefault:true,selfOptIn:true,repSafe:true,encryptedReload:true,audit:true};
  }finally{await service.lock();await reset(scope);}
 }
 
@@ -973,7 +991,7 @@ self.onmessage = async event => {
       assert(!opened, "Tampered engine asset was executed");
       self.postMessage({ result: { tamperedAssetRejected: true } }); return;
     }
-    const result = action === "suppliers" ? await suppliersFlow() : action === "rebates" ? await rebatesFlow() : action === "monitor" ? await monitorFlow() : action === "currency" ? await currencyFlow() : action === "pricingTools" ? await pricingToolsFlow() : action === "pricingOps" ? await pricingOpsFlow() : action === "phase5aBenchmark" ? await phase5aBenchmark() : action === "phase5a" ? await phase5a() : action === "pricing" ? await pricingFlow() : action === "legacyStorage" ? await legacyStorage() : action === "pricingBenchmark" ? await pricingBenchmark() : action === "fixture" ? await fixture() : action === "v1" ? await testFixture(event.data.bytes) : action === "seed" ? await seed(event.data.rows) : action === "firstChange" ? await firstChange(event.data.rows) : action === "integrity" ? await integrity() : action === "studio" ? await studio() : action === "mapper" ? await mapper() : action === "playground" ? await playground() : action === "margin" ? await margin() : action === "marginBenchmark" ? await marginBenchmark(event.data.rows) : action === "studioBenchmark" ? await studioBenchmark(event.data.rows) : action === "warmup" ? await warmup() : action === "cipherOnly" ? await cipherOnly() : await storageStatus();
+    const result = action === "reports" ? await reportsFlow() : action === "suppliers" ? await suppliersFlow() : action === "rebates" ? await rebatesFlow() : action === "monitor" ? await monitorFlow() : action === "currency" ? await currencyFlow() : action === "pricingTools" ? await pricingToolsFlow() : action === "pricingOps" ? await pricingOpsFlow() : action === "phase5aBenchmark" ? await phase5aBenchmark() : action === "phase5a" ? await phase5a() : action === "pricing" ? await pricingFlow() : action === "legacyStorage" ? await legacyStorage() : action === "pricingBenchmark" ? await pricingBenchmark() : action === "fixture" ? await fixture() : action === "v1" ? await testFixture(event.data.bytes) : action === "seed" ? await seed(event.data.rows) : action === "firstChange" ? await firstChange(event.data.rows) : action === "integrity" ? await integrity() : action === "studio" ? await studio() : action === "mapper" ? await mapper() : action === "playground" ? await playground() : action === "margin" ? await margin() : action === "marginBenchmark" ? await marginBenchmark(event.data.rows) : action === "studioBenchmark" ? await studioBenchmark(event.data.rows) : action === "warmup" ? await warmup() : action === "cipherOnly" ? await cipherOnly() : await storageStatus();
     self.postMessage({ result });
   } catch (e) { self.postMessage({ error: e instanceof Error ? e.message : "test worker failed" }); }
 };

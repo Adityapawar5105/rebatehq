@@ -44,14 +44,14 @@ test("every role has the capabilities the blueprint gives it; reps never get cos
   for (const role of ["owner", "pricing_owner", "pricing_manager", "sales_manager", "sales_rep"] as RoleId[]) assert.ok(has(role, "quote"), `${role} uses Quote Desk`);
   assert.ok(!has("accountant", "quote") && !has("admin", "quote"));
   assert.ok(has("sales_manager", "quoteApprove") && has("owner", "quoteApprove") && has("pricing_owner", "quoteApprove") && !has("pricing_manager", "quoteApprove") && !has("sales_rep", "quoteApprove") && !has("sales_manager", "approve"));
-  assert.deepEqual(sectionsFor(capsFor("sales_rep", false)), ["Home", "Pricing", "Quotes", "Rebates & Contracts"]);
+  assert.deepEqual(sectionsFor(capsFor("sales_rep", false)), ["Home", "Pricing", "Quotes", "Rebates & Contracts", "Reports"]);
   assert.ok(!sectionsFor(capsFor("sales_rep", false)).includes("Margin"));
   assert.deepEqual(sectionsFor(capsFor("admin", false)), ["Home", "Pricing", "Reports", "Settings"]); // Reports holds the audit log for Admin / IT
   assert.deepEqual(intersect(capsFor("owner", false), capsFor("sales_rep", false)), ["view", "guards", "collaborate", "quote", "rebates"]);
 });
 test("every command is classified, and the dispatcher handles exactly the classified commands", () => {
   const source = readFileSync(new URL("../lib/vault/dispatch.ts", import.meta.url), "utf8");
-  const handled = [...source.matchAll(/case "([A-Za-z]+)":/g)].map(m => m[1]).sort();
+  const handled = [...source.matchAll(/case "([A-Za-z][A-Za-z0-9]*)":/g)].map(m => m[1]).sort();
   assert.deepEqual(handled, Object.keys(ACTION_CAP).filter(a => a !== "cancel").sort()); // `cancel` is answered by the worker itself
   const protocol = readFileSync(new URL("../lib/vault/protocol.ts", import.meta.url), "utf8");
   for (const action of Object.keys(ACTION_CAP)) assert.ok(new RegExp(`\\b${action}:`).test(protocol), `${action} is in the protocol`);

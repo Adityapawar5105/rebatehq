@@ -226,6 +226,47 @@ async function simUi(){
  results.checks.simUi={currency:'CAD',marginChange:true,scenarioMargin:true,breakdownTotals:true,keptAcrossTabs:true,phone375:true,nonPricingHidden:true,privacyMarkers:true};
  }catch(error){console.error('Simulator UI diagnostics:',JSON.stringify(await diagnose()));throw error;}finally{await context.close();context=savedContext;page=savedPage;dataPlaneActive=active;}
 }
+async function reportsUi(){
+ const savedContext=context,savedPage=page,active=dataPlaneActive;
+ context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-reports-')),browserOptions);await configureContext();page=await openPage();
+ try{
+ dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic review owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
+ await page.locator('nav a[href="#settings"]').click();await page.locator('section[aria-labelledby="currency-heading"] select').selectOption('CAD');await page.getByRole('button',{name:'Save currency',exact:true}).click();await page.getByText('Current currency: CAD',{exact:true}).waitFor();
+ const sku=marker+'-REVIEW-P',customer=marker+'-REVIEW-C';
+ await page.locator('nav a[href="#data-hub"]').click();await importFiles([
+ {name:'review-items.csv',mimeType:'text/csv',buffer:Buffer.from('product_id,description,category,uom,current_cost,list_price\n'+sku+',Synthetic valve,Valves,EA,80.00,120.00\n')},
+ {name:'review-customers.csv',mimeType:'text/csv',buffer:Buffer.from('customer_id,name,tier\n'+customer+',Synthetic,T\n')},
+ {name:'review-sales.csv',mimeType:'text/csv',buffer:Buffer.from('line_id,product_id,customer_id,sale_date,quantity,list_amount,discount_amount,freight_amount,rebate_amount,cost_amount,invoice_id\n1,'+sku+','+customer+',2026-11-01,1,100.00,10.00,20.00,0,80.00,NOV\n2,'+sku+','+customer+',2026-10-01,1,100.00,0,0,0,70.00,OCT\n3,'+sku+','+customer+',2026-07-01,1,100.00,0,0,0,10.00,JUL1\n4,'+sku+','+customer+',2026-07-02,1,100.00,0,0,0,10.00,JUL2\n')}],'4');
+ await page.locator('nav a[href="#reports"]').click();await page.getByTestId('cadence-month').fill('2026-11');await page.getByTestId('cadence-check').click();await page.getByTestId('cadence-prepare').waitFor({timeout:60000});
+ const pack=page.getByTestId('cadence-pack');assert.ok((await pack.innerText()).includes('CA$20.00'),'Review leak lost CAD or deduplicated value');assert.ok((await pack.innerText()).includes('CA$40.00'),'Review bridge lost CAD');await page.getByTestId('cadence-last-checked').filter({hasText:'Last checked:'}).waitFor();
+ const pdfText=async()=>{await page.getByTestId('cadence-prepare').click();await page.getByTestId('cadence-download').waitFor();const event=page.waitForEvent('download');await page.getByTestId('cadence-download').click();const bytes=await readFile(await(await event).path());assert.ok(bytes.subarray(0,8).toString().startsWith('%PDF-1.4'));return bytes.toString('latin1').replace(/\\([0-7]{3})/g,(_,oct)=>String.fromCharCode(parseInt(oct,8)));};
+ for(const [locale,title]of [['en','Monthly Pricing Review Pack'],['es','Paquete mensual de revisión de precios'],['fr','Dossier mensuel de revue des prix']]){await page.getByTestId('language').first().selectOption(locale);const text=await pdfText();assert.ok(text.includes(title),'PDF language differs from the user language');assert.ok(text.includes('CAD'),'PDF omitted the workspace currency');}
+ await page.getByTestId('language').first().selectOption('en');await page.getByTestId('cadence-kind').selectOption('weekly');await page.getByTestId('cadence-check').click();await page.getByTestId('cadence-prepare').waitFor();assert.ok((await pack.innerText()).includes('Customers flagged'));const weekly=await pdfText();assert.ok(weekly.includes('Weekly digest')&&weekly.includes('app is open'),'Weekly digest omitted its honest execution limit');
+ await page.locator('nav a[href="#pricing"]').click();for(const [label,value]of Object.entries({'Customer tier':'T','Product category':'Valves','Start price (cents)':'12000','Target price (cents)':'10000','Floor price (cents)':'8000'}))await page.getByLabel(label,{exact:true}).fill(value);await page.getByRole('button',{name:'Save guardrails',exact:true}).click();await page.getByRole('status').filter({hasText:'Guardrails saved.'}).waitFor();
+ await page.locator('nav a[href="#quotes"]').click();await page.getByRole('button',{name:'Quote',exact:true}).click();await page.getByTestId('quote-customer').fill(customer);await page.getByTestId('quote-customer').press('Enter');await page.getByTestId('add-sku').fill(sku);await page.getByTestId('add-sku').press('Enter');await page.getByTestId('quote-total').filter({hasText:'CA$120.00'}).waitFor();await page.getByRole('button',{name:'Submit quote',exact:true}).click();
+ await page.locator('nav a[href="#reports"]').click();await page.getByRole('link',{name:'Team compliance',exact:true}).click();await page.getByTestId('scorecard-from').fill('2026-11-01');await page.getByTestId('scorecard-to').fill('2026-12-31');await page.getByTestId('scorecard').getByRole('button',{name:'Check now',exact:true}).click();await page.getByTestId('scorecard-points').filter({hasText:/^2$/}).waitFor();const grid=page.getByTestId('scorecard-grid');await grid.getByTestId('grid-select-all').check();const total=grid.getByTestId('grid-total-protectedPoints');await total.waitFor();assert.equal(await total.getAttribute('data-sum'),'2');
+ await page.locator('nav a[href="#settings"]').click();await page.getByLabel('Preview as').selectOption('sales_rep');await page.getByTestId('preview-banner').waitFor();await page.locator('nav a[href="#reports"]').click();await page.getByTestId('scorecard').waitFor();assert.equal(await page.getByRole('link',{name:'Review packs',exact:true}).count(),0);assert.equal(await page.getByRole('link',{name:'Recovery tracker',exact:true}).count(),0);assert.equal(await page.getByTestId('scorecard-view').inputValue(),'team');
+ await page.getByTestId('scorecard-consent').check();await page.getByTestId('scorecard-view').locator('option[value=mine]').waitFor({state:'attached'});await page.getByTestId('scorecard-view').selectOption('mine');await page.getByTestId('scorecard-points').filter({hasText:/^2$/}).waitFor();await page.getByTestId('scorecard-consent').uncheck();await until(async()=>await page.getByTestId('scorecard-view').inputValue()==='team','Opt-out did not return to team aggregate');
+ await page.getByTestId('preview-banner').getByRole('button',{name:'Return to my own view'}).click();await page.getByTestId('preview-banner').waitFor({state:'detached'});await page.locator('nav a[href="#reports"]').click();
+ for(const theme of ['light','dark','contrast']){await page.evaluate(v=>document.documentElement.dataset.theme=v,theme);await page.setViewportSize({width:375,height:812});for(const hash of ['review','roi','scorecard']){await page.evaluate(v=>location.hash='#reports-'+v,hash);await page.getByTestId(hash==='review'?'cadence-pack':hash==='roi'?'roi-v2':'scorecard').waitFor();assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Reports overflow phone');}await page.screenshot({path:'test-results/reports-'+channel+'-'+theme+'.png',fullPage:true});}
+ await page.setViewportSize({width:1280,height:800});await page.evaluate(()=>localStorage.setItem('rebatehq.locale','pseudo'));await page.reload();await page.locator('form input[type="password"]').fill(secret);await page.locator('form:has(input[type="password"]) button').click();await page.getByTestId('line-count').waitFor();for(const hash of ['review','roi','scorecard']){await page.evaluate(v=>location.hash='#reports-'+v,hash);await page.getByText(/⟦/).first().waitFor();}await page.getByTestId('language').first().selectOption('en');await page.evaluate(()=>location.hash='#reports-review');await page.getByTestId('cadence-last-checked').filter({hasText:'Last checked:'}).waitFor();assert.equal(await page.getByTestId('cadence-prepare').count(),0,'Reload retained a stale report');
+ results.checks.reportsUi={currency:'CAD',monthly:true,weeklyHealth:true,pdfLanguages:['en','es','fr'],retainedDownload:true,scorecardPoints:true,workerGridTotals:true,teamDefault:true,selfOptIn:true,repPrivateTabsHidden:true,phoneThemes:true,pseudoLocale:true,lastCheckedSurvivesReload:true,privacyMarkers:true};
+ }catch(error){console.error('Reports UI diagnostics:',JSON.stringify(await diagnose()));throw error;}finally{await context.close();context=savedContext;page=savedPage;dataPlaneActive=active;}
+}
+async function recoveryUi(){
+ // A real (non-sample) finding of its own: one line whose freight (30.00) exceeds 10% of list (100.00), recorded by the leak finder on the
+ // Margin page. Sales line IDs are unique across the vault, so the line uses an ID the main data does not.
+ // The main page sits idle while the fresh-vault checks run in their own contexts, so it may have locked.
+ if(await page.getByRole('button',{name:'Unlock vault',exact:true}).count())await unlock();
+ const sku=marker+'-ROI-P',customer=marker+'-ROI-C',before=BigInt(await page.getByTestId('line-count').getAttribute('data-value'));
+ await page.locator('nav a[href="#data-hub"]').click();await review([{name:'roi-items.csv',mimeType:'text/csv',buffer:Buffer.from('product_id,description,category,uom,current_cost,list_price\n'+sku+',Synthetic ROI item,ROI,EA,10.00,100.00\n')},{name:'roi-customers.csv',mimeType:'text/csv',buffer:Buffer.from('customer_id,name,tier\n'+customer+',Synthetic,ROI\n')},{name:'roi-sales.csv',mimeType:'text/csv',buffer:Buffer.from('line_id,product_id,customer_id,sale_date,quantity,list_amount,discount_amount,freight_amount,rebate_amount,cost_amount,invoice_id\n987654321,'+sku+','+customer+',2026-11-02,1,100.00,0,30.00,0,10.00,ROI1\n')}]);
+ if(await page.getByTestId('studio-ack').count())await page.getByTestId('studio-ack').check();
+ await page.getByRole('button',{name:'Confirm and import locally'}).click();await page.locator('[data-testid="line-count"][data-value="'+(before+BigInt(1))+'"]').waitFor({timeout:120000});
+ await page.locator('nav a[href="#margin"]').click();await page.getByTestId('leak-total').waitFor({timeout:60000});
+ await page.locator('nav a[href="#reports"]').click();await page.getByRole('link',{name:'Recovery tracker',exact:true}).click();await page.getByTestId('roi-recovered').filter({hasText:'$0.00'}).waitFor();await page.getByTestId('roi-grid').getByRole('button',{name:'Choose for recovery',exact:true}).first().click();
+ await page.getByRole('link',{name:'Rule runs',exact:true}).click();await page.getByTestId('roi-grid').locator('tbody tr').filter({hasText:'exported'}).first().getByRole('button',{name:'Choose for recovery',exact:true}).click();await page.getByTestId('roi-amount').fill('125.25');await page.getByTestId('roi-reference').fill(marker+'-RECOVERY');await page.getByTestId('roi-confirm').check();await page.getByTestId('roi-form').getByRole('button',{name:'Record recovery',exact:true}).click();await page.getByTestId('roi-recovered').filter({hasText:'$125.25'}).waitFor();
+ await page.getByRole('link',{name:'Recovery records',exact:true}).click();await page.getByTestId('roi-grid').locator('tbody tr').filter({hasText:marker+'-RECOVERY'}).getByRole('button',{name:'Void recovery',exact:true}).click();await page.getByTestId('roi-recovered').filter({hasText:'$0.00'}).waitFor();results.checks.roiUi={currency:'USD',attested12525:true,linkedToFindingAndExport:true,voidRestoresZero:true,markerSensors:true};
+}
 async function suppliersUi(){
  const savedContext=context,savedPage=page,active=dataPlaneActive;
  context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-suppliers-')),browserOptions);await configureContext();page=await openPage();
@@ -276,7 +317,7 @@ async function monitorUi(){
 await build({ entryPoints: ["tests/helpers/studio-fixtures.ts"], outfile: "test-results/studio-fixtures.mjs", bundle: true, platform: "node", format: "esm" });
 const fixtures = await import(new URL("../test-results/studio-fixtures.mjs", import.meta.url).href);
 try {
- if(process.argv.includes('--sim-ui-only')){await simUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Simulator UI focused gate passed ('+channel+').');}else if(process.argv.includes('--vendors-ui-only')){await vendorsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Vendor UI focused gate passed ('+channel+').');}else if(process.argv.includes('--suppliers-ui-only')){await suppliersUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Supplier UI focused gate passed ('+channel+').');}else{
+ if(process.argv.includes('--reports-ui-only')){await reportsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Reports UI focused gate passed ('+channel+').');}else if(process.argv.includes('--sim-ui-only')){await simUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Simulator UI focused gate passed ('+channel+').');}else if(process.argv.includes('--vendors-ui-only')){await vendorsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Vendor UI focused gate passed ('+channel+').');}else if(process.argv.includes('--suppliers-ui-only')){await suppliersUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Supplier UI focused gate passed ('+channel+').');}else{
   if (auth) {
     assert.notEqual(process.env.LEGACY_BUSINESS_ENABLED,'true','Privacy gate must run with legacy business routes OFF');
     await signInLocal(context,page,base);
@@ -327,6 +368,7 @@ try {
   results.checks.monitor = await worker("monitor");
   results.checks.rebates = await worker("rebates",{},180000);
   results.checks.suppliers = await worker("suppliers",{},180000);
+  results.checks.reports = await worker("reports",{},180000);
   results.checks.warmup = await worker("warmup");
   results.checks.mapper = await worker("mapper");
   results.checks.playground = await worker("playground");
@@ -513,6 +555,7 @@ try {
   await page.getByRole('link',{name:'Settings',exact:true}).click();const encrypted=page.waitForEvent('download');await page.getByRole('button',{name:'Download encrypted backup',exact:true}).click();const enc=await encrypted;assert.ok((await readFile(await enc.path())).subarray(0,8).toString()==='MDVAULT1','Backup export is not encrypted');
   if(!auth){await page.getByRole('button',{name:'Use licensed capacity',exact:true}).click();await page.getByRole('status').filter({hasText:'Licensed capacity applied'}).waitFor();results.checks.licensedCapacityUpgrade=true;}
   results.checks.pricingUi={owner:true,guardrails:true,rule:true,simulation:true,preview:true,approval:true,erpExportAndLog:true,folderHandleSeam:true,encryptedBackup:true};
+
 
   // 7C-1: every operation stays under the same real authenticated privacy sensors.
   const opsShot=async name=>{if(!auth)await page.screenshot({path:`test-results/7c-${channel}-${name}.png`,fullPage:true});};
@@ -721,7 +764,8 @@ try {
   }
   await monitorUi();
   await rebatesUi();
-  await suppliersUi(); await vendorsUi(); await simUi();
+  await suppliersUi(); await vendorsUi(); await simUi(); await reportsUi();
+  await recoveryUi();
   if(auth){
     const device=await page.evaluate(()=>{const key=Object.keys(localStorage).find(k=>k.startsWith('rebatehq-device-v1:'));return localStorage.getItem(key);});assert.ok(device);
     const revoked=await context.request.post(base+'/api/licence/devices',{data:{id:device,status:'revoked'}});assert.equal(revoked.status(),200);

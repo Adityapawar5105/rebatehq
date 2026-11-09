@@ -49,6 +49,15 @@ export type CleanupUndone = { summary: string; restored: string; skipped: string
 export type StorageStatus = { persistent: boolean; usage: string; quota: string; namedOpfsBytes: string; files: string };
 export type ImportEstimate = { bytes: string; estimatedMemoryBytes: string; maxLines: string; maxProducts: string; warning: string };
 export type Commands = {
+  reportState:{};
+  reportCheck:{kind:import('../reports/pack').PackKind;month?:string};
+  reportExport:{id:string;locale?:string};
+  roiV2:{};
+  roiRows:{kind:import('../reports/roi').RoiKind;offset?:number;grid?:GridQuery};
+  roiRecord:{input:import('../reports/roi').RecoveryInput};
+  roiVoid:{id:string};
+  scorecard:import('../reports/scorecard').ScoreInput;
+  scorecardOptIn:{optIn:boolean};
   vendorSheets:Record<string,never>;
   vendorReview:{sheet:string;window?:number;offset?:number;grid?:GridQuery};
   vendorReviewQuotes:{sheet:string;offset?:number;grid?:GridQuery};
@@ -179,6 +188,15 @@ export type Commands = {
 export type LeaksView = { result: LeakResult; roi: RoiSummary; sample: boolean; recorded: number };
 export type CommitResult = { loaded: string; rejected: string; files: string; cleanup: boolean };
 export type Results = {
+  reportState:Awaited<ReturnType<VaultService["reportState"]>>;
+  reportCheck:Awaited<ReturnType<VaultService["reportCheck"]>>;
+  reportExport:Awaited<ReturnType<VaultService["reportExport"]>>;
+  roiV2:Awaited<ReturnType<VaultService["roiV2"]>>;
+  roiRows:Awaited<ReturnType<VaultService["roiRows"]>>;
+  roiRecord:Awaited<ReturnType<VaultService["roiRecord"]>>;
+  roiVoid:Awaited<ReturnType<VaultService["roiVoid"]>>;
+  scorecard:Awaited<ReturnType<VaultService["scorecard"]>>;
+  scorecardOptIn:Awaited<ReturnType<VaultService["scorecardOptIn"]>>;
   vendorSheets:Awaited<ReturnType<VaultService["vendorSheets"]>>;
   vendorReview:Awaited<ReturnType<VaultService["vendorReview"]>>;
   vendorReviewQuotes:Awaited<ReturnType<VaultService["vendorReviewQuotes"]>>;
