@@ -1,6 +1,6 @@
 # Chunk 7E — verification
 
-Blueprint Phase 2 (section 6) and the execution plan's 7E bullet (section 9). Part 1 is vendor price review and purchase price variance; part 2 (the Scale-only historical simulator) has not started.
+Blueprint Phase 2 (section 6) and the execution plan's 7E bullet (section 9). Part 1 is vendor price review and purchase price variance; part 2 is the Scale-only historical scenario simulator. Both parts are CI-verified; 7E is complete.
 
 ## Part 1 — vendor price review and purchase price variance
 
@@ -41,11 +41,11 @@ The browser gate adds `vendorsUi` (fresh vault in CAD, under the request and con
 
 ### CI proof (part 1)
 
-**7E-1 is CI-verified** in [CI #126](https://github.com/Adityapawar5105/rebatehq/actions/runs/42616397012) on `2cee899`, 9 November 2026: 301 unit tests (78 JS + 223 TS), **55 authenticated Chromium vault checks** (including `vendorsUi`), **53 Firefox lab checks**, **12 real-authenticated local-Supabase relay checks**, and the fresh 152-check pgTAP suite twice. Local vault v16 / 47 tables (unchanged); 11 locked migrations, zero pending; no restore drill needed (no Supabase change). Every job step passed, including both required browser gates; their result lists include `vendorsUi`. Part 2 (the Scale-only historical simulator) has not started.
+**7E-1 is CI-verified** in [CI #126](https://github.com/Adityapawar5105/rebatehq/actions/runs/42616397012) on `2cee899`, 9 November 2026: 301 unit tests (78 JS + 223 TS), **55 authenticated Chromium vault checks** (including `vendorsUi`), **53 Firefox lab checks**, **12 real-authenticated local-Supabase relay checks**, and the fresh 152-check pgTAP suite twice. Local vault v16 / 47 tables (unchanged); 11 locked migrations, zero pending; no restore drill needed (no Supabase change). Every job step passed, including both required browser gates; their result lists include `vendorsUi`. Part 2 followed in CI #128.
 
 ## Part 2 — historical scenario simulator (Scale only)
 
-**Status: built by Claude Code, 9 November 2026; CI result: pending.** Local vault schema unchanged (v16, 47 tables). No Supabase migration, no locked-hash change, no dependency change. Blueprint unchanged.
+**7E-2 is CI-verified** in [CI #128](https://github.com/Adityapawar5105/rebatehq/actions/runs/42640305379) on `b24f6c8`, 9 November 2026: 306 unit tests (78 JS + 228 TS), **56 authenticated Chromium vault checks** (including `simUi`), **54 Firefox lab checks**, **12 real-authenticated local-Supabase relay checks**, and the fresh 152-check pgTAP suite twice. Local vault v16 / 47 tables (unchanged); 11 locked migrations, zero pending; no restore drill needed (no Supabase change). Built by Claude Code. Local vault schema unchanged. No Supabase migration, no locked-hash change, no dependency change. Blueprint unchanged.
 
 ### What was built
 
@@ -87,3 +87,7 @@ The browser gate adds `simUi` (fresh CAD vault, under the request and console ma
 - Cancelling a long replay in the browser by hand; cancel is proved in the unit test and uses the same worker cancel as imports.
 - Pilot review of the method (no volume response, discount and rebate moving with list).
 - Headed screen-reader use; native-language review of the new labels.
+
+### CI proof (part 2)
+
+**7E-2 is CI-verified** in [CI #128](https://github.com/Adityapawar5105/rebatehq/actions/runs/42640305379) on `b24f6c8`, 9 November 2026: 306 unit tests (78 JS + 228 TS), **56 authenticated Chromium vault checks** (including `simUi`), **54 Firefox lab checks**, **12 real-authenticated local-Supabase relay checks**, and the fresh 152-check pgTAP suite twice. Local vault v16 / 47 tables (unchanged); 11 locked migrations, zero pending; no restore drill needed (no Supabase change). Every job step passed, including both required browser gates; their result lists include `simUi` and `vendorsUi`. 7E is complete. Next chunk: 7F, only on explicit instruction.

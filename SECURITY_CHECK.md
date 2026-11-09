@@ -1,5 +1,9 @@
 # RebateHQ security verification
 
+## Chunk 7E-2 — historical scenario simulator (CI-verified)
+
+Verified in [CI #128](https://github.com/Adityapawar5105/rebatehq/actions/runs/42640305379) on `b24f6c8`, 9 November 2026 (56 authenticated Chromium, 54 Firefox, 12 relay checks; 306 unit tests). The replay runs locally in the vault worker into a temporary table; the browser gate runs it under the request and console marker sensors. The three new commands are read-only, need `pricing` (every such role also holds `cost`) and the Scale licence (worker check; Starter and Professional refused in unit tests); Sales Reps, Sales Managers and Accountants are refused, and the tab is hidden from them. Scenario values are validated and quoted as SQL text; months, changes and lines are capped before any work. No export, relay, audit or server path was added. Details: [CHUNK_7E_VERIFICATION.md](./CHUNK_7E_VERIFICATION.md).
+
 ## Chunk 7E-1 — vendor review and purchase variance (CI-verified)
 
 Verified in [CI #126](https://github.com/Adityapawar5105/rebatehq/actions/runs/42616397012) on `2cee899`, 9 November 2026 (55 authenticated Chromium, 53 Firefox, 12 relay checks; 301 unit tests). All figures are computed locally in the vault worker; the browser gate runs the Vendors flow under the request and console marker sensors. The five new commands are read-only, need `cost` and the Professional or Scale tier (worker check); the Vendors section is hidden from Sales Reps (unit and browser checks). Worker grids accept only their own code-defined columns, and sheet, product and date inputs are validated and quoted. No export, relay or server path was added. Details: [CHUNK_7E_VERIFICATION.md](./CHUNK_7E_VERIFICATION.md).
