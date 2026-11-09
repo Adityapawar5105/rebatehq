@@ -1,5 +1,5 @@
 import { msg } from "../i18n/core";
-export const SCHEMA_VERSION = 15;
+export const SCHEMA_VERSION = 16;
 const V1_TABLES = ["vault_meta", "products", "customers", "price_matrix", "price_guardrails", "source_files", "import_batches", "sales_lines", "vendor_costs", "cost_basis_settings", "rules", "rule_runs", "price_versions", "roi_ledger", "audit_log", "import_issues", "converter_recipes"] as const;
 const V4_TABLES = [...V1_TABLES, "rejected_rows"] as const;
 const V5_TABLES = [...V4_TABLES, "agg_cpm", "agg_cm", "agg_p", "recon_issues"] as const;
@@ -9,9 +9,10 @@ const V9_TABLES = [...V7_TABLES, "relay_state"] as const;
 const V10_TABLES = [...V9_TABLES, "source_kinds", "credit_profiles", "quotes", "quote_lines"] as const;
 const V11_TABLES = [...V10_TABLES, "price_changesets", "price_changeset_rows"] as const;
 const V12_TABLES = [...V11_TABLES, "competitor_prices", "price_grid_drafts", "price_export_receipts", "price_landed_checks", "sales_service_flags"] as const;
-export const TABLES = [...V12_TABLES,"rebate_programs","rebate_tiers","rebate_accruals"] as const;
+const V15_TABLES = [...V12_TABLES,"rebate_programs","rebate_tiers","rebate_accruals"] as const;
+export const TABLES = [...V15_TABLES,"supplier_claims","purchases"] as const;
 /** Tables that exist at a schema version (in creation order, so copy-on-write inserts parents first). */
-export function tablesFor(version: number): readonly string[] { return version >= 14 ? TABLES : version >= 12 ? V12_TABLES : version >= 11 ? V11_TABLES : version >= 10 ? V10_TABLES : version >= 9 ? V9_TABLES : version >= 7 ? V7_TABLES : version >= 6 ? V6_TABLES : version >= 5 ? V5_TABLES : version >= 4 ? V4_TABLES : V1_TABLES; }
+export function tablesFor(version: number): readonly string[] { return version >= 16 ? TABLES : version >= 14 ? V15_TABLES : version >= 12 ? V12_TABLES : version >= 11 ? V11_TABLES : version >= 10 ? V10_TABLES : version >= 9 ? V9_TABLES : version >= 7 ? V7_TABLES : version >= 6 ? V6_TABLES : version >= 5 ? V5_TABLES : version >= 4 ? V4_TABLES : V1_TABLES; }
 // These are local DuckDB migrations, not Supabase migrations. V1 stays frozen
 // so the committed encrypted compatibility fixture exercises a real upgrade.
 export const V1_SQL = `
@@ -161,7 +162,15 @@ FROM sales_lines s LEFT JOIN rebate_accruals a ON a.source_id=s.source_id AND a.
 // The 1,000-character limit (Unicode code points) is enforced in the worker, where it is measured.
 export const V15_SQL = `ALTER TABLE products ADD COLUMN notes VARCHAR;
 ALTER TABLE customers ADD COLUMN notes VARCHAR;`;
-const STEPS = [V1_SQL, V2_SQL, V3_SQL, V4_SQL, V5_SQL, V6_SQL, V7_SQL, V8_SQL, V9_SQL, V10_SQL, V11_SQL, V12_SQL, V13_SQL,V14_SQL,V15_SQL];
+export const V16_SQL = `CREATE TEMP TABLE md_v15_kinds AS SELECT * FROM source_kinds;
+DROP TABLE source_kinds;
+CREATE TABLE source_kinds(source_id VARCHAR PRIMARY KEY,kind VARCHAR NOT NULL CHECK(kind IN ('ar_aging','rebate_agreement','purchases')));
+INSERT INTO source_kinds SELECT * FROM md_v15_kinds; DROP TABLE md_v15_kinds;
+CREATE TABLE purchases(source_id VARCHAR NOT NULL,line_id BIGINT NOT NULL CHECK(line_id>0),receipt_ref VARCHAR NOT NULL,supplier VARCHAR NOT NULL,product_id VARCHAR NOT NULL,receipt_date DATE NOT NULL,quantity DECIMAL(18,4) NOT NULL,amount_cents BIGINT NOT NULL,entry_kind VARCHAR NOT NULL CHECK(entry_kind IN ('receipt','return','credit_memo')),uom VARCHAR NOT NULL,source_row BIGINT NOT NULL CHECK(source_row>0),PRIMARY KEY(source_id,line_id),CHECK((entry_kind='receipt' AND quantity>0 AND amount_cents>=0) OR (entry_kind='return' AND quantity<0 AND amount_cents<=0) OR (entry_kind='credit_memo' AND quantity<=0 AND amount_cents<=0)));
+CREATE INDEX purchase_supplier_period ON purchases(supplier,receipt_date);
+CREATE TABLE supplier_claims(id VARCHAR PRIMARY KEY,reference VARCHAR NOT NULL UNIQUE,supplier VARCHAR NOT NULL,program VARCHAR NOT NULL,claim_type VARCHAR NOT NULL CHECK(claim_type IN ('rebate','ship_and_debit')),period_start DATE NOT NULL,period_end DATE NOT NULL CHECK(period_end>=period_start),due_date DATE NOT NULL,mode VARCHAR NOT NULL CHECK(mode IN ('retroactive','incremental')),tiers_json VARCHAR NOT NULL,eligible_skus VARCHAR NOT NULL,excluded_skus VARCHAR NOT NULL,requested_cents BIGINT CHECK(requested_cents>=0),authorization_ref VARCHAR NOT NULL,status VARCHAR NOT NULL CHECK(status IN ('draft','prepared','submitted','approved','rejected','paid','cancelled')),amount_claimed BIGINT CHECK(amount_claimed>=0),snapshot_json VARCHAR,created_by VARCHAR NOT NULL,created_at VARCHAR NOT NULL,updated_at VARCHAR NOT NULL);
+CREATE INDEX supplier_claim_program_period ON supplier_claims(supplier,program,period_start,period_end);`;
+const STEPS = [V1_SQL, V2_SQL, V3_SQL, V4_SQL, V5_SQL, V6_SQL, V7_SQL, V8_SQL, V9_SQL, V10_SQL, V11_SQL, V12_SQL, V13_SQL,V14_SQL,V15_SQL,V16_SQL];
 function checkVersion(version: number) {
   if (!Number.isInteger(version) || version < 1 || version > SCHEMA_VERSION) throw new Error(msg("vault.schema.unsupportedVaultSchemaVersion"));
 }

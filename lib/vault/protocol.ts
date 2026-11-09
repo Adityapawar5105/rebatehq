@@ -53,6 +53,13 @@ export type Commands = {
   noteSet:{kind:"customer"|"product";id:string;text:string};
   sourceRemovePreview:{id:string};
   gridTotals:{types:GridType[];values:(string|null)[][]};
+  supplierClaims:{offset?:number;grid?:GridQuery};
+  supplierPurchases:{offset?:number;grid?:GridQuery;claimId?:string};
+  supplierProgress:{offset?:number;grid?:GridQuery};
+  supplierClaimPreview:{id:string};
+  supplierClaimSave:{input:import('../rebate/supplier').ClaimInput};
+  supplierClaimStatus:{id:string;status:import('../rebate/supplier').ClaimStatus};
+  supplierClaimExport:{id:string;format:'csv'|'xlsx';fingerprint:string};
   rebateProgress:{offset?:number;grid?:GridQuery};
   rebateState:Record<string,never>;
   rebateRows:{id:string;offset?:number;grid?:GridQuery};
@@ -168,6 +175,13 @@ export type Results = {
   noteSet:Awaited<ReturnType<VaultService["noteSet"]>>;
   sourceRemovePreview:Awaited<ReturnType<VaultService["sourceRemovePreview"]>>;
   gridTotals:Totals[];
+  supplierClaims:Awaited<ReturnType<VaultService['supplierClaims']>>;
+  supplierPurchases:Awaited<ReturnType<VaultService['supplierPurchases']>>;
+  supplierProgress:Awaited<ReturnType<VaultService['supplierProgress']>>;
+  supplierClaimPreview:Awaited<ReturnType<VaultService['supplierClaimPreview']>>;
+  supplierClaimSave:Awaited<ReturnType<VaultService['supplierClaimSave']>>;
+  supplierClaimStatus:Awaited<ReturnType<VaultService['supplierClaimStatus']>>;
+  supplierClaimExport:Awaited<ReturnType<VaultService['supplierClaimExport']>>;
   rebateProgress:Awaited<ReturnType<VaultService['rebateProgress']>>;
   rebateState:Awaited<ReturnType<VaultService['rebateState']>>;
   rebateRows:Awaited<ReturnType<VaultService['rebateRows']>>;

@@ -1,3 +1,4 @@
+import {hasSupplier} from '../rebate/input';
 // Freeform row notes (chunk 7V-3b, blueprint v2.5 items 26-27): a plain-text note of at most 1,000 characters
 // on each customer and product. Notes stay in the encrypted local vault: they are never relayed, never sent to
 // the server, never in ERP exports and never shown to a role without the `data` capability (Sales Reps).
@@ -57,11 +58,11 @@ FROM products p LEFT JOIN (SELECT product_id, count(*) AS lines FROM sales_lines
 /** How many notes removing this source file would delete with the customer and product rows that removal drops
  * (rows owned by no other file and used by no other file's invoice lines). Mirrors lib/studio/load.ts. */
 export async function removalNotes(e: Engine, sourceId: string) {
-  const s = Q(sourceId);
+  const s = Q(sourceId),purchases=await hasSupplier(e);
   const r = (await rows(e, `SELECT
  (SELECT count(*) FROM products p WHERE coalesce(p.notes,'')<>'' AND (p.source_id IS NULL OR p.source_id=${s})
-   AND p.product_id IN (SELECT product_id FROM sales_lines WHERE source_id=${s} UNION SELECT product_id FROM products WHERE source_id=${s})
-   AND p.product_id NOT IN (SELECT product_id FROM sales_lines WHERE source_id<>${s}))::VARCHAR AS products,
+   AND p.product_id IN (SELECT product_id FROM sales_lines WHERE source_id=${s} UNION SELECT product_id FROM products WHERE source_id=${s} ${purchases?`UNION SELECT product_id FROM purchases WHERE source_id=${s}`:''})
+   AND p.product_id NOT IN (SELECT product_id FROM sales_lines WHERE source_id<>${s}) ${purchases?`AND p.product_id NOT IN(SELECT product_id FROM purchases WHERE source_id<>${s})`:''})::VARCHAR AS products,
  (SELECT count(*) FROM customers c WHERE coalesce(c.notes,'')<>'' AND (c.source_id IS NULL OR c.source_id=${s})
    AND c.customer_id IN (SELECT customer_id FROM sales_lines WHERE source_id=${s} UNION SELECT customer_id FROM customers WHERE source_id=${s} UNION SELECT customer_id FROM credit_profiles WHERE source_id=${s})
    AND c.customer_id NOT IN (SELECT customer_id FROM sales_lines WHERE source_id<>${s}))::VARCHAR AS customers`))[0];

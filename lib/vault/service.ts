@@ -1,3 +1,5 @@
+import * as suppliers from '../rebate/supplier';
+import {claimExport} from '../rebate/claim-export';
 import * as rebates from '../rebate/store';
 import {salesInput} from '../rebate/input';
 import { currencyChangeSql, workspaceCurrency } from './currency';
@@ -206,8 +208,8 @@ export class VaultService {
   async studioClear() { this.requireEngine(); this.studio.clear(); return this.studioState(); }
   private rebateTier(){if(this.licence.tier==='starter')throw new VaultError('LICENCE',msg('rebate.proRequired'));}
   private async rebateImportGuard(source?:string){
-    const agreement=source?(await this.requireEngine().conn.query(`SELECT coalesce(k.kind,s.role) AS role FROM source_files s LEFT JOIN source_kinds k ON k.source_id=s.id WHERE s.id=${sqlText(source)}`)).toArray()[0]?.role==='rebate_agreement':(await this.studioState()).files.some(f=>f.role==='rebate_agreement');
-    if(agreement){this.rebateTier();await this.guard('rebateManage');}
+    const roles=source?[(await this.requireEngine().conn.query(`SELECT coalesce(k.kind,s.role) AS role FROM source_files s LEFT JOIN source_kinds k ON k.source_id=s.id WHERE s.id=${sqlText(source)}`)).toArray()[0]?.role]:(await this.studioState()).files.map(f=>f.role);
+    if(roles.some(role=>role==='rebate_agreement'||role==='purchases')){this.rebateTier();await this.guard('rebateManage');}
   }
   async studioPlan(signal: AbortSignal, progress: Progress) { await this.rebateImportGuard();await this.studio.plan(this.requireEngine(), this.tier, signal, progress); return this.studioState(); }
   async studioCommit(acknowledge: boolean, progress: Progress) {
@@ -302,6 +304,13 @@ export class VaultService {
     await engine.conn.query('UPDATE vault_meta SET pricing_revision=pricing_revision+1 WHERE id=1');
     const d=await findDifferences(engine);await engine.conn.query(await recordSql(d.found,new Date().toISOString()));
   }
+  async supplierClaims(offset=0,grid?:unknown){this.rebateTier();return suppliers.claims(this.requireEngine(),offset,grid);}
+  async supplierPurchases(offset=0,grid?:unknown,claimId?:string){this.rebateTier();return suppliers.purchases(this.requireEngine(),offset,grid,claimId);}
+  async supplierProgress(offset=0,grid?:unknown){this.rebateTier();return suppliers.progress(this.requireEngine(),offset,grid);}
+  async supplierClaimPreview(id:string){this.rebateTier();return suppliers.preview(this.requireEngine(),id);}
+  async supplierClaimSave(input:suppliers.ClaimInput){this.rebateTier();const p=await suppliers.saveSql(this.requireEngine(),input,this.identity.userId);await this.write('supplier.claim_saved',{id:p.id,actor:this.identity.userId},e=>e.conn.query(p.sql).then(()=>undefined));return suppliers.preview(this.requireEngine(),p.id);}
+  async supplierClaimStatus(id:string,status:suppliers.ClaimStatus){this.rebateTier();const sql=await suppliers.statusSql(this.requireEngine(),id,status);await this.write('supplier.claim_status',{id,status,actor:this.identity.userId},e=>e.conn.query(sql).then(()=>undefined));return suppliers.preview(this.requireEngine(),id);}
+  async supplierClaimExport(id:string,format:'csv'|'xlsx',fingerprint:string){this.rebateTier();if(!['csv','xlsx'].includes(format))suppliers.bad();const p=await suppliers.exportPlan(this.requireEngine(),id,fingerprint),file=claimExport(p,format);await this.write('supplier.claim_exported',{id,format,actor:this.identity.userId},async e=>{if(p.sql)await e.conn.query(p.sql);});return file;}
   async rebateProgress(offset=0,grid?:unknown){this.rebateTier();return rebates.progress(this.requireEngine(),offset,grid);}
   async rebateState(){this.rebateTier();return rebates.state(this.requireEngine());}
   async rebateRows(id:string,offset=0,grid?:unknown){this.rebateTier();return rebates.evidence(this.requireEngine(),id,offset,grid);}

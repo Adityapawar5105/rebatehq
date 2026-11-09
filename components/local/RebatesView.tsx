@@ -6,9 +6,10 @@ import type {ProgramInput,Program} from '@/lib/rebate/store';
 import type {Cap} from '@/lib/roles/access';
 import {centsText} from '@/lib/margin/decimal';
 import {fmt,t} from '@/lib/i18n';
-import {Button,ButtonLink,Card,DataTable,Dialog,EmptyState,Field,Grid,Notice,Skeleton} from '@/components/ui/ui';
+import {Button,ButtonLink,Card,DataTable,Dialog,EmptyState,Field,Grid,Notice,Skeleton,SectionTabs} from '@/components/ui/ui';
 import {DataGrid} from '@/components/ui/DataGrid';
 import type {GridQuery} from '@/lib/grid/core';
+import {SupplierClaimsView} from './SupplierClaimsView';
 const modeKey={retroactive:'rebate.retroactive',incremental:'rebate.incremental'} as const;
 const treatmentKey={additional:'rebate.additional',replace:'rebate.replace'} as const;
 const fresh=():ProgramInput=>({reference:'',customer:'',mode:'retroactive',treatment:'additional',from:new Date().getUTCFullYear()+'-01-01',to:new Date().getUTCFullYear()+'-12-31',eligible:'',excluded:'',enabled:true,tiers:[{from:'0',to:'',rate:'2'}]});
@@ -16,7 +17,7 @@ export function RebateReconciliation({value}:{value:NonNullable<Results['marginW
  if(value.programs==='0')return null;
  return <Notice tone={value.valid?'info':'warn'} role={value.valid?undefined:'alert'}><p>{t('rebate.waterfallReconciliation',{booked:fmt.currency(value.booked),adjustment:fmt.currency(value.adjustment),recognized:fmt.currency(value.recognized)})}</p><p>{t('rebate.reconciliationHelp')}</p>{!value.valid&&<p>{t('rebate.reconciliationFailed')}</p>}</Notice>;
 }
-export function RebatesView({client,caps,tier,busy,version,operation,refresh}:{client:VaultClient;caps:Cap[];tier?:Tier;busy:boolean;version:string;operation:(f:()=>Promise<void>)=>Promise<void>;refresh:()=>Promise<void>}){
+function CustomerRebatesView({client,caps,tier,busy,version,operation,refresh}:{client:VaultClient;caps:Cap[];tier?:Tier;busy:boolean;version:string;operation:(f:()=>Promise<void>)=>Promise<void>;refresh:()=>Promise<void>}){
  const cost=caps.includes('cost'),manage=caps.includes('rebateManage'),mathRequest=useRef(0);
  useEffect(()=>()=>{mathRequest.current++;},[]);
  const [state,setState]=useState<Results['rebateState']|null>(null),[progress,setProgress]=useState<Results['rebateProgress']|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState(''),[form,setForm]=useState<ProgramInput>(fresh),[confirmed,setConfirmed]=useState(false),[math,setMath]=useState<Program|null>(null),[evidence,setEvidence]=useState<Results['rebateRows']|null>(null),[mathError,setMathError]=useState(false),[gq,setGq]=useState<GridQuery>({}),[eq,setEq]=useState<GridQuery>({});
@@ -45,4 +46,12 @@ export function RebatesView({client,caps,tier,busy,version,operation,refresh}:{c
  {cost&&<Dialog open={!!math} onClose={closeMath} labelledBy="rebate-math-title"><h2 id="rebate-math-title">{t('monitor.showMath')}</h2>{math&&<><h3 translate="no">{math.reference}</h3><p>{t(modeKey[math.mode])} · {t(treatmentKey[math.treatment])}</p><p>{t('rebate.mathHelp')}</p><DataTable label={t('rebate.tiers')}><thead><tr><th scope="col">{t('rebate.lower')}</th><th scope="col">{t('rebate.upper')}</th><th scope="col">{t('rebate.rate')}</th></tr></thead><tbody>{math.tiers.map(r=><tr key={r.from}><td>{money(r.from)}</td><td>{r.to===null?t('rebate.openEnded'):money(r.to)}</td><td>{fmt.percent(r.rate)}</td></tr>)}</tbody></DataTable>{mathError?<Notice tone="warn" role="alert">{t('rebate.loadFailed')}</Notice>:!evidence?<Skeleton/>:<><DataGrid label={t('rebate.sourceRows')} testId="rebate-evidence" rows={evidence.rows} rowKey={r=>r.source+'|'+r.line} remote={{query:eq,onQuery:q=>{setEq(q);void showMath(math,0,q);},meta:evidence.grid,fetch:q=>client.call('rebateRows',{id:math.id,offset:0,grid:q}).then(v=>v.grid)}} columns={[{id:'source',name:t('rebate.source'),value:r=>r.source,cell:r=><><span translate="no">{r.source} · {r.product}</span><p>{t('rebate.sourceRow',{row:fmt.int(r.row),date:fmt.date(r.date)})}</p></>},{id:'product',name:t('ops.product'),value:r=>r.product,cell:r=><span translate="no">{r.product}</span>},{id:'date',name:t('ops.date'),type:'date',value:r=>r.date},{id:'base',name:t('rebate.base'),type:'money',value:r=>r.base},{id:'booked',name:t('rebate.booked'),type:'money',value:r=>r.booked},{id:'accrued',name:t('rebate.accrued'),type:'money',value:r=>r.accrued},{id:'recognized',name:t('rebate.recognized'),type:'money',value:r=>r.recognized}]}/><Button disabled={!evidence.offset} onClick={()=>void showMath(math,evidence.offset-50)}>{t('ops.previous')}</Button><Button disabled={evidence.offset+50>=Number(evidence.count)} onClick={()=>void showMath(math,evidence.offset+50)}>{t('ops.next')}</Button></>}
  </>}<Button onClick={closeMath}>{t('common.close')}</Button></Dialog>}
  </>;
+}
+
+type RebateProps=Parameters<typeof CustomerRebatesView>[0];
+export function RebatesView(props:RebateProps){
+ const [tab,setTab]=useState('customer');
+ useEffect(()=>{const change=()=>{const v=location.hash.replace('#rebates-','');setTab(['claims','purchases','supplier'].includes(v)?v:'customer');};change();window.addEventListener('hashchange',change);return()=>window.removeEventListener('hashchange',change);},[]);
+ const cost=props.caps.includes('cost'),active=cost?tab:'customer';
+ return <><SectionTabs label={t('rebate.heading')} current={active} onSelect={setTab} items={[{id:'customer',label:t('rebate.heading'),href:'#rebates'},...(cost?[{id:'claims',label:t('supplier.claims'),href:'#rebates-claims',testId:'supplier-tab-claims'},{id:'purchases',label:t('supplier.purchases'),href:'#rebates-purchases',testId:'supplier-tab-purchases'},{id:'supplier',label:t('supplier.progress'),href:'#rebates-supplier',testId:'supplier-tab-progress'}]:[])]}/>{active==='customer'||props.tier==='starter'?<CustomerRebatesView {...props}/>:<SupplierClaimsView key={active} {...props} tab={active as 'claims'|'purchases'|'supplier'} manage={props.caps.includes('rebateManage')} data={props.caps.includes('data')}/>}</>;
 }

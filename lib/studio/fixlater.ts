@@ -90,7 +90,7 @@ CREATE TEMP TABLE studio_messages AS SELECT * FROM (VALUES ${messages}) v(file_o
     await engine.conn.query(`UPDATE rejected_rows SET status='loaded' WHERE source_id=${s} AND status='open' AND source_row IN (SELECT src_row FROM ty_${role} WHERE err IS NULL);
 UPDATE rejected_rows SET code=t.err FROM ty_${role} t WHERE rejected_rows.source_id=${s} AND rejected_rows.source_row=t.src_row AND rejected_rows.status='open' AND t.err IS NOT NULL;
 UPDATE import_batches SET rows_loaded=rows_loaded+${ok}, rows_rejected=greatest(0, rows_rejected-${ok}) WHERE source_id=${s}`);
-    await appendAudit(engine, "fixlater.loaded", { source_id: sourceId, ...(role!=="rebate_agreement"?{file_name:name}:{}), code, rows_loaded: ok, still_rejected: bad });
+    await appendAudit(engine, "fixlater.loaded", { source_id: sourceId, ...(!["rebate_agreement","purchases"].includes(role)?{file_name:name}:{}), code, rows_loaded: ok, still_rejected: bad });
     await engine.conn.query("COMMIT");
   } catch (error) { await engine.conn.query("ROLLBACK").catch(() => undefined); throw error; }
   finally { await resetStage(engine).catch(() => undefined); }

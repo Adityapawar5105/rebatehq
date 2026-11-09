@@ -1,5 +1,6 @@
 import { batchFx, workspaceCurrency } from '../vault/currency';
 import {rebuildAccruals} from '../rebate/store';
+import {hasSupplier} from '../rebate/input';
 import {hasRebates} from '../rebate/input';
 import { fitsLicenceCapacity } from "../licence-policy";
 // Import Studio orchestration inside the vault worker. Files stay in worker memory
@@ -459,7 +460,7 @@ export class Studio {
           // Rows outside the chosen dates are skipped; an unreadable date still goes to validation (and Fix Later).
           const day = range ? out[dateAt] : "";
           if (range && ISO_DAY.test(day) && ((range.from && day < range.from) || (range.to && day > range.to))) { outside++; normalizer.stats.read--; normalizer.stats.skipped++; return; }
-          if (role === "sales_history" && ++batchRows > rowCap) throw tooBig();
+          if ((role === "sales_history" || role === "purchases") && ++batchRows > rowCap) throw tooBig();
           writer.row(out, row);
         }, emptyStats(), letter, cut => cut.every(i => !used.has(i)));
         const read = await this.run(e, normalizer, signal, bytes => progress(msg("import.convertingOf", { name: e.file.name, value: ord + 1, length: load.length }), String(bytes), String(e.file.size)));
@@ -480,7 +481,7 @@ export class Studio {
       if(roles.has("rebate_agreement"))warnings.push(msg("rebate.importWarning"));
       progress(msg("import.checkingValuesDuplicatesAnd"), "0", "1");
       // Headers and item lists first: sales lines take customer, date and freight from the one and cost from the other.
-      const sequence = (["order_header", "item_master", "customer_list", "ar_aging", "vendor_cost", "price_list", "sales_history", "rebate_agreement"] as const).filter(r => roles.has(r));
+      const sequence = (["order_header", "item_master", "customer_list", "ar_aging", "vendor_cost", "price_list", "sales_history", "rebate_agreement", "purchases"] as const).filter(r => roles.has(r));
       for (const role of sequence) {
         signal.throwIfAborted();
         if (role === "sales_history") {
@@ -557,12 +558,12 @@ export class Studio {
     const messages = kept.flatMap(f => CODES(f.role).map(code => `(${f.ord},${sqlText(code)},${sqlText(issueColumn(code, f))},${sqlText(issueMessage(code, f.settings))})`)).join(",");
     await engine.conn.query("BEGIN");
     try {
-      if (staged.replaces) await engine.conn.query(removeChildrenSql(staged.replaces,await hasRebates(engine)));
+      if (staged.replaces) await engine.conn.query(removeChildrenSql(staged.replaces,await hasRebates(engine),await hasSupplier(engine)));
       await engine.conn.query(`CREATE TEMP TABLE studio_files AS SELECT * FROM (VALUES ${values}) v(file_ord, source_id, name);
 CREATE TEMP TABLE studio_messages AS SELECT * FROM (VALUES ${messages}) v(file_ord, code, column_name, message)`);
       for (const [i, f] of kept.entries()) {
         const r = report.files.find(x => x.id === staged.entries[f.ord].id)!;
-        await engine.conn.query(`INSERT INTO source_files VALUES (${sqlText(sources[i])},${sqlText(f.name)},${sqlText(["ar_aging","rebate_agreement"].includes(f.role) ? "customer_list" : f.role)},${f.bytes},${sqlText(now)});${["ar_aging","rebate_agreement"].includes(f.role) ? `INSERT INTO source_kinds VALUES (${sqlText(sources[i])},${sqlText(f.role)});` : ""}
+        await engine.conn.query(`INSERT INTO source_files VALUES (${sqlText(sources[i])},${sqlText(f.name)},${sqlText(["ar_aging","rebate_agreement","purchases"].includes(f.role) ? "customer_list" : f.role)},${f.bytes},${sqlText(now)});${["ar_aging","rebate_agreement","purchases"].includes(f.role) ? `INSERT INTO source_kinds VALUES (${sqlText(sources[i])},${sqlText(f.role)});` : ""}
 INSERT INTO import_batches(id,source_id,rows_loaded,rows_rejected,imported_at,content_sha256,fingerprint,rows_skipped,source_currency,workspace_currency,fx_rate,header_fx) VALUES (${sqlText(id())},${sqlText(sources[i])},${r.rowsLoaded},${r.rowsRejected},${sqlText(now)},NULL,${sqlText(f.fingerprint)},${r.rowsSkipped},${sqlText(f.settings.sourceCurrency ?? "USD")},${sqlText(await workspaceCurrency(engine))},${sqlText(f.settings.fxRate ?? "1")},${sqlText(JSON.stringify(staged.files.filter(h=>h.role === "order_header").map(h=>({sourceCurrency:h.settings.sourceCurrency,fxRate:h.settings.fxRate}))))})`);
       }
       await engine.conn.query(commitSql(new Set([...staged.roles].filter(r => r !== "order_header"))));
@@ -574,13 +575,13 @@ INSERT INTO import_batches(id,source_id,rows_loaded,rows_rejected,imported_at,co
         const rows = staged.stats.get(f.ord)!.rejectedRows;
         for (let at = 0; at < rows.length; at += 500) await engine.conn.query(`INSERT INTO rejected_rows VALUES ${rows.slice(at, at + 500).map(r => `(${sqlText(sources[i])},${Math.max(1, r)},${sqlText(f.role)},'structure',${Array(12).fill("NULL").join(",")},'open')`).join(",")} ON CONFLICT DO NOTHING`);
         const r = report.files.find(x => x.id === staged.entries[f.ord].id)!;
-        await appendAudit(engine, "import.committed", { source_id: sources[i], ...(f.role!=="rebate_agreement"?{file_name:f.name}:{}), role: f.role, rows_loaded: r.rowsLoaded, rows_rejected: r.rowsRejected, ...(staged.replaces ? { replaces: staged.replaces } : {}), ...(f.fromHeader?.length && headerNames ? { header_files: headerNames } : {}), ...(f.itemCost ? { cost_source: msg("import.itemListCurrentCost") } : {}) });
+        await appendAudit(engine, "import.committed", { source_id: sources[i], ...(!["rebate_agreement","purchases"].includes(f.role)?{file_name:f.name}:{}), role: f.role, rows_loaded: r.rowsLoaded, rows_rejected: r.rowsRejected, ...(staged.replaces ? { replaces: staged.replaces } : {}), ...(f.fromHeader?.length && headerNames ? { header_files: headerNames } : {}), ...(f.itemCost ? { cost_source: msg("import.itemListCurrentCost") } : {}) });
       }
       await engine.conn.query("COMMIT");
     } catch (error) { await engine.conn.query("ROLLBACK").catch(() => undefined); throw error; }
     let cleanup = true;
     if (staged.replaces) {
-      try { await engine.conn.query(`BEGIN; ${finishRemovalSql(staged.replaces)} COMMIT`); } catch { await engine.conn.query("ROLLBACK").catch(() => undefined); cleanup = false; }
+      try { await engine.conn.query(`BEGIN; ${finishRemovalSql(staged.replaces,await hasSupplier(engine))} COMMIT`); } catch { await engine.conn.query("ROLLBACK").catch(() => undefined); cleanup = false; }
     }
     await resetStage(engine).catch(() => undefined);
     const result = { loaded: report.loaded, rejected: report.rejected, files: String(kept.length), cleanup };
@@ -593,12 +594,12 @@ export async function removeSource(engine: Engine, source: string) {
   if (!row) throw new StudioError(msg("import.thatFileIsNo"));
   await engine.conn.query("BEGIN");
   try {
-    await engine.conn.query(removeChildrenSql(source,await hasRebates(engine)));
+    await engine.conn.query(removeChildrenSql(source,await hasRebates(engine),await hasSupplier(engine)));
     await rebuildAccruals(engine);
-    await appendAudit(engine, "import.removed", { source_id: source, ...(row.role!=="rebate_agreement"?{file_name:String(row.name)}:{}) });
+    await appendAudit(engine, "import.removed", { source_id: source, ...(!["rebate_agreement","purchases"].includes(String(row.role))?{file_name:String(row.name)}:{}) });
     await engine.conn.query("COMMIT");
   } catch (error) { await engine.conn.query("ROLLBACK").catch(() => undefined); throw error; }
-  try { await engine.conn.query(`BEGIN; ${finishRemovalSql(source)} COMMIT`); return true; }
+  try { await engine.conn.query(`BEGIN; ${finishRemovalSql(source,await hasSupplier(engine))} COMMIT`); return true; }
   catch { await engine.conn.query("ROLLBACK").catch(() => undefined); return false; }
 }
 export async function listSources(engine: Engine): Promise<SourceView[]> {

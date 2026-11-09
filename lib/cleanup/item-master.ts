@@ -1,3 +1,4 @@
+import {hasSupplier} from '../rebate/input';
 // Item master cleanup assistant. It never edits invoice facts: it merges look-alike product
 // IDs, spells units one way and fills missing categories, and every fix keeps the cells it
 // changed in cleanup_changes so it can be undone. Fixes are computed here as SQL; the service
@@ -108,6 +109,7 @@ UPDATE products SET category = ${Q(category)} WHERE ${where}; ${BUMP}` };
   const canon = group.canonical, dups = group.members.map(m => m.product).filter(p => p !== canon), list = dups.map(Q).join(","), canonQ = Q(canon);
   const involved = new Set(group.members.map(m=>m.product));
   if((await rebatePrograms(e)).some(p=>[...p.eligible,...p.excluded].some(s=>involved.has(s))))return bad(msg('rebate.skuMergeBlocked'));
+  if(await hasSupplier(e)){const n=(await rows(e,`SELECT count(*)::VARCHAR n FROM purchases WHERE product_id IN(${[...involved].map(Q).join(',')})`))[0].n;if(n!=='0')return bad(msg('supplier.mergeBlocked'));}
   const moved = Number((await rows(e, `SELECT count(*) AS n FROM sales_lines WHERE product_id IN (${list})`))[0].n);
   if (moved > MAX_MERGE_LINES) return bad(msg("itemfix.thisMergeWouldMove", { moved, maxmergelines: MAX_MERGE_LINES }));
   const vendor = Number((await rows(e, `SELECT count(*) AS n FROM vendor_costs WHERE product_id IN (${list})`))[0].n), price = Number((await rows(e, `SELECT count(*) AS n FROM price_matrix WHERE product_id IN (${list})`))[0].n);

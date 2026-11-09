@@ -69,7 +69,7 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
     const touch = () => { if (Date.now() - lastActivity > 5000) { lastActivity = Date.now(); void c.call("touch", {}).catch(() => undefined); } };
     const leaving = () => { void c.call("lock", {}).catch(() => undefined); };
     window.addEventListener("pointerdown", touch); window.addEventListener("keydown", touch); window.addEventListener("pagehide", leaving);
-    const hash = () => { const raw = location.hash.slice(1); const value=raw.startsWith('pricing-')?'pricing':raw.startsWith('margin-')?'margin':raw; const match = sections.find(s => sectionHash(s) === value); if (match) setSection(match); };
+    const hash = () => { const raw = location.hash.slice(1); const value=raw.startsWith('pricing-')?'pricing':raw.startsWith('margin-')?'margin':raw.startsWith('rebates-')?'rebates':raw; const match = sections.find(s => sectionHash(s) === value); if (match) setSection(match); };
     hash(); window.addEventListener("hashchange", hash);
     return () => { active = false; window.removeEventListener("pointerdown", touch); window.removeEventListener("keydown", touch); window.removeEventListener("pagehide", leaving); window.removeEventListener("hashchange", hash); c.close(); client.current = null; };
   }, [scope.userId, scope.tenantId]);

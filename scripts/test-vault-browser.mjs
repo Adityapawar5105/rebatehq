@@ -162,6 +162,29 @@ async function rebatesUi(){
  }finally{await context.close();context=savedContext;page=savedPage;dataPlaneActive=active;}
 }
 
+
+async function suppliersUi(){
+ const savedContext=context,savedPage=page,active=dataPlaneActive;
+ context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-suppliers-')),browserOptions);await configureContext();page=await openPage();
+ try{
+ dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic supplier owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
+ await page.locator('nav a[href="#settings"]').click();await page.locator('section[aria-labelledby="currency-heading"] select').selectOption('CAD');await page.getByRole('button',{name:'Save currency',exact:true}).click();await page.getByText('Current currency: CAD',{exact:true}).waitFor();
+ const supplier=marker+'-SUP',sku=marker+'-PURCHASE',ref=marker+'-CLAIM';
+ const csv=Buffer.from('line_id,receipt_ref,supplier,product_id,receipt_date,quantity,purchase_amount,entry_kind,uom\n1,PO1,'+supplier+','+sku+',2026-03-31,1,30000.00,receipt,EA\n2,PO2,'+supplier+','+sku+',2026-03-31,1,400.00,return,EA\n3,PO3,'+supplier+','+sku+',2026-03-31,0,100.00,credit_memo,EA\n');
+ await page.locator('nav a[href="#data-hub"]').click();await review([{name:'synthetic-po-receipts.csv',mimeType:'text/csv',buffer:csv}]);await page.getByRole('button',{name:'Confirm and import locally',exact:true}).click();await page.getByRole('heading',{name:'Batch report'}).waitFor({state:'detached'});
+ await page.locator('nav a[href="#rebates"]').click();await page.getByTestId('supplier-tab-claims').click();const form=page.getByTestId('supplier-form');await form.waitFor();await page.getByTestId('supplier-reference').fill(ref);await page.getByTestId('supplier-supplier').fill(supplier);await page.getByTestId('supplier-program').fill('Synthetic quarterly');await page.getByTestId('supplier-from').fill('2026-01-01');await page.getByTestId('supplier-to').fill('2026-03-31');await page.getByTestId('supplier-due').fill('2026-04-30');await page.getByTestId('supplier-confirm').check();await form.getByRole('button',{name:'Save claim draft',exact:true}).click();const claim=page.getByTestId('supplier-review');await page.getByTestId('supplier-earned').filter({hasText:'CA$590.00'}).waitFor();assert.ok((await claim.innerText()).includes('CA$29,500.00'),'Supplier UI lost CAD spend');
+ const checkDownload=async(name,format)=>{const wait=page.waitForEvent('download');await claim.getByRole('button',{name,exact:true}).click();const d=await wait,bytes=await readFile(await d.path());assert.ok(d.suggestedFilename().endsWith('.'+format)&&bytes.length>100,'Empty claim download');if(format==='csv'){const text=bytes.toString('utf8');assert.ok(text.includes('CAD')&&text.includes('590.00')&&text.includes('29500.00'),'Claim CSV lost CAD amounts');assert.ok(!text.includes('notes'),'Claim CSV includes notes');}};
+ await checkDownload('Prepare claim CSV','csv');await claim.getByText('Recorded claimed amount: CA$590.00',{exact:false}).waitFor();await checkDownload('Prepare claim XLSX','xlsx');
+ for(const name of ['Mark submitted','Mark approved','Mark paid']){await claim.getByRole('button',{name,exact:true}).click();await page.getByTestId('supplier-claims-grid').getByRole('cell',{name:name==='Mark submitted'?'Submitted by operator':name==='Mark approved'?'Approved by supplier':'Paid (operator confirmed)',exact:true}).waitFor();}
+ await page.getByTestId('supplier-tab-purchases').click();const receipts=page.getByTestId('supplier-purchases-grid');await receipts.getByRole('cell',{name:'CA$30,000.00',exact:true}).waitFor();await receipts.getByTestId('grid-select-all').check();const total=receipts.getByTestId('grid-total-amount_cents');await total.waitFor();assert.equal(await total.getAttribute('data-sum'),'2950000');assert.ok((await total.innerText()).includes('CA$29,500.00'),'Supplier total lost currency');
+ await page.getByTestId('supplier-tab-progress').click();await page.getByTestId('supplier-progress-grid').getByRole('cell',{name:'CA$590.00',exact:true}).first().waitFor();
+ for(const theme of ['light','dark','contrast']){await page.evaluate(v=>document.documentElement.dataset.theme=v,theme);await page.setViewportSize({width:375,height:812});for(const tab of ['claims','purchases','progress']){await page.getByTestId('supplier-tab-'+tab).click();await page.getByTestId('supplier-section').waitFor();assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Supplier page overflows phone');}await page.screenshot({path:'test-results/suppliers-'+channel+'-'+theme+'.png',fullPage:true});}await page.setViewportSize({width:1280,height:800});
+ await page.locator('nav a[href="#settings"]').click();await page.getByLabel('Preview as').selectOption('sales_rep');await page.getByTestId('preview-banner').waitFor();await page.locator('nav a[href="#rebates"]').click();assert.equal(await page.getByTestId('supplier-tab-claims').count(),0,'Rep sees supplier navigation');await page.getByRole('button',{name:'Return to my own view'}).click();
+ await page.evaluate(()=>localStorage.setItem('rebatehq.locale','pseudo'));await page.reload();await page.locator('form input[type="password"]').fill(secret);await page.locator('form:has(input[type="password"]) button').click();await page.getByTestId('line-count').waitFor();for(const hash of ['claims','purchases','supplier']){await page.evaluate(v=>location.hash='#rebates-'+v,hash);await page.getByTestId('supplier-section').waitFor();assert.ok((await page.getByTestId('supplier-section').innerText()).includes('⟦'),'Supplier pseudo missing');}
+ results.checks.suppliersUi={currency:'CAD',earned590:true,spend29500:true,localCsvXlsx:true,statusFlow:true,workerGridTotals:true,repHidden:true,encryptedReload:true,pseudo:true,themes:true,phone375:true,privacyMarkers:true};
+ }finally{await context.close();context=savedContext;page=savedPage;dataPlaneActive=active;}
+}
+
 async function monitorUi(){
  const savedContext=context,savedPage=page,active=dataPlaneActive;
  context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-monitor-')),browserOptions);await configureContext();page=await openPage();
@@ -236,6 +259,7 @@ try {
   results.checks.currency = await worker("currency");
   results.checks.monitor = await worker("monitor");
   results.checks.rebates = await worker("rebates",{},180000);
+  results.checks.suppliers = await worker("suppliers",{},180000);
   results.checks.warmup = await worker("warmup");
   results.checks.mapper = await worker("mapper");
   results.checks.playground = await worker("playground");
@@ -630,6 +654,7 @@ try {
   }
   await monitorUi();
   await rebatesUi();
+  await suppliersUi();
   if(auth){
     const device=await page.evaluate(()=>{const key=Object.keys(localStorage).find(k=>k.startsWith('rebatehq-device-v1:'));return localStorage.getItem(key);});assert.ok(device);
     const revoked=await context.request.post(base+'/api/licence/devices',{data:{id:device,status:'revoked'}});assert.equal(revoked.status(),200);

@@ -41,6 +41,7 @@ function fieldSql(field: Field, settings: Pick<Settings, "decimal" | "dateFormat
   }
 }
 export function issueMessage(code: string, settings: Settings) {
+  if(code==='entry_kind:invalid'||code==='quantity:receipt')return msg('supplier.purchaseIssue');
   if(code==='calculation_mode:invalid')return msg('rebate.modeIssue');
   if(code==='rebate_treatment:invalid')return msg('rebate.treatmentIssue');
   if(code==='party_type:invalid')return msg('rebate.partyIssue');
@@ -72,8 +73,9 @@ export function issueColumn(code: string, file: StagedFile) {
   if (!at) return "";
   return file.keyed ? file.headers[at.index] : columnLetter(file.colOffset + at.index);
 }
-export const CODES = (role: Role) => [...ROLE_FIELDS[role].flatMap(f => [`${f.name}:required`, `${f.name}:invalid`, `${f.name}:negative`]), "duplicate_row", "duplicate_key", "exists", "scope", "valid_to:range", "no_header",...(role==='rebate_agreement'?['program_id:incomplete','program_id:overlap','program_id:metadata','program_id:tiers','period_end:range']:[])];
+export const CODES = (role: Role) => [...ROLE_FIELDS[role].flatMap(f => [`${f.name}:required`, `${f.name}:invalid`, `${f.name}:negative`]), "duplicate_row", "duplicate_key", "exists", "scope", "valid_to:range", "no_header",...(role==='purchases'?['quantity:receipt']:[]),...(role==='rebate_agreement'?['program_id:incomplete','program_id:overlap','program_id:metadata','program_id:tiers','period_end:range']:[])];
 const KEYS: Record<Role, string[]> = {
+  purchases:["supplier","receipt_ref","line_id"],
   rebate_agreement:['program_id','threshold_amount'],
   sales_history: ["line_id"], item_master: ["product_id"], customer_list: ["customer_id"], order_header: ["invoice_id"],
   vendor_cost: ["vendor", "product_id", "effective_date"], price_list: ["product_id", "category", "customer_id", "tier", "qty_break", "valid_from"],
@@ -109,6 +111,7 @@ export async function validate(engine: Engine, role: Role, files: StagedFile[], 
   await engine.conn.query(`CREATE TEMP TABLE ${typed(role)} AS ${parts.join(" UNION ALL ")}`);
   const t = typed(role), outs = fields.map(f => q(output(f).name)), key = KEYS[role].map(k => q(output(fields.find(f => f.name === k)!).name));
   if (role === "price_list") await engine.conn.query(`UPDATE ${t} SET err='scope' WHERE err IS NULL AND product_id IS NULL AND category IS NULL; UPDATE ${t} SET err='valid_to:range' WHERE err IS NULL AND valid_to IS NOT NULL AND valid_to<=valid_from`);
+  if(role==='purchases')await engine.conn.query(`UPDATE ${t} SET err='entry_kind:invalid' WHERE err IS NULL AND (entry_kind IS NULL OR entry_kind NOT IN ('receipt','return','credit_memo'));UPDATE ${t} SET err='quantity:receipt' WHERE err IS NULL AND entry_kind IN ('receipt','return') AND quantity<=0`);
   const hash = `md5(concat_ws('|',${outs.map(c => `coalesce(${c}::VARCHAR,'\u0001')`).join(",")}))`;
   // 6A: a window over every row (1M rows with md5 strings) exhausted the 512 MB budget. A
   // 64-bit hash count finds the few keys that repeat; the exact window runs on those rows only.
@@ -123,6 +126,8 @@ SELECT file_ord, src_row, CASE WHEN h=first_h THEN 'duplicate_row' ELSE 'duplica
  SELECT file_ord, src_row, ${hash} AS h, first_value(${hash}) OVER w AS first_h, row_number() OVER w AS rn FROM ${t} WHERE err IS NULL AND ${keyed(key)} IN (SELECT k FROM studio_repeats)
  WINDOW w AS (PARTITION BY ${key.map(k => `coalesce(${k}::VARCHAR,'')`).join(",")} ORDER BY file_ord, src_row)) WHERE rn>1) d
 WHERE ${t}.file_ord=d.file_ord AND ${t}.src_row=d.src_row`);
+  // The storage key is source + line_id: a line identifier must be unique within its file, too.
+  if(role==='purchases')await engine.conn.query(`UPDATE ${t} SET err='duplicate_key' FROM (SELECT file_ord,src_row FROM (SELECT file_ord,src_row,row_number() OVER(PARTITION BY file_ord,line_id ORDER BY src_row) n FROM ${t} WHERE err IS NULL) WHERE n>1) d WHERE ${t}.file_ord=d.file_ord AND ${t}.src_row=d.src_row`);
   // Generated line IDs differ per row, so exact copies are found on every other field.
   const generated = files.filter(f => f.role === role && f.generatedIds).map(f => f.ord);
   if (role === "sales_history" && generated.length) {
@@ -137,6 +142,7 @@ WHERE ${t}.file_ord=d.file_ord AND ${t}.src_row=d.src_row`);
   const other = (alias = "") => replaces ? `${alias}source_id IS DISTINCT FROM ${sqlText(replaces)}` : "true";
   const exists: Record<typeof role, string> = {
     rebate_agreement:'false',
+    purchases: `EXISTS(SELECT 1 FROM purchases p WHERE p.supplier=${t}.supplier AND p.receipt_ref=${t}.receipt_ref AND p.line_id=${t}.line_id AND ${other('p.')})`,
     sales_history: `line_id IN (SELECT line_id FROM sales_lines WHERE ${other()})`,
     item_master: `product_id IN (SELECT product_id FROM products WHERE source_id IS NOT NULL AND ${other()})`,
     customer_list: `customer_id IN (SELECT customer_id FROM customers WHERE source_id IS NOT NULL AND ${other()})`,
@@ -239,8 +245,10 @@ export async function salesRanges(engine: Engine, replaces: string | null) {
   return { batch, vault };
 }
 export async function capUsage(engine: Engine, roles: Set<Role>, replaces: string | null) {
-  const lines = (await engine.conn.query(`SELECT (SELECT count(*) FROM sales_lines WHERE ${replaces ? `source_id<>${sqlText(replaces)}` : "true"}) + ${roles.has("sales_history") ? `(SELECT count(*) FROM ${typed("sales_history")} WHERE err IS NULL)` : "0"} AS n`)).toArray()[0].n;
-  const sources = ["SELECT product_id FROM products", ...(roles.has("sales_history") ? [`SELECT product_id FROM ${typed("sales_history")} WHERE err IS NULL`] : []), ...(roles.has("item_master") ? [`SELECT product_id FROM ${typed("item_master")} WHERE err IS NULL`] : [])];
+  const hasPurchases=(await engine.conn.query("SELECT count(*)::VARCHAR n FROM information_schema.tables WHERE table_catalog=current_database() AND table_name='purchases'")).toArray()[0].n==='1';
+  const purchaseLines=hasPurchases?`(SELECT count(*) FROM purchases WHERE ${replaces?`source_id<>${sqlText(replaces)}`:'true'}) + ${roles.has('purchases')?'(SELECT count(*) FROM ty_purchases WHERE err IS NULL)':'0'}`:'0';
+  const lines = (await engine.conn.query(`SELECT (SELECT count(*) FROM sales_lines WHERE ${replaces ? `source_id<>${sqlText(replaces)}` : "true"}) + ${purchaseLines} + ${roles.has("sales_history") ? `(SELECT count(*) FROM ${typed("sales_history")} WHERE err IS NULL)` : "0"} AS n`)).toArray()[0].n;
+  const sources = ["SELECT product_id FROM products", ...(roles.has("purchases")?["SELECT product_id FROM ty_purchases WHERE err IS NULL"]:[]), ...(roles.has("sales_history") ? [`SELECT product_id FROM ${typed("sales_history")} WHERE err IS NULL`] : []), ...(roles.has("item_master") ? [`SELECT product_id FROM ${typed("item_master")} WHERE err IS NULL`] : [])];
   const products = (await engine.conn.query(`SELECT count(DISTINCT product_id) AS n FROM (${sources.join(" UNION ALL ")})`)).toArray()[0].n;
   return { lines: BigInt(lines), products: BigInt(products) };
 }
@@ -251,9 +259,10 @@ const CUSTOMER_RESET = "name='',tier='',branch='',region='',payment_terms='',sou
  * cannot delete a parent row in the transaction that deleted its children, so the
  * source row and now-unused products/customers go in step 2 (finishRemoval).
  */
-export function removeChildrenSql(source: string,rebates=false) {
+export function removeChildrenSql(source: string,rebates=false,purchases=false) {
   const s = sqlText(source);
   return `CREATE TEMP TABLE IF NOT EXISTS studio_affected(kind VARCHAR, id VARCHAR);
+${purchases?`INSERT INTO studio_affected SELECT DISTINCT 'p',product_id FROM purchases WHERE source_id=${s};DELETE FROM purchases WHERE source_id=${s};`:''}
 INSERT INTO studio_affected SELECT DISTINCT 'p', product_id FROM sales_lines WHERE source_id=${s} UNION SELECT 'p', product_id FROM products WHERE source_id=${s}
  UNION SELECT DISTINCT 'c', customer_id FROM sales_lines WHERE source_id=${s} UNION SELECT 'c', customer_id FROM customers WHERE source_id=${s} UNION SELECT 'c', customer_id FROM credit_profiles WHERE source_id=${s};
 ${rebates?`DELETE FROM rebate_accruals WHERE source_id=${s} OR program_id IN(SELECT id FROM rebate_programs WHERE source_id=${s});DELETE FROM rebate_tiers WHERE program_id IN(SELECT id FROM rebate_programs WHERE source_id=${s});DELETE FROM rebate_programs WHERE source_id=${s};`:''}
@@ -261,9 +270,9 @@ DELETE FROM sales_lines WHERE source_id=${s}; DELETE FROM vendor_costs WHERE sou
 UPDATE products SET ${PRODUCT_RESET} WHERE source_id=${s}; UPDATE customers SET ${CUSTOMER_RESET} WHERE source_id=${s};
 DELETE FROM import_issues WHERE source_id=${s}; DELETE FROM import_batches WHERE source_id=${s}; DELETE FROM rejected_rows WHERE source_id=${s};`;
 }
-export function finishRemovalSql(source: string) {
+export function finishRemovalSql(source: string,purchases=false) {
   return `DELETE FROM source_files WHERE id=${sqlText(source)};
-DELETE FROM products WHERE source_id IS NULL AND product_id IN (SELECT id FROM studio_affected WHERE kind='p') AND product_id NOT IN (SELECT product_id FROM sales_lines);
+DELETE FROM products WHERE source_id IS NULL AND product_id IN (SELECT id FROM studio_affected WHERE kind='p') AND product_id NOT IN (SELECT product_id FROM sales_lines) ${purchases?'AND product_id NOT IN(SELECT product_id FROM purchases)':''};
 DELETE FROM customers WHERE source_id IS NULL AND customer_id IN (SELECT id FROM studio_affected WHERE kind='c') AND customer_id NOT IN (SELECT customer_id FROM sales_lines);
 DROP TABLE studio_affected;`;
 }
@@ -271,6 +280,8 @@ DROP TABLE studio_affected;`;
 export function commitSql(roles: Set<Role>) {
   const v = (role: Role) => `(SELECT t.*, m.source_id FROM ${typed(role)} t JOIN studio_files m USING(file_ord) WHERE t.err IS NULL)`;
   const out: string[] = [];
+  if(roles.has('purchases'))out.push(`INSERT INTO products(product_id) SELECT DISTINCT product_id FROM ${v('purchases')} WHERE product_id NOT IN(SELECT product_id FROM products);
+ INSERT INTO purchases(source_id,line_id,receipt_ref,supplier,product_id,receipt_date,quantity,amount_cents,entry_kind,uom,source_row) SELECT source_id,line_id,receipt_ref,supplier,product_id,receipt_date,CASE WHEN entry_kind='receipt' THEN quantity ELSE -quantity END,CASE WHEN entry_kind='receipt' THEN purchase_cents ELSE -purchase_cents END,entry_kind,coalesce(uom,''),src_row FROM ${v('purchases')} ORDER BY supplier,receipt_date,line_id;`);
   if(roles.has('rebate_agreement'))out.push(rebateCommitSql(v('rebate_agreement')));
   if (roles.has("sales_history")) out.push(`INSERT INTO products(product_id) SELECT DISTINCT product_id FROM ${v("sales_history")} WHERE product_id NOT IN (SELECT product_id FROM products);
 INSERT INTO customers(customer_id) SELECT DISTINCT customer_id FROM ${v("sales_history")} WHERE customer_id NOT IN (SELECT customer_id FROM customers);

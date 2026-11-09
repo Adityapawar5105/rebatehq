@@ -310,3 +310,11 @@ test('7D-1 signed licence tier gates all rebate operations and import activation
  const acct=serviceFor(c,'acct');assert.ok((await acct.access()).caps.includes('rebateManage'));await assert.rejects(call(acct,'studioAdd',{files:[]}),code('FORBIDDEN'));assert.deepEqual((await call(acct,'rebateState',{}) as {programs:unknown[]}).programs,[]);
  }finally{c.close();}
 });
+
+test('7D-2 every supplier payload and write is worker-denied for reps; Starter and manager capabilities stay narrow',async()=>{
+ const {c}=await vault();try{const rep=serviceFor(c,'rep'),starter=serviceFor(c,'owner1','starter');
+ for(const action of ['supplierClaims','supplierPurchases','supplierProgress','supplierClaimPreview','supplierClaimSave','supplierClaimStatus','supplierClaimExport'] as const){await assert.rejects(call(rep,action,{id:'missing'} as never),code('FORBIDDEN'));await assert.rejects(call(starter,action,{id:'missing'} as never),code('LICENCE'));}
+ const sm=serviceFor(c,'sm');await assert.rejects(call(sm,'supplierClaimSave',{} as never),code('FORBIDDEN'));
+ starter.studioState=async()=>({files:[{role:'purchases'}]} as never);await assert.rejects(call(starter,'studioPlan',{}),code('LICENCE'));const acct=serviceFor(c,'acct');await assert.rejects(call(acct,'studioPlan',{}),code('FORBIDDEN'));
+ }finally{c.close();}
+});

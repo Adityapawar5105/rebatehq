@@ -58,6 +58,7 @@ export const intersect = (a: Cap[], b: Cap[]) => a.filter(c => b.includes(c));
  * fail when a new command is added without a decision.
  */
 export const ACTION_CAP: Record<Action, Cap | null> = {
+  supplierClaims:'cost',supplierPurchases:'cost',supplierProgress:'cost',supplierClaimPreview:'cost',supplierClaimSave:'rebateManage',supplierClaimStatus:'rebateManage',supplierClaimExport:'rebateManage',
   customerList:'data',productList:'data',noteSet:'data',sourceRemovePreview:'data',
   gridTotals:'view',
   rebateProgress:'rebates',rebateState:'cost',rebateRows:'cost',rebateSave:'rebateManage',rebateDelete:'rebateManage',rebateRecalculate:'rebateManage',

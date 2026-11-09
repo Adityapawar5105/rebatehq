@@ -13,6 +13,13 @@ export async function dispatch(service: VaultService, request: Request, hooks: H
   service.licenceGuard(request.action);
   const { progress } = hooks;
   switch (request.action) {
+    case "supplierClaims":return service.supplierClaims(request.data.offset,request.data.grid);
+    case "supplierPurchases":return service.supplierPurchases(request.data.offset,request.data.grid,request.data.claimId);
+    case "supplierProgress":return service.supplierProgress(request.data.offset,request.data.grid);
+    case "supplierClaimPreview":return service.supplierClaimPreview(request.data.id);
+    case "supplierClaimSave":return service.supplierClaimSave(request.data.input);
+    case "supplierClaimStatus":return service.supplierClaimStatus(request.data.id,request.data.status);
+    case "supplierClaimExport":return service.supplierClaimExport(request.data.id,request.data.format,request.data.fingerprint);
     case "customerList":return service.customerList(request.data.offset,request.data.grid);
     case "productList":return service.productList(request.data.offset,request.data.grid);
     case "noteSet":return service.noteSet(request.data.kind,request.data.id,request.data.text);

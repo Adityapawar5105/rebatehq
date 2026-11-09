@@ -1,3 +1,4 @@
+import {hasSupplier} from '../rebate/input';
 import {hasRebates} from '../rebate/input';
 // Local-only cent-denominated currencies and exact, manually supplied batch FX.
 import type { Engine } from './engine';
@@ -45,6 +46,7 @@ export async function currencyChangeSql(e: Engine, code: string) {
   if (code === await workspaceCurrency(e)) return '';
   const tables = ['source_files','import_batches','products','customers','sales_lines','vendor_costs','price_matrix','price_guardrails','rules','rule_runs','price_versions','roi_ledger','quotes','quote_lines','competitor_prices','price_export_receipts','relay_state'];
   if(await hasRebates(e))tables.push('rebate_programs','rebate_tiers','rebate_accruals');
+  if(await hasSupplier(e))tables.push('supplier_claims','purchases');
   const r = (await e.conn.query(`SELECT (${tables.map(t => `(SELECT count(*) FROM ${t})`).join('+')})::VARCHAR AS n`)).toArray()[0];
   if (BigInt(r.n) > BigInt(0)) throw new VaultError('CURRENCY', msg('fx.changeBlocked'));
   return `UPDATE vault_meta SET currency=${Q(code)} WHERE id=1`;
