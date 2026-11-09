@@ -48,6 +48,11 @@ export type CleanupUndone = { summary: string; restored: string; skipped: string
 export type StorageStatus = { persistent: boolean; usage: string; quota: string; namedOpfsBytes: string; files: string };
 export type ImportEstimate = { bytes: string; estimatedMemoryBytes: string; maxLines: string; maxProducts: string; warning: string };
 export type Commands = {
+  vendorSheets:Record<string,never>;
+  vendorReview:{sheet:string;window?:number;offset?:number;grid?:GridQuery};
+  vendorReviewQuotes:{sheet:string;offset?:number;grid?:GridQuery};
+  vendorPpv:{from?:string;to?:string;offset?:number;grid?:GridQuery};
+  vendorPpvLines:{product:string;from?:string;to?:string;offset?:number;grid?:GridQuery};
   customerList:{offset?:number;grid?:GridQuery};
   productList:{offset?:number;grid?:GridQuery};
   noteSet:{kind:"customer"|"product";id:string;text:string};
@@ -170,6 +175,11 @@ export type Commands = {
 export type LeaksView = { result: LeakResult; roi: RoiSummary; sample: boolean; recorded: number };
 export type CommitResult = { loaded: string; rejected: string; files: string; cleanup: boolean };
 export type Results = {
+  vendorSheets:Awaited<ReturnType<VaultService["vendorSheets"]>>;
+  vendorReview:Awaited<ReturnType<VaultService["vendorReview"]>>;
+  vendorReviewQuotes:Awaited<ReturnType<VaultService["vendorReviewQuotes"]>>;
+  vendorPpv:Awaited<ReturnType<VaultService["vendorPpv"]>>;
+  vendorPpvLines:Awaited<ReturnType<VaultService["vendorPpvLines"]>>;
   customerList:Awaited<ReturnType<VaultService["customerList"]>>;
   productList:Awaited<ReturnType<VaultService["productList"]>>;
   noteSet:Awaited<ReturnType<VaultService["noteSet"]>>;

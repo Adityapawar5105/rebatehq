@@ -27,4 +27,10 @@ export const frCA: Partial<Catalog> = {
   "report.rebatehqMarginLeakReport2": "RebateHQ - Rapport des fuites de marge - généré sur cet appareil; rien n'a été téléversé",
   "margin.reportCreated": "Rapport des fuites PDF créé sur cet appareil ({bytes} octets); rien n'a été téléversé. L'export figure dans le journal d'audit.",
   "quotes.linesLabel": "Lignes de la soumission",
+  "vendor.quotes": "Soumissions ouvertes concernées",
+  "vendor.affectedQuotes": "Soumissions ouvertes concernées",
+  "vendor.affectedQuotesHelp": "Lignes de soumissions en brouillon, soumises et en attente dont l'article change de coût : la marge au prix proposé avant et après.",
+  "vendor.noQuotes": "Aucune soumission ouverte n'utilise un article dont le coût change.",
+  "vendor.quoteCost": "Coût lors de la soumission",
+  "vendor.openQuotes": "Soumissions ouvertes",
 };

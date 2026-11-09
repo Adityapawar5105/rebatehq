@@ -6,6 +6,7 @@ import { currencyChangeSql, workspaceCurrency } from './currency';
 import {customerHealth} from '../margin/monitor';
 import {valuesTotals} from '../grid/sql';
 import * as notes from '../notes/notes';
+import * as vendor from '../vendor/review';
 import * as grid from '../pricing/grid';
 import * as market from '../pricing/market';
 import {whatIf} from '../pricing/whatif';
@@ -361,6 +362,12 @@ export class VaultService {
   /** Saves one note. The audit records the kind and row ID, never the note text. */
   async noteSet(kind:unknown,id:unknown,text:unknown){let saved:string|null=null;await this.write("data.note_saved",{kind:String(kind),id:String(id)},async e=>{await e.conn.query(await notes.noteSql(e,kind,id,text));saved=notes.checkNote(text);});return {kind,id,notes:saved};}
   async sourceRemovePreview(id:string){return notes.removalNotes(this.requireEngine(),id);}
+  // ---- 7E-1: vendor price review and purchase price variance (Professional and Scale; capability `cost`) ----
+  async vendorSheets(){this.opsTier();return vendor.vendorSheets(this.requireEngine());}
+  async vendorReview(sheet:unknown,window?:unknown,offset=0,grid?:unknown){this.opsTier();return vendor.vendorReview(this.requireEngine(),sheet,window,offset,grid);}
+  async vendorReviewQuotes(sheet:unknown,offset=0,grid?:unknown){this.opsTier();return vendor.vendorReviewQuotes(this.requireEngine(),sheet,offset,grid);}
+  async vendorPpv(range:{from?:unknown;to?:unknown}={},offset=0,grid?:unknown){this.opsTier();return vendor.ppv(this.requireEngine(),range,offset,grid);}
+  async vendorPpvLines(product:unknown,range:{from?:unknown;to?:unknown}={},offset=0,grid?:unknown){this.opsTier();return vendor.ppvLines(this.requireEngine(),product,range,offset,grid);}
   async gridTotals(types:unknown,values:unknown){return valuesTotals(this.requireEngine(),types,values);}
   async homeMonitor(thresholdBp='500'){
     const e=this.requireEngine();

@@ -163,6 +163,40 @@ async function rebatesUi(){
 }
 
 
+// 7E-1 Vendors: price review of a supplier cost sheet and purchase price variance, in CAD, in a fresh vault
+// under the same request/console marker sensors.
+async function vendorsUi(){
+ const savedContext=context,savedPage=page,active=dataPlaneActive;
+ context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-vendors-')),browserOptions);await configureContext();page=await openPage();
+ try{
+ dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic vendor owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
+ await page.locator('nav a[href="#settings"]').click();await page.locator('section[aria-labelledby="currency-heading"] select').selectOption('CAD');await page.getByRole('button',{name:'Save currency',exact:true}).click();await page.getByText('Current currency: CAD',{exact:true}).waitFor();
+ const sku=marker+'-VALVE',vendor=marker+'-MILLS',unknown=marker+'-NOT-IN-ITEMS';
+ const batch=async files=>{await page.locator('nav a[href="#data-hub"]').click();await review(files);await page.getByRole('button',{name:'Confirm and import locally',exact:true}).click();await page.getByRole('heading',{name:'Batch report'}).waitFor({state:'detached'});};
+ await batch([
+  {name:'synthetic-items.csv',mimeType:'text/csv',buffer:Buffer.from('product_id,description,category,uom,current_cost,list_price\n'+sku+',Synthetic valve,Valves,EA,60.00,100.00\n')},
+  {name:'synthetic-sales.csv',mimeType:'text/csv',buffer:Buffer.from('line_id,product_id,customer_id,sale_date,quantity,list_amount,discount_amount,freight_amount,rebate_amount,cost_amount\n1,'+sku+','+marker+'-CUST,2026-03-01,4,400.00,0,0,0,240.00\n')},
+  {name:'synthetic-costs-jan.csv',mimeType:'text/csv',buffer:Buffer.from('vendor,product_id,cost,effective_date\n'+vendor+','+sku+',50.00,2026-01-01\n')},
+  {name:'synthetic-po.csv',mimeType:'text/csv',buffer:Buffer.from('line_id,receipt_ref,supplier,product_id,receipt_date,quantity,purchase_amount,entry_kind,uom\n1,PO1,'+vendor+','+sku+',2026-02-01,10,500.00,receipt,EA\n2,PO2,'+marker+'-OTHER,'+sku+',2026-02-10,10,800.00,receipt,EA\n')}]);
+ await batch([{name:'synthetic-costs-mar.csv',mimeType:'text/csv',buffer:Buffer.from('vendor,product_id,cost,effective_date\n'+vendor+','+sku+',55.00,2026-03-01\n'+vendor+','+unknown+',9.00,2026-03-01\n')}]);
+ await page.locator('nav a[href="#vendors"]').click();const reviewGrid=page.getByTestId('vendor-review-grid');await reviewGrid.waitFor({timeout:60000});
+ assert.ok((await page.getByTestId('vendor-sheet').locator('option:checked').innerText()).includes('synthetic-costs-mar.csv'),'The newest supplier sheet is not reviewed first');
+ // 50.00 to 55.00 = +5.00 (+10.00%); 4 units sold in the window: margin effect -20.00 (CAD). The unknown SKU is a line to check.
+ const row=reviewGrid.locator('tbody tr').filter({hasText:sku});await row.getByText('Increase',{exact:true}).waitFor();assert.ok((await row.innerText()).includes('CA$5.00')&&(await row.innerText()).includes('10.00'),'Review row lost the exact change or its currency');
+ assert.equal(await page.getByTestId('vendor-impact').getAttribute('data-value'),'-2000');assert.ok((await page.getByTestId('vendor-impact').innerText()).includes('CA$'),'Margin effect lost its currency');
+ assert.equal(await page.getByTestId('vendor-conflicts').innerText(),'1');await reviewGrid.locator('tbody tr').filter({hasText:unknown}).getByText('Not in item master',{exact:true}).waitFor();
+ await page.getByTestId('vendor-quotes').waitFor();
+ await page.getByTestId('vendor-tab-ppv').click();const ppvGrid=page.getByTestId('ppv-grid');await ppvGrid.waitFor({timeout:60000});
+ // Receipts: 10 @ 50.00 and 10 @ 80.00 from two suppliers; standard 60.00: variance 1,300.00 - 1,200.00 = +100.00.
+ assert.equal(await page.getByTestId('ppv-total').getAttribute('data-value'),'10000');const ppvRow=ppvGrid.locator('tbody tr').filter({hasText:sku});
+ for(const text of ['CA$50.00','CA$80.00','CA$65.00','CA$100.00'])await ppvRow.getByText(text,{exact:true}).first().waitFor();
+ await ppvGrid.getByTestId('grid-select-all').check();const varianceTotal=ppvGrid.getByTestId('grid-total-variance');await varianceTotal.waitFor();assert.equal(await varianceTotal.getAttribute('data-sum'),'10000');assert.ok((await varianceTotal.innerText()).includes('CA$100.00'),'Variance total lost its currency');
+ await ppvRow.getByTestId('ppv-show-lines').click();const lines=page.getByTestId('ppv-lines-grid');await lines.waitFor();assert.equal(await lines.locator('tbody tr').count(),2);
+ await page.setViewportSize({width:375,height:812});for(const tab of ['review','ppv']){await page.getByTestId('vendor-tab-'+tab).click();await page.waitForTimeout(400);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Vendors page overflows a phone');}await page.screenshot({path:'test-results/vendors-'+channel+'.png',fullPage:true});await page.setViewportSize({width:1280,height:800});
+ await page.locator('nav a[href="#settings"]').click();await page.getByLabel('Preview as').selectOption('sales_rep');await page.getByTestId('preview-banner').waitFor();assert.equal(await page.locator('nav a[href="#vendors"]').count(),0,'A Sales Rep sees the Vendors section');await page.getByRole('button',{name:'Return to my own view'}).click();
+ results.checks.vendorsUi={currency:'CAD',reviewChange:true,marginEffect:true,unknownSkuFlagged:true,ppvVariance:true,ppvGridTotals:true,ppvLines:true,phone375:true,repHidden:true,privacyMarkers:true};
+ }catch(error){console.error('Vendor UI diagnostics:',JSON.stringify(await diagnose()));throw error;}finally{await context.close();context=savedContext;page=savedPage;dataPlaneActive=active;}
+}
 async function suppliersUi(){
  const savedContext=context,savedPage=page,active=dataPlaneActive;
  context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-suppliers-')),browserOptions);await configureContext();page=await openPage();
@@ -213,7 +247,7 @@ async function monitorUi(){
 await build({ entryPoints: ["tests/helpers/studio-fixtures.ts"], outfile: "test-results/studio-fixtures.mjs", bundle: true, platform: "node", format: "esm" });
 const fixtures = await import(new URL("../test-results/studio-fixtures.mjs", import.meta.url).href);
 try {
- if(process.argv.includes('--suppliers-ui-only')){await suppliersUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Supplier UI focused gate passed ('+channel+').');}else{
+ if(process.argv.includes('--vendors-ui-only')){await vendorsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Vendor UI focused gate passed ('+channel+').');}else if(process.argv.includes('--suppliers-ui-only')){await suppliersUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Supplier UI focused gate passed ('+channel+').');}else{
   if (auth) {
     assert.notEqual(process.env.LEGACY_BUSINESS_ENABLED,'true','Privacy gate must run with legacy business routes OFF');
     await signInLocal(context,page,base);
@@ -560,7 +594,7 @@ try {
     await page.getByTestId('theme').first().selectOption(theme);
     for(const size of [{width:1366,height:768},{width:375,height:812}]){
       await page.setViewportSize(size);
-      for(const hash of ['#home','#data-hub','#margin','#margin-bridge','#pricing','#pricing-planner','#pricing-versions','#pricing-exceptions','#pricing-expiry','#quotes','#rebates','#reports','#settings']){
+      for(const hash of ['#home','#data-hub','#margin','#margin-bridge','#pricing','#pricing-planner','#pricing-versions','#pricing-exceptions','#pricing-expiry','#quotes','#rebates','#vendors','#vendors-ppv','#reports','#settings']){
         await page.evaluate(h=>{location.hash=h;},hash);await page.waitForTimeout(300);await page.waitForFunction(()=>!document.querySelector('main [aria-busy="true"]'),null,{timeout:60000});if(hash==='#pricing-versions'&&theme==='dark'&&size.width===375)await opsShot('versions-dark-mobile');
         if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1))overflowed.push(`${hash} ${theme} ${size.width}px`);
       }
@@ -658,7 +692,7 @@ try {
   }
   await monitorUi();
   await rebatesUi();
-  await suppliersUi();
+  await suppliersUi(); await vendorsUi();
   if(auth){
     const device=await page.evaluate(()=>{const key=Object.keys(localStorage).find(k=>k.startsWith('rebatehq-device-v1:'));return localStorage.getItem(key);});assert.ok(device);
     const revoked=await context.request.post(base+'/api/licence/devices',{data:{id:device,status:'revoked'}});assert.equal(revoked.status(),200);
