@@ -1,5 +1,9 @@
 # RebateHQ security verification
 
+## Chunk 7E-1 — vendor review and purchase variance (CI-verified)
+
+Verified in [CI #126](https://github.com/Adityapawar5105/rebatehq/actions/runs/42616397012) on `2cee899`, 9 November 2026 (55 authenticated Chromium, 53 Firefox, 12 relay checks; 301 unit tests). All figures are computed locally in the vault worker; the browser gate runs the Vendors flow under the request and console marker sensors. The five new commands are read-only, need `cost` and the Professional or Scale tier (worker check); the Vendors section is hidden from Sales Reps (unit and browser checks). Worker grids accept only their own code-defined columns, and sheet, product and date inputs are validated and quoted. No export, relay or server path was added. Details: [CHUNK_7E_VERIFICATION.md](./CHUNK_7E_VERIFICATION.md).
+
 ## Chunk 7V-3b — row notes (CI-verified)
 
 Verified in [CI #120](https://github.com/Adityapawar5105/rebatehq/actions/runs/42487588209) on `7ef16fc`, 8 November 2026 (52 authenticated Chromium, 50 Firefox, 12 relay checks; 286 unit tests). Notes are free text, so they are treated as private business data: stored only in the encrypted vault and its encrypted backups, never in a relay event, server request, ERP export or change log (the authenticated gate writes notes containing the privacy marker under the request and console sensors; the worker test checks the CSV export and change log). The note commands need `data`; the palette searches and returns notes only for `data` roles, and the decision 16 test proves a Sales Rep can neither see nor search them. Notes are validated in the worker (1,000 code points, control characters refused), stored as quoted SQL values and rendered as text, never HTML. Saving a note is audited with the row kind and ID, not the text. Details: [CHUNK_7V3_VERIFICATION.md](./CHUNK_7V3_VERIFICATION.md).

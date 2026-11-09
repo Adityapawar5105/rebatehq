@@ -4,7 +4,7 @@ Blueprint Phase 2 (section 6) and the execution plan's 7E bullet (section 9). Pa
 
 ## Part 1 — vendor price review and purchase price variance
 
-**Status: built by Claude Code, 9 November 2026; CI result: pending.** Local vault schema unchanged (v16, 47 tables). No Supabase migration, no locked-hash change, no dependency change. Blueprint unchanged.
+**7E-1 is CI-verified** in [CI #126](https://github.com/Adityapawar5105/rebatehq/actions/runs/42616397012) on `2cee899`, 9 November 2026: 301 unit tests (78 JS + 223 TS), **55 authenticated Chromium vault checks** (including `vendorsUi`), **53 Firefox lab checks**, **12 real-authenticated local-Supabase relay checks**, and the fresh 152-check pgTAP suite twice. Local vault v16 / 47 tables (unchanged); 11 locked migrations, zero pending; no restore drill needed (no Supabase change). Built by Claude Code. Local vault schema unchanged. No Supabase migration, no locked-hash change, no dependency change. Blueprint unchanged.
 
 ### What was built
 
@@ -35,7 +35,10 @@ The browser gate adds `vendorsUi` (fresh vault in CAD, under the request and con
 
 ### Unverified
 
-- Passing CI for this part, until linked.
 - Real supplier sheets and purchase files from a pilot; the fixtures are synthetic.
 - Large-vault timings of the review and variance queries; no capacity claim is made.
 - Headed screen-reader use; native-language review of the new labels.
+
+### CI proof (part 1)
+
+**7E-1 is CI-verified** in [CI #126](https://github.com/Adityapawar5105/rebatehq/actions/runs/42616397012) on `2cee899`, 9 November 2026: 301 unit tests (78 JS + 223 TS), **55 authenticated Chromium vault checks** (including `vendorsUi`), **53 Firefox lab checks**, **12 real-authenticated local-Supabase relay checks**, and the fresh 152-check pgTAP suite twice. Local vault v16 / 47 tables (unchanged); 11 locked migrations, zero pending; no restore drill needed (no Supabase change). Every job step passed, including both required browser gates; their result lists include `vendorsUi`. Part 2 (the Scale-only historical simulator) has not started.
