@@ -3,7 +3,7 @@
 Written 6 November 2026, after 7B (CI #89, #90, #91 green); updated 7 November 2026 after 7V (CI #95, #96 green). This file is the starting point for whoever builds
 the next chunk. It holds what a new session needs without the earlier chat history.
 
-**Current status (8 November 2026): 7V-3 done and CI-verified: 7V-3a in [CI #118](https://github.com/Adityapawar5105/rebatehq/actions/runs/42480527882) on `027a14d`, 7V-3b in [CI #120](https://github.com/Adityapawar5105/rebatehq/actions/runs/42487588209) on `7ef16fc`.** Local v15 / 45 tables. Next: **7D-2** (prompt 4, "continue with 7D-2"), only on explicit instruction. See CHUNK_7V3_VERIFICATION.md.
+**Current status (9 November 2026): 7D-2 done and CI-verified in [CI #123](https://github.com/Adityapawar5105/rebatehq/actions/runs/42606577225) on `2b1481d`, 9 November 2026.** Local v16 / 47 tables; 296 unit tests (78 JS + 218 TS), 54 authenticated Chromium vault checks, 52 required Firefox lab checks, 12 real-authenticated local-Supabase relay checks, and the fresh 152-check pgTAP suite twice with unchanged tenant row counts. Next: **7E**, only on explicit instruction. See CHUNK_7D_VERIFICATION.md part 2.
 
 ## How to use this file
 1. Work **one chunk per session**, in the order below. Paste **Block A (shared context)** first, then that
@@ -24,8 +24,8 @@ the next chunk. It holds what a new session needs without the earlier chat histo
 | 3b | 7C-3b v2.4: health alerts, competitor alternatives, sync status, cash-leak hero | No | Done: [CI #111](https://github.com/Adityapawar5105/rebatehq/actions/runs/42449524974) on `fa93eab`, 8 November 2026; 260 unit / 48 authenticated vault / 46 Firefox / 12 authenticated relay checks |
 | 4 | 7D-1 Customer rebates | No | Done: [CI #114](https://github.com/Adityapawar5105/rebatehq/actions/runs/42470690491) on `585ccf8`, 8 November 2026 |
 | 4a | 7V-3 v2.5: grid filter/sort + selection totals (7V-3a), row notes (7V-3b) | No | Done: 7V-3a [CI #118](https://github.com/Adityapawar5105/rebatehq/actions/runs/42480527882) on `027a14d`; 7V-3b [CI #120](https://github.com/Adityapawar5105/rebatehq/actions/runs/42487588209) on `7ef16fc` |
-| 4b | 7D-2 Supplier claims, Purchases import, rebate progress, claim generator | No | **Next** |
-| 5 | 7E Vendor review and simulator | No | — |
+| 4b | 7D-2 Supplier claims, Purchases import, rebate progress, claim generator | No | Done: [CI #123](https://github.com/Adityapawar5105/rebatehq/actions/runs/42606577225) on `2b1481d`, 9 November 2026 |
+| 5 | 7E Vendor review and simulator | No | **Next, only on explicit instruction** |
 | 6 | 7F Reporting and reach | No | — |
 | 7 | 8A Deal guidance and cross-sell | No | — |
 | 8 | 8B Margin Drain agents, cost index, dead stock | Maybe (public index feed) | — |
@@ -51,7 +51,7 @@ Read before doing anything, in this order:
 5. The latest verification records: CHUNK_7V_VERIFICATION.md (UI components and layout rules), CHUNK_7B_VERIFICATION.md,
    CHUNK_7U_VERIFICATION.md, CHUNK_7A_VERIFICATION.md.
 
-Where things stand: chunks 4.0 through 7D-1 and 7V (7V-1, 7V-2, 7V-3a grid standard, 7V-3b row notes) are CI-verified (local vault v15, 45 tables). 7V-3b: [CI #120](https://github.com/Adityapawar5105/rebatehq/actions/runs/42487588209) on `7ef16fc`, 8 November 2026. Next: 7D-2, only on explicit instruction.
+Where things stand: chunks 4.0 through 7D and 7V are CI-verified (local vault v16, 47 tables). Latest proof: [CI #123](https://github.com/Adityapawar5105/rebatehq/actions/runs/42606577225) on `2b1481d`, 9 November 2026. Next: 7E, only on explicit instruction. See CHUNK_7D_VERIFICATION.md part 2.
 Blueprint v2.4 (section 22, items 24-25) added work that 7C-3 covered. Blueprint v2.5 (items 26-27) adds a grid standard and row
 notes, built in 7V-3; from then on every new grid must meet that standard. New screens use the
 shared components in components/ui (ui.tsx, Icon.tsx, ui.module.css) inside the shell in components/local/VaultApp.tsx. The local vault is DuckDB-Wasm in a Web
@@ -810,3 +810,11 @@ SQL to_json for invoice keys; the browser test caught this difference. The local
 control-vault runner now supports VAULT_TEST_PORT and checks that the port is
 free rather than reusing an unrelated server. It still supplies no Supabase
 configuration. Use 3106 here if the user's older preview holds 3100.
+
+### 7D-2 carry-forward pitfalls (9 November 2026)
+
+- Purchases need a file-unique line ID plus supplier/receipt reference for cross-file duplicate detection. Repeated IDs become Fix Later issues; never generate or rewrite IDs silently.
+- Physical source_files.role uses customer_list for CHECK compatibility; source_kinds must store purchases, and reads coalesce the kind. Source cleanup and note-removal previews must account for purchase references. SKU merges touching receipt evidence are blocked.
+- Supplier progress is live; prepared/submitted claimed amounts and evidence hashes are frozen. Re-export rejects changed evidence; redraft only where the status allows. Ship-and-debit is manual authorized assessment, not inferred entitlement.
+- Prepare exports asynchronously, then offer an explicit retained download link. Do not rely on a post-await automatic download or a one-second Blob URL timer. Clear links on edits/status changes; keep the delayed-download and inner-context diagnostics tests.
+- New supplier commands are cost / rebateManage gated; no new rep-reachable projection. Future grids still follow 7V-3, and imports must keep notes via named columns. All 11 Supabase migrations and migrations.lock remain unchanged.

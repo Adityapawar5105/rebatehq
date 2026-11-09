@@ -100,7 +100,7 @@ Validation: full 78 JS + 191 TS rerun passed; the focused `node <TS-runner> --te
 
 ## Part 2 — supplier claims and purchase receipts (7D-2, 9 November 2026)
 
-Status: **unverified in CI** until a passing run is cited below. 7E remains unstarted. Blueprint v2.5 unchanged.
+Status: **CI-verified** in [CI #123](https://github.com/Adityapawar5105/rebatehq/actions/runs/42606577225) on `2b1481d`, 9 November 2026. 7E remains unstarted. Blueprint v2.5 unchanged.
 
 ### Implemented boundary
 
@@ -125,7 +125,7 @@ The local toolchain has no pnpm on PATH. Node equivalents use the installed pinn
 
 ### Unverified limits
 
-Until a green run is cited, CI authentication/privacy and required Firefox coverage are unverified. Hosted auth/deployment/restore, headed manual acceptance, physical crash/quota/multi-tab recovery, real supplier/ERP layout acceptance, native-language review and large-vault supplier/export performance remain unverified. App-open progress/reminders are not recurring notifications. No new restore drill is required: control-plane schema and inventory are unchanged.
+CI authentication/privacy and required Firefox coverage are verified by the passing run below, for these local-vault flows only. Hosted auth/deployment/restore, headed manual acceptance, physical crash/quota/multi-tab recovery, real supplier/ERP layout acceptance, native-language review and large-vault supplier/export performance remain unverified. App-open progress/reminders are not recurring notifications. No new restore drill is required: control-plane schema and inventory are unchanged.
 
 Local unit evidence (9 November 2026): node --test --test-concurrency=1 tests/*.test.js passed 78/78; node node_modules/.pnpm/tsx@4.23.15/node_modules/tsx/dist/cli.mjs --test --test-concurrency=1 tests/*.test.ts passed 218/218, zero skips. Earlier complete TS run found one obsolete schema-version assertion; updated to require the v16 upgrade and reject v17, retaining the check. The final suite executes the nine new supplier tests and all existing margin/legacy tier golden cases. Typecheck passed. check-migrations-lock passed 11 locked / 0 pending; check-schema passed 24 public tenant tables; check-service-role passed 237 local user-facing files. git diff --check passed. These are local results, not CI evidence.
 
@@ -136,3 +136,26 @@ Final local browser run: VAULT_TEST_PORT=3106 node scripts/test-control-vault.mj
 CI #122 on b77234e failed at the second supplier UI download (XLSX): no download event within 30 seconds; the preceding CSV and recorded-amount check passed. Worker suppliers, unit/type/build/lock and real-Postgres checks passed; Firefox and authenticated relay did not run. The original outer-page diagnostics lost the failing nested page. No isolation or arithmetic assertion was weakened. A Windows delayed-download probe downloaded both formats, so the exact CI-only auto-download failure was not reproduced. The supplier flow now separates asynchronous preparation from an explicit, persistent download link, releasing its Blob URL only on replacement/unmount. The browser regression delays export dispatch 6.5 seconds and then waits 1.5 seconds before clicking the prepared link, checking both downloads and retaining inner-page diagnostics on failure. Chrome and Edge focused supplier UI gates passed this strengthened flow. Default CI still runs the complete gate; --suppliers-ui-only is a local focused entry point only. CI fix attempt 1 is pending.
 
 CI download fix local recheck: 78 JS + 218 TS tests passed again, zero skips; typecheck and syntax checks (node --check scripts/test-vault-browser.mjs / scripts/test-control-vault.mjs) passed. Production rebuilds passed. The final focused Chrome/Edge supplier UI runs passed the 6.5-second export delay, 1.5-second retained-link wait, both exact CAD downloads and clearing stale links after status changes. Firefox final focused rerun is in progress; all earlier full gates remain recorded above. No product SQL, migration/hash or server code was changed by this fix.
+
+Final focused Firefox controller also exited 0 after the retained-link/stale-link changes. All three final focused browser gates passed. Commands: VAULT_TEST_PORT=3106 node scripts/test-control-vault.mjs --vault-only --suppliers-ui-only (Chrome + Edge); same with --browser=firefox. Each controller rebuilt workers and the production app. A local ignored node test-results/7d2-download-probe.mjs probe served synthetic data on loopback and confirmed that Windows Chrome downloaded both delayed automatic files; this did not reproduce the CI-only cause. The correction deliberately uses explicit stable links instead of relying on that browser behavior. Original next-env.d.ts restored; repeated lock/schema/service-role checks passed, and git diff --name-only -- supabase/migrations migrations.lock app/api was empty.
+
+### Part 2 passing CI evidence
+
+Verified in [CI #123](https://github.com/Adityapawar5105/rebatehq/actions/runs/42606577225) on `2b1481d`, 9 November 2026: 296 unit tests (78 JS + 218 TS), 54 authenticated Chromium vault checks, 52 required Firefox lab checks, 12 real-authenticated local-Supabase relay checks, and the fresh 152-check pgTAP suite twice with unchanged tenant row counts. Job 129123997634 step 21 (Required authenticated local-vault privacy gate) and step 23 (Required Firefox local-vault lab gate) both completed successfully, not skipped. Log JSON has auth=true / Chromium 156.0.8078.4 / 54 check names and auth=false / Firefox 157.0 / 52 check names. Both lists include suppliers and suppliersUi. The real-authenticated relay gate printed 12 passed checks. Both pgTAP plans were 1..152 and passed through check 152, with the repeatability command exiting successfully. Install --frozen-lockfile, advisory audit, typecheck, pnpm test/build, migrations/warning gates and restricted runtime-role checks passed. CI source scan counted 229 files (237 locally after generated harness assets).
+
+Local vault v16 / 47 tables; 24 public tenant tables; 11 locked migrations / zero pending, unchanged. No restore drill required or run: no Supabase schema/inventory change. One CI fix attempt after #122; no test assertion, privacy sensor, role control, comparator, financial golden or locked migration was weakened. The exact earlier automatic-download mechanism was not reproduced on Windows; the explicit retained-link workflow passes the strengthened delayed-download regression in CI. The full local Chrome/Edge/Firefox gates preceded the fix; the changed download path then passed focused delayed-export gates in all three browsers and the full authenticated Chromium/Firefox CI gates.
+
+Hosted auth/deployment/restore, headed manual acceptance, physical recovery, real ERP/supplier layout acceptance, native-language review and large-vault supplier/export performance remain unverified. This is no app-wide privacy claim for legacy paths. Wave-2 server rebate retirement stays in 8R; 7E unstarted. Blueprint unchanged.
+
+Implementation commit b77234e and download-workflow fix 2b1481d were explicitly staged, committed with git commit -F under ignored test-results, and pushed to origin/main. GitHub tools read/polled runs, jobs, steps and completed logs; the expected in-progress log 404 was not a test failure. The documentation close-out changes only the seven evidence/handoff files below; it does not change source or tests.
+
+### Part 2 changed files
+
+- Screens: components/local/SupplierClaimsView.tsx (new), RebatesView.tsx and VaultApp.tsx.
+- Claim logic/export: lib/rebate/supplier.ts and claim-export.ts (new), input.ts; lib/vault/schema.ts, protocol.ts, dispatch.ts, licence.ts, service.ts and currency.ts; lib/roles/access.ts.
+- Import/source/notes: lib/studio/formats.ts, mapper.ts, load.ts, studio.ts and fixlater.ts; lib/notes/notes.ts and lib/cleanup/item-master.ts.
+- Catalogs: lib/i18n/locales/en.ts, es.ts, fr.ts (fr-CA inherits).
+- Verification: tests/supplier-claims.test.ts (new), quotes.test.ts, notes.test.ts, rebate-local.test.ts, vault.test.ts, tests/browser/vault-worker.ts; scripts/test-vault-browser.mjs and test-control-vault.mjs.
+- Docs: AGENTS.md, ASSUMPTIONS.md, BLUEPRINT_EXECUTION_PLAN.md, CODEX_HANDOFF.md, README.md, SECURITY_CHECK.md and this record.
+
+Final command ledger supplements the inventory above: both full unit suites passed again after the download fix; production controller rebuilds, focused Chrome/Edge/Firefox runs, node --check on both browser scripts, typecheck, lock/schema/service-role scans and git diff --check passed. Exploratory rg Windows wildcard errors and the edit-helper main-try locator error were corrected; no product test was removed. Close-out reruns the JS suite, typecheck and migration-lock check, then explicitly stages only these seven docs and uses git commit -F plus git push origin main. CI proof remains attached to implementation 2b1481d; the close-out introduces no source changes.
