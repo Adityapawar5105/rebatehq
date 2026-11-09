@@ -65,3 +65,4 @@
 .noteInput{width:100%;min-height:72px;padding:var(--space-2);font:inherit;color:var(--text);background:var(--surface);border:1px solid var(--control-border);border-radius:var(--radius-sm);resize:vertical}
 .noteInput:focus-visible{outline:3px solid var(--focus);outline-offset:1px}
 .noteOver{font-size:var(--fs-xs);font-weight:600;color:var(--bad-text)}
+.ruler{font-family:var(--font-mono);font-size:var(--fs-xs);line-height:1.45;margin:0;padding:var(--space-3);white-space:pre;overflow-x:auto;max-width:100%;color:var(--text)}

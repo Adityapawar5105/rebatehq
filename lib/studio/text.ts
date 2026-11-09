@@ -2,6 +2,7 @@
 // RFC 4180 tokenizer. Never holds a whole large file as one string or row array.
 import { DELIMITERS, StudioError, type Delimiter, type Encoding } from "./formats";
 import { msg } from "../i18n/core";
+import { detectBoundaries, fixedSegments, sliceFixed } from "./layout";
 export const MAX_COLUMNS = 256, MAX_CELL = 4000, CHUNK_BYTES = 4 * 1024 * 1024;
 
 export function detectEncoding(head: Uint8Array): { encoding: Encoding; bom: number } {
@@ -115,4 +116,60 @@ export function detectDelimiter(text: string, preferred?: Delimiter): Delimiter 
     if (score > bestScore) { best = d; bestScore = score; }
   }
   return best;
+}
+
+// ---- 7F-2: fixed-width print reports ----------------------------------------------------------------------------
+/** Longest line kept from a fixed-width file; anything longer is cut and the row rejected as oversized. */
+export const MAX_FIXED_LINE = MAX_CELL * 16;
+/** Streaming fixed-width reader: splits lines (LF, CRLF or CR) and slices each at the boundaries. */
+export class FixedTokenizer {
+  private pending = ""; private record = 1; private pendingCR = false; private long = false;
+  constructor(private boundaries: number[], private sink: RowSink) {}
+  push(text: string) {
+    let i = 0;
+    if (this.pendingCR) { this.pendingCR = false; if (text.charCodeAt(0) === 10) i = 1; }
+    while (i < text.length) {
+      let j = i; while (j < text.length) { const c = text.charCodeAt(j); if (c === 10 || c === 13) break; j++; }
+      this.append(text.slice(i, j));
+      if (j >= text.length) return;
+      this.emit();
+      if (text.charCodeAt(j) === 13) { if (j + 1 >= text.length) { this.pendingCR = true; return; } i = text.charCodeAt(j + 1) === 10 ? j + 2 : j + 1; }
+      else i = j + 1;
+    }
+  }
+  end() { if (this.pending) this.emit(); }
+  private append(s: string) {
+    if (this.pending.length + s.length > MAX_FIXED_LINE) { this.long = true; this.pending += s.slice(0, Math.max(0, MAX_FIXED_LINE - this.pending.length)); }
+    else this.pending += s;
+  }
+  private emit() {
+    const cells = sliceFixed(this.pending, this.boundaries), cut = cells.flatMap((v, i) => v.length > MAX_CELL ? [i] : []);
+    this.sink(cut.length ? cells.map(v => v.slice(0, MAX_CELL)) : cells, this.record, this.long || cut.length > 0, this.long ? [] : cut);
+    this.pending = ""; this.long = false; this.record++;
+  }
+}
+/** Fixed-width rows of a small decoded sample. */
+export function sampleFixed(text: string, boundaries: number[], maxRows = 200) {
+  const rows: string[][] = [];
+  const t = new FixedTokenizer(boundaries, cells => { if (rows.length < maxRows) rows.push(cells); });
+  t.push(text); t.end();
+  return rows;
+}
+/**
+ * Fixed-width or delimited? A file is fixed-width when no delimiter splits most lines into three or more columns,
+ * while aligned blank gaps do (and give more columns than the delimiter). `.prn` prefers fixed-width.
+ */
+export function detectLayout(text: string, delimiter: Delimiter, preferFixed = false): { layout: "delimited" | "fixed"; boundaries: number[] } {
+  const lines = text.split(/\r\n|\n|\r/).slice(0, 200).filter((l, i, all) => i < all.length - 1 || l.length);
+  const used = lines.filter(l => l.trim());
+  if (used.length < 2) return { layout: "delimited", boundaries: [] };
+  const counts = new Map<number, number>();
+  for (const row of sampleRows(text, delimiter, 200)) if (row.length) counts.set(row.length, (counts.get(row.length) || 0) + 1);
+  let mode = 1, freq = 0; for (const [n, f] of counts) if (f > freq) { mode = n; freq = f; }
+  if (mode >= 3 && freq >= used.length * 0.6 && !preferFixed) return { layout: "delimited", boundaries: [] };
+  const boundaries = detectBoundaries(used.map((l, i) => ({ row: i + 1, segments: fixedSegments(l) })), 1);
+  const multi = used.filter(l => sliceFixed(l, boundaries).filter(Boolean).length >= 2).length;
+  if (boundaries.length >= 2 && boundaries.length + 1 > mode && multi >= used.length * 0.6) return { layout: "fixed", boundaries };
+  if (preferFixed && boundaries.length >= 1) return { layout: "fixed", boundaries };
+  return { layout: "delimited", boundaries: [] };
 }

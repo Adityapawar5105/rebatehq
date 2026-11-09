@@ -178,6 +178,8 @@ test("issue messages and columns never include cell values", () => {
 test("recipe fingerprints depend on kind and normalized headers only", () => {
   assert.equal(fingerprint("csv", ["Line ID", "SKU"]), fingerprint("csv", ["line_id", "sku"]));
   assert.notEqual(fingerprint("csv", ["a"]), fingerprint("tsv", ["a"]));
-  assert.equal(kindOf("Report.XLSB"), "xlsb"); assert.equal(kindOf("x.pdf"), null);
+  assert.equal(kindOf("Report.XLSB"), "xlsb"); assert.equal(kindOf("x.docx"), null);
+  // 7F-2: text-based PDF tables, Parquet and .prn print reports are converter inputs.
+  assert.equal(kindOf("x.pdf"), "pdf"); assert.equal(kindOf("x.parquet"), "parquet"); assert.equal(kindOf("x.PRN"), "prn");
 });
 test("sampleRows is bounded", () => { assert.equal(sampleRows("a\n".repeat(500), ",", 60).length, 60); });

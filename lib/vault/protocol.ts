@@ -4,7 +4,7 @@ import type {GridMeta,GridQuery,GridType,Totals} from "../grid/core";
 import type {PlanInput,ExceptionInput} from "../pricing/ops";
 import type { VaultService } from './service';
 import type { RuleInput, GuardInput } from '../pricing/rules';
-import type { Role, Settings } from "../studio/formats";
+import type { Role, Settings, SettingsPatch } from "../studio/formats";
 import type { ErpProfile, FieldSource } from "../studio/mapper";
 import type { FixGroup, FixRow } from "../studio/fixlater";
 import type { Health } from "../studio/health";
@@ -147,7 +147,8 @@ export type Commands = {
   verify: Record<string, never>;
   storage: Record<string, never>;
   studioAdd: { files: File[]; replaces?: string | null };
-  studioUpdate: { id: string; settings?: Partial<Settings>; role?: Role | null; erp?: ErpProfile; field?: { name: string; source: FieldSource }; confirmed?: boolean; range?: { from: string | null; to: string | null } };
+  folderGet: Record<string, never>; folderSet: { directory: FileSystemDirectoryHandle | null }; studioFolder: { files: File[] };
+  studioUpdate: { id: string; settings?: SettingsPatch; role?: Role | null; erp?: ErpProfile; field?: { name: string; source: FieldSource }; confirmed?: boolean; range?: { from: string | null; to: string | null } };
   studioDrop: { id: string };
   studioClear: Record<string, never>;
   studioState: Record<string, never>;
@@ -203,6 +204,7 @@ export type Results = {
   vendorPpv:Awaited<ReturnType<VaultService["vendorPpv"]>>;
   vendorPpvLines:Awaited<ReturnType<VaultService["vendorPpvLines"]>>;
   simOptions:Awaited<ReturnType<VaultService["simOptions"]>>;
+  folderGet:Awaited<ReturnType<VaultService["folderGet"]>>; folderSet:Awaited<ReturnType<VaultService["folderSet"]>>; studioFolder:Awaited<ReturnType<VaultService["studioFolder"]>>;
   simRun:Awaited<ReturnType<VaultService["simRun"]>>;
   simRows:Awaited<ReturnType<VaultService["simRows"]>>;
   customerList:Awaited<ReturnType<VaultService["customerList"]>>;

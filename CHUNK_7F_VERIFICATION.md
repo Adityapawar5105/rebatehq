@@ -54,3 +54,46 @@ Hosted/deployed sign-in and relay/restore, real customer/ERP/accounting acceptan
 ## Part 2 — folder re-import and Phase 2 converters
 
 Not started. Requires a new explicit user task after part 1 is green in CI.
+
+## Part 2 — folder re-import and Phase 2 converters (local verification)
+
+**Status: built by Claude Code, 10 November 2026; CI result: pending.** Local vault schema unchanged (v17, 50 tables). No Supabase migration or locked-hash change. Blueprint unchanged.
+
+### What was built
+
+- `lib/studio/layout.ts`: column boundaries from aligned gaps for fixed-width text (characters) and PDF text (points), typical-line filtering, slicing, placement and validated manual input.
+- Fixed-width reports: `FixedTokenizer` (streaming, CR/LF/CRLF across chunks, over-long lines rejected), layout detection, `.prn` kind; Import Studio shows a "Columns" choice, the boundaries with "Use these columns" and "Detect again", and a ruler over the raw lines.
+- PDF tables: `lib/studio/pdf.ts` with pdf.js 6.4.299 (legacy build) run inside the vault worker and loaded on demand as a separate chunk; pdf.js's worker module is evaluated so that it cannot take over the vault worker's message port. Scanned, password-protected and damaged PDFs are refused with a reason; no OCR.
+- Parquet: `lib/studio/parquet.ts` and `lib/vault/parquet-engine.ts`; DuckDB's signed Parquet extension vendored and pinned (`vendor/duckdb-extensions/README.md`, `scripts/build-spike.mjs`).
+- Row pipeline: repeated header rows and split page footers are skipped for every format.
+- Folder re-import: `components/local/FolderReimport.tsx`, `lib/vault/folder.ts`, worker commands `folderGet`, `folderSet` (read-only) and `studioFolder`, all needing `data`.
+- Dependency: `pdfjs-dist` 6.4.299, pinned exactly (pnpm 10 lockfile; high/critical audit clean, the one moderate finding is the existing `uuid` via `exceljs`).
+- Message keys `layout.*`, `pdf.*`, `parquet.*`, `folder.*` in en, es and fr.
+
+Rules for every behaviour are in `ASSUMPTIONS.md`, section 7F-2.
+
+### Tests
+
+`tests/converters.test.ts` (6 tests): layout detection on a print report (boundaries worked out by hand), slicing, PDF placement and boundary validation; the fixed-width tokenizer across chunk edges and over-long lines; the full row pipeline of a print report (title, repeated header, total and footers skipped), manual boundaries, "Detect again", layout switching and a recipe matching next month's report; a two-page PDF price list read by pdf.js (repeated header and footers skipped, manual breaks, recipe) and refusals of scanned, damaged and empty PDFs; Parquet grids, limits and reader failures (no engine text leaks); stored recipes with malformed layouts ignored; folder re-import through the worker dispatcher (recipe match added; imported, unsupported, unmatched and unreadable files listed; Sales Rep refused; nothing loads until confirmed).
+
+The browser gate adds the worker check `converters` (DuckDB writes a real Parquet file after loading the pinned extension; a print report, a PDF price list and the Parquet customers import exactly; the folder handle round-trips through IndexedDB; folder re-import loads next month's report; malformed and scanned files are refused) and the UI check `convertersUi` (fixed-width ruler, a wrong boundary corrected and detected again, recipe, PDF and Parquet in one batch, phone width, folder re-import through the picker seam and a second re-import that adds nothing).
+
+### Local checks, part 2 (not CI proof)
+
+| Command | Result |
+| --- | --- |
+| `node node_modules/typescript/bin/tsc --noEmit` | passed |
+| `node --test tests/*.test.js` | 78 of 78 passed |
+| `node …/tsx/dist/cli.mjs --test --test-concurrency=2 tests/*.test.ts` | 242 of 242 passed (6 new in `tests/converters.test.ts`) |
+| `node scripts/check-migrations-lock.mjs` | 11 applied, 0 pending, unchanged |
+| `pnpm audit --audit-level high` (pnpm 10) | passed; 1 moderate (existing `uuid` via `exceljs`) |
+| `scripts/test-vault-browser.mjs --browser=chrome` on a production build (lab mode) | passed, 59 checks (Chrome 156.0.8078.80), including `converters` and `convertersUi` |
+| Same, `--browser=msedge` | passed, 59 checks (Edge 157.0.4341.42) |
+| Relay and Firefox gates | not run locally; CI runs both |
+
+### Unverified, part 2
+
+- The native folder picker and the browser's permission prompt: automation uses an OPFS folder in place of the picker (the File System Access calls after it are real). Folder re-import in Firefox is not offered (no picker there).
+- Real ERP print reports, real supplier PDFs and real Parquet exports from a pilot; all fixtures are synthetic.
+- PDFs with CID fonts that need external CMaps, rotated text, and multi-line cells; large-file timings for the three converters.
+- Native-language review of the new labels; headed screen-reader use of the column ruler.

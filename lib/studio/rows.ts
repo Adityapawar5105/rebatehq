@@ -3,7 +3,7 @@
 // location. Writers emit clean UTF-8 CSV as Blob parts, never one giant string.
 import { csvSafeCell } from "../csv";
 import { FOOTER, TOTAL, classifyRow, headerNames, type Settings, type StudioIssue } from "./formats";
-import { CsvTokenizer, decodeChunks } from "./text";
+import { CsvTokenizer, FixedTokenizer, decodeChunks } from "./text";
 import type { Grid } from "./sheets";
 import { msg } from "../i18n/core";
 export const MAX_STORED_ISSUES = 10_000;
@@ -11,6 +11,8 @@ export type Stats = { read: number; skipped: number; rejected: number; issues: S
 export const emptyStats = (): Stats => ({ read: 0, skipped: 0, rejected: 0, issues: [], issueCount: 0, rejectedRows: [] });
 export function addIssue(stats: Stats, issue: StudioIssue) { stats.issueCount++; if (stats.issues.length < MAX_STORED_ISSUES) stats.issues.push(issue); }
 type DataSink = (cells: string[], row: number) => void;
+/** A row compared as text: trimmed cells, trailing blanks ignored. */
+const rowKey = (cells: string[]) => { const v = cells.map(c => c.trim()); while (v.length && !v.at(-1)) v.pop(); return v.join(""); };
 const UNNAMED = /^Column [A-Z]+$/;
 /**
  * Leading unnamed columns that hold report section headings (QuickBooks "Sales by Item
@@ -35,6 +37,9 @@ export class Normalizer {
   headers: string[] | null = null;
   /** Section-heading rows copied down (counted in stats.skipped too). */
   headings = 0;
+  /** 7F-2: header rows repeated further down (print reports and PDFs repeat them on every page), skipped. */
+  repeatedHeaders = 0;
+  private headerKeys = new Set<string>();
   private block: string[][] = [];
   private lead = 0;
   private carry: string[] = [];
@@ -52,13 +57,14 @@ export class Normalizer {
       else {
         if (index < headerRow - headerDepth + 1) return; // preamble above the header block
         this.block.push(cells);
-        if (index === headerRow) { this.headers = headerNames(this.block, this.block.length - 1, this.block.length); this.block = []; this.lead = headingColumns(this.headers); }
+        if (index === headerRow) { this.headers = headerNames(this.block, this.block.length - 1, this.block.length); for (const r of this.block) { const k = rowKey(r); if (k) this.headerKeys.add(k); } this.block = []; this.lead = headingColumns(this.headers); }
         return;
       }
     }
     // Blank and footer rows are classified first so carried headings never fill them in.
     const early = classifyRow(cells, this.headers.length);
     if (early === "blank" || early === "footer") { this.stats.skipped++; return; }
+    if (this.headerKeys.size && this.headerKeys.has(rowKey(cells))) { this.repeatedHeaders++; this.stats.skipped++; return; }
     if (this.lead) {
       const level = headingLevel(cells, this.lead);
       if (level !== null) { this.carry[level] = cells[level].trim(); this.carry.length = level + 1; this.headings++; this.stats.skipped++; return; }
@@ -78,7 +84,8 @@ export class Normalizer {
 }
 export async function streamText(file: Blob, settings: Settings, normalizer: Normalizer, signal?: AbortSignal, progress?: (bytes: number) => void) {
   let index = 0;
-  const tokenizer = new CsvTokenizer(settings.delimiter, (cells, record, oversized, cut) => { normalizer.accept(cells, record, index++, oversized, cut); });
+  const sink = (cells: string[], record: number, oversized: boolean, cut: number[]) => { normalizer.accept(cells, record, index++, oversized, cut); };
+  const tokenizer = settings.layout === "fixed" ? new FixedTokenizer(settings.boundaries ?? [], sink) : new CsvTokenizer(settings.delimiter, sink);
   for await (const { text, bytes } of decodeChunks(file, settings.encoding, signal)) { tokenizer.push(text); progress?.(bytes); }
   tokenizer.end();
 }

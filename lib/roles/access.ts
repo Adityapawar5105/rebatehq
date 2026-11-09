@@ -62,6 +62,8 @@ export const ACTION_CAP: Record<Action, Cap | null> = {
   vendorSheets:'cost',vendorReview:'cost',vendorReviewQuotes:'cost',vendorPpv:'cost',vendorPpvLines:'cost',
   // 7E-2: the historical simulator is a pricing simulation (every role with "pricing" also has "cost"); Scale only.
   simOptions:'pricing',simRun:'pricing',simRows:'pricing',
+  // 7F-2: folder re-import is an import (Import Studio, every tier).
+  folderGet:'data',folderSet:'data',studioFolder:'data',
   supplierClaims:'cost',supplierPurchases:'cost',supplierProgress:'cost',supplierClaimPreview:'cost',supplierClaimSave:'rebateManage',supplierClaimStatus:'rebateManage',supplierClaimExport:'rebateManage',
   customerList:'data',productList:'data',noteSet:'data',sourceRemovePreview:'data',
   gridTotals:'view',

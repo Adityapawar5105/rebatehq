@@ -12,6 +12,10 @@ import {valuesTotals} from '../grid/sql';
 import * as notes from '../notes/notes';
 import * as vendor from '../vendor/review';
 import * as sim from '../vendor/simulate';
+import { parquetReader } from './parquet-engine';
+import { kindOf } from '../studio/formats';
+import { fileFingerprint } from '../studio/studio';
+import { importFolder, storeImportFolder } from './folder';
 import * as grid from '../pricing/grid';
 import * as market from '../pricing/market';
 import {whatIf} from '../pricing/whatif';
@@ -29,7 +33,7 @@ import { appendAudit, verifyAudit, GENESIS } from "./audit";
 import { V1_SQL, SCHEMA_VERSION, upgradeSql } from "./schema";
 import { sqlText } from "../spike/exact";
 import { Studio, listSources, loadRecipes, recipeSql, removeSource, type Progress } from "../studio/studio";
-import type { Role, Settings } from "../studio/formats";
+import type { Role, Settings, SettingsPatch } from "../studio/formats";
 import type { ErpProfile, FieldSource } from "../studio/mapper";
 import { dismissSql, fixGroups, fixRows, fixSetSql, recheck } from "../studio/fixlater";
 import { health } from "../studio/health";
@@ -206,8 +210,25 @@ export class VaultService {
   }
   private async recipes() { return loadRecipes(this.requireEngine()); }
   async studioState() { return this.studio.state(await this.recipes()); }
-  async studioAdd(files: File[], replaces: string | null = null) { this.requireEngine(); await this.studio.add(files, await this.recipes(), replaces, await workspaceCurrency(this.requireEngine())); return this.studioState(); }
-  async studioUpdate(id: string, settings: Partial<Settings> = {}, role?: Role | null, extra: { erp?: ErpProfile; field?: { name: string; source: FieldSource }; confirmed?: boolean; range?: { from: string | null; to: string | null } } = {}) {
+  async studioAdd(files: File[], replaces: string | null = null) { const e = this.requireEngine(); await this.studio.add(files, await this.recipes(), replaces, await workspaceCurrency(e), { parquet: parquetReader(e) }); return this.studioState(); }
+  // 7F-2 folder re-import: the remembered folder handle, and adding the folder's files that match a saved recipe.
+  async folderGet() { const d = await importFolder(this.storage.scope); return { directory: d, name: d?.name ?? null }; }
+  async folderSet(directory: FileSystemDirectoryHandle | null) { await storeImportFolder(this.storage.scope, directory ?? null); return this.folderGet(); }
+  async studioFolder(files: File[]) {
+    const e = this.requireEngine();
+    if (!Array.isArray(files) || files.length > 500 || !files.every(f => f instanceof File)) throw new VaultError("FOLDER", msg("folder.invalid"));
+    const known = new Set((await e.conn.query("SELECT fingerprint FROM import_batches WHERE fingerprint IS NOT NULL")).toArray().map(r => String(r.fingerprint)));
+    const fresh: File[] = [], skipped: { name: string; reason: string }[] = [];
+    for (const f of files) {
+      if (!kindOf(f.name)) { skipped.push({ name: f.name, reason: msg("folder.skipKind") }); continue; }
+      if (f.size > 0 && known.has(await fileFingerprint(f))) { skipped.push({ name: f.name, reason: msg("folder.skipImported") }); continue; }
+      fresh.push(f);
+    }
+    const r = await this.studio.addMatching(fresh, await this.recipes(), await workspaceCurrency(e), { parquet: parquetReader(e) });
+    this.touch();
+    return { ...(await this.studioState()), folder: { added: r.added, skipped: [...skipped, ...r.skipped] } };
+  }
+  async studioUpdate(id: string, settings: SettingsPatch = {}, role?: Role | null, extra: { erp?: ErpProfile; field?: { name: string; source: FieldSource }; confirmed?: boolean; range?: { from: string | null; to: string | null } } = {}) {
     this.requireEngine(); await this.studio.update(id, { ...settings, ...(role !== undefined ? { role } : {}), ...extra }); return this.studioState();
   }
   async studioDrop(id: string) { this.requireEngine(); this.studio.drop(id); return this.studioState(); }

@@ -2,11 +2,15 @@ import { msg } from "../i18n/core";
 // Import Studio shared types, canonical role columns and header/role detection.
 // Pure functions: no DOM, DuckDB or Node APIs, so they run in the worker and in unit tests.
 export type Role = "purchases" | "sales_history" | "item_master" | "customer_list" | "vendor_cost" | "rebate_agreement" | "price_list" | "order_header" | "ar_aging";
-export type Kind = "csv" | "tsv" | "txt" | "xlsx" | "xlsm" | "xls" | "xlsb" | "ods" | "json" | "xml";
+export type Kind = "csv" | "tsv" | "txt" | "prn" | "xlsx" | "xlsm" | "xls" | "xlsb" | "ods" | "json" | "xml" | "parquet" | "pdf";
 export type Encoding = "utf-8" | "utf-16le" | "utf-16be" | "windows-1252";
 export type Delimiter = "," | ";" | "\t" | "|";
 export type DateFormat = "YYYY-MM-DD" | "DD/MM/YYYY" | "MM/DD/YYYY" | "DD.MM.YYYY" | "DD-MM-YYYY";
-export type Settings = { sheet: string | null; headerRow: number; headerDepth: 1 | 2 | 3; delimiter: Delimiter; encoding: Encoding; decimal: "dot" | "comma"; dateFormat: DateFormat; sourceCurrency?: string; fxRate?: string };
+export type Settings = { sheet: string | null; headerRow: number; headerDepth: 1 | 2 | 3; delimiter: Delimiter; encoding: Encoding; decimal: "dot" | "comma"; dateFormat: DateFormat; sourceCurrency?: string; fxRate?: string;
+  /** 7F-2: text files are delimited or fixed-width; fixed-width and PDF tables split at these column boundaries. */
+  layout?: "delimited" | "fixed"; boundaries?: number[] };
+/** A settings change from the preview: `boundaries: null` asks for the columns to be detected again (7F-2). */
+export type SettingsPatch = Omit<Partial<Settings>, "boundaries"> & { boundaries?: number[] | null };
 export type StudioIssue = { row: number; column: string; message: string };
 export class StudioError extends Error {}
 
@@ -128,6 +132,8 @@ export function classifyRow(cells: string[], headerCount: number): RowVerdict {
   if (!filled.length) return "blank";
   if (cells.slice(0, 3).some(v => TOTAL.test(v))) return "total";
   if (filled.length === 1 && headerCount >= 3 && textish(filled[0]) && (FOOTER.test(filled[0]) || filled[0].length > 15 && filled[0].includes(" "))) return "footer";
+  // 7F-2: a print or PDF page footer cut by fixed column boundaries ("Printed 2026-02-01 ... Page 2").
+  if (filled.length >= 2 && filled.length <= Math.min(3, Math.floor(headerCount / 2)) && FOOTER.test(filled.join(" ")) && filled.some(v => /\bpage \d+\b|\bprinted\b/i.test(v))) return "footer";
   return "data";
 }
 /** Decimal style from data cells: comma when comma decimals clearly dominate. */
@@ -189,7 +195,9 @@ export function fingerprint(kind: Kind, headers: string[]) {
 }
 export function kindOf(name: string): Kind | null {
   const ext = /\.([a-z0-9]+)$/i.exec(name)?.[1].toLowerCase();
-  return (["csv", "tsv", "txt", "xlsx", "xlsm", "xls", "xlsb", "ods", "json", "xml"] as const).find(k => k === ext) || null;
+  return (["csv", "tsv", "txt", "prn", "xlsx", "xlsm", "xls", "xlsb", "ods", "json", "xml", "parquet", "pdf"] as const).find(k => k === ext) || null;
 }
 export const SPREADSHEET: Kind[] = ["xlsx", "xlsm", "xls", "xlsb", "ods"];
-export const TEXT: Kind[] = ["csv", "tsv", "txt"];
+export const TEXT: Kind[] = ["csv", "tsv", "txt", "prn"];
+/** 7F-2: read into a grid by DuckDB (Parquet) or pdf.js (text-based PDF tables). */
+export const DOCUMENTS: Kind[] = ["parquet", "pdf"];

@@ -19,6 +19,9 @@ import { rha } from "../../lib/margin/decimal";
 import { findLeaks, hitKinds, hitRows } from "../../lib/margin/leaks";
 import { REBUILD_SQL, findDifferences } from "../../lib/margin/aggregate";
 import { moneyText } from "../../lib/spike/exact";
+import { ensureParquet } from "../../lib/vault/parquet-engine";
+import { printReport, priceListPdf } from "../helpers/converter-fixtures";
+import { makePdf } from "../helpers/pdf";
 // Test-only signed metadata. Private test key is injected into this intercepted test bundle only.
 class VaultService extends ProductionVaultService {
  override async init(scope:import('../../lib/vault/protocol').Scope){
@@ -964,6 +967,46 @@ async function suppliersFlow(){
 }
 
 
+// 7F-2: Phase 2 converters and folder re-import in the real worker: DuckDB writes a Parquet fixture after loading the
+// pinned, same-origin Parquet extension; pdf.js reads a PDF; a print report goes through the fixed-width reader.
+async function convertersFlow(){
+ const scope={userId:'converters-'+crypto.randomUUID(),tenantId:'converters-'+crypto.randomUUID()},service=new VaultService(()=>undefined);await service.init(scope);await service.create(secret,'starter','Synthetic converter owner');
+ const call=async(action:string,data:Record<string,unknown>={})=>dispatch(service,{id:'converters',action,data} as any,{signal:()=>new AbortController().signal,progress:()=>undefined}) as Promise<any>;
+ const fails=async(action:string,data:Record<string,unknown>,pattern:RegExp)=>{try{await call(action,data);}catch(e){assert(pattern.test(String((e as Error).message)),'Unexpected refusal: '+String((e as Error).message).slice(0,120));return;}throw new Error('Expected a refusal for '+action);};
+ try{
+  const e=service.engine!;await ensureParquet(e);
+  await e.conn.query("COPY (SELECT * FROM (VALUES ('PQ-C1','North Supply','T1'),('PQ-C2',NULL,'T2')) t(customer_id,name,tier)) TO 'conv-customers.parquet' (FORMAT parquet)");
+  const parquet=await e.db.copyFileToBuffer('conv-customers.parquet');await e.db.dropFile('conv-customers.parquet');
+  const pdf=priceListPdf([['P-100','Brass valve 1/2 in','12.50','20.00'],['P-200','Steel pipe','8.00','13.25'],['P-300','Gasket kit','3.10','5.00']]);
+  const sales=printReport([['1','P-100','PQ-C1','2026-01-05','2','200.00','120.00'],['2','P-200','PQ-C2','2026-01-06','10','1250.50','900.00'],['3','P-100','PQ-C1','2026-01-07','1','100.00','60.00']]);
+  let st=await call('studioAdd',{files:[new File([sales],'sales.prn'),new File([pdf as BlobPart],'items.pdf'),new File([parquet as BlobPart],'customers.parquet')]});
+  const by=(k:string)=>st.files.find((x:any)=>x.kind===k);
+  assert(by('prn').layout.mode==='fixed'&&by('prn').layout.boundaries.join()==='8,20,33,45,55,68'&&by('prn').role==='sales_history','Fixed-width report not detected');
+  assert(by('pdf').layout.mode==='pdf'&&by('pdf').role==='item_master'&&by('pdf').headers.join()==='product_id,description,current_cost,list_price','PDF table columns differ');
+  assert(by('parquet').role==='customer_list'&&by('parquet').headers.join()==='customer_id,name,tier','Parquet columns differ');
+  st=await call('studioUpdate',{id:by('prn').id,confirmed:true});await call('recipeSave',{id:by('prn').id,name:'Print sales'});
+  await call('studioPlan');await call('studioCommit',{acknowledge:true});
+  const one=async(sql:string)=>Object.fromEntries(Object.entries((await e.conn.query(sql)).toArray()[0]).map(([k,v])=>[k,v===null?null:String(v)]));
+  let n=await one("SELECT (SELECT count(*) FROM sales_lines) AS \"s\",(SELECT count(*) FROM products) AS \"p\",(SELECT count(*) FROM customers) AS \"c\",(SELECT current_cost FROM products WHERE product_id='P-100') AS \"cost\",(SELECT name FROM customers WHERE customer_id='PQ-C2') AS \"blank\",(SELECT list_cents FROM sales_lines WHERE line_id=2) AS \"list\"");
+  assert(n.s==='3'&&n.p==='3'&&n.c==='2'&&n.cost==='1250'&&n.blank===''&&n.list==='125050','Converted rows did not load exactly: '+JSON.stringify(n));
+  // Folder re-import: the remembered handle round-trips through IndexedDB; only the recipe match that is not yet imported is added.
+  const dir=await (await navigator.storage.getDirectory()).getDirectoryHandle('conv-import-'+crypto.randomUUID().slice(0,8),{create:true});
+  assert((await call('folderSet',{directory:dir})).name===dir.name&&(await call('folderGet')).name===dir.name,'Import folder was not remembered');
+  const feb=printReport([['4','P-300','PQ-C2','2026-02-05','3','15.00','9.30'],['5','P-100','PQ-C1','2026-02-06','1','20.00','12.50']]);
+  st=await call('studioFolder',{files:[new File([sales],'sales.prn'),new File([feb],'february.prn'),new File(['x'],'notes.docx'),new File(['a,b\n1,2\n'],'other.csv')]});
+  assert(st.folder.added.join()==='february.prn'&&st.folder.skipped.length===3&&st.files[0].appliedRecipe==='Print sales','Folder re-import did not keep only the recipe match: '+JSON.stringify(st.folder.added));
+  await call('studioPlan');await call('studioCommit',{acknowledge:true});
+  n=await one("SELECT count(*) AS \"s\" FROM sales_lines");assert(n.s==='5','Folder re-import rows did not load');
+  assert((await call('folderSet',{directory:null})).directory===null,'Import folder was not forgotten');
+  // Malformed and scanned files are refused with a reason; nothing is added.
+  await fails('studioAdd',{files:[new File([new Uint8Array([80,65,82,49,1,2,3,80,65,82,49])],'broken.parquet')]},/Parquet file could not be read/);
+  await fails('studioAdd',{files:[new File([makePdf([[]]) as BlobPart],'scan.pdf')]},/no text to read.*OCR/);
+  await fails('studioAdd',{files:[new File(['%PDF-1.4 nope'],'broken.pdf')]},/could not be read/);
+  assert((await call('studioState')).files.length===0,'A refused file stayed in the batch');
+  return {parquetViaPinnedExtension:true,pdfTables:true,fixedWidth:true,exactLoad:true,recipe:true,folderHandle:true,folderReimport:true,malformedRefused:true,parquetBytes:btoa(String.fromCharCode(...parquet))};
+ }finally{await service.lock();await reset(scope);}
+}
+
 async function reportsFlow(){
  const scope={userId:'reports-'+crypto.randomUUID(),tenantId:'reports-'+crypto.randomUUID()},service=new VaultService(()=>undefined);await service.init(scope);await service.create(secret,'professional','Synthetic reporting owner');
  const call=async(action:string,data:Record<string,unknown>={})=>dispatch(service,{id:'reports',action,data} as any,{signal:()=>new AbortController().signal,progress:()=>undefined}) as Promise<any>;
@@ -991,7 +1034,7 @@ self.onmessage = async event => {
       assert(!opened, "Tampered engine asset was executed");
       self.postMessage({ result: { tamperedAssetRejected: true } }); return;
     }
-    const result = action === "reports" ? await reportsFlow() : action === "suppliers" ? await suppliersFlow() : action === "rebates" ? await rebatesFlow() : action === "monitor" ? await monitorFlow() : action === "currency" ? await currencyFlow() : action === "pricingTools" ? await pricingToolsFlow() : action === "pricingOps" ? await pricingOpsFlow() : action === "phase5aBenchmark" ? await phase5aBenchmark() : action === "phase5a" ? await phase5a() : action === "pricing" ? await pricingFlow() : action === "legacyStorage" ? await legacyStorage() : action === "pricingBenchmark" ? await pricingBenchmark() : action === "fixture" ? await fixture() : action === "v1" ? await testFixture(event.data.bytes) : action === "seed" ? await seed(event.data.rows) : action === "firstChange" ? await firstChange(event.data.rows) : action === "integrity" ? await integrity() : action === "studio" ? await studio() : action === "mapper" ? await mapper() : action === "playground" ? await playground() : action === "margin" ? await margin() : action === "marginBenchmark" ? await marginBenchmark(event.data.rows) : action === "studioBenchmark" ? await studioBenchmark(event.data.rows) : action === "warmup" ? await warmup() : action === "cipherOnly" ? await cipherOnly() : await storageStatus();
+    const result = action === "converters" ? await convertersFlow() : action === "reports" ? await reportsFlow() : action === "suppliers" ? await suppliersFlow() : action === "rebates" ? await rebatesFlow() : action === "monitor" ? await monitorFlow() : action === "currency" ? await currencyFlow() : action === "pricingTools" ? await pricingToolsFlow() : action === "pricingOps" ? await pricingOpsFlow() : action === "phase5aBenchmark" ? await phase5aBenchmark() : action === "phase5a" ? await phase5a() : action === "pricing" ? await pricingFlow() : action === "legacyStorage" ? await legacyStorage() : action === "pricingBenchmark" ? await pricingBenchmark() : action === "fixture" ? await fixture() : action === "v1" ? await testFixture(event.data.bytes) : action === "seed" ? await seed(event.data.rows) : action === "firstChange" ? await firstChange(event.data.rows) : action === "integrity" ? await integrity() : action === "studio" ? await studio() : action === "mapper" ? await mapper() : action === "playground" ? await playground() : action === "margin" ? await margin() : action === "marginBenchmark" ? await marginBenchmark(event.data.rows) : action === "studioBenchmark" ? await studioBenchmark(event.data.rows) : action === "warmup" ? await warmup() : action === "cipherOnly" ? await cipherOnly() : await storageStatus();
     self.postMessage({ result });
   } catch (e) { self.postMessage({ error: e instanceof Error ? e.message : "test worker failed" }); }
 };

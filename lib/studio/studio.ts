@@ -12,11 +12,13 @@ import { appendAudit } from "../vault/audit";
 import { CAPS, type Tier } from "../vault/protocol";
 import {
   DATE_FORMATS, DELIMITERS, LOADABLE, USABLE, ROLES, ROLE_FIELDS, ROLE_LABELS, SPREADSHEET, StudioError, TEXT, canonicalValue, columnLetter, detectDateFormat, detectDecimal,
-  NO_HEADER, detectHeader, fingerprint, headerNames, isoDate, kindOf, normalizeHeader, type FieldType, type Kind, type Role, type Settings, type StudioIssue,
+  NO_HEADER, detectHeader, fingerprint, headerNames, isoDate, kindOf, normalizeHeader, type FieldType, type Kind, type Role, type Settings, type SettingsPatch, type StudioIssue,
 } from "./formats";
 import { ALTERNATIVES, PROFILES, PROFILE_IDS, columnOf, detectProfile, detectRole, lineIdFor, mappingProblems, needsConfirmation, suggestMapping, type ErpProfile, type FieldSource, type MappedField } from "./mapper";
 import { NOTE_TEXT, cleanDate, cleanId, cleanNumber, lineTotal, shareOf, toCents, type CleanNote } from "./clean";
-import { bomLength, detectDelimiter, detectEncoding, sampleRows } from "./text";
+import { bomLength, detectDelimiter, detectEncoding, detectLayout, sampleFixed, sampleRows } from "./text";
+import { PDF_MIN_GAP, checkBoundaries, detectBoundaries, pdfGrid, type Line } from "./layout";
+import { readParquet, type ParquetReader } from "./parquet";
 import { MAX_DOC_BYTES, MAX_SHEET_BYTES, MAX_SHEET_ROWS, checkZip, jsonGrid, sheetGrid, sheetNames, xmlGrid, type Grid } from "./sheets";
 import { sampleSheet, sheetSize, streamSheet } from "./xlsxstream";
 import { CsvWriter, Normalizer, emptyStats, headingColumns, headingLevel, streamGrid, streamText, type Stats } from "./rows";
@@ -37,6 +39,8 @@ export type FileView = {
   preview: { row: number; cells: string[] }[]; headerRowNumber: number; headerRowOptions: { index: number; row: number }[]; notices: string[];
   issues: StudioIssue[]; loadable: boolean; reason: string | null; estimatedRows: string; recipe: { id: string; name: string } | null;
   appliedRecipe: string | null; replaces: string | null; fixedLayout: boolean; textFormat: boolean; columnLabels: string[];
+  /** 7F-2: column layout of a text file or PDF; raw lines of a fixed-width file for the boundary ruler. */
+  layout: { mode: "delimited" | "fixed" | "pdf"; boundaries: number[]; raw: string[] } | null;
   range: { from: string | null; to: string | null };
 };
 export type FileReport = { id: string; name: string; role: Role; rowsRead: string; rowsLoaded: string; rowsRejected: string; rowsSkipped: string; issueCount: string; issues: StudioIssue[]; dateRange: { from: string; to: string } | null; fx: {sourceCurrency:string;workspaceCurrency:string;fxRate:string}; cleaned: { field: string; note: string; count: string }[] };
@@ -52,7 +56,11 @@ type Entry = {
   headings: number[];
   /** Sales files only: import just these dates (ISO, inclusive); null = no limit (blueprint engine rule 9). */
   range: DateRange;
+  /** 7F-2: the decoded sample of a text file (for re-slicing fixed-width columns) and a PDF's positioned lines. */
+  text: string; positioned: Line[] | null; pages: number;
 };
+/** 7F-2: readers that need the vault worker's engine (Parquet goes through DuckDB). */
+export type Readers = { parquet?: ParquetReader };
 export type DateRange = { from: string | null; to: string | null };
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 type Notes = Map<string, Map<CleanNote, number>>;
@@ -132,23 +140,39 @@ export class Studio {
   private invalidate() { this.report = null; this.staged = null; }
   private get(fileId: string) { const e = this.entries.get(fileId); if (!e) throw new StudioError(msg("import.thatFileIsNo2")); return e; }
 
-  async add(files: File[], recipes: Recipe[], replaces: string | null = null, currency = "USD") {
+  async add(files: File[], recipes: Recipe[], replaces: string | null = null, currency = "USD", readers: Readers = {}) {
     if (!files.length) throw new StudioError(msg("import.chooseAtLeastOne"));
     if (replaces && (files.length !== 1 || this.order.length)) throw new StudioError(msg("import.replaceOneImportedFile"));
     if (this.order.length && [...this.entries.values()].some(e => e.replaces)) throw new StudioError(msg("import.finishOrClearThe"));
     if (this.order.length + files.length > MAX_FILES) throw new StudioError(msg("import.addAtMostFiles", { maxfiles: MAX_FILES }));
     const added: Entry[] = [];
-    for (const file of files) { const entry = await this.inspect(file, recipes, replaces); entry.settings.sourceCurrency = currency; entry.settings.fxRate = "1"; added.push(entry); };
+    for (const file of files) { const entry = await this.inspect(file, recipes, replaces, readers); entry.settings.sourceCurrency = currency; entry.settings.fxRate = "1"; added.push(entry); };
     for (const e of added) { this.entries.set(e.id, e); this.order.push(e.id); }
     this.invalidate();
   }
-  private async inspect(file: File, recipes: Recipe[], replaces: string | null): Promise<Entry> {
+  /** 7F-2 folder re-import: add only the files a saved recipe recognises, and say why the others were left out. */
+  async addMatching(files: File[], recipes: Recipe[], currency = "USD", readers: Readers = {}) {
+    if ([...this.entries.values()].some(e => e.replaces)) throw new StudioError(msg("import.finishOrClearThe"));
+    const added: Entry[] = [], skipped: { name: string; reason: string }[] = [];
+    for (const file of files) {
+      if (this.order.length + added.length >= MAX_FILES) { skipped.push({ name: file.name, reason: msg("folder.skipLimit", { max: MAX_FILES }) }); continue; }
+      try {
+        const entry = await this.inspect(file, recipes, null, readers);
+        if (!entry.appliedRecipe) { skipped.push({ name: file.name, reason: msg("folder.skipNoRecipe") }); continue; }
+        entry.settings.sourceCurrency = currency; entry.settings.fxRate = "1"; added.push(entry);
+      } catch (error) { skipped.push({ name: file.name, reason: error instanceof StudioError ? error.message.replace(file.name + ": ", "") : msg("folder.skipUnreadable") }); }
+    }
+    for (const e of added) { this.entries.set(e.id, e); this.order.push(e.id); }
+    if (added.length) this.invalidate();
+    return { added: added.map(e => e.file.name), skipped };
+  }
+  private async inspect(file: File, recipes: Recipe[], replaces: string | null, readers: Readers = {}): Promise<Entry> {
     const kind = kindOf(file.name);
     if (!kind) throw new StudioError(msg("import.useCsvTsvTxt", { name: file.name }));
     if (file.name.length > 200 || file.size < 1) throw new StudioError(msg("import.chooseANonEmpty", { name: file.name }));
     const limit = TEXT.includes(kind) ? MAX_TEXT_BYTES : SPREADSHEET.includes(kind) ? MAX_SHEET_BYTES : MAX_DOC_BYTES;
     if (file.size > limit) throw new StudioError(msg(TEXT.includes(kind) ? "import.tooLargeText" : "import.tooLargeSheet", { name: file.name, value: Math.round(limit / 1048576) }));
-    const entry: Entry = { id: id(), file, kind, role: null, roleManual: false, sheets: [], zipNotices: [], bytes: null, grid: null, sample: [], sampleBytes: 0, sampleRecords: 1, notices: [], replaces, appliedRecipe: null, erp: "generic", overrides: {}, confirmed: false, headings: [], range: { from: null, to: null },
+    const entry: Entry = { id: id(), file, kind, role: null, roleManual: false, sheets: [], zipNotices: [], bytes: null, grid: null, sample: [], sampleBytes: 0, sampleRecords: 1, notices: [], replaces, appliedRecipe: null, erp: "generic", overrides: {}, confirmed: false, headings: [], range: { from: null, to: null }, text: "", positioned: null, pages: 0,
       settings: { sheet: null, headerRow: 0, headerDepth: 1, delimiter: kind === "tsv" ? "\t" : ",", encoding: "utf-8", decimal: "dot", dateFormat: "YYYY-MM-DD" } };
     try {
       if (TEXT.includes(kind)) {
@@ -156,12 +180,22 @@ export class Studio {
         entry.settings.encoding = detectEncoding(head).encoding;
         const text = await this.sampleText(entry);
         entry.settings.delimiter = detectDelimiter(text, kind === "tsv" ? "\t" : undefined);
-        entry.sample = sampleRows(text, entry.settings.delimiter, 60);
+        // 7F-2: a print-to-file report has no delimiter; aligned blank gaps give its columns.
+        const layout = kind === "csv" || kind === "tsv" ? { layout: "delimited" as const, boundaries: [] } : detectLayout(text, entry.settings.delimiter, kind === "prn");
+        entry.settings.layout = layout.layout; entry.settings.boundaries = layout.boundaries;
+        entry.sample = this.sampleOf(entry);
       } else if (SPREADSHEET.includes(kind)) {
         entry.bytes = new Uint8Array(await file.arrayBuffer());
         if (kind !== "xls") entry.zipNotices = await checkZip(entry.bytes, kind);
         entry.sheets = sheetNames(entry.bytes); entry.settings.sheet = entry.sheets[0];
         entry.grid = await this.loadSheet(entry, entry.sheets[0]);
+      } else if (kind === "pdf") {
+        const { pdfLines } = await import("./pdf"); // pdf.js loads only when a PDF is added
+        const read = await pdfLines(new Uint8Array(await file.arrayBuffer()));
+        entry.positioned = read.lines; entry.pages = read.pages; entry.settings.boundaries = detectBoundaries(read.lines, PDF_MIN_GAP);
+        entry.grid = pdfGrid(read.lines, entry.settings.boundaries, read.pages);
+      } else if (kind === "parquet") {
+        entry.grid = await readParquet(readers.parquet, new Uint8Array(await file.arrayBuffer()));
       } else {
         const text = await file.text();
         entry.grid = kind === "json" ? jsonGrid(text) : xmlGrid(text);
@@ -179,9 +213,17 @@ export class Studio {
     const head = new Uint8Array(await entry.file.slice(0, SAMPLE_BYTES).arrayBuffer());
     const text = new TextDecoder(entry.settings.encoding).decode(head.subarray(bomLength(head, entry.settings.encoding)), { stream: true });
     entry.sampleBytes = head.length; entry.sampleRecords = Math.max(1, text.split("\n").length - (text.endsWith("\n") ? 1 : 0));
+    entry.text = text;
     return text;
   }
   private rows(entry: Entry) { return entry.grid ? entry.grid.rows : entry.sample; }
+  /** The preview rows of a text file in its current layout. */
+  private sampleOf(entry: Entry) { return entry.settings.layout === "fixed" ? sampleFixed(entry.text, entry.settings.boundaries ?? [], 60) : sampleRows(entry.text, entry.settings.delimiter, 60); }
+  /** Re-slice after a layout or boundary change (text sample, or the PDF's grid). */
+  private relayout(entry: Entry) {
+    if (entry.positioned) entry.grid = pdfGrid(entry.positioned, entry.settings.boundaries ?? [], entry.pages);
+    else if (TEXT.includes(entry.kind)) entry.sample = this.sampleOf(entry);
+  }
   private rowNumber(entry: Entry, index: number) { return entry.grid ? entry.grid.rowNumbers[index] ?? index + 1 : index + 1; }
   private detect(entry: Entry) {
     const rows = this.rows(entry);
@@ -254,7 +296,11 @@ export class Studio {
     for (const recipe of recipes) {
       if (recipe.settings.kind !== entry.kind) continue;
       if (entry.grid && !entry.grid.keyed && recipe.settings.sheet !== entry.settings.sheet) continue;
-      const rows = entry.grid ? entry.grid.rows : entry.settings.delimiter === recipe.settings.delimiter ? entry.sample : null;
+      const fixed = (recipe.settings.layout ?? "delimited") === "fixed";
+      const rows = entry.positioned ? pdfGrid(entry.positioned, recipe.settings.boundaries ?? [], entry.pages).rows
+        : entry.grid ? entry.grid.rows
+        : fixed ? sampleFixed(entry.text, recipe.settings.boundaries ?? [], 60)
+        : entry.settings.delimiter === recipe.settings.delimiter ? (entry.settings.layout === "fixed" ? sampleRows(entry.text, recipe.settings.delimiter, 60) : entry.sample) : null;
       if (!rows?.length) continue;
       const headers = headerNames(rows, Math.min(recipe.settings.headerRow, rows.length - 1), recipe.settings.headerDepth);
       if (fingerprint(entry.kind, headers) === recipe.profile) return recipe;
@@ -264,13 +310,16 @@ export class Studio {
   private applySettings(entry: Entry, recipe: Recipe) {
     const { kind: _kind, role, erp, mapping, sourceCurrency: _currency, fxRate: _fx, ...settings } = recipe.settings;
     entry.settings = { ...entry.settings, ...settings, sheet: entry.settings.sheet };
+    // A recipe saved before 7F-2 is delimited; fixed-width and PDF recipes carry their column boundaries.
+    if (TEXT.includes(entry.kind)) { entry.settings.layout = settings.layout ?? "delimited"; entry.settings.boundaries = settings.boundaries ?? []; }
+    this.relayout(entry);
     if (role) { entry.role = role; entry.roleManual = true; }
     if (erp && PROFILE_IDS.includes(erp)) entry.erp = erp;
     // A saved recipe was checked when it was saved, so its mapping counts as confirmed.
     entry.overrides = mapping ? { ...mapping } : {}; entry.confirmed = !!mapping;
     entry.appliedRecipe = recipe.name;
   }
-  async update(fileId: string, patch: Partial<Settings> & { role?: Role | null; erp?: ErpProfile; field?: { name: string; source: FieldSource }; confirmed?: boolean; range?: DateRange }) {
+  async update(fileId: string, patch: SettingsPatch & { role?: Role | null; erp?: ErpProfile; field?: { name: string; source: FieldSource }; confirmed?: boolean; range?: DateRange }) {
     const entry = this.get(fileId), before = entry.settings;
     if (patch.range) {
       const { from, to } = patch.range, ok = (d: string | null) => d === null || (ISO_DAY.test(d) && isoDate(d, "YYYY-MM-DD") === d);
@@ -294,13 +343,24 @@ export class Studio {
     if (patch.headerRow !== undefined && Number.isInteger(patch.headerRow) && patch.headerRow >= NO_HEADER && patch.headerRow < 40) next.headerRow = patch.headerRow;
     if (patch.sourceCurrency !== undefined) next.sourceCurrency = patch.sourceCurrency;
     if (patch.fxRate !== undefined) next.fxRate = patch.fxRate;
+    // 7F-2: fixed-width text and PDF tables. boundaries: null asks for detection again.
+    const columns = TEXT.includes(entry.kind) || !!entry.positioned;
+    if (patch.layout !== undefined) { if (!TEXT.includes(entry.kind) || !["delimited", "fixed"].includes(patch.layout)) throw new StudioError(msg("layout.notHere")); next.layout = patch.layout; }
+    if (patch.boundaries !== undefined) { if (!columns) throw new StudioError(msg("layout.notHere")); next.boundaries = patch.boundaries === null ? undefined : checkBoundaries(patch.boundaries); }
     entry.settings = next;
+    if (TEXT.includes(entry.kind) && next.encoding !== before.encoding) await this.sampleText(entry);
+    const relaid = columns && (patch.layout !== undefined || patch.boundaries !== undefined) || (TEXT.includes(entry.kind) && next.layout === "fixed" && next.encoding !== before.encoding);
+    if (relaid) {
+      if (next.boundaries === undefined || (next.layout === "fixed" && before.layout !== "fixed" && patch.boundaries === undefined))
+        next.boundaries = entry.positioned ? detectBoundaries(entry.positioned, PDF_MIN_GAP) : detectLayout(entry.text, next.delimiter, true).boundaries;
+      this.relayout(entry); this.detect(entry);
+    }
     if (next.sheet !== before.sheet && entry.bytes) { entry.grid = await this.loadSheet(entry, next.sheet!); this.detect(entry); }
-    else if (TEXT.includes(entry.kind) && (next.encoding !== before.encoding || next.delimiter !== before.delimiter)) entry.sample = sampleRows(await this.sampleText(entry), next.delimiter, 60);
+    else if (!relaid && TEXT.includes(entry.kind) && (next.encoding !== before.encoding || next.delimiter !== before.delimiter)) entry.sample = this.sampleOf(entry);
     if (patch.role !== undefined) { entry.role = patch.role && ROLES.includes(patch.role) ? patch.role : null; entry.roleManual = true; }
     else if (!entry.roleManual) entry.role = detectRole(entry.file.name, this.headers(entry)).role;
     // Column indexes or the role may have changed: drop column choices and re-check.
-    const moved = next.sheet !== before.sheet || next.headerRow !== before.headerRow || next.headerDepth !== before.headerDepth || next.delimiter !== before.delimiter || next.encoding !== before.encoding || patch.role !== undefined;
+    const moved = relaid || next.sheet !== before.sheet || next.headerRow !== before.headerRow || next.headerDepth !== before.headerDepth || next.delimiter !== before.delimiter || next.encoding !== before.encoding || patch.role !== undefined;
     if (moved) { entry.overrides = {}; entry.confirmed = false; this.findHeadings(entry, this.headers(entry)); if (patch.role === undefined) entry.erp = detectProfile(this.headers(entry)); }
     entry.appliedRecipe = null; this.invalidate();
   }
@@ -344,6 +404,8 @@ export class Studio {
       issues: (entry.grid?.issues ?? []).slice(0, 50), loadable: reason === null, reason, estimatedRows: String(Math.max(0, dataRows)),
       recipe: recipe && recipe.name !== entry.appliedRecipe ? { id: recipe.id, name: recipe.name } : null, appliedRecipe: entry.appliedRecipe,
       replaces: entry.replaces, fixedLayout: !!entry.grid?.keyed, textFormat: TEXT.includes(entry.kind),
+      layout: entry.positioned ? { mode: "pdf", boundaries: entry.settings.boundaries ?? [], raw: [] }
+        : TEXT.includes(entry.kind) ? { mode: entry.settings.layout ?? "delimited", boundaries: entry.settings.boundaries ?? [], raw: entry.settings.layout === "fixed" ? entry.text.split(/\r\n|\n|\r/).slice(0, 24).map(l => l.slice(0, 240)) : [] } : null,
       range: entry.range,
       columnLabels: Array.from({ length: Math.min(30, Math.max(0, ...rows.slice(start, start + 22).map(r => r.length))) }, (_, i) => letter(i)),
     };
@@ -617,6 +679,8 @@ export async function loadRecipes(engine: Engine): Promise<Recipe[]> {
       const sourceOk = (x: FieldSource) => x && ["column", "unit", "percent", "fraction", "zero", "none", "generate", "header", "item_cost"].includes(x.kind) && (!("index" in x) || Number.isInteger(x.index));
       if (s.mapping && (typeof s.mapping !== "object" || !Object.values(s.mapping as Record<string, FieldSource>).every(sourceOk))) delete s.mapping;
       if (s.erp && !PROFILE_IDS.includes(s.erp)) delete s.erp;
+      if (s.layout !== undefined && !["delimited", "fixed"].includes(s.layout)) return [];
+      if (s.boundaries !== undefined) { try { checkBoundaries(s.boundaries); } catch { return []; } }
       return valid ? [{ id: String(r.id), name: String(r.name), profile: String(r.profile), settings: s }] : [];
     } catch { return []; }
   });

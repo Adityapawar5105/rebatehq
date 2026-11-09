@@ -226,6 +226,65 @@ async function simUi(){
  results.checks.simUi={currency:'CAD',marginChange:true,scenarioMargin:true,breakdownTotals:true,keptAcrossTabs:true,phone375:true,nonPricingHidden:true,privacyMarkers:true};
  }catch(error){console.error('Simulator UI diagnostics:',JSON.stringify(await diagnose()));throw error;}finally{await context.close();context=savedContext;page=savedPage;dataPlaneActive=active;}
 }
+// 7F-2: the converters in the real Import Studio (fresh vault, under the request/console marker sensors): a fixed-width
+// print report with the column ruler, a wrong boundary corrected by hand and detected again, a recipe; a PDF price list
+// (pdf.js chunk loaded on demand) and a Parquet customer list (DuckDB with the pinned extension); then folder re-import
+// through the picker seam (an OPFS folder stands in for the native picker, which automation cannot drive).
+let parquetFixture=null;
+async function converterFixtures(){
+ const out=await build({entryPoints:['tests/helpers/converter-fixtures.ts'],bundle:true,format:'esm',platform:'node',write:false,logLevel:'silent'});
+ return import('data:text/javascript;base64,'+Buffer.from(out.outputFiles[0].text).toString('base64'));
+}
+async function convertersUi(){
+ if(!parquetFixture){if(!page.url().startsWith(base)){await page.goto(base+route);await ready();}const r=await worker('converters',{},240000);results.checks.converters={...r,parquetBytes:undefined};parquetFixture=Buffer.from(r.parquetBytes,'base64');}
+ const {printReport,priceListPdf}=await converterFixtures();
+ const savedContext=context,savedPage=page,active=dataPlaneActive;
+ context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-converters-')),browserOptions);await configureContext();
+ await context.addInitScript(()=>{window.showDirectoryPicker=async()=>await(await navigator.storage.getDirectory()).getDirectoryHandle('rebatehq-import-seam',{create:true});});
+ page=await openPage();
+ try{
+ dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic converter owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
+ // Short customer IDs fit the report's fixed columns; the privacy marker travels in the saved recipe's name.
+ const c1='CV-1',c2='CV-2',recipeName='Print sales '+marker;
+ const sales=printReport([['1','P-100',c1,'2026-01-05','2','200.00','120.00'],['2','P-200',c2,'2026-01-06','10','1250.50','900.00'],['3','P-100',c1,'2026-01-07','1','100.00','60.00']]);
+ await page.locator('nav a[href="#data-hub"]').click();
+ await page.getByTestId('studio-files').setInputFiles([{name:'sales.prn',mimeType:'text/plain',buffer:Buffer.from(sales)}]);
+ const boundaries=page.getByTestId('studio-boundaries');await boundaries.waitFor({timeout:60000});
+ assert.equal(await page.getByTestId('studio-layout').inputValue(),'fixed','A print report was not read as fixed width');
+ assert.equal(await boundaries.inputValue(),'8, 20, 33, 45, 55, 68');
+ assert.ok((await page.getByLabel('First lines of the file with a position ruler and the column starts').innerText()).includes('line_id  product_id'),'The ruler lost the raw lines');
+ // A missing boundary merges two columns in the preview; "Detect again" restores them.
+ await boundaries.fill('8, 20, 33, 55, 68');await page.getByTestId('studio-boundaries-apply').click();
+ await page.locator('table td').filter({hasText:/^sale_date\s+quantity$/}).first().waitFor();
+ await page.getByTestId('studio-boundaries-detect').click();await page.waitForFunction(()=>document.querySelector('[data-testid="studio-boundaries"]')?.value==='8, 20, 33, 45, 55, 68');
+ await page.getByTestId('studio-columns').screenshot({path:'test-results/converters-columns-'+channel+'.png'});
+ await page.getByText('I checked this mapping',{exact:false}).first().click();
+ await page.getByLabel('Recipe name (ERP or supplier)').fill(recipeName);await page.getByRole('button',{name:'Save as recipe',exact:true}).click();await page.getByText(/Saved recipes: .*Print sales/).waitFor();
+ // A PDF price list and a Parquet customer list in the same batch.
+ const pdf=priceListPdf([['P-100','Brass valve 1/2 in','12.50','20.00'],['P-200','Steel pipe','8.00','13.25']]);
+ await page.getByTestId('studio-files').setInputFiles([{name:'prices.pdf',mimeType:'application/pdf',buffer:Buffer.from(pdf)},{name:'customers.parquet',mimeType:'application/octet-stream',buffer:parquetFixture}]);
+ await page.getByText('2 rows and 3 columns read with DuckDB on this device.',{exact:false}).first().waitFor({timeout:60000});
+ await page.getByRole('row').filter({hasText:'prices.pdf'}).getByRole('button',{name:'Preview and fix'}).click();
+ await page.getByText('2 pages read, 7 lines of text',{exact:false}).first().waitFor({timeout:60000});assert.equal(await page.getByTestId('studio-layout').count(),0,'A PDF offers a delimiter layout');await page.getByTestId('studio-boundaries').waitFor();
+ await page.setViewportSize({width:375,height:812});await page.waitForTimeout(300);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Import Studio overflows a phone with the column ruler');await page.setViewportSize({width:1280,height:800});
+ await page.getByRole('button',{name:'Review import',exact:true}).click();await page.getByRole('heading',{name:'Batch report'}).waitFor({timeout:120000});
+ if(await page.getByTestId('studio-ack').count())await page.getByTestId('studio-ack').check();
+ await page.getByRole('button',{name:'Confirm and import locally',exact:true}).click();await page.locator('[data-testid="line-count"][data-value="3"]').waitFor({timeout:120000});
+ // Folder re-import: next month's report in the remembered folder is added with the saved recipe; files of other types
+ // (notes.docx) are never read.
+ const feb=printReport([['4','P-200',c2,'2026-02-05','3','15.00','9.30'],['5','P-100',c1,'2026-02-06','1','20.00','12.50']]);
+ await page.evaluate(async files=>{const dir=await(await navigator.storage.getDirectory()).getDirectoryHandle('rebatehq-import-seam',{create:true});for(const [name,text] of files){const w=await(await dir.getFileHandle(name,{create:true})).createWritable();await w.write(text);await w.close();}},[['february.prn',feb],['notes.docx','not a report']]);
+ await page.getByTestId('folder-choose').click();await page.getByText('Import folder set to rebatehq-import-seam.',{exact:false}).first().waitFor();
+ await page.getByTestId('folder-reimport-run').click();await page.getByText('1 file added to the batch with its saved recipe; 0 left out.',{exact:false}).first().waitFor({timeout:60000});
+ await page.getByText('Recipe "Print sales" was applied',{exact:false}).first().waitFor().catch(()=>undefined);
+ await page.getByRole('button',{name:'Review import',exact:true}).click();await page.getByRole('heading',{name:'Batch report'}).waitFor({timeout:120000});
+ if(await page.getByTestId('studio-ack').count())await page.getByTestId('studio-ack').check();
+ await page.getByRole('button',{name:'Confirm and import locally',exact:true}).click();await page.locator('[data-testid="line-count"][data-value="5"]').waitFor({timeout:120000});
+ // Re-importing the same folder again adds nothing: the file is already imported, unchanged.
+ await page.getByTestId('folder-reimport-run').click();await page.getByText('0 files added to the batch with their saved recipes; 1 left out.',{exact:false}).first().waitFor({timeout:60000});
+ results.checks.convertersUi={fixedWidthRuler:true,manualBoundaries:true,detectAgain:true,recipe:true,pdfTable:true,parquetDuckdb:true,exactLines:true,folderReimport:true,alreadyImportedSkipped:true,phone375:true,privacyMarkers:true};
+ }catch(error){console.error('Converters UI diagnostics:',JSON.stringify(await diagnose()));throw error;}finally{await context.close();context=savedContext;page=savedPage;dataPlaneActive=active;}
+}
 async function reportsUi(){
  const savedContext=context,savedPage=page,active=dataPlaneActive;
  context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-reports-')),browserOptions);await configureContext();page=await openPage();
@@ -317,7 +376,7 @@ async function monitorUi(){
 await build({ entryPoints: ["tests/helpers/studio-fixtures.ts"], outfile: "test-results/studio-fixtures.mjs", bundle: true, platform: "node", format: "esm" });
 const fixtures = await import(new URL("../test-results/studio-fixtures.mjs", import.meta.url).href);
 try {
- if(process.argv.includes('--reports-ui-only')){await reportsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Reports UI focused gate passed ('+channel+').');}else if(process.argv.includes('--sim-ui-only')){await simUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Simulator UI focused gate passed ('+channel+').');}else if(process.argv.includes('--vendors-ui-only')){await vendorsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Vendor UI focused gate passed ('+channel+').');}else if(process.argv.includes('--suppliers-ui-only')){await suppliersUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Supplier UI focused gate passed ('+channel+').');}else{
+ if(process.argv.includes('--converters-ui-only')){await convertersUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Converters UI focused gate passed ('+channel+').');}else if(process.argv.includes('--reports-ui-only')){await reportsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Reports UI focused gate passed ('+channel+').');}else if(process.argv.includes('--sim-ui-only')){await simUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Simulator UI focused gate passed ('+channel+').');}else if(process.argv.includes('--vendors-ui-only')){await vendorsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Vendor UI focused gate passed ('+channel+').');}else if(process.argv.includes('--suppliers-ui-only')){await suppliersUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Supplier UI focused gate passed ('+channel+').');}else{
   if (auth) {
     assert.notEqual(process.env.LEGACY_BUSINESS_ENABLED,'true','Privacy gate must run with legacy business routes OFF');
     await signInLocal(context,page,base);
@@ -369,6 +428,7 @@ try {
   results.checks.rebates = await worker("rebates",{},180000);
   results.checks.suppliers = await worker("suppliers",{},180000);
   results.checks.reports = await worker("reports",{},180000);
+  { const r=await worker("converters",{},240000); parquetFixture=Buffer.from(r.parquetBytes,'base64'); delete r.parquetBytes; results.checks.converters=r; }
   results.checks.warmup = await worker("warmup");
   results.checks.mapper = await worker("mapper");
   results.checks.playground = await worker("playground");
@@ -764,7 +824,7 @@ try {
   }
   await monitorUi();
   await rebatesUi();
-  await suppliersUi(); await vendorsUi(); await simUi(); await reportsUi();
+  await suppliersUi(); await vendorsUi(); await simUi(); await reportsUi(); await convertersUi();
   await recoveryUi();
   if(auth){
     const device=await page.evaluate(()=>{const key=Object.keys(localStorage).find(k=>k.startsWith('rebatehq-device-v1:'));return localStorage.getItem(key);});assert.ok(device);

@@ -3,7 +3,9 @@ import { useEffect, useState } from "react";
 import type { VaultClient } from "@/lib/vault/client";
 import type { VaultStatus } from "@/lib/vault/protocol";
 import { CURRENCIES } from '@/lib/vault/currency';
-import { DATE_FORMATS, ROLES, ROLE_LABELS, kindOf, type Role, type Settings } from "@/lib/studio/formats";
+import { DATE_FORMATS, ROLES, ROLE_LABELS, kindOf, type Role, type Settings, type SettingsPatch } from "@/lib/studio/formats";
+import { parseBoundaries } from "@/lib/studio/layout";
+import { FolderReimport } from "./FolderReimport";
 import type { FileView, SourceView, StudioState } from "@/lib/studio/studio";
 import type { ErpProfile, FieldSource } from "@/lib/studio/mapper";
 import type { FixGroup, FixRow } from "@/lib/studio/fixlater";
@@ -15,7 +17,7 @@ import { Icon } from "@/components/ui/Icon";
 import styles from "./vault.module.css";
 import { DataGrid } from "@/components/ui/DataGrid";
 type Props = { client: VaultClient; status: VaultStatus; busy: boolean; operation: (work: () => Promise<void>) => Promise<void>; onStatus: (status: VaultStatus) => void; setMessage: (message: string) => void };
-const ACCEPT = ".csv,.tsv,.txt,.xlsx,.xlsm,.xls,.xlsb,.ods,.json,.xml";
+const ACCEPT = ".csv,.tsv,.txt,.prn,.xlsx,.xlsm,.xls,.xlsb,.ods,.json,.xml,.parquet,.pdf";
 const DELIMITER_LABELS: Record<string, MessageKey> = { ",": "studio.comma", ";": "studio.semicolon", "\t": "studio.tab", "|": "studio.pipe" };
 const directory = { webkitdirectory: "", directory: "" } as Record<string, string>;
 function save(blob: Blob, name: string) {
@@ -61,7 +63,7 @@ export function ImportStudio({ client, status, busy, operation, onStatus, setMes
       setMessage(msg("studio.filesAdded", { count: supported.length }) + (skipped ? " " + msg("studio.filesIgnored", { count: skipped }) : ""));
     });
   }
-  const update = (id: string, settings: Partial<Settings>, role?: Role | null) => {
+  const update = (id: string, settings: SettingsPatch, role?: Role | null) => {
     const work = async () => { setStudio(await client.call("studioUpdate", { id, settings, ...(role !== undefined ? { role } : {}) })); setAck(false); };
     // Rate typing is cheap staging metadata. Do not disable/blur the input per
     // keystroke; the worker queue applies all edits before a subsequent review.
@@ -83,7 +85,9 @@ export function ImportStudio({ client, status, busy, operation, onStatus, setMes
           <label>{t("studio.chooseAFolder")}<input data-testid="studio-folder" type="file" {...directory} disabled={busy} onChange={event => { const list = [...(event.target.files ?? [])]; event.target.value = ""; void add(list); }}/></label>
         </div>
         <p className={styles.muted}>{t("studio.csvTsvTxtXlsx")}</p>
+        <p className={styles.muted}>{t("layout.formats")}</p>
       </div>
+      <FolderReimport client={client} busy={busy} operation={operation} setMessage={setMessage} onAdded={next => { setStudio(next); setAck(false); setOpen(next.files.at(-1)?.id ?? null); }}/>
     </section>
     {files.length > 0 && <section className={styles.card} aria-labelledby="batch-heading">
       <h2 id="batch-heading">{t("studio.filesInThisBatch")}</h2>
@@ -206,8 +210,8 @@ function MappingEditor({ file, busy, patch }: { file: FileView; busy: boolean; p
     {file.needsConfirmation && <label className={styles.row}><input type="checkbox" style={{ width: "auto" }} checked={confirmed} disabled={busy || file.missing.length > 0} onChange={e => { setConfirmed(e.target.checked); void patch({ confirmed: e.target.checked }); }}/>{" "}{t("studio.iCheckedThisMapping")}{file.missing.length ? t("studio.mapFirst", { missing: file.missing.join(", ") }) : ""}</label>}
   </div>;
 }
-function FilePanel({ currency, file, busy, studio, recipeName, setRecipeName, update, patch, apply, saveRecipe }: { currency: string; file: FileView; busy: boolean; studio: StudioState; recipeName: string; setRecipeName: (v: string) => void; update: (id: string, settings: Partial<Settings>, role?: Role | null) => Promise<void>; patch: (data: Patch) => Promise<void>; apply: (recipeId: string) => Promise<void>; saveRecipe: () => Promise<void> }) {
-  const s = file.settings, set = (patch: Partial<Settings>) => void update(file.id, patch);
+function FilePanel({ currency, file, busy, studio, recipeName, setRecipeName, update, patch, apply, saveRecipe }: { currency: string; file: FileView; busy: boolean; studio: StudioState; recipeName: string; setRecipeName: (v: string) => void; update: (id: string, settings: SettingsPatch, role?: Role | null) => Promise<void>; patch: (data: Patch) => Promise<void>; apply: (recipeId: string) => Promise<void>; saveRecipe: () => Promise<void> }) {
+  const s = file.settings, set = (patch: SettingsPatch) => void update(file.id, patch);
   const [rate, setRate] = useState(s.fxRate ?? '1');
   // Ignore intermediate worker responses while typing. A new file/source resets the draft.
   useEffect(() => { setRate(s.fxRate ?? '1'); }, [file.id, s.sourceCurrency]);
@@ -226,9 +230,11 @@ function FilePanel({ currency, file, busy, studio, recipeName, setRecipeName, up
       {!file.fixedLayout && <label>{t("studio.headerRows")}<select value={s.headerDepth} disabled={busy} onChange={e => set({ headerDepth: Number(e.target.value) as 1 | 2 | 3 })}><option value={1}>{t("studio.1Row")}</option><option value={2}>{t("studio.2Rows")}</option><option value={3}>{t("studio.3Rows")}</option></select></label>}
       {file.textFormat && <label>{t("studio.delimiter")}<select value={s.delimiter} disabled={busy} onChange={e => set({ delimiter: e.target.value as Settings["delimiter"] })}>{Object.entries(DELIMITER_LABELS).map(([v, l]) => <option key={v} value={v}>{t(l)}</option>)}</select></label>}
       {file.textFormat && <label>{t("studio.encoding")}<select value={s.encoding} disabled={busy} onChange={e => set({ encoding: e.target.value as Settings["encoding"] })}><option value="utf-8">UTF-8</option><option value="windows-1252">{t("studio.windows1252Western")}</option><option value="utf-16le">UTF-16 LE</option><option value="utf-16be">UTF-16 BE</option></select></label>}
+      {file.layout && file.layout.mode !== "pdf" && <label>{t("layout.layout")}<select data-testid="studio-layout" value={file.layout.mode} disabled={busy} onChange={e => set({ layout: e.target.value as "delimited" | "fixed" })}><option value="delimited">{t("layout.delimited")}</option><option value="fixed">{t("layout.fixed")}</option></select></label>}
       <label>{t("studio.decimalSymbol")}<select value={s.decimal} disabled={busy} onChange={e => set({ decimal: e.target.value as Settings["decimal"] })}><option value="dot">{t("studio.dot1250")}</option><option value="comma">{t("studio.comma1250")}</option></select></label>
       <label>{t("studio.dateFormat")}<select value={s.dateFormat} disabled={busy} onChange={e => set({ dateFormat: e.target.value as Settings["dateFormat"] })}>{DATE_FORMATS.map(d => <option key={d}>{d}</option>)}</select></label>
     </div>
+    {file.layout && file.layout.mode !== "delimited" && <Boundaries key={file.id + file.layout.boundaries.join(",")} file={file} busy={busy} set={set}/>}
     {file.role === "sales_history" && <div className={styles.grid}>
       <label>{t("studio.importDatesFrom")}<input type="date" value={file.range.from ?? ""} disabled={busy} onChange={e => void patch({ range: { from: e.target.value || null, to: file.range.to } })}/></label>
       <label>{t("studio.to")}<input type="date" value={file.range.to ?? ""} disabled={busy} onChange={e => void patch({ range: { from: file.range.from, to: e.target.value || null } })}/></label>
@@ -247,6 +253,24 @@ function FilePanel({ currency, file, busy, studio, recipeName, setRecipeName, up
     </div>
     {studio.recipes.length > 0 && <p className={styles.small}>{t("studio.savedRecipes", { value: fmt.list(studio.recipes.map(r => r.name)) })}</p>}
   </section>;
+}
+
+/** 7F-2: column boundaries of a fixed-width file or PDF table, with a ruler over the raw lines of a fixed-width file. */
+function Boundaries({ file, busy, set }: { file: FileView; busy: boolean; set: (patch: SettingsPatch) => void }) {
+  const layout = file.layout!, [text, setText] = useState(layout.boundaries.join(", ")), [error, setError] = useState("");
+  const width = Math.min(240, Math.max(0, ...layout.raw.map(l => l.length)));
+  const ruler = Array.from({ length: width }, (_, i) => i % 10 === 0 ? String(i / 10 % 10) : i % 5 === 0 ? "+" : "·").join("");
+  const marks = Array.from({ length: width }, (_, i) => layout.boundaries.includes(i) ? "|" : " ").join("");
+  return <div data-testid="studio-columns">
+    <form className={styles.row} onSubmit={e => { e.preventDefault(); try { set({ boundaries: parseBoundaries(text) }); setError(""); } catch (x) { setError(x instanceof Error ? x.message : msg("common.operationFailed")); } }}>
+      <label>{t(layout.mode === "pdf" ? "layout.boundariesPdf" : "layout.boundaries")}<input data-testid="studio-boundaries" value={text} disabled={busy} onChange={e => setText(e.target.value)} inputMode="numeric" aria-describedby="boundaries-help"/></label>
+      <button type="submit" disabled={busy} data-testid="studio-boundaries-apply">{t("layout.apply")}</button>
+      <button type="button" disabled={busy} data-testid="studio-boundaries-detect" onClick={() => set({ boundaries: null })}>{t("layout.detect")}</button>
+    </form>
+    <p id="boundaries-help" className={styles.small}>{t(layout.mode === "pdf" ? "layout.helpPdf" : "layout.help")}</p>
+    {error && <p className={styles.error} role="alert">{say(error)}</p>}
+    {layout.raw.length > 0 && <div className={styles.tableWrap}><pre className={styles.ruler} aria-label={t("layout.rawLines")} translate="no">{[ruler, marks, ...layout.raw].join("\n")}</pre></div>}
+  </div>;
 }
 
 type Shared = { client: VaultClient; busy: boolean; operation: (work: () => Promise<void>) => Promise<void>; onStatus: (status: VaultStatus) => void; setMessage: (message: string) => void; version: number; bump: () => void };
