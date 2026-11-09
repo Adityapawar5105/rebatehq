@@ -3,7 +3,7 @@
 Written 6 November 2026, after 7B (CI #89, #90, #91 green); updated 7 November 2026 after 7V (CI #95, #96 green). This file is the starting point for whoever builds
 the next chunk. It holds what a new session needs without the earlier chat history.
 
-**Current status (9 November 2026): 7E complete; 7E-2 CI-verified in [CI #128](https://github.com/Adityapawar5105/rebatehq/actions/runs/42640305379) on `b24f6c8`.** Local v16 / 47 tables. Next: **7F-1** (prompt 6), only on explicit instruction. See CHUNK_7E_VERIFICATION.md.
+**Current status (10 November 2026): 7F-1 done and CI-verified in [CI #130](https://github.com/Adityapawar5105/rebatehq/actions/runs/42674285171) on `1903986`.** Local v17 / 50 tables. Next: **7F-2** (prompt 6, "continue with 7F-2"), only on explicit instruction. See CHUNK_7F_VERIFICATION.md.
 
 ## How to use this file
 1. Work **one chunk per session**, in the order below. Paste **Block A (shared context)** first, then that
@@ -26,7 +26,7 @@ the next chunk. It holds what a new session needs without the earlier chat histo
 | 4a | 7V-3 v2.5: grid filter/sort + selection totals (7V-3a), row notes (7V-3b) | No | Done: 7V-3a [CI #118](https://github.com/Adityapawar5105/rebatehq/actions/runs/42480527882) on `027a14d`; 7V-3b [CI #120](https://github.com/Adityapawar5105/rebatehq/actions/runs/42487588209) on `7ef16fc` |
 | 4b | 7D-2 Supplier claims, Purchases import, rebate progress, claim generator | No | Done: [CI #123](https://github.com/Adityapawar5105/rebatehq/actions/runs/42606577225) on `2b1481d`, 9 November 2026 |
 | 5 | 7E Vendor review and simulator (7E-1, 7E-2) | No | Done: 7E-1 [CI #126](https://github.com/Adityapawar5105/rebatehq/actions/runs/42616397012) on `2cee899`; 7E-2 [CI #128](https://github.com/Adityapawar5105/rebatehq/actions/runs/42640305379) on `b24f6c8` |
-| 6 | 7F Reporting and reach (7F-1, 7F-2) | No | **7F-1 next, only on explicit instruction** |
+| 6 | 7F Reporting and reach (7F-1, 7F-2) | No | 7F-1 done: [CI #130](https://github.com/Adityapawar5105/rebatehq/actions/runs/42674285171) on `1903986`; **7F-2 next, only on explicit instruction** |
 | 7 | 8A Deal guidance and cross-sell | No | — |
 | 8 | 8B Margin Drain agents, cost index, dead stock | Maybe (public index feed) | — |
 | 9 | 8C Win/loss, desktop offline mode, audit pack, templates | No | — |
@@ -51,7 +51,7 @@ Read before doing anything, in this order:
 5. The latest verification records: CHUNK_7V_VERIFICATION.md (UI components and layout rules), CHUNK_7B_VERIFICATION.md,
    CHUNK_7U_VERIFICATION.md, CHUNK_7A_VERIFICATION.md.
 
-Where things stand: chunks 4.0 through 7E and 7V are CI-verified (local vault v16, 47 tables). 7E-2 (Scale-only historical simulator, third Vendors tab `#vendors-sim`, lib/vendor/simulate.ts): [CI #128](https://github.com/Adityapawar5105/rebatehq/actions/runs/42640305379) on `b24f6c8`, 9 November 2026. Next: 7F, only on explicit instruction.
+Where things stand: chunks 4.0 through 7E, 7V and 7F-1 are CI-verified (local vault v17, 50 tables). 7F-1 (lib/reports, components/local/ReportsView.tsx; Reports tabs #reports-review, #reports-roi, #reports-scorecard): [CI #130](https://github.com/Adityapawar5105/rebatehq/actions/runs/42674285171) on `1903986`, 10 November 2026. Next: 7F-2, only on explicit instruction.
 Blueprint v2.4 (section 22, items 24-25) added work that 7C-3 covered. Blueprint v2.5 (items 26-27) adds a grid standard and row
 notes, built in 7V-3; from then on every new grid must meet that standard. New screens use the
 shared components in components/ui (ui.tsx, Icon.tsx, ui.module.css) inside the shell in components/local/VaultApp.tsx. The local vault is DuckDB-Wasm in a Web
@@ -635,6 +635,8 @@ Write CHUNK_7E_VERIFICATION.md.
 [Block A]
 Chunk 7F. The mobile PWA is not part of 7F (it is 9A, on hold).
 Precondition: 7E is CI-verified (7E-2 in CI #128 on b24f6c8; local vault v16, 47 tables).
+7F-1 is done (CI #130 on 1903986; local vault v17, 50 tables): lib/reports (pack, pdf, roi, scorecard) and
+components/local/ReportsView.tsx. For 7F-2, a further schema bump goes to v18 (upgradeSql(17)) with the same version-pin updates.
 
 Size: two parts, each committed, pushed and green in CI before the next: 7F-1 = items 1-4 (Review Pack, weekly
 digest, ROI v2, rep compliance scorecard), 7F-2 = items 5-6 (folder re-import, Phase 2 converters). Stop after

@@ -2,7 +2,7 @@
 
 ## Part 1 — review cadence, recovery evidence and rep compliance
 
-Status: **built by Codex, finished and verified locally by Claude Code, 9 November 2026; CI result: pending.** This record covers 7F-1 only. Part 2 (folder re-import and converters) has not started. Blueprint unchanged.
+**7F-1 is CI-verified** in [CI #130](https://github.com/Adityapawar5105/rebatehq/actions/runs/42674285171) on `1903986`, 10 November 2026 (Asia/Kolkata): 314 unit tests (78 JS + 236 TS), **59 authenticated Chromium vault checks** (including `reports`, `reportsUi` and `roiUi`), **57 Firefox lab checks**, **12 real-authenticated local-Supabase relay checks**, and the fresh 152-check pgTAP suite twice. Local vault **v17 / 50 tables**; 11 locked migrations, zero pending; no restore drill needed (no Supabase change). Built by Codex; finished and verified by Claude Code. This record covers 7F-1 only. Part 2 (folder re-import and converters) has not started. Blueprint unchanged.
 
 ### Implementation and boundaries
 
@@ -46,6 +46,10 @@ Local results are not CI proof. Test logs, synthetic PDFs, rendered pages and br
 ### Unverified
 
 Hosted/deployed sign-in and relay/restore, real customer/ERP/accounting acceptance, cash-posting or causal ROI claims, native-language review, headed accessibility/native permission checks, physical crash/quota/multi-tab recovery, historical storage-estimate discrepancy and new large-vault report/compliance latency are unverified. No server or background delivery exists for the weekly digest. Full 7F/Phase 2 completion awaits separately authorized 7F-2.
+
+### CI proof (part 1)
+
+**7F-1 is CI-verified** in [CI #130](https://github.com/Adityapawar5105/rebatehq/actions/runs/42674285171) on `1903986`, 10 November 2026 (Asia/Kolkata): 314 unit tests (78 JS + 236 TS), **59 authenticated Chromium vault checks** (including `reports`, `reportsUi` and `roiUi`), **57 Firefox lab checks**, **12 real-authenticated local-Supabase relay checks**, and the fresh 152-check pgTAP suite twice. Local vault **v17 / 50 tables**; 11 locked migrations, zero pending; no restore drill needed (no Supabase change). Every job step passed, including both required browser gates; their result lists include `reports`, `reportsUi` and `roiUi`. Part 2 (folder re-import and converters) has not started.
 
 ## Part 2 — folder re-import and Phase 2 converters
 
