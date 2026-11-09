@@ -18,6 +18,9 @@ export async function dispatch(service: VaultService, request: Request, hooks: H
     case "vendorReviewQuotes":return service.vendorReviewQuotes(request.data.sheet,request.data.offset,request.data.grid);
     case "vendorPpv":return service.vendorPpv({from:request.data.from,to:request.data.to},request.data.offset,request.data.grid);
     case "vendorPpvLines":return service.vendorPpvLines(request.data.product,{from:request.data.from,to:request.data.to},request.data.offset,request.data.grid);
+    case "simOptions":return service.simOptions();
+    case "simRun":return service.simRun(request.data.scenario,hooks.signal(),progress);
+    case "simRows":return service.simRows(request.data.dim,request.data.offset,request.data.grid);
     case "supplierClaims":return service.supplierClaims(request.data.offset,request.data.grid);
     case "supplierPurchases":return service.supplierPurchases(request.data.offset,request.data.grid,request.data.claimId);
     case "supplierProgress":return service.supplierProgress(request.data.offset,request.data.grid);

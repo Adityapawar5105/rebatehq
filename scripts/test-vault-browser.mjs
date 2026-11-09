@@ -197,6 +197,35 @@ async function vendorsUi(){
  results.checks.vendorsUi={currency:'CAD',reviewChange:true,marginEffect:true,unknownSkuFlagged:true,ppvVariance:true,ppvGridTotals:true,ppvLines:true,phone375:true,repHidden:true,privacyMarkers:true};
  }catch(error){console.error('Vendor UI diagnostics:',JSON.stringify(await diagnose()));throw error;}finally{await context.close();context=savedContext;page=savedPage;dataPlaneActive=active;}
 }
+// 7E-2 historical scenario simulator (Scale licence in the lab and CI): replay two months with +10% price, in CAD,
+// in a fresh vault under the same request/console marker sensors.
+async function simUi(){
+ const savedContext=context,savedPage=page,active=dataPlaneActive;
+ context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-sim-')),browserOptions);await configureContext();page=await openPage();
+ try{
+ dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic simulator owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
+ await page.locator('nav a[href="#settings"]').click();await page.locator('section[aria-labelledby="currency-heading"] select').selectOption('CAD');await page.getByRole('button',{name:'Save currency',exact:true}).click();await page.getByText('Current currency: CAD',{exact:true}).waitFor();
+ const sku=marker+'-SIMVALVE',customer=marker+'-SIMCUST';
+ await page.locator('nav a[href="#data-hub"]').click();await review([
+  {name:'synthetic-items.csv',mimeType:'text/csv',buffer:Buffer.from('product_id,description,category,uom,current_cost,list_price\n'+sku+',Synthetic valve,Valves,EA,60.00,100.00\n')},
+  {name:'synthetic-sales.csv',mimeType:'text/csv',buffer:Buffer.from('line_id,product_id,customer_id,sale_date,quantity,list_amount,discount_amount,freight_amount,rebate_amount,cost_amount\n1,'+sku+','+customer+',2026-03-01,4,400.00,0,0,0,240.00\n2,'+sku+','+customer+',2026-04-10,1,100.00,10.00,0,0,60.00\n')}]);
+ await page.getByRole('button',{name:'Confirm and import locally',exact:true}).click();await page.getByRole('heading',{name:'Batch report'}).waitFor({state:'detached'});
+ await page.locator('nav a[href="#vendors"]').click();await page.getByTestId('vendor-tab-sim').click();await page.getByTestId('sim-run').waitFor({timeout:60000});
+ await page.getByTestId('sim-from').fill('2026-03');await page.getByTestId('sim-to').fill('2026-04');await page.getByTestId('sim-pct').fill('10');await page.getByTestId('sim-run').click();
+ // +10% price: line 1 list 400.00→440.00 (margin 160.00→200.00); line 2 list 100.00→110.00, discount 10.00→11.00 (margin 30.00→39.00). Change +49.00 CAD.
+ const change=page.getByTestId('sim-margin-change');await change.waitFor({timeout:60000});
+ assert.equal(await change.getAttribute('data-value'),'4900');assert.ok((await change.innerText()).includes('CA$49.00'),'Margin change lost its currency');
+ assert.equal(await page.getByTestId('sim-scenario-margin').getAttribute('data-value'),'23900');assert.equal(await page.getByTestId('sim-actual-margin').getAttribute('data-value'),'19000');assert.equal(await page.getByTestId('sim-lines').innerText(),'2');
+ await page.getByTestId('sim-dim').selectOption('month');const grid=page.getByTestId('sim-grid');await grid.locator('tbody tr').filter({hasText:'2026-04'}).waitFor();assert.equal(await grid.locator('tbody tr').count(),2);
+ await grid.getByTestId('grid-select-all').check();const total=grid.getByTestId('grid-total-margin_change');await total.waitFor();assert.equal(await total.getAttribute('data-sum'),'4900');assert.ok((await total.innerText()).includes('CA$49.00'),'Breakdown total lost its currency');
+ // The run survives a tab switch while the data is unchanged.
+ await page.getByTestId('vendor-tab-ppv').click();await page.getByTestId('vendor-tab-sim').click();await change.waitFor();assert.equal(await change.getAttribute('data-value'),'4900');assert.equal(await page.getByTestId('sim-pct').inputValue(),'10','The restored run lost its changes');
+ await page.setViewportSize({width:375,height:812});await page.waitForTimeout(400);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Simulator overflows a phone');await page.screenshot({path:'test-results/simulator-'+channel+'.png',fullPage:true});await page.setViewportSize({width:1280,height:800});
+ await page.locator('nav a[href="#settings"]').click();await page.getByLabel('Preview as').selectOption('accountant');await page.getByTestId('preview-banner').waitFor();await page.locator('nav a[href="#vendors"]').click();await page.getByTestId('vendor-tab-review').waitFor();assert.equal(await page.getByTestId('vendor-tab-sim').count(),0,'An Accountant sees the simulator');
+ await page.locator('nav a[href="#settings"]').click();await page.getByRole('button',{name:'Return to my own view'}).click();
+ results.checks.simUi={currency:'CAD',marginChange:true,scenarioMargin:true,breakdownTotals:true,keptAcrossTabs:true,phone375:true,nonPricingHidden:true,privacyMarkers:true};
+ }catch(error){console.error('Simulator UI diagnostics:',JSON.stringify(await diagnose()));throw error;}finally{await context.close();context=savedContext;page=savedPage;dataPlaneActive=active;}
+}
 async function suppliersUi(){
  const savedContext=context,savedPage=page,active=dataPlaneActive;
  context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-suppliers-')),browserOptions);await configureContext();page=await openPage();
@@ -247,7 +276,7 @@ async function monitorUi(){
 await build({ entryPoints: ["tests/helpers/studio-fixtures.ts"], outfile: "test-results/studio-fixtures.mjs", bundle: true, platform: "node", format: "esm" });
 const fixtures = await import(new URL("../test-results/studio-fixtures.mjs", import.meta.url).href);
 try {
- if(process.argv.includes('--vendors-ui-only')){await vendorsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Vendor UI focused gate passed ('+channel+').');}else if(process.argv.includes('--suppliers-ui-only')){await suppliersUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Supplier UI focused gate passed ('+channel+').');}else{
+ if(process.argv.includes('--sim-ui-only')){await simUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Simulator UI focused gate passed ('+channel+').');}else if(process.argv.includes('--vendors-ui-only')){await vendorsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Vendor UI focused gate passed ('+channel+').');}else if(process.argv.includes('--suppliers-ui-only')){await suppliersUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Supplier UI focused gate passed ('+channel+').');}else{
   if (auth) {
     assert.notEqual(process.env.LEGACY_BUSINESS_ENABLED,'true','Privacy gate must run with legacy business routes OFF');
     await signInLocal(context,page,base);
@@ -594,7 +623,7 @@ try {
     await page.getByTestId('theme').first().selectOption(theme);
     for(const size of [{width:1366,height:768},{width:375,height:812}]){
       await page.setViewportSize(size);
-      for(const hash of ['#home','#data-hub','#margin','#margin-bridge','#pricing','#pricing-planner','#pricing-versions','#pricing-exceptions','#pricing-expiry','#quotes','#rebates','#vendors','#vendors-ppv','#reports','#settings']){
+      for(const hash of ['#home','#data-hub','#margin','#margin-bridge','#pricing','#pricing-planner','#pricing-versions','#pricing-exceptions','#pricing-expiry','#quotes','#rebates','#vendors','#vendors-ppv','#vendors-sim','#reports','#settings']){
         await page.evaluate(h=>{location.hash=h;},hash);await page.waitForTimeout(300);await page.waitForFunction(()=>!document.querySelector('main [aria-busy="true"]'),null,{timeout:60000});if(hash==='#pricing-versions'&&theme==='dark'&&size.width===375)await opsShot('versions-dark-mobile');
         if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1))overflowed.push(`${hash} ${theme} ${size.width}px`);
       }
@@ -692,7 +721,7 @@ try {
   }
   await monitorUi();
   await rebatesUi();
-  await suppliersUi(); await vendorsUi();
+  await suppliersUi(); await vendorsUi(); await simUi();
   if(auth){
     const device=await page.evaluate(()=>{const key=Object.keys(localStorage).find(k=>k.startsWith('rebatehq-device-v1:'));return localStorage.getItem(key);});assert.ok(device);
     const revoked=await context.request.post(base+'/api/licence/devices',{data:{id:device,status:'revoked'}});assert.equal(revoked.status(),200);

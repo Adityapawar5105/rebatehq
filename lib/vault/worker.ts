@@ -28,7 +28,7 @@ scope.onmessage = event => {
     // Only our own fixed messages cross the boundary; engine errors can embed cell values.
     const own = error instanceof VaultError || error instanceof StudioError || error instanceof RelayError;
     const cancelled = abort.signal.aborted && !own;
-    post({ id: request.id, error: { code: error instanceof VaultError || error instanceof RelayError ? error.code : cancelled ? "CANCELLED" : own ? "STUDIO" : "LOCAL", message: own ? error.message : cancelled ? request.action.startsWith('relay') ? msg("vault.worker.sharingCancelledSyncTo") : msg("vault.worker.importCancelledNoRows") : msg("vault.worker.theLocalOperationFailed") } });
+    post({ id: request.id, error: { code: error instanceof VaultError || error instanceof RelayError ? error.code : cancelled ? "CANCELLED" : own ? "STUDIO" : "LOCAL", message: own ? error.message : cancelled ? request.action.startsWith('sim') ? msg("sim.cancelled") : request.action.startsWith('relay') ? msg("vault.worker.sharingCancelledSyncTo") : msg("vault.worker.importCancelledNoRows") : msg("vault.worker.theLocalOperationFailed") } });
   });
 };
 

@@ -1,3 +1,4 @@
+import type { SimInput, SimDim } from '../vendor/simulate';
 import type {BridgeInput} from "../margin/bridge";
 import type {GridMeta,GridQuery,GridType,Totals} from "../grid/core";
 import type {PlanInput,ExceptionInput} from "../pricing/ops";
@@ -53,6 +54,9 @@ export type Commands = {
   vendorReviewQuotes:{sheet:string;offset?:number;grid?:GridQuery};
   vendorPpv:{from?:string;to?:string;offset?:number;grid?:GridQuery};
   vendorPpvLines:{product:string;from?:string;to?:string;offset?:number;grid?:GridQuery};
+  simOptions:Record<string,never>;
+  simRun:{scenario:SimInput};
+  simRows:{dim:SimDim;offset?:number;grid?:GridQuery};
   customerList:{offset?:number;grid?:GridQuery};
   productList:{offset?:number;grid?:GridQuery};
   noteSet:{kind:"customer"|"product";id:string;text:string};
@@ -180,6 +184,9 @@ export type Results = {
   vendorReviewQuotes:Awaited<ReturnType<VaultService["vendorReviewQuotes"]>>;
   vendorPpv:Awaited<ReturnType<VaultService["vendorPpv"]>>;
   vendorPpvLines:Awaited<ReturnType<VaultService["vendorPpvLines"]>>;
+  simOptions:Awaited<ReturnType<VaultService["simOptions"]>>;
+  simRun:Awaited<ReturnType<VaultService["simRun"]>>;
+  simRows:Awaited<ReturnType<VaultService["simRows"]>>;
   customerList:Awaited<ReturnType<VaultService["customerList"]>>;
   productList:Awaited<ReturnType<VaultService["productList"]>>;
   noteSet:Awaited<ReturnType<VaultService["noteSet"]>>;

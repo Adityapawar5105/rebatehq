@@ -154,13 +154,107 @@ function PriceVariance({ client, version }: { client: VaultClient; version: stri
   </>;
 }
 
-export function VendorsView({ client, tier, version, canImport }: { client: VaultClient; tier?: Tier; version: string; canImport: boolean }) {
-  const [tab, setTab] = useState<"review" | "ppv">("review");
-  useEffect(() => { const read = () => setTab(location.hash === "#vendors-ppv" ? "ppv" : "review"); read(); window.addEventListener("hashchange", read); return () => window.removeEventListener("hashchange", read); }, []);
+type Change = { kind: "price" | "cost"; scope: "all" | "category" | "customer" | "product"; value: string; pct: string };
+const SCOPE: Record<Change["scope"], MessageKey> = { all: "sim.scope.all", category: "sim.scope.category", customer: "sim.scope.customer", product: "sim.scope.product" };
+type Dim = "product" | "category" | "customer" | "tier" | "month";
+const DIMS: Array<{ id: Dim; label: MessageKey }> = [{ id: "category", label: "sim.dim.category" }, { id: "product", label: "sim.dim.product" }, { id: "customer", label: "sim.dim.customer" }, { id: "tier", label: "sim.dim.tier" }, { id: "month", label: "sim.dim.month" }];
+const pct = (v: string | null) => v === null ? t("common.notApplicable") : fmt.percent(v);
+const shift = (month: string, by: number) => { const [y, m] = month.split("-").map(Number), i = y * 12 + m - 1 + by; return `${Math.floor(i / 12)}-${String(i % 12 + 1).padStart(2, "0")}`; };
+
+/** Historical scenario simulator (7E-2, Scale only): replays past months with price and cost changes in the worker. */
+function Simulator({ client, version, operation }: { client: VaultClient; version: string; operation: (work: () => Promise<void>) => Promise<void> }) {
+  const [options, setOptions] = useState<Results["simOptions"] | null>(null), [error, setError] = useState(""), [from, setFrom] = useState(""), [to, setTo] = useState("");
+  const [changes, setChanges] = useState<Change[]>([{ kind: "price", scope: "all", value: "", pct: "2" }]), [run, setRun] = useState<Results["simRun"] | null>(null), [dim, setDim] = useState<Dim>("category"), [running, setRunning] = useState(false);
+  useEffect(() => {
+    let on = true; setRun(null);
+    void client.call("simOptions", {}).then(v => {
+      if (!on) return; setOptions(v); setRun(v.last);
+      if (v.last) { setFrom(v.last.from); setTo(v.last.to); setChanges(v.last.changes.map(c => ({ kind: c.kind, scope: c.scope, value: c.value, pct: String(Number(c.bp) / 100) }))); }
+      else if (v.first && v.lastMonth) { setTo(v.lastMonth); const a = shift(v.lastMonth, -11); setFrom(a < v.first ? v.first : a); }
+    }).catch(e => { if (on) setError(errorText(e)); });
+    return () => { on = false; };
+  }, [client, version]);
+  const rows = useGrid((offset, grid) => client.call("simRows", { dim, offset, grid }), run ? `${dim}|${run.from}|${run.to}|${run.ms}|${run.lines}|${JSON.stringify(run.changes)}` : "");
+  const set = (i: number, patch: Partial<Change>) => setChanges(list => list.map((c, j) => j !== i ? c : { ...c, ...patch, ...(patch.kind === "cost" && c.scope === "customer" ? { scope: "all" as const, value: "" } : {}), ...(patch.scope === "all" ? { value: "" } : {}) }));
+  const submit = () => void operation(async () => { setRunning(true); try { setRun(await client.call("simRun", { scenario: { from, to, changes } })); } finally { setRunning(false); } });
+  if (error) return <Notice tone="warn" role="alert">{error}</Notice>;
+  if (!options) return <Skeleton/>;
+  if (!options.first) return <Card title={t("sim.heading")} description={t("sim.help")}><EmptyState icon="upload" title={t("sim.noSales")} body={t("sim.noSalesHelp")}/></Card>;
+  const r = run;
+  const metric = (id: string, label: MessageKey, a: string | null, b: string | null, isMoney = true) => ({ id, label: t(label), actual: a, scenario: b, change: isMoney && a !== null && b !== null ? String(BigInt(b) - BigInt(a)) : null, isMoney });
+  const compare = r ? [metric("list", "sim.m.list", r.actual.list, r.scenario.list), metric("discount", "sim.m.discount", r.actual.discount, r.scenario.discount), metric("rebate", "sim.m.rebate", r.actual.rebate, r.scenario.rebate),
+    metric("freight", "sim.m.freight", r.actual.freight, r.scenario.freight), metric("pocket", "sim.m.pocket", r.actual.pocket, r.scenario.pocket), metric("cost", "sim.m.cost", r.actual.cost, r.scenario.cost),
+    metric("margin", "sim.m.margin", r.actual.margin, r.scenario.margin), metric("rate", "sim.m.rate", r.actual.rate, r.scenario.rate, false)] : [];
+  return <>
+    <Card title={t("sim.heading")} description={t("sim.help")} data-testid="sim" aria-busy={running}>
+      <form onSubmit={e => { e.preventDefault(); submit(); }}>
+        <Grid min={200}>
+          <Field label={t("sim.from")} hint={t("sim.monthHint")}><input type="month" value={from} min={options.first ?? undefined} max={options.lastMonth ?? undefined} onChange={e => setFrom(e.target.value)} required data-testid="sim-from"/></Field>
+          <Field label={t("sim.to")} hint={t("sim.dataSpan", { first: options.first ?? "", last: options.lastMonth ?? "" })}><input type="month" value={to} min={options.first ?? undefined} max={options.lastMonth ?? undefined} onChange={e => setTo(e.target.value)} required data-testid="sim-to"/></Field>
+        </Grid>
+        <h3 className={styles.small}>{t("sim.changes")}</h3>
+        <datalist id="sim-categories">{options.categories.map(c => <option key={c} value={c}/>)}</datalist>
+        {changes.map((c, i) => <div key={i} data-testid="sim-change"><Grid min={160}>
+          <Field label={t("sim.kind")}><select value={c.kind} onChange={e => set(i, { kind: e.target.value as Change["kind"] })} data-testid="sim-kind"><option value="price">{t("sim.kind.price")}</option><option value="cost">{t("sim.kind.cost")}</option></select></Field>
+          <Field label={t("sim.scope")}><select value={c.scope} onChange={e => set(i, { scope: e.target.value as Change["scope"] })} data-testid="sim-scope">{(Object.keys(SCOPE) as Change["scope"][]).filter(k => c.kind === "price" || k !== "customer").map(k => <option key={k} value={k}>{t(SCOPE[k])}</option>)}</select></Field>
+          {c.scope !== "all" && <Field label={t("sim.value")}><input value={c.value} maxLength={200} required list={c.scope === "category" ? "sim-categories" : undefined} onChange={e => set(i, { value: e.target.value })} data-testid="sim-value" translate="no"/></Field>}
+          <Field label={t("sim.percent")} hint={t("sim.percentHint")}><input value={c.pct} inputMode="decimal" required pattern="[+\-]?[0-9]{1,3}([.][0-9]{1,2})?" onChange={e => set(i, { pct: e.target.value })} data-testid="sim-pct"/></Field>
+        </Grid>
+          <Button size="sm" variant="ghost" icon="close" disabled={changes.length < 2} aria-label={t("sim.removeChange", { n: fmt.int(i + 1) })} onClick={() => setChanges(list => list.filter((_, j) => j !== i))}>{t("sim.remove")}</Button>
+        </div>)}
+        <div className={styles.row}>
+          <Button size="sm" icon="sparkle" disabled={changes.length >= 20} onClick={() => setChanges(list => [...list, { kind: "price", scope: "category", value: "", pct: "0" }])} data-testid="sim-add">{t("sim.addChange")}</Button>
+          <Button type="submit" variant="primary" icon="flask" disabled={running || !from || !to} data-testid="sim-run">{t("sim.run")}</Button>
+        </div>
+        <p className={styles.small}>{t("sim.method")}</p>
+      </form>
+    </Card>
+    {r && <Card title={t("sim.results", { from: r.from, to: r.to })} description={t("sim.resultsHelp")} data-testid="sim-results">
+      <Grid min={170} className={ui.kpis}>
+        <StatTile icon="tag" label={t("sim.lines")} value={fmt.int(r.lines)} hint={t("sim.changedLines", { count: fmt.int(r.changedLines) })} valueProps={{ "data-testid": "sim-lines" }}/>
+        <StatTile icon="coins" label={t("sim.actualMargin")} value={money(r.actual.margin)} hint={pct(r.actual.rate)} valueProps={{ "data-testid": "sim-actual-margin", "data-value": r.actual.margin }}/>
+        <StatTile icon="flask" label={t("sim.scenarioMargin")} value={money(r.scenario.margin)} hint={pct(r.scenario.rate)} valueProps={{ "data-testid": "sim-scenario-margin", "data-value": r.scenario.margin }}/>
+        <StatTile wide icon="trend" tone={r.delta.margin.startsWith("-") ? "bad" : r.delta.margin === "0" ? undefined : "ok"} label={t("sim.marginChange")} value={money(r.delta.margin)} hint={t("sim.pocketChange", { amount: money(r.delta.pocket) })} valueProps={{ "data-testid": "sim-margin-change", "data-value": r.delta.margin }}/>
+      </Grid>
+      {r.uncostedLines !== "0" && <Notice tone="warn">{t("sim.uncosted", { count: fmt.int(r.uncostedLines) })}</Notice>}
+      <DataGrid label={t("sim.compare")} testId="sim-compare-grid" rows={compare} rowKey={x => x.id} columns={[
+        { id: "label", name: t("sim.measure"), value: x => x.label },
+        { id: "actual", name: t("sim.actual"), type: "money", num: true, value: x => x.isMoney ? x.actual : null, cell: x => x.isMoney ? money(x.actual) : pct(x.actual) },
+        { id: "scenario", name: t("sim.scenario"), type: "money", num: true, value: x => x.isMoney ? x.scenario : null, cell: x => x.isMoney ? money(x.scenario) : pct(x.scenario) },
+        { id: "change", name: t("sim.change"), type: "money", num: true, value: x => x.change, cell: x => x.isMoney ? money(x.change) : "" },
+      ]}/>
+    </Card>}
+    {r && <Card title={t("sim.breakdown")} data-testid="sim-breakdown" aria-busy={rows.busy} actions={<select aria-label={t("sim.breakdownBy")} value={dim} onChange={e => setDim(e.target.value as Dim)} data-testid="sim-dim">{DIMS.map(d => <option key={d.id} value={d.id}>{t(d.label)}</option>)}</select>}>
+      {rows.error && <Notice tone="warn" role="alert">{rows.error}</Notice>}
+      {!rows.view ? !rows.error && <Skeleton/> : <>
+        <DataGrid label={t("sim.breakdown")} testId="sim-grid" rows={rows.view.rows} rowKey={x => x.key} remote={{ query: rows.gq, onQuery: rows.query, meta: rows.view.grid, fetch: g => client.call("simRows", { dim, offset: 0, grid: g }).then(v => v.grid) }} columns={[
+          { id: "key", name: t(DIMS.find(d => d.id === dim)!.label), value: x => x.key, cell: x => <span className={styles.wrap} translate="no">{x.key || t("sim.none")}{x.label ? ` · ${x.label}` : ""}</span> },
+          { id: "lines", name: t("sim.lines"), type: "int", num: true, value: x => x.lines },
+          { id: "changed", name: t("sim.changed"), type: "int", num: true, value: x => x.changed },
+          { id: "actual_pocket", name: t("sim.actualPocket"), type: "money", num: true, value: x => x.actual_pocket },
+          { id: "scenario_pocket", name: t("sim.scenarioPocket"), type: "money", num: true, value: x => x.scenario_pocket },
+          { id: "actual_margin", name: t("sim.actualMargin"), type: "money", num: true, value: x => x.actual_margin },
+          { id: "scenario_margin", name: t("sim.scenarioMargin"), type: "money", num: true, value: x => x.scenario_margin },
+          { id: "margin_change", name: t("sim.marginChange"), type: "money", num: true, value: x => x.margin_change },
+          { id: "actual_rate", name: t("sim.actualRate"), type: "percent", num: true, value: x => x.actual_rate, cell: x => pct(x.actual_rate) },
+          { id: "scenario_rate", name: t("sim.scenarioRate"), type: "percent", num: true, value: x => x.scenario_rate, cell: x => pct(x.scenario_rate) },
+          { id: "uncosted", name: t("sim.uncostedCol"), type: "int", num: true, value: x => x.uncosted },
+        ]}/>
+        <Pager offset={rows.view.offset} matched={rows.view.grid.matched} busy={rows.busy} page={rows.page}/>
+      </>}
+    </Card>}
+  </>;
+}
+
+export function VendorsView({ client, tier, version, canImport, canSimulate, operation }: { client: VaultClient; tier?: Tier; version: string; canImport: boolean; canSimulate: boolean; operation: (work: () => Promise<void>) => Promise<void> }) {
+  const [tab, setTab] = useState<"review" | "ppv" | "sim">("review");
+  useEffect(() => { const read = () => setTab(location.hash === "#vendors-ppv" ? "ppv" : location.hash === "#vendors-sim" ? "sim" : "review"); read(); window.addEventListener("hashchange", read); return () => window.removeEventListener("hashchange", read); }, []);
   if (tier === "starter") return <Card title={t("vendor.review")}><Notice>{t("vendor.proRequired")}</Notice></Card>;
   return <>
-    <SectionTabs label={t("vendor.tabs")} current={tab} onSelect={id => setTab(id as "review" | "ppv")} items={[
-      { id: "review", label: t("vendor.review"), href: "#vendors", testId: "vendor-tab-review" }, { id: "ppv", label: t("vendor.ppv"), href: "#vendors-ppv", testId: "vendor-tab-ppv" }]}/>
-    {tab === "ppv" ? <PriceVariance client={client} version={version}/> : <PriceReview client={client} version={version} canImport={canImport}/>}
+    <SectionTabs label={t("vendor.tabs")} current={tab} onSelect={id => setTab(id as "review" | "ppv" | "sim")} items={[
+      { id: "review", label: t("vendor.review"), href: "#vendors", testId: "vendor-tab-review" }, { id: "ppv", label: t("vendor.ppv"), href: "#vendors-ppv", testId: "vendor-tab-ppv" },
+      ...(canSimulate ? [{ id: "sim", label: t("sim.tab"), href: "#vendors-sim", testId: "vendor-tab-sim" }] : [])]}/>
+    {tab === "sim" && canSimulate ? tier === "scale" ? <Simulator client={client} version={version} operation={operation}/> : <Card title={t("sim.heading")}><Notice data-testid="sim-scale-required">{t("sim.needScale")}</Notice></Card>
+      : tab === "ppv" ? <PriceVariance client={client} version={version}/> : <PriceReview client={client} version={version} canImport={canImport}/>}
   </>;
 }

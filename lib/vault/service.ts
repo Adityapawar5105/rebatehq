@@ -7,6 +7,7 @@ import {customerHealth} from '../margin/monitor';
 import {valuesTotals} from '../grid/sql';
 import * as notes from '../notes/notes';
 import * as vendor from '../vendor/review';
+import * as sim from '../vendor/simulate';
 import * as grid from '../pricing/grid';
 import * as market from '../pricing/market';
 import {whatIf} from '../pricing/whatif';
@@ -363,6 +364,14 @@ export class VaultService {
   async noteSet(kind:unknown,id:unknown,text:unknown){let saved:string|null=null;await this.write("data.note_saved",{kind:String(kind),id:String(id)},async e=>{await e.conn.query(await notes.noteSql(e,kind,id,text));saved=notes.checkNote(text);});return {kind,id,notes:saved};}
   async sourceRemovePreview(id:string){return notes.removalNotes(this.requireEngine(),id);}
   // ---- 7E-1: vendor price review and purchase price variance (Professional and Scale; capability `cost`) ----
+  // 7E-2 historical simulator: Scale licence only, checked here in the worker. The run lives in a temporary table of
+  // this engine and is valid only while the data it replayed is unchanged.
+  private simLast:{engine:Engine;version:number;result:Awaited<ReturnType<typeof sim.simulate>>}|null=null;
+  private scaleTier(){if(this.licence.tier!=='scale')throw new VaultError('LICENCE',msg('sim.needScale'));}
+  private simCurrent(){const e=this.requireEngine(),l=this.simLast;return l&&l.engine===e&&l.version===this.dataVersion?l:null;}
+  async simOptions(){this.scaleTier();const e=this.requireEngine();return {...await sim.simOptions(e),last:this.simCurrent()?.result??null};}
+  async simRun(scenario:unknown,signal:AbortSignal,progress:Progress){this.scaleTier();const e=this.requireEngine();this.simLast=null;const result=await sim.simulate(e,scenario,signal,progress);this.simLast={engine:e,version:this.dataVersion,result};this.touch();return result;}
+  async simRows(dim:unknown,offset=0,grid?:unknown){this.scaleTier();const l=this.simCurrent();if(!l)throw new VaultError('SIM',msg('sim.runFirst'));return sim.simRows(l.engine,dim,offset,grid);}
   async vendorSheets(){this.opsTier();return vendor.vendorSheets(this.requireEngine());}
   async vendorReview(sheet:unknown,window?:unknown,offset=0,grid?:unknown){this.opsTier();return vendor.vendorReview(this.requireEngine(),sheet,window,offset,grid);}
   async vendorReviewQuotes(sheet:unknown,offset=0,grid?:unknown){this.opsTier();return vendor.vendorReviewQuotes(this.requireEngine(),sheet,offset,grid);}

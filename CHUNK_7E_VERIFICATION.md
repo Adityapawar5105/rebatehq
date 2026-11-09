@@ -42,3 +42,48 @@ The browser gate adds `vendorsUi` (fresh vault in CAD, under the request and con
 ### CI proof (part 1)
 
 **7E-1 is CI-verified** in [CI #126](https://github.com/Adityapawar5105/rebatehq/actions/runs/42616397012) on `2cee899`, 9 November 2026: 301 unit tests (78 JS + 223 TS), **55 authenticated Chromium vault checks** (including `vendorsUi`), **53 Firefox lab checks**, **12 real-authenticated local-Supabase relay checks**, and the fresh 152-check pgTAP suite twice. Local vault v16 / 47 tables (unchanged); 11 locked migrations, zero pending; no restore drill needed (no Supabase change). Every job step passed, including both required browser gates; their result lists include `vendorsUi`. Part 2 (the Scale-only historical simulator) has not started.
+
+## Part 2 — historical scenario simulator (Scale only)
+
+**Status: built by Claude Code, 9 November 2026; CI result: pending.** Local vault schema unchanged (v16, 47 tables). No Supabase migration, no locked-hash change, no dependency change. Blueprint unchanged.
+
+### What was built
+
+- `lib/vendor/simulate.ts` (worker): scenario validation, the month-by-month replay into a temporary table, totals and a worker-grid breakdown. Each imported sales and credit line in the period is replayed through the vault's line waterfall with the scenario's price and cost changes; nothing in the vault changes.
+- Commands, all read-only, needing the `pricing` capability and the **Scale licence (worker check)**: `simOptions` (data span, categories, the last run while still valid), `simRun` (progress per month and cancel through the shared progress bar), `simRows` (breakdown by category, SKU, customer, customer tier or month).
+- A third Vendors tab, **Scenario simulator** (`#vendors-sim`), shown only to roles with `pricing`; a Professional workspace sees a Scale notice instead. Period of whole months, up to 20 price or cost changes by all lines, category, customer (price only) or SKU; results as tiles (lines, actual margin, scenario margin, margin change), an actual-versus-scenario grid and the breakdown grid. Both grids meet the grid standard; amounts are in the workspace currency.
+- Guardrails: at most 36 months and 2,000,000 lines per run (checked before any work); a cancelled or failed run leaves nothing behind; a run is discarded when the data changes or the vault locks.
+- Message keys `sim.*` in en, es and fr (no quote wording, so no fr-CA override). Theme tokens only.
+
+Rules for every figure are in `ASSUMPTIONS.md`, section 7E-2.
+
+### Tests
+
+`tests/simulator.test.ts` (5 tests):
+- input validation (months, percent text, scopes, duplicates, the 36-month and 20-change limits, SQL text as data);
+- a hand-checked fixture: half-away-from-zero rounding (115.5 → 116, −555.5 → −556), a credit line, an unknown cost, precedence (SKU over customer over category over all), totals (margin 91 → 164, +73), the breakdown by category, month, tier, customer and SKU with grid sort, filter and totals, and the vault unchanged with the run in a temporary table only;
+- cancel between months (no partial run left) and the 2M-line guardrail refusing before any work;
+- **the playground** (120,000 generated lines; 2025 replayed with seven changes): the simulator's actual and scenario totals equal an independent replay of every line through the engine (`lineFromCents` with `rha`), a zero change equals what happened, and the breakdown totals equal the run totals by month, category and tier;
+- the gates: Starter and Professional refused (`LICENCE`) for all three commands, Sales Rep and Accountant refused (`FORBIDDEN`), a run invalidated by a data change, every `pricing` role also holding `cost`, and no audit row written.
+
+The browser gate adds `simUi` (fresh CAD vault, under the request and console marker sensors): two months imported through Import Studio, a +10% price scenario with the exact margin change (+CA$49.00), actual and scenario margins, the month breakdown with grid totals in CAD, the run kept across a tab switch, no overflow at 375 px, and the simulator hidden from an Accountant preview. The pseudo-locale and layout walk now includes `#vendors-sim`.
+
+### Local checks (not CI proof)
+
+| Command | Result |
+| --- | --- |
+| `node node_modules/typescript/bin/tsc --noEmit` | passed |
+| `node --test tests/*.test.js` | 78 of 78 passed |
+| `node …/tsx/dist/cli.mjs --test --test-concurrency=2 tests/*.test.ts` | 228 of 228 passed (5 new) |
+| `node scripts/check-migrations-lock.mjs` | 11 applied, 0 pending, unchanged |
+| `scripts/test-vault-browser.mjs --browser=chrome` on a production build (lab mode) | passed, 54 checks (Chrome 156.0.8078.80), including `simUi` |
+| Same, `--browser=msedge` | passed, 54 checks (Edge 157.0.4341.42) |
+| `--sim-ui-only` in Chrome and Edge after restoring the run's changes on return | passed |
+| Relay and Firefox gates | not run locally; CI runs both |
+
+### Unverified
+
+- Timing of a real 2M-line, 36-month replay on an 8 GB laptop; the playground year (about 60,000 lines) is the largest replay run. No capacity claim is made.
+- Cancelling a long replay in the browser by hand; cancel is proved in the unit test and uses the same worker cancel as imports.
+- Pilot review of the method (no volume response, discount and rebate moving with list).
+- Headed screen-reader use; native-language review of the new labels.

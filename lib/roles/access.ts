@@ -59,6 +59,8 @@ export const intersect = (a: Cap[], b: Cap[]) => a.filter(c => b.includes(c));
  */
 export const ACTION_CAP: Record<Action, Cap | null> = {
   vendorSheets:'cost',vendorReview:'cost',vendorReviewQuotes:'cost',vendorPpv:'cost',vendorPpvLines:'cost',
+  // 7E-2: the historical simulator is a pricing simulation (every role with "pricing" also has "cost"); Scale only.
+  simOptions:'pricing',simRun:'pricing',simRows:'pricing',
   supplierClaims:'cost',supplierPurchases:'cost',supplierProgress:'cost',supplierClaimPreview:'cost',supplierClaimSave:'rebateManage',supplierClaimStatus:'rebateManage',supplierClaimExport:'rebateManage',
   customerList:'data',productList:'data',noteSet:'data',sourceRemovePreview:'data',
   gridTotals:'view',
