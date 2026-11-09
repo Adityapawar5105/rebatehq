@@ -588,6 +588,25 @@ them here.
 ```
 [Block A]
 Chunk 7E. Build screens on the 7V components ("Vendors" and "Simulator" sections; blueprint section 9).
+Precondition: 7D-2 is CI-verified (CI #123; local vault v16, 47 tables).
+
+Size: two parts, each committed, pushed and green in CI before the next: 7E-1 = items 1 and 2 (vendor price
+review, purchase price variance), 7E-2 = item 3 (historical scenario simulator). Stop after 7E-1 and report; the
+user starts 7E-2 in a new session with Block A and this same prompt, saying "continue with 7E-2". Record both
+parts in CHUNK_7E_VERIFICATION.md (part 1, part 2).
+
+Standards from 7C-3, 7V-3 and 7D (Block B has the pitfalls):
+- Every list of records is a components/ui/DataGrid that meets the grid standard; paged lists are worker grids
+  (lib/grid/sql.ts gridPage with a GridSpec of output columns, or memoryPage for rows the worker holds).
+- Money in integer cents through the existing formatters in the workspace currency; browser assertions check the
+  currency as well as the amount. Any export is formula-safe (lib/csv csvSafeCell/csvRow) and never reads the
+  notes column of customers or products.
+- A schema bump goes to v17 (upgradeSql(16)); update every test that pins the version: tests/vault.test.ts
+  (upgradeSql(16) contents, upgradeSql(17) empty, schemaSql equality), tests/browser/vault-worker.ts (three
+  schemaVersion assertions) and any upgrade test that re-runs later steps. List columns by name in any new
+  INSERT INTO products or customers.
+- Run the Chrome and Edge gates locally on a production build; CI's authenticated Chromium and Firefox gates must
+  pass. Filter panels and dialogs must stay usable on grids low on the page.
 
 Scope:
 1. Vendor price review: a new supplier cost sheet against current costs (vendor_costs and products). Show the
