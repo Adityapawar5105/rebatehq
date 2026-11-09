@@ -49,15 +49,11 @@ Hosted/deployed sign-in and relay/restore, real customer/ERP/accounting acceptan
 
 ### CI proof (part 1)
 
-**7F-1 is CI-verified** in [CI #130](https://github.com/Adityapawar5105/rebatehq/actions/runs/42674285171) on `1903986`, 10 November 2026 (Asia/Kolkata): 314 unit tests (78 JS + 236 TS), **59 authenticated Chromium vault checks** (including `reports`, `reportsUi` and `roiUi`), **57 Firefox lab checks**, **12 real-authenticated local-Supabase relay checks**, and the fresh 152-check pgTAP suite twice. Local vault **v17 / 50 tables**; 11 locked migrations, zero pending; no restore drill needed (no Supabase change). Every job step passed, including both required browser gates; their result lists include `reports`, `reportsUi` and `roiUi`. Part 2 (folder re-import and converters) has not started.
+**7F-1 is CI-verified** in [CI #130](https://github.com/Adityapawar5105/rebatehq/actions/runs/42674285171) on `1903986`, 10 November 2026 (Asia/Kolkata): 314 unit tests (78 JS + 236 TS), **59 authenticated Chromium vault checks** (including `reports`, `reportsUi` and `roiUi`), **57 Firefox lab checks**, **12 real-authenticated local-Supabase relay checks**, and the fresh 152-check pgTAP suite twice. Local vault **v17 / 50 tables**; 11 locked migrations, zero pending; no restore drill needed (no Supabase change). Every job step passed, including both required browser gates; their result lists include `reports`, `reportsUi` and `roiUi`. Part 2 followed in CI #132.
 
 ## Part 2 — folder re-import and Phase 2 converters
 
-Not started. Requires a new explicit user task after part 1 is green in CI.
-
-## Part 2 — folder re-import and Phase 2 converters (local verification)
-
-**Status: built by Claude Code, 10 November 2026; CI result: pending.** Local vault schema unchanged (v17, 50 tables). No Supabase migration or locked-hash change. Blueprint unchanged.
+**7F-2 is CI-verified** in [CI #132](https://github.com/Adityapawar5105/rebatehq/actions/runs/42687463097) on `799c2f9`, 10 November 2026 (Asia/Kolkata): 320 unit tests (78 JS + 242 TS), **61 authenticated Chromium vault checks** (including `converters` and `convertersUi`), **59 Firefox lab checks** (including both), **12 real-authenticated local-Supabase relay checks**, the high/critical dependency audit, and the fresh 152-check pgTAP suite twice. Local vault v17 / 50 tables (unchanged); 11 locked migrations, zero pending; no restore drill needed (no Supabase change). Built by Claude Code. Local vault schema unchanged (v17, 50 tables). No Supabase migration or locked-hash change. Blueprint unchanged.
 
 ### What was built
 
@@ -97,3 +93,7 @@ The browser gate adds the worker check `converters` (DuckDB writes a real Parque
 - Real ERP print reports, real supplier PDFs and real Parquet exports from a pilot; all fixtures are synthetic.
 - PDFs with CID fonts that need external CMaps, rotated text, and multi-line cells; large-file timings for the three converters.
 - Native-language review of the new labels; headed screen-reader use of the column ruler.
+
+### CI proof (part 2)
+
+**7F-2 is CI-verified** in [CI #132](https://github.com/Adityapawar5105/rebatehq/actions/runs/42687463097) on `799c2f9`, 10 November 2026 (Asia/Kolkata): 320 unit tests (78 JS + 242 TS), **61 authenticated Chromium vault checks** (including `converters` and `convertersUi`), **59 Firefox lab checks** (including both), **12 real-authenticated local-Supabase relay checks**, the high/critical dependency audit, and the fresh 152-check pgTAP suite twice. Local vault v17 / 50 tables (unchanged); 11 locked migrations, zero pending; no restore drill needed (no Supabase change). Every job step passed, including both required browser gates; their result lists include `converters` and `convertersUi`, so the pinned Parquet extension and the on-demand pdf.js chunk ran in Chromium and Firefox. **7F is complete**; blueprint Phase 2 is complete except the mobile PWA (9A, on hold). Next chunk: 8A, only on explicit instruction.
