@@ -2,6 +2,8 @@
 
 Blueprint Phase 3, chunk 8B (BLUEPRINT_EXECUTION_PLAN.md section 9): Margin Drain agents (blueprint v2.6 gap 1), cost index triggers and the dead-stock clearance optimiser. Built by Claude Code in two parts. Blueprint v2.6 governs and is unchanged by this chunk.
 
+**8B is CI-verified:** 8B-1 in [CI #137](https://github.com/Adityapawar5105/rebatehq/actions/runs/42847127386) on `509a0f8` and 8B-2 in [CI #138](https://github.com/Adityapawar5105/rebatehq/actions/runs/42853411139) on `e23f5f7`, 10 November 2026. Local vault v19 / 57 tables. The optional public index feed was not built (uploads only), so there is no Supabase migration. Next chunk: 8C, only on explicit instruction.
+
 ## Part 1: Margin Drain agents and cost index triggers
 
 **8B-1 is CI-verified** in [CI #137](https://github.com/Adityapawar5105/rebatehq/actions/runs/42847127386) on `509a0f8`, 10 November 2026 (Asia/Kolkata): 334 unit tests (78 JS + 256 TS), **63 authenticated Chromium vault checks** (including `agentsUi`), **61 Firefox lab checks** (including `agentsUi`), **12 real-authenticated local-Supabase relay checks**, the high/critical dependency audit, and the fresh 152-check pgTAP suite twice. Local vault v18 / 55 tables; 11 locked migrations, zero pending; no restore drill needed (no Supabase change). Every job step passed.
@@ -62,7 +64,7 @@ The browser gate adds `agentsUi`, in a fresh vault under the request and console
 
 ## Part 2: dead-stock clearance optimiser
 
-**8B-2 is not yet CI-verified.** The local checks below are not CI proof.
+**8B-2 is CI-verified** in [CI #138](https://github.com/Adityapawar5105/rebatehq/actions/runs/42853411139) on `e23f5f7`, 10 November 2026 (Asia/Kolkata): 340 unit tests (78 JS + 262 TS), **64 authenticated Chromium vault checks** (including `agentsUi` and `deadStockUi`), **62 Firefox lab checks** (including both), **12 real-authenticated local-Supabase relay checks**, the high/critical dependency audit, and the fresh 152-check pgTAP suite twice. Local vault v19 / 57 tables; 11 locked migrations, zero pending; no restore drill needed (no Supabase change). Every job step passed.
 
 ### What was built
 

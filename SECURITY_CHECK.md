@@ -1,5 +1,15 @@
 # RebateHQ security verification
 
+## Chunk 8B — Margin Drain agents, cost index triggers and dead stock (CI-verified)
+
+Verified in [CI #137](https://github.com/Adityapawar5105/rebatehq/actions/runs/42847127386) on `509a0f8` (8B-1) and [CI #138](https://github.com/Adityapawar5105/rebatehq/actions/runs/42853411139) on `e23f5f7` (8B-2), 10 November 2026 (64 authenticated Chromium, 62 Firefox and 12 relay checks; 340 unit tests).
+- **Where it runs:** every agent rule, trigger and dead-stock figure is computed locally in the vault worker. Agent checks run on a timer inside the worker only while the vault is unlocked. They write audited rows to the encrypted vault and never reset the idle-lock timer.
+- **Network:** index series and stock levels come only from files the user imports; exchange rates are typed. No feed, server path, relay payload, export column or Supabase table was added.
+- **Commands:** all 13 new commands are Professional/Scale in the worker. They need `cost` to read and `pricing` to change; dead-stock drafts also need the named Pricing Owner and go through the existing approval and export.
+- **Sales Reps (decision 16):** no command is reachable by a Sales Rep, and the browser gate checks that the rep preview has no agents card and no Vendors.
+
+Details: [CHUNK_8B_VERIFICATION.md](./CHUNK_8B_VERIFICATION.md).
+
 ## Chunk 8A — deal guidance, cross-sell and the v2.6 pre-8A fixes (CI-verified)
 
 Verified in [CI #135](https://github.com/Adityapawar5105/rebatehq/actions/runs/42786807751) on `666608f`, 10 November 2026 (62 authenticated Chromium, 60 Firefox, 12 relay checks; 327 unit tests). Guidance and cross-sell are computed locally in the vault worker from sales lines, guardrails, quote snapshots and vendor cost dates; the new commands `quoteGuidance` and `quoteCrossSell` need `quote`, the Quote Desk tier and permission to open the quote, are read-only, and are in the decision 16 payload scan with real history, a cost-rise flag and a cross-sell row (no cost or margin value reaches a Sales Rep; the cost rise is a yes/no flag). The relay set-up card is decided from a server flag passed to the page and the new read-only `relayLocal` (local vault only, no network request; reviewed for decision 16); the browser gate's request sensor confirms no API call from it in lab mode. No export, relay payload or server path was added. Details: [CHUNK_8A_VERIFICATION.md](./CHUNK_8A_VERIFICATION.md).
