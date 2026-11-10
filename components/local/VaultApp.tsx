@@ -37,7 +37,7 @@ const SECTION_DESC: Record<Section, MessageKey> = { Home: "shell.desc.home", "Da
 const SECTION_ICON: Record<Section, IconName> = { Home: "home", "Data Hub": "database", Margin: "chart", Pricing: "tag", Quotes: "quote", "Rebates & Contracts": "coins", Vendors: "users", Reports: "report", Settings: "settings" };
 export const sectionHash = (s: Section) => s === "Rebates & Contracts" ? "rebates" : s.toLowerCase().replace(" ", "-");
 const NAV_KEY = "rebatehq.nav";
-export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled = false }: { scope: Scope; email: string; workspace: string; lab?: boolean; legacyEnabled?: boolean }) {
+export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled = false, relayEnabled = false }: { scope: Scope; email: string; workspace: string; lab?: boolean; legacyEnabled?: boolean; relayEnabled?: boolean }) {
   useLocale(); // re-render every screen when the language changes
   const client = useRef<VaultClient | null>(null);
   // Every grid totals its selected rows through the worker (DuckDB), never in the page.
@@ -151,7 +151,7 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
             {licenceLine}
           </div>
           {shown === "Home" && client.current && <HomeView client={client.current} userId={scope.userId} version={`${status.lines}|${status.generation}|${access?.role}`} busy={busy} operation={operation} refresh={async () => setStatus(await client.current!.call("status", {}))}/>}
-          {shown === "Home" && client.current && caps.includes('collaborate') && status.licence?.tier!=='starter' && <RelayPanel client={client.current} userId={scope.userId} onChange={async()=>setStatus(await client.current!.call('status',{}))}/>}
+          {shown === "Home" && client.current && caps.includes('collaborate') && status.licence?.tier!=='starter' && <RelayPanel client={client.current} userId={scope.userId} tenantId={scope.tenantId} relayEnabled={relayEnabled} onChange={async()=>setStatus(await client.current!.call('status',{}))}/>}
           {shown === "Home" && <GlossaryCard/>}
           {shown === "Data Hub" && client.current && <>
             <JumpNav label={t("shell.onThisPage")} jumpLabel={name => t("shell.jumpTo", { name })} items={[

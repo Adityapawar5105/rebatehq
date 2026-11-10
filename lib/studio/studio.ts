@@ -57,7 +57,7 @@ type Entry = {
   /** Sales files only: import just these dates (ISO, inclusive); null = no limit (blueprint engine rule 9). */
   range: DateRange;
   /** 7F-2: the decoded sample of a text file (for re-slicing fixed-width columns) and a PDF's positioned lines. */
-  text: string; positioned: Line[] | null; pages: number;
+  text: string; positioned: Line[] | null; pages: number; blankPages: number[];
 };
 /** 7F-2: readers that need the vault worker's engine (Parquet goes through DuckDB). */
 export type Readers = { parquet?: ParquetReader };
@@ -172,7 +172,7 @@ export class Studio {
     if (file.name.length > 200 || file.size < 1) throw new StudioError(msg("import.chooseANonEmpty", { name: file.name }));
     const limit = TEXT.includes(kind) ? MAX_TEXT_BYTES : SPREADSHEET.includes(kind) ? MAX_SHEET_BYTES : MAX_DOC_BYTES;
     if (file.size > limit) throw new StudioError(msg(TEXT.includes(kind) ? "import.tooLargeText" : "import.tooLargeSheet", { name: file.name, value: Math.round(limit / 1048576) }));
-    const entry: Entry = { id: id(), file, kind, role: null, roleManual: false, sheets: [], zipNotices: [], bytes: null, grid: null, sample: [], sampleBytes: 0, sampleRecords: 1, notices: [], replaces, appliedRecipe: null, erp: "generic", overrides: {}, confirmed: false, headings: [], range: { from: null, to: null }, text: "", positioned: null, pages: 0,
+    const entry: Entry = { id: id(), file, kind, role: null, roleManual: false, sheets: [], zipNotices: [], bytes: null, grid: null, sample: [], sampleBytes: 0, sampleRecords: 1, notices: [], replaces, appliedRecipe: null, erp: "generic", overrides: {}, confirmed: false, headings: [], range: { from: null, to: null }, text: "", positioned: null, pages: 0, blankPages: [],
       settings: { sheet: null, headerRow: 0, headerDepth: 1, delimiter: kind === "tsv" ? "\t" : ",", encoding: "utf-8", decimal: "dot", dateFormat: "YYYY-MM-DD" } };
     try {
       if (TEXT.includes(kind)) {
@@ -192,8 +192,8 @@ export class Studio {
       } else if (kind === "pdf") {
         const { pdfLines } = await import("./pdf"); // pdf.js loads only when a PDF is added
         const read = await pdfLines(new Uint8Array(await file.arrayBuffer()));
-        entry.positioned = read.lines; entry.pages = read.pages; entry.settings.boundaries = detectBoundaries(read.lines, PDF_MIN_GAP);
-        entry.grid = pdfGrid(read.lines, entry.settings.boundaries, read.pages);
+        entry.positioned = read.lines; entry.pages = read.pages; entry.blankPages = read.empty; entry.settings.boundaries = detectBoundaries(read.lines, PDF_MIN_GAP);
+        entry.grid = pdfGrid(read.lines, entry.settings.boundaries, read.pages, read.empty);
       } else if (kind === "parquet") {
         entry.grid = await readParquet(readers.parquet, new Uint8Array(await file.arrayBuffer()));
       } else {
@@ -221,7 +221,7 @@ export class Studio {
   private sampleOf(entry: Entry) { return entry.settings.layout === "fixed" ? sampleFixed(entry.text, entry.settings.boundaries ?? [], 60) : sampleRows(entry.text, entry.settings.delimiter, 60); }
   /** Re-slice after a layout or boundary change (text sample, or the PDF's grid). */
   private relayout(entry: Entry) {
-    if (entry.positioned) entry.grid = pdfGrid(entry.positioned, entry.settings.boundaries ?? [], entry.pages);
+    if (entry.positioned) entry.grid = pdfGrid(entry.positioned, entry.settings.boundaries ?? [], entry.pages, entry.blankPages);
     else if (TEXT.includes(entry.kind)) entry.sample = this.sampleOf(entry);
   }
   private rowNumber(entry: Entry, index: number) { return entry.grid ? entry.grid.rowNumbers[index] ?? index + 1 : index + 1; }

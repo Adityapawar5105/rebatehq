@@ -27,7 +27,7 @@ function loadPdfWorker() {
 type TextItem = { str: string; transform: number[]; width: number; height: number };
 
 /** Positioned text lines of every page, top to bottom. Lines are numbered 1, 2, 3... across the document. */
-export async function pdfLines(bytes: Uint8Array, signal?: AbortSignal): Promise<{ lines: Line[]; pages: number }> {
+export async function pdfLines(bytes: Uint8Array, signal?: AbortSignal): Promise<{ lines: Line[]; pages: number; empty: number[] }> {
   (globalThis as { pdfjsWorker?: unknown }).pdfjsWorker = await loadPdfWorker(); // run pdf.js's worker code here, no extra Worker
   const task = pdfjs.getDocument({ data: bytes.slice(), isEvalSupported: false, disableFontFace: true, useSystemFonts: false, disableAutoFetch: true, disableStream: true,
     disableRange: true, enableXfa: false, isOffscreenCanvasSupported: false, stopAtErrors: false, verbosity: 0, useWorkerFetch: false, standardFontDataUrl: undefined, cMapUrl: undefined, wasmUrl: undefined } as Parameters<typeof pdfjs.getDocument>[0]);
@@ -40,8 +40,9 @@ export async function pdfLines(bytes: Uint8Array, signal?: AbortSignal): Promise
   }
   try {
     if (doc.numPages > MAX_PDF_PAGES) throw new StudioError(msg("pdf.tooManyPages", { max: MAX_PDF_PAGES }));
-    const lines: Line[] = [];
+    const lines: Line[] = [], empty: number[] = [];
     for (let p = 1; p <= doc.numPages; p++) {
+      const before = lines.length;
       signal?.throwIfAborted();
       const page = await doc.getPage(p);
       const content = await page.getTextContent();
@@ -56,9 +57,10 @@ export async function pdfLines(bytes: Uint8Array, signal?: AbortSignal): Promise
         current.segments.push({ x0: i.x, x1: i.x + i.w, text: i.text });
       }
       flush();
+      if (lines.length === before) empty.push(p); // a page with no text layer (a scanned page): reported, never silently dropped
       if (lines.length > MAX_SHEET_ROWS) throw new StudioError(msg("pdf.tooManyLines", { max: MAX_SHEET_ROWS }));
     }
     if (!lines.length) throw new StudioError(msg("pdf.noText"));
-    return { lines, pages: doc.numPages };
+    return { lines, pages: doc.numPages, empty };
   } finally { await task.destroy().catch(() => undefined); }
 }

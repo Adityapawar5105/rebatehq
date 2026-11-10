@@ -219,3 +219,17 @@ INSERT INTO import_batches(id,source_id,rows_loaded,rows_rejected,imported_at,fi
   for (const a of ["folderGet", "folderSet", "studioFolder"] as const) assert.equal(ACTION_CAP[a], "data");
   assert.ok(READ_ONLY_ACTIONS.has("folderGet") && READ_ONLY_ACTIONS.has("folderSet") && !READ_ONLY_ACTIONS.has("studioFolder"));
 });
+
+test("v2.6 gap 4: a partly scanned PDF keeps its text pages and names the pages without text; a scan names the alternatives", async () => {
+  const pdf = makePdf([tablePage([PRICE_HEAD, ["P-1", "Valve", "1.00", "2.00"]], XS), [], tablePage([PRICE_HEAD, ["P-2", "Pipe", "3.00", "4.00"]], XS)]);
+  const read = await pdfLines(pdf);
+  assert.equal(read.pages, 3); assert.deepEqual(read.empty, [2]);
+  const studio = new Studio(); await studio.add([new File([pdf as BlobPart], "mixed.pdf")], []);
+  const view = studio.state([]).files[0];
+  assert.ok(view.notices.some(n => n.startsWith("Page 2 has no text (probably a scanned page) and was left out")), view.notices.join(" / "));
+  assert.deepEqual((await cleanRows(studio, view.id)).rows, [PRICE_HEAD, ["P-1", "Valve", "1.00", "2.00"], ["P-2", "Pipe", "3.00", "4.00"]]);
+  const many = await pdfLines(makePdf([tablePage([PRICE_HEAD, ["P-1", "Valve", "1.00", "2.00"]], XS), [], []]));
+  assert.deepEqual(many.empty, [2, 3]);
+  const scan = new Studio();
+  await assert.rejects(scan.add([new File([makePdf([[], []]) as BlobPart], "scan.pdf")], []), (e: unknown) => e instanceof StudioError && /fixed-width converter/.test(e.message) && /CSV/.test(e.message) && /does not use OCR/.test(e.message));
+});

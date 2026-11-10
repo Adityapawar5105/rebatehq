@@ -285,6 +285,44 @@ async function convertersUi(){
  results.checks.convertersUi={fixedWidthRuler:true,manualBoundaries:true,detectAgain:true,recipe:true,pdfTable:true,parquetDuckdb:true,exactLines:true,folderReimport:true,alreadyImportedSkipped:true,phone375:true,privacyMarkers:true};
  }catch(error){console.error('Converters UI diagnostics:',JSON.stringify(await diagnose()));throw error;}finally{await context.close();context=savedContext;page=savedPage;dataPlaneActive=active;}
 }
+// 8A: explainable deal guidance and cross-sell in Quote Desk (fresh vault, under the request/console marker sensors),
+// the Sales Rep preview (guidance shown, no margin), and the v2.6 relay onboarding card where the relay is available.
+async function guidanceUi(){
+ const savedContext=context,savedPage=page,active=dataPlaneActive;
+ context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-guidance-')),browserOptions);await configureContext();page=await openPage();
+ try{
+ dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic guidance owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
+ // v2.6 gap 2: the relay set-up card appears only where the relay answers and this device has no key; "Not now" is remembered.
+ await page.waitForTimeout(1500);let relayOnboarding='relay-unavailable';
+ if(await page.getByTestId('relay-onboarding').count()){await page.getByTestId('relay-onboarding-dismiss').click();await page.getByTestId('relay-onboarding').waitFor({state:'detached'});await page.locator('nav a[href="#settings"]').click();await page.locator('nav a[href="#home"]').click();await page.waitForTimeout(1000);assert.equal(await page.getByTestId('relay-onboarding').count(),0,'The dismissed relay card came back');relayOnboarding='dismissed-and-remembered';}
+ const a=marker+'-GA',b=marker+'-GB',c=marker+'-GC',g1=marker+'-G1',g2=marker+'-G2',g3=marker+'-G3';
+ // G1 bought A twice at 97.00 a unit (history median 9,700). A and B are on three invoices together; with seven invoices
+ // in all (A on 5, B on 3) the lift of A -> B is 3 x 7 / (5 x 3) = 1.40 and confidence 3 / 5 = 60.00%.
+ const s=(n,p,cu,d,q,l,inv)=>[n,p,cu,d,q,l,'0','0','0','',inv].join(',');
+ await page.locator('nav a[href="#data-hub"]').click();await importFiles([
+  {name:'guidance-items.csv',mimeType:'text/csv',buffer:Buffer.from('product_id,description,category,uom,current_cost,list_price\n'+a+',Synthetic valve,Valves,EA,60.00,110.00\n'+b+',Synthetic gasket,Valves,EA,1.00,5.00\n'+c+',Synthetic tape,Misc,EA,0.10,1.00\n')},
+  {name:'guidance-customers.csv',mimeType:'text/csv',buffer:Buffer.from('customer_id,name,tier\n'+g1+',Guide one,T1\n'+g2+',Guide two,T1\n'+g3+',Guide three,T1\n')},
+  {name:'guidance-sales.csv',mimeType:'text/csv',buffer:Buffer.from('line_id,product_id,customer_id,sale_date,quantity,list_amount,discount_amount,freight_amount,rebate_amount,cost_amount,invoice_id\n'+[
+   s(1,a,g1,'2026-09-01',1,'97.00','H1'),s(2,a,g1,'2026-10-01',2,'194.00','H2'),s(3,a,g2,'2026-10-02',1,'105.00','X1'),s(4,b,g2,'2026-10-02',1,'5.00','X1'),
+   s(5,a,g2,'2026-10-03',1,'105.00','X2'),s(6,b,g2,'2026-10-03',1,'5.00','X2'),s(7,a,g3,'2026-10-04',1,'106.00','X3'),s(8,b,g3,'2026-10-04',1,'5.00','X3'),
+   s(9,c,g2,'2026-10-05',1,'1.00','Y1'),s(10,c,g3,'2026-10-06',1,'1.00','Y2')].join('\n')+'\n')}],'10');
+ await page.locator('nav a[href="#pricing"]').click();for(const [label,value]of Object.entries({'Customer tier':'T1','Product category':'Valves','Start price (cents)':'12000','Target price (cents)':'10000','Floor price (cents)':'8000'}))await page.getByLabel(label,{exact:true}).fill(value);await page.getByRole('button',{name:'Save guardrails',exact:true}).click();await page.getByRole('status').filter({hasText:'Guardrails saved.'}).waitFor();
+ const quoteFor=async()=>{await page.locator('nav a[href="#quotes"]').click();await page.getByRole('button',{name:'Quote',exact:true}).click();await page.getByTestId('quote-customer').fill(g1);await page.getByTestId('quote-customer').press('Enter');await page.getByTestId('add-sku').fill(a);await page.getByTestId('add-sku').press('Enter');await page.getByTestId('quote-total').filter({hasText:'$110.00'}).waitFor();};
+ await quoteFor();
+ const guide=page.getByTestId('guidance-1');await guide.waitFor({timeout:60000});
+ assert.equal(await guide.getAttribute('data-suggested'),'9700');assert.equal(await guide.getAttribute('data-basis'),'history');
+ await guide.getByText('Why',{exact:true}).click();await guide.getByText(/2 recent sales to this customer: median \$97\.00/).waitFor();await guide.getByText(/Target price \$100\.00; floor \$80\.00\./).waitFor();
+ await page.getByTestId('guidance-use-1').click();await page.getByTestId('quote-total').filter({hasText:'$97.00'}).waitFor();assert.equal(await page.getByTestId('price-1').inputValue(),'97.00');
+ const cross=page.getByTestId('cross-sell-grid');await cross.waitFor({timeout:60000});const row=cross.locator('tbody tr').filter({hasText:b});await row.waitFor();assert.ok((await row.innerText()).includes('60'),'Cross-sell confidence missing');
+ await page.getByTestId('cross-add-'+b).click();await page.getByTestId('quote-lines').locator('tbody tr').nth(1).waitFor();assert.equal(await page.getByTestId('quote-lines').locator('tbody tr').count(),2);
+ await page.setViewportSize({width:375,height:812});await page.waitForTimeout(300);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Quote Desk overflows a phone with guidance');await page.setViewportSize({width:1280,height:800});
+ // A Sales Rep sees the suggested price and its reasons, never margin.
+ await page.locator('nav a[href="#settings"]').click();await page.getByLabel('Preview as').selectOption('sales_rep');await page.getByTestId('preview-banner').waitFor();
+ await quoteFor();await page.getByTestId('guidance-1').waitFor({timeout:60000});assert.equal(await page.getByTestId('guidance-1').getAttribute('data-suggested'),'9700');assert.equal(await page.getByTestId('quote-margin').count(),0,'A Sales Rep sees quote margin');
+ await page.getByTestId('preview-banner').getByRole('button',{name:'Return to my own view'}).click();await page.getByTestId('preview-banner').waitFor({state:'detached'});
+ results.checks.guidanceUi={suggestion9700:true,reasons:true,useSuggestion:true,crossSellLift:true,addFromCrossSell:true,repSeesGuidanceNoMargin:true,phone375:true,relayOnboarding,privacyMarkers:true};
+ }catch(error){console.error('Guidance UI diagnostics:',JSON.stringify(await diagnose()));throw error;}finally{await context.close();context=savedContext;page=savedPage;dataPlaneActive=active;}
+}
 async function reportsUi(){
  const savedContext=context,savedPage=page,active=dataPlaneActive;
  context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-reports-')),browserOptions);await configureContext();page=await openPage();
@@ -376,7 +414,7 @@ async function monitorUi(){
 await build({ entryPoints: ["tests/helpers/studio-fixtures.ts"], outfile: "test-results/studio-fixtures.mjs", bundle: true, platform: "node", format: "esm" });
 const fixtures = await import(new URL("../test-results/studio-fixtures.mjs", import.meta.url).href);
 try {
- if(process.argv.includes('--converters-ui-only')){await convertersUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Converters UI focused gate passed ('+channel+').');}else if(process.argv.includes('--reports-ui-only')){await reportsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Reports UI focused gate passed ('+channel+').');}else if(process.argv.includes('--sim-ui-only')){await simUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Simulator UI focused gate passed ('+channel+').');}else if(process.argv.includes('--vendors-ui-only')){await vendorsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Vendor UI focused gate passed ('+channel+').');}else if(process.argv.includes('--suppliers-ui-only')){await suppliersUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Supplier UI focused gate passed ('+channel+').');}else{
+ if(process.argv.includes('--guidance-ui-only')){await guidanceUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Guidance UI focused gate passed ('+channel+').');}else if(process.argv.includes('--converters-ui-only')){await convertersUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Converters UI focused gate passed ('+channel+').');}else if(process.argv.includes('--reports-ui-only')){await reportsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Reports UI focused gate passed ('+channel+').');}else if(process.argv.includes('--sim-ui-only')){await simUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Simulator UI focused gate passed ('+channel+').');}else if(process.argv.includes('--vendors-ui-only')){await vendorsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Vendor UI focused gate passed ('+channel+').');}else if(process.argv.includes('--suppliers-ui-only')){await suppliersUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Supplier UI focused gate passed ('+channel+').');}else{
   if (auth) {
     assert.notEqual(process.env.LEGACY_BUSINESS_ENABLED,'true','Privacy gate must run with legacy business routes OFF');
     await signInLocal(context,page,base);
@@ -824,7 +862,7 @@ try {
   }
   await monitorUi();
   await rebatesUi();
-  await suppliersUi(); await vendorsUi(); await simUi(); await reportsUi(); await convertersUi();
+  await suppliersUi(); await vendorsUi(); await simUi(); await reportsUi(); await convertersUi(); await guidanceUi();
   await recoveryUi();
   if(auth){
     const device=await page.evaluate(()=>{const key=Object.keys(localStorage).find(k=>k.startsWith('rebatehq-device-v1:'));return localStorage.getItem(key);});assert.ok(device);

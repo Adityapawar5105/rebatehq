@@ -28,6 +28,9 @@ export async function dispatch(service: VaultService, request: Request, hooks: H
     case "vendorPpv":return service.vendorPpv({from:request.data.from,to:request.data.to},request.data.offset,request.data.grid);
     case "vendorPpvLines":return service.vendorPpvLines(request.data.product,{from:request.data.from,to:request.data.to},request.data.offset,request.data.grid);
     case "simOptions":return service.simOptions();
+    case "relayLocal":return service.relayLocal();
+    case "quoteGuidance":return service.quoteGuidance(request.data.id);
+    case "quoteCrossSell":return service.quoteCrossSell(request.data.id);
     case "folderGet":return service.folderGet();
     case "folderSet":return service.folderSet(request.data.directory);
     case "studioFolder":return service.studioFolder(request.data.files);

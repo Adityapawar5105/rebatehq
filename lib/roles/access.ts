@@ -62,6 +62,10 @@ export const ACTION_CAP: Record<Action, Cap | null> = {
   vendorSheets:'cost',vendorReview:'cost',vendorReviewQuotes:'cost',vendorPpv:'cost',vendorPpvLines:'cost',
   // 7E-2: the historical simulator is a pricing simulation (every role with "pricing" also has "cost"); Scale only.
   simOptions:'pricing',simRun:'pricing',simRows:'pricing',
+  // 8A: deal guidance and cross-sell are Quote Desk reads; rep-safe and scanned for decision 16 (tests/quotes.test.ts).
+  quoteGuidance:'quote',quoteCrossSell:'quote',
+  // v2.6 gap 2: local yes/no for the relay set-up card (reviewed for decision 16 in tests/quotes.test.ts).
+  relayLocal:'collaborate',
   // 7F-2: folder re-import is an import (Import Studio, every tier).
   folderGet:'data',folderSet:'data',studioFolder:'data',
   supplierClaims:'cost',supplierPurchases:'cost',supplierProgress:'cost',supplierClaimPreview:'cost',supplierClaimSave:'rebateManage',supplierClaimStatus:'rebateManage',supplierClaimExport:'rebateManage',

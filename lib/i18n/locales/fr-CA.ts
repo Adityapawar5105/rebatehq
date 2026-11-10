@@ -4,6 +4,8 @@
 import type { Catalog } from "../core";
 
 export const frCA: Partial<Catalog> = {
+  "cross.help": "D'après les factures des 12 derniers mois sur cet appareil : articles achetés ensemble au moins 3 fois, avec un lift de 1,2 ou plus. Les articles déjà dans cette soumission, ou achetés par ce client pendant cette période, sont exclus.",
+  "cross.addFor": "Ajouter {sku} à la soumission",
   "app.description": "Tarification sécurisée, garde-fous pour les soumissions et suivi des ristournes pour les distributeurs.",
   "relay.thisSharesASummary": "Ceci partage un résumé, pas votre coffre-fort ni votre historique de factures. Le destinataire doit vérifier la soumission ou le changement référencé avant d'approuver.",
   "relay.quoteReference": "Référence de soumission",

@@ -154,8 +154,9 @@ test("7B Quote Desk and Price Check need Professional", async () => {
 // Decision 16 (blueprint section 22, item 21). Every command a Sales Rep can reach is listed here and
 // either scanned (its real payload is checked for cost and margin keys and for the cost value) or
 // reviewed (it cannot carry cost). Adding a rep-reachable command fails this test until it is classified.
-const SCANNED = ["scorecard","scorecardOptIn","rebateProgress","status", "home", "checklist", "search", "roleList", "pricingState", "priceCheck", "quoteCreate", "quoteLines", "quoteSubmit", "quoteGet", "quoteList"] as const;
+const SCANNED = ["quoteGuidance","quoteCrossSell","scorecard","scorecardOptIn","rebateProgress","status", "home", "checklist", "search", "roleList", "pricingState", "priceCheck", "quoteCreate", "quoteLines", "quoteSubmit", "quoteGet", "quoteList"] as const;
 const REVIEWED: Record<string, string> = {
+  relayLocal: "v2.6 gap 2: a yes/no for this device's local relay identity, read from the vault; no cost, no network",
   gridTotals: "7V-3a: totals of numbers the caller already holds; returns only sums, counts, minimum and maximum of them",
   init: "vault bootstrap state", create: "creates an empty vault", unlock: "returns status (scanned)", lock: "returns status", touch: "idle timer", cancel: "cancels a job", save: "returns status",
   storage: "browser storage quota", licenceSet: "licence claims", rolePreview: "returns status (scanned) and can only remove capabilities", backupRestore: "replaces the vault, returns status",
@@ -191,6 +192,17 @@ test("decision 16: no Sales Rep payload contains cost or margin", async (context
     payloads.rebateProgress=await call(s,'rebateProgress',{});
     assert.equal((payloads.rebateProgress as {rows:{earned:string}[]}).rows[0].earned,'59000');
     for(const action of ['rebateState','rebateRows','rebateSave','rebateDelete','rebateRecalculate'] as const)await assert.rejects(call(s,action,{id:plan.id} as never),code('FORBIDDEN'));
+    // 8A: deal guidance (history, similar customers, a recent cost rise) and cross-sell, with data behind every signal.
+    c.query(`INSERT INTO sales_lines(source_id,line_id,product_id,customer_id,sale_date,quantity,list_cents,discount_cents,freight_cents,rebate_cents,cost_cents,source_row,invoice_id) VALUES
+      ('rebate-test',11,'P1','C3','2026-03-01',1,10300,0,0,0,${COST},3,'INV1'),('rebate-test',12,'P3','C3','2026-03-01',1,500,0,0,0,100,4,'INV1'),
+      ('rebate-test',13,'P1','C3','2026-03-05',2,20400,0,0,0,${COST},5,'INV2'),('rebate-test',14,'P3','C3','2026-03-05',1,500,0,0,0,100,6,'INV2'),
+      ('rebate-test',15,'P1','C2','2026-03-07',1,10100,0,0,0,${COST},7,'INV3'),('rebate-test',16,'P3','C2','2026-03-07',1,500,0,0,0,100,8,'INV3'),
+      ('rebate-test',17,'P2','C2','2026-03-08',1,9000,0,0,0,NULL,9,'INV4'),('rebate-test',18,'P2','C3','2026-03-09',1,9000,0,0,0,NULL,10,'INV5');
+      INSERT INTO vendor_costs(id,vendor,product_id,cost,effective_date,source_file) VALUES('v1','V','P1',4000,current_date - 200,'f'),('v2','V','P1',4500,current_date - 10,'f')`);
+    payloads.quoteGuidance = await call(s, "quoteGuidance", { id: created.id });
+    payloads.quoteCrossSell = await call(s, "quoteCrossSell", { id: created.id });
+    assert.ok(JSON.stringify(payloads.quoteGuidance).includes('"costRise"') && JSON.stringify(payloads.quoteGuidance).includes('"history"'), "the guidance scan must cover history and the cost-rise flag");
+    assert.deepEqual((payloads.quoteCrossSell as { suggestions: { productId: string }[] }).suggestions.map(x => x.productId), ["P3"], "the cross-sell scan must cover a real suggestion");
     payloads.priceCheck = await call(s, "priceCheck", { productId: "P1", customerId: "C1", quantity: "1" });
     payloads.pricingState = await call(s, "pricingState", {});
     // 7V-3b row notes never reach a Sales Rep: not in a search result, and not searchable by them.

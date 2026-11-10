@@ -180,6 +180,7 @@ export type Commands = {
   priceCheck: { productId: string; customerId: string | null; quantity: string };
   quoteCreate: { customerId: string }; quoteLines: { id: string; lines: LineInput[] }; quoteSubmit: { id: string; reason: string | null };
   quoteDecide: { id: string; decision: "approve" | "reject"; note: string | null }; quoteGet: { id: string }; quoteList: { pendingOnly?: boolean };
+  quoteGuidance: { id: string }; quoteCrossSell: { id: string }; relayLocal: Record<string, never>;
   quoteShare: { id: string; preset: "standard" | "conservative" }; quoteRelaySync: { id: string };
   roi: Record<string, never>;
   reconcile: Record<string, never>;
@@ -204,6 +205,7 @@ export type Results = {
   vendorPpv:Awaited<ReturnType<VaultService["vendorPpv"]>>;
   vendorPpvLines:Awaited<ReturnType<VaultService["vendorPpvLines"]>>;
   simOptions:Awaited<ReturnType<VaultService["simOptions"]>>;
+  relayLocal:Awaited<ReturnType<VaultService["relayLocal"]>>; quoteGuidance:Awaited<ReturnType<VaultService["quoteGuidance"]>>; quoteCrossSell:Awaited<ReturnType<VaultService["quoteCrossSell"]>>;
   folderGet:Awaited<ReturnType<VaultService["folderGet"]>>; folderSet:Awaited<ReturnType<VaultService["folderSet"]>>; studioFolder:Awaited<ReturnType<VaultService["studioFolder"]>>;
   simRun:Awaited<ReturnType<VaultService["simRun"]>>;
   simRows:Awaited<ReturnType<VaultService["simRows"]>>;

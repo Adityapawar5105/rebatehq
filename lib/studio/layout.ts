@@ -97,7 +97,7 @@ export function placeSegments(line: Line, boundaries: number[]): string[] {
 /** Narrowest blank band (points) that separates two PDF columns; word spacing inside a cell is narrower. */
 export const PDF_MIN_GAP = 4;
 /** The grid of a PDF at the given boundaries (points). Blank lines are left to the row pipeline to skip. */
-export function pdfGrid(lines: Line[], boundaries: number[], pages: number): Grid {
+export function pdfGrid(lines: Line[], boundaries: number[], pages: number, empty: number[] = []): Grid {
   return { rows: lines.map(l => placeSegments(l, boundaries)), rowNumbers: lines.map(l => l.row), colOffset: 0, merged: false, keyed: false, issues: [],
-    notices: [msg("pdf.read", { pages, lines: lines.length })] };
+    notices: [msg("pdf.read", { pages, lines: lines.length }), ...(empty.length ? [msg("pdf.pagesSkipped", { count: empty.length, pages: empty.slice(0, 20).join(", ") + (empty.length > 20 ? "…" : "") })] : [])] };
 }

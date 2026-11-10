@@ -12,6 +12,8 @@ import {valuesTotals} from '../grid/sql';
 import * as notes from '../notes/notes';
 import * as vendor from '../vendor/review';
 import * as sim from '../vendor/simulate';
+import { quoteGuidance } from '../quotes/guidance';
+import { crossSell } from '../quotes/crosssell';
 import { parquetReader } from './parquet-engine';
 import { kindOf } from '../studio/formats';
 import { fileFingerprint } from '../studio/studio';
@@ -59,6 +61,12 @@ import {RelayError} from '../relay/protocol';
 import {minorUnits} from '../spike/exact';
 import { msg } from "../i18n/core";
 export class VaultService {
+  /** v2.6 gap 2: whether this device already has a relay identity, read from the vault only (no network request). */
+  async relayLocal(){
+    const deviceId=this.licence.claims?.device??'',rows=(await this.requireEngine().conn.query('SELECT payload FROM relay_state WHERE id=1')).toArray();
+    let identity=false;try{const state=rows.length?JSON.parse(String(rows[0].payload)) as RelayState:null;identity=!!state?.identity&&state.identity.device.deviceId===deviceId;}catch{identity=false;}
+    return {identity};
+  }
   async relay(request:Extract<import('./protocol').Request,{action:`relay${string}`}>,signal:AbortSignal){
     this.licence.assert();if(this.licence.tier==='starter')throw new VaultError('LICENCE',msg("vault.workspaceSharingRequiresProfessional"));
     const deviceId=this.licence.claims?.device??'';
@@ -455,6 +463,9 @@ export class VaultService {
     return this.quoteView(id);
   }
   async quoteGet(id: string) { this.quoteTier(); return this.ownQuote(id); }
+  // 8A: explainable deal guidance and cross-sell for a quote the caller may open. Both are rep-safe (decision 16).
+  async quoteGuidance(id: string) { this.quoteTier(); await this.ownQuote(id); return quoteGuidance(this.requireEngine(), id); }
+  async quoteCrossSell(id: string) { this.quoteTier(); const v = await this.ownQuote(id); return { quoteId: id, suggestions: await crossSell(this.requireEngine(), v.customerId, v.lines.map(l => l.productId)) }; }
   async quoteList(pendingOnly: boolean) {
     this.quoteTier(); const a = await this.access();
     return quotes.list(this.requireEngine(), { pendingOnly, userId: this.identity.userId, mineOnly: !a.caps.includes("quoteApprove") && !a.caps.includes("cost") });

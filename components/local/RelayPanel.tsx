@@ -12,12 +12,21 @@ const STATUS: Record<string, MessageKey> = { pending: "relay.status.pending", ap
 import styles from './vault.module.css';
 import {Badge} from '@/components/ui/ui';
 type RelayAction=Extract<Action,`relay${string}`>;
-export function RelayPanel({client,userId,onChange}:{client:VaultClient;userId:string;onChange:()=>Promise<void>}){
+/** v2.6 gap 2: this browser remembers that the user dismissed the sharing set-up card (a preference, never business data). */
+const onboardKey=(tenant:string,user:string)=>`rebatehq.relayOnboarding.dismissed:${tenant}:${user}`;
+export function RelayPanel({client,userId,tenantId,relayEnabled,onChange}:{client:VaultClient;userId:string;tenantId:string;relayEnabled:boolean;onChange:()=>Promise<void>}){
  const dialog=useRef<HTMLDialogElement>(null),[open,setOpen]=useState(false),[view,setView]=useState<RelayView|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
  const [tab,setTab]=useState<'inbox'|'share'|'keys'>('inbox'),[selected,setSelected]=useState(''),[pin,setPin]=useState(''),[confirmed,setConfirmed]=useState<string[]>([]);
  const currency=getWorkspaceCurrency();
  const [title,setTitle]=useState(''),[reference,setReference]=useState(''),[amount,setAmount]=useState(''),[kind,setKind]=useState<ShareInput['objectKind']>('price_change'),[preset,setPreset]=useState<ShareInput['preset']>('standard');
  const [first,setFirst]=useState(''),[second,setSecond]=useState(''),[text,setText]=useState(''),[mentions,setMentions]=useState<string[]>([]);
+ // First-login onboarding (blueprint v2.6, gap 2): shown only where the server has sharing on and this device has no key.
+ // Both are known without a network request (the server flag from the page, the identity from the local vault).
+ const [onboard,setOnboard]=useState(false);
+ useEffect(()=>{let dismissed=false;try{dismissed=localStorage.getItem(onboardKey(tenantId,userId))==="yes";}catch{}if(dismissed)return;let active=true;
+  if(!relayEnabled){setOnboard(false);return;}
+  void client.call("relayLocal",{}).then(v=>{if(active)setOnboard(!v.identity);}).catch(()=>{if(active)setOnboard(false);});return()=>{active=false;};},[client,tenantId,userId,relayEnabled]);
+ const dismiss=()=>{try{localStorage.setItem(onboardKey(tenantId,userId),"yes");}catch{}setOnboard(false);};
  useEffect(()=>{if(!open)return;let active=true;dialog.current?.showModal();setView(null);setError('');setBusy(true);
   void client.call('relayView',{}).then(v=>{if(active)setView(v);}).catch(e=>{if(active)setError(e instanceof Error&&e.message?e.message:msg("relay.sharingCouldNotFinish"));}).finally(()=>{if(active)setBusy(false);});
   return()=>{active=false;dialog.current?.close();};
@@ -33,6 +42,7 @@ export function RelayPanel({client,userId,onChange}:{client:VaultClient;userId:s
  const people=[...new Map((view?.devices??[]).map(d=>[d.userId,d])).values()],label=(id:string)=>people.find(p=>p.userId===id)?.label??id;
  const check=(values:string[],value:string,on:boolean)=>on?[...values,value]:values.filter(v=>v!==value);
  return <section className={styles.card}>
+  {onboard&&<div className={styles.notice} role="note" data-testid="relay-onboarding"><strong>{t("relay.onboard.title")}</strong><p>{t("relay.onboard.body")}</p><div className={styles.row}><button className={styles.primary} onClick={()=>{setOnboard(false);setTab("keys");setSelected("");setView(null);setError("");setBusy(true);setOpen(true);}} data-testid="relay-onboarding-start">{t("relay.onboard.start")}</button><button onClick={dismiss} data-testid="relay-onboarding-dismiss">{t("relay.onboard.later")}</button></div></div>}
   <h2>{t("relay.workspaceSharing2")}</h2><p>{t("relay.shareAnEncryptedReference")}</p>
   <button onClick={()=>{setTab('inbox');setSelected('');setView(null);setError('');setBusy(true);setOpen(true);}}>{t("relay.openSharedInbox")}</button>
   <dialog ref={dialog} className={styles.relayDialog} aria-labelledby="relay-title" aria-busy={open&&(busy||(!view&&!error))} onCancel={()=>setOpen(false)}>

@@ -6,6 +6,8 @@ import type { VaultClient } from "@/lib/vault/client";
 import type { Cap } from "@/lib/roles/access";
 import type { Guard, LineInput, PricePoint, PriceSource, QuoteStatus, QuoteSummary, QuoteView } from "@/lib/quotes/quotes";
 import type { CreditSignal } from "@/lib/quotes/credit";
+import type { Basis, Reason } from "@/lib/quotes/guidance";
+import type { Results } from "@/lib/vault/protocol";
 import { fmt, msg, say, t, type MessageKey } from "@/lib/i18n";
 import styles from "./vault.module.css";
 import { DataGrid } from "@/components/ui/DataGrid";
@@ -56,6 +58,22 @@ function Credit({ credit }: { credit: CreditSignal }) {
   </div>;
 }
 
+/** 8A: one guidance reason as a sentence in the user's language and the workspace currency. */
+function reasonText(r: Reason) {
+  const used = "used" in r && r.used ? " " + t("guidance.usedTag") : "";
+  switch (r.code) {
+    case "history": return t("guidance.r.history", { count: fmt.int(r.count), price: money(r.cents), date: fmt.date(r.date) }) + used;
+    case "similar": return t("guidance.r.similar", { tier: r.tier, price: money(r.cents), count: fmt.int(r.count), customers: fmt.int(r.customers) }) + used;
+    case "target": return (r.floorCents === null ? t("guidance.r.targetNoFloor", { price: money(r.cents) }) : t("guidance.r.target", { price: money(r.cents), floor: money(r.floorCents) })) + used;
+    case "book": return t("guidance.r.book", { price: money(r.cents) }) + used;
+    case "costRise": return t(r.applied ? "guidance.r.costRiseApplied" : "guidance.r.costRise");
+    case "floor": return t("guidance.r.floor", { price: money(r.cents) });
+    case "start": return t("guidance.r.start", { price: money(r.cents) });
+    default: return t("guidance.r.none");
+  }
+}
+const BASIS: Record<Basis, MessageKey> = { history: "guidance.basis.history", similar: "guidance.basis.similar", target: "guidance.basis.target", book: "guidance.basis.book", none: "guidance.basis.none" };
+
 export function QuotesView({ client, userId, caps, tier, busy, operation }: { client: VaultClient; userId: string; caps: Cap[]; tier: string | undefined; busy: boolean; operation: Op }) {
   const canApprove = caps.includes("quoteApprove"), seesCost = caps.includes("cost"), canShare = caps.includes("collaborate");
   const tabs: Tab[] = ["check", "new", ...(canApprove ? ["inbox" as const] : []), "history"];
@@ -64,6 +82,15 @@ export function QuotesView({ client, userId, caps, tier, busy, operation }: { cl
   const [customer, setCustomer] = useState(""), [quote, setQuote] = useState<QuoteView | null>(null), [lines, setLines] = useState<{ productId: string; quantity: string; price: string }[]>([]);
   const [add, setAdd] = useState({ productId: "", quantity: "1" }), [reason, setReason] = useState(""), [decisionNote, setDecisionNote] = useState("");
   const [list, setList] = useState<QuoteSummary[]>([]);
+  // 8A: guidance and cross-sell for the open quote, refreshed whenever its lines change.
+  const [guide, setGuide] = useState<Results["quoteGuidance"] | null>(null), [cross, setCross] = useState<Results["quoteCrossSell"] | null>(null);
+  const quoteKey = quote ? `${quote.id}|${quote.updatedAt}|${quote.lines.map(l => l.productId + ":" + l.unitCents).join(",")}` : "";
+  useEffect(() => {
+    if (!quote || !quote.lines.length) { setGuide(null); setCross(null); return; }
+    let on = true;
+    void Promise.all([client.call("quoteGuidance", { id: quote.id }), client.call("quoteCrossSell", { id: quote.id })]).then(([g, x]) => { if (on) { setGuide(g); setCross(x); } }).catch(() => { if (on) { setGuide(null); setCross(null); } });
+    return () => { on = false; };
+  }, [client, quoteKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const load = async (pendingOnly: boolean) => setList(await client.call("quoteList", { pendingOnly }));
   useEffect(() => { if (tab === "inbox" || tab === "history") void load(tab === "inbox").catch(e => setNote(e instanceof Error ? e.message : msg("common.operationFailed"))); }, [tab, client]);
   if (tier === "starter") return <section className={styles.card}><h2>{t("quotes.heading")}</h2><p>{t("quotes.needsProfessional")}</p></section>;
@@ -127,10 +154,34 @@ export function QuotesView({ client, userId, caps, tier, busy, operation }: { cl
         { id: "unit", name: t("quotes.unitPrice"), type: "money", value: l => String(l.unitCents), cell: l => { const i = quote.lines.indexOf(l); return editable ? <input aria-label={t("quotes.priceFor", { sku: l.productId })} inputMode="decimal" value={lines[i]?.price ?? ""} onChange={e => setLines(lines.map((x, j) => j === i ? { ...x, price: e.target.value } : x))} data-testid={`price-${l.lineNo}`}/> : fmt.currency(l.unitCents); } },
         { id: "book", name: t("quotes.book"), type: "money", value: l => l.bookCents === null || l.bookCents === undefined ? null : String(l.bookCents), cell: l => <>{money(l.bookCents)}<br/><span className={styles.muted}>{t(SOURCE[l.source])}</span></> },
         { id: "zone", name: t("quotes.zone"), value: l => t(GUARD[l.guard]), cell: l => <Zone guard={l.guard}/> },
+        { id: "suggested", name: t("guidance.column"), type: "money", value: l => guide?.lines.find(g => g.lineNo === l.lineNo)?.suggestedCents ?? null, cell: l => {
+          const g = guide?.lines.find(x => x.lineNo === l.lineNo), i = quote.lines.indexOf(l);
+          if (!g) return "";
+          return <div className={styles.wrap} data-testid={`guidance-${l.lineNo}`} data-suggested={g.suggestedCents ?? ""} data-basis={g.basis}>
+            {g.suggestedCents === null ? t("guidance.basis.none") : <><strong>{money(g.suggestedCents)}</strong><br/><span className={styles.muted}>{t(BASIS[g.basis])}</span></>}
+            <details><summary>{t("guidance.why")}</summary><ul className={styles.small}>{g.reasons.map((r, n) => <li key={n}>{reasonText(r)}</li>)}</ul></details>
+            {editable && g.suggestedCents !== null && g.suggestedCents !== String(l.unitCents) && <button type="button" disabled={busy} aria-label={t("guidance.useFor", { sku: l.productId })} data-testid={`guidance-use-${l.lineNo}`}
+              onClick={() => void operation(() => save(lines.map((x, j) => j === i ? { ...x, price: centsToText(g.suggestedCents!) } : x)))}>{t("guidance.use")}</button>}
+          </div>;
+        } },
         { id: "total", name: t("quotes.lineTotal"), type: "money", value: l => String(l.totalCents) },
         ...(seesCost ? [{ id: "margin", name: t("quotes.lineMargin"), type: "percent" as const, value: (l: QuoteView["lines"][number]) => l.marginRate == null ? null : String(l.marginRate), cell: (l: QuoteView["lines"][number]) => l.marginRate == null ? t("quotes.none") : fmt.percent(l.marginRate) }] : []),
         ...(editable ? [{ id: "actions", name: t("quotes.actions"), cell: (l: QuoteView["lines"][number]) => <button type="button" disabled={busy} onClick={() => void operation(() => save(lines.filter((_, j) => j !== quote.lines.indexOf(l))))}>{t("quotes.remove")}</button> }] : []),
       ]}/>
+      {quote.lines.length > 0 && <p className={styles.small}>{t("guidance.note")}</p>}
+      {quote.lines.length > 0 && cross && <section aria-labelledby="cross-heading" data-testid="cross-sell">
+        <h3 id="cross-heading">{t("cross.heading")}</h3><p className={styles.small}>{t("cross.help")}</p>
+        {!cross.suggestions.length ? <p className={styles.muted} data-testid="cross-sell-empty">{t("cross.none")}</p> :
+        <DataGrid label={t("cross.heading")} testId="cross-sell-grid" rows={cross.suggestions} rowKey={x => x.productId} columns={[
+          { id: "item", name: t("cross.item"), value: x => x.productId, cell: x => <span className={styles.wrap}><span translate="no">{x.productId}</span>{x.description ? <><br/><span className={styles.muted}>{x.description}</span></> : null}</span> },
+          { id: "basedOn", name: t("cross.basedOn"), value: x => x.basedOn, cell: x => <span translate="no">{x.basedOn}</span> },
+          { id: "together", name: t("cross.together"), type: "int", num: true, value: x => x.together },
+          { id: "confidence", name: t("cross.confidence"), type: "percent", num: true, value: x => x.confidence, cell: x => fmt.percent(x.confidence) },
+          { id: "lift", name: t("cross.lift"), type: "decimal", num: true, value: x => x.lift, cell: x => fmt.decimal(x.lift) },
+          ...(editable ? [{ id: "add", name: t("quotes.actions"), cell: (x: Results["quoteCrossSell"]["suggestions"][number]) => <button type="button" disabled={busy} aria-label={t("cross.addFor", { sku: x.productId })} data-testid={`cross-add-${x.productId}`}
+            onClick={() => void operation(() => save([...lines, { productId: x.productId, quantity: "1", price: "" }]))}>{t("cross.add")}</button> }] : []),
+        ]}/>}
+      </section>}
       {editable && <>
         <button type="button" disabled={busy || !lines.length} onClick={() => void operation(() => save(lines))}>{t("quotes.reprice")}</button>
         <form className={styles.quoteForm} onSubmit={e => { e.preventDefault(); if (!add.productId.trim()) return; void operation(async () => { await save([...lines, { productId: add.productId.trim(), quantity: add.quantity.trim() || "1", price: "" }]); setAdd({ productId: "", quantity: "1" }); }); }}>
