@@ -13,6 +13,8 @@ import * as notes from '../notes/notes';
 import * as vendor from '../vendor/review';
 import * as sim from '../vendor/simulate';
 import { quoteGuidance } from '../quotes/guidance';
+import * as agents from '../agents/agents';
+import * as costindex from '../agents/costindex';
 import { crossSell } from '../quotes/crosssell';
 import { parquetReader } from './parquet-engine';
 import { kindOf } from '../studio/formats';
@@ -463,6 +465,45 @@ export class VaultService {
     return this.quoteView(id);
   }
   async quoteGet(id: string) { this.quoteTier(); return this.ownQuote(id); }
+  // ---- 8B-1: Margin Drain agents and cost index triggers (Professional and Scale; worker checks) ----------------
+  /** The first scheduled check after an unlock is recorded as the "open" check. */
+  private agentsOpened = false;
+  /** Agent bookkeeping: audited and saved, but it neither resets the idle lock timer nor counts as a data change. */
+  private async agentWrite(details: Record<string, string>, work: (e: Engine) => Promise<void>) {
+    const e = await this.writable(); await e.conn.query('BEGIN');
+    try { await work(e); await appendAudit(e, 'agents.checked', details); await e.conn.query('COMMIT'); }
+    catch (error) { await e.conn.query('ROLLBACK').catch(() => undefined); throw error; }
+    this.dirty = true; await this.save();
+  }
+  private async agentPass(reason: 'schedule' | 'open' | 'manual', signal?: AbortSignal, progress?: (n: number) => void) {
+    const e = this.requireEngine(), s = await agents.settings(e), startedAt = new Date().toISOString();
+    const found = await agents.collect(e, s, () => this.leakResult(), startedAt.slice(0, 10), signal, progress);
+    const r = await agents.reconcileSql(e, found, reason, startedAt, new Date().toISOString());
+    await this.agentWrite({ reason, findings: r.stats.findings, fresh: r.stats.fresh, resolved: r.stats.resolved }, x => x.conn.query(r.sql).then(() => undefined));
+    return r.stats;
+  }
+  async agentState() {
+    this.opsTier(); const e = this.requireEngine(), s = await agents.settings(e), last = await agents.lastRun(e);
+    return { settings: s, last, due: agents.due(s, last, Date.now()), nextAt: last && s.enabled ? new Date(Date.parse(last.finishedAt) + s.intervalMinutes * 60_000).toISOString() : null, counts: await agents.counts(e) };
+  }
+  async agentRows(offset = 0, grid?: unknown) { this.opsTier(); return agents.inbox(this.requireEngine(), offset, grid); }
+  async agentRun(signal: AbortSignal, progress: Progress) { this.opsTier(); await this.agentPass('manual', signal, n => progress(msg('agents.progress', { step: n + 1 }), String(n), '7')); this.touch(); return this.agentState(); }
+  async agentMark(key: unknown, status: unknown) { this.opsTier(); const sql = agents.markSql(key, status); await this.write('agents.marked', { status: String(status) }, e => e.conn.query(sql).then(() => undefined)); return this.agentState(); }
+  async agentSettingsSave(input: unknown) { this.opsTier(); const sql = agents.settingsSql(input, new Date().toISOString()); await this.write('agents.settings_saved', {}, e => e.conn.query(sql).then(() => undefined)); return this.agentState(); }
+  /** Called by the worker every minute and right after unlock: runs a due check for a cost role, silently. Returns whether it ran. */
+  async agentsDue() {
+    if (!this.engine || !this.licence.writable || this.licence.tier === 'starter') return false;
+    try {
+      const a = await this.access(); if (!a.caps.includes('cost')) return false;
+      const e = this.engine, s = await agents.settings(e);
+      if (!agents.due(s, await agents.lastRun(e), Date.now())) return false;
+      await this.agentPass(this.agentsOpened ? 'schedule' : 'open'); return true;
+    } catch { return false; } finally { this.agentsOpened = true; }
+  }
+  async indexState() { this.opsTier(); const e = this.requireEngine(); return { series: await costindex.series(e), triggers: await costindex.triggers(e) }; }
+  async indexSkus(id: unknown, offset = 0, grid?: unknown) { this.opsTier(); return costindex.triggerSkus(this.requireEngine(), id, offset, grid); }
+  async indexTriggerSave(input: costindex.TriggerInput) { this.opsTier(); const p = await costindex.triggerSql(this.requireEngine(), input, this.identity.userId, new Date().toISOString()); await this.write('index.trigger_saved', { id: p.id }, e => e.conn.query(p.sql).then(() => undefined)); return this.indexState(); }
+  async indexTriggerDelete(id: unknown) { this.opsTier(); const sql = costindex.deleteSql(id); await this.write('index.trigger_deleted', { id: String(id) }, e => e.conn.query(sql).then(() => undefined)); return this.indexState(); }
   // 8A: explainable deal guidance and cross-sell for a quote the caller may open. Both are rep-safe (decision 16).
   async quoteGuidance(id: string) { this.quoteTier(); await this.ownQuote(id); return quoteGuidance(this.requireEngine(), id); }
   async quoteCrossSell(id: string) { this.quoteTier(); const v = await this.ownQuote(id); return { quoteId: id, suggestions: await crossSell(this.requireEngine(), v.customerId, v.lines.map(l => l.productId)) }; }
@@ -783,7 +824,7 @@ export class VaultService {
   }
   private async dispose() {
     if (this.timer) clearTimeout(this.timer); this.timer = null;
-    const engine = this.engine; this.engine = null; this.key = null; this.packLast=null; this.studio.clear(); this.leakCache = null; this.accessCache = null; this.viewAs = null;
+    const engine = this.engine; this.engine = null; this.key = null; this.packLast=null; this.agentsOpened = false; this.studio.clear(); this.leakCache = null; this.accessCache = null; this.viewAs = null;
     if (engine) await closeMemory(engine).catch(() => undefined);
     this.releaseLease?.(); this.releaseLease = null; this.dirty = false;
   }

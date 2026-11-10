@@ -323,6 +323,49 @@ async function guidanceUi(){
  results.checks.guidanceUi={suggestion9700:true,reasons:true,useSuggestion:true,crossSellLift:true,addFromCrossSell:true,repSeesGuidanceNoMargin:true,phone375:true,relayOnboarding,privacyMarkers:true};
  }catch(error){console.error('Guidance UI diagnostics:',JSON.stringify(await diagnose()));throw error;}finally{await context.close();context=savedContext;page=savedPage;dataPlaneActive=active;}
 }
+// 8B-1: Margin Drain agents on Home and cost index triggers (fresh vault, under the request/console marker sensors).
+// A freight leak of $30.00 becomes an inbox finding once the leak threshold is lowered to $1.00; a copper index read
+// from a Data Hub file (100 -> 106.5 = +6.50%) fires a 5% trigger with a 50% share, so the expected cost change is
+// +3.25% and a $60.00 SKU is expected at $61.95. A Sales Rep sees neither the agents nor Vendors.
+async function agentsUi(){
+ const savedContext=context,savedPage=page,active=dataPlaneActive;
+ context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-agents-')),browserOptions);await configureContext();page=await openPage();
+ try{
+ dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic agents owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
+ const sku=marker+'-AGWIRE',other=marker+'-AGVALVE',customer=marker+'-AGCUST',series='Copper '+marker;
+ await page.locator('nav a[href="#data-hub"]').click();await importFiles([
+  {name:'agents-items.csv',mimeType:'text/csv',buffer:Buffer.from('product_id,description,category,uom,current_cost,list_price\n'+sku+',Synthetic wire,Wire,EA,60.00,100.00\n'+other+',Synthetic valve,Valves,EA,20.00,40.00\n')},
+  {name:'agents-customers.csv',mimeType:'text/csv',buffer:Buffer.from('customer_id,name,tier\n'+customer+',Synthetic,T1\n')},
+  {name:'agents-sales.csv',mimeType:'text/csv',buffer:Buffer.from('line_id,product_id,customer_id,sale_date,quantity,list_amount,discount_amount,freight_amount,rebate_amount,cost_amount,invoice_id\n1,'+sku+','+customer+',2026-10-02,1,100.00,0,30.00,0,60.00,AG1\n')},
+  {name:'copper-index.csv',mimeType:'text/csv',buffer:Buffer.from('index_name,period_date,index_value\n'+series+',2026-01-01,100\n'+series+',2026-06-01,103.25\n'+series+',2026-10-01,106.5\n')}],'1');
+ // Home: the card says checks run only while the app is open; the first check runs at opening.
+ await page.locator('nav a[href="#home"]').click();const card=page.getByTestId('agents');await card.waitFor({timeout:60000});
+ assert.ok((await card.innerText()).includes('open'),'The agents card does not say checks run only while the app is open');
+ await page.getByTestId('agents-settings').click();await page.getByLabel('Leaks of at least (amount)',{exact:true}).fill('1.00');await page.getByTestId('agents-settings-save').click();await page.getByTestId('agents-settings-form').waitFor({state:'detached'});
+ await page.getByTestId('agents-run').click();await page.getByTestId('agents-last-checked').filter({hasText:'run by hand'}).waitFor({timeout:60000});
+ const inbox=page.getByTestId('agents-inbox');const leak=inbox.locator('tbody tr[data-rule="leak"]');await leak.first().waitFor({timeout:60000});
+ assert.ok((await leak.first().innerText()).includes('$30.00'),'The freight leak finding lost its amount');
+ // Vendors > Cost index: the series read from the file, a trigger and the SKUs it covers.
+ await page.locator('nav a[href="#vendors"]').click();await page.getByTestId('vendor-tab-index').click();const seriesGrid=page.getByTestId('index-series-grid');await seriesGrid.locator('tbody tr').filter({hasText:series}).waitFor({timeout:60000});
+ assert.ok((await seriesGrid.locator('tbody tr').filter({hasText:series}).innerText()).includes('3'),'The index series lost its points');
+ await page.getByTestId('index-new').click();await page.getByTestId('index-name').fill('Copper wire '+marker);await page.getByTestId('index-series-select').selectOption(series);await page.getByTestId('index-value').fill('Wire');await page.getByTestId('index-base').fill('2026-01-01');await page.getByTestId('index-threshold').fill('5');await page.getByTestId('index-pass').fill('50');await page.getByTestId('index-save').click();
+ const trig=page.getByTestId('index-triggers-grid').locator('tbody tr').filter({hasText:'Copper wire'});await trig.waitFor({timeout:60000});
+ assert.equal(await trig.getAttribute('data-status'),'triggered');assert.equal(await trig.getAttribute('data-cost-bp'),'325');
+ await trig.getByTestId('index-show-skus').click();const skuRow=page.getByTestId('index-skus-grid').locator('tbody tr').filter({hasText:sku});await skuRow.waitFor({timeout:60000});
+ assert.ok((await skuRow.innerText()).includes('$61.95'),'Expected cost is not $61.95');assert.equal(await page.getByTestId('index-skus-grid').locator('tbody tr').filter({hasText:other}).count(),0,'A SKU outside the category is covered');
+ await page.setViewportSize({width:375,height:812});await page.waitForTimeout(300);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Cost index overflows a phone');await page.setViewportSize({width:1280,height:800});
+ // The next check adds the trigger to the inbox; marking the leak read keeps it in the default view.
+ await page.locator('nav a[href="#home"]').click();await page.getByTestId('agents-run').click();await inbox.locator('tbody tr[data-rule="index_trigger"]').waitFor({timeout:60000});
+ assert.equal(await page.getByTestId('agents-new').innerText(),'2');
+ await leak.first().getByTestId('agents-mark-read').click();await inbox.locator('tbody tr[data-rule="leak"][data-status="read"]').waitFor();assert.equal(await page.getByTestId('agents-new').innerText(),'1');
+ await page.setViewportSize({width:375,height:812});await page.waitForTimeout(300);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'The agents card overflows a phone');await page.screenshot({path:'test-results/agents-'+channel+'.png',fullPage:true});await page.setViewportSize({width:1280,height:800});
+ // A Sales Rep sees no agents card and no Vendors.
+ await page.locator('nav a[href="#settings"]').click();await page.getByLabel('Preview as').selectOption('sales_rep');await page.getByTestId('preview-banner').waitFor();await page.locator('nav a[href="#home"]').click();await page.waitForTimeout(800);
+ assert.equal(await page.getByTestId('agents').count(),0,'A Sales Rep sees the agents');assert.equal(await page.locator('nav a[href="#vendors"]').count(),0,'A Sales Rep sees Vendors');
+ await page.getByTestId('preview-banner').getByRole('button',{name:'Return to my own view'}).click();await page.getByTestId('preview-banner').waitFor({state:'detached'});
+ results.checks.agentsUi={leakAtThreshold:true,manualCheck:true,indexFromFile:true,trigger325bp:true,expectedCost6195:true,inboxTrigger:true,markRead:true,phone375:true,repHidden:true,privacyMarkers:true};
+ }catch(error){console.error('Agents UI diagnostics:',JSON.stringify(await diagnose()));throw error;}finally{await context.close();context=savedContext;page=savedPage;dataPlaneActive=active;}
+}
 async function reportsUi(){
  const savedContext=context,savedPage=page,active=dataPlaneActive;
  context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-reports-')),browserOptions);await configureContext();page=await openPage();
@@ -414,7 +457,7 @@ async function monitorUi(){
 await build({ entryPoints: ["tests/helpers/studio-fixtures.ts"], outfile: "test-results/studio-fixtures.mjs", bundle: true, platform: "node", format: "esm" });
 const fixtures = await import(new URL("../test-results/studio-fixtures.mjs", import.meta.url).href);
 try {
- if(process.argv.includes('--guidance-ui-only')){await guidanceUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Guidance UI focused gate passed ('+channel+').');}else if(process.argv.includes('--converters-ui-only')){await convertersUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Converters UI focused gate passed ('+channel+').');}else if(process.argv.includes('--reports-ui-only')){await reportsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Reports UI focused gate passed ('+channel+').');}else if(process.argv.includes('--sim-ui-only')){await simUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Simulator UI focused gate passed ('+channel+').');}else if(process.argv.includes('--vendors-ui-only')){await vendorsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Vendor UI focused gate passed ('+channel+').');}else if(process.argv.includes('--suppliers-ui-only')){await suppliersUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Supplier UI focused gate passed ('+channel+').');}else{
+ if(process.argv.includes('--agents-ui-only')){await agentsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Agents UI focused gate passed ('+channel+').');}else if(process.argv.includes('--guidance-ui-only')){await guidanceUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Guidance UI focused gate passed ('+channel+').');}else if(process.argv.includes('--converters-ui-only')){await convertersUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Converters UI focused gate passed ('+channel+').');}else if(process.argv.includes('--reports-ui-only')){await reportsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Reports UI focused gate passed ('+channel+').');}else if(process.argv.includes('--sim-ui-only')){await simUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Simulator UI focused gate passed ('+channel+').');}else if(process.argv.includes('--vendors-ui-only')){await vendorsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Vendor UI focused gate passed ('+channel+').');}else if(process.argv.includes('--suppliers-ui-only')){await suppliersUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Supplier UI focused gate passed ('+channel+').');}else{
   if (auth) {
     assert.notEqual(process.env.LEGACY_BUSINESS_ENABLED,'true','Privacy gate must run with legacy business routes OFF');
     await signInLocal(context,page,base);
@@ -862,7 +905,7 @@ try {
   }
   await monitorUi();
   await rebatesUi();
-  await suppliersUi(); await vendorsUi(); await simUi(); await reportsUi(); await convertersUi(); await guidanceUi();
+  await suppliersUi(); await vendorsUi(); await simUi(); await reportsUi(); await convertersUi(); await guidanceUi(); await agentsUi();
   await recoveryUi();
   if(auth){
     const device=await page.evaluate(()=>{const key=Object.keys(localStorage).find(k=>k.startsWith('rebatehq-device-v1:'));return localStorage.getItem(key);});assert.ok(device);

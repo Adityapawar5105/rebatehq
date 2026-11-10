@@ -16,7 +16,7 @@ const progress = (stage: string, done: string, total: string) => post({ event: "
 function cancellable() { return abort.signal; }
 async function handle(request: Request) {
   abort = new AbortController(); // each request gets its own cancellation scope
-  const result = await dispatch(service, request, { signal: cancellable, progress, unlocked: () => { void service.warmup()?.then(() => post({ event: "writable" })); } });
+  const result = await dispatch(service, request, { signal: cancellable, progress, unlocked: () => { void service.warmup()?.then(() => { post({ event: "writable" }); agentsDue(); }); } });
   post({ id: request.id, action: request.action, result } as Response);
 }
 scope.onmessage = event => {
@@ -33,5 +33,7 @@ scope.onmessage = event => {
 };
 
 // Scheduled work is serialized with every mutation and runs only while unlocked.
-setInterval(()=>{queue=queue.then(()=>service.backupDue()).catch(()=>undefined);},60_000);
+// 8B-1: Margin Drain agents run on their saved schedule while the app is open, queued like any other work.
+const agentsDue = () => { queue = queue.then(() => service.agentsDue()).then(ran => { if (ran) post({ event: "agents" }); }).catch(() => undefined); };
+setInterval(()=>{queue=queue.then(()=>service.backupDue()).catch(()=>undefined);agentsDue();},60_000);
 

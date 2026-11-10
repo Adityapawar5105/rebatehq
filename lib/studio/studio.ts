@@ -543,7 +543,7 @@ export class Studio {
       if(roles.has("rebate_agreement"))warnings.push(msg("rebate.importWarning"));
       progress(msg("import.checkingValuesDuplicatesAnd"), "0", "1");
       // Headers and item lists first: sales lines take customer, date and freight from the one and cost from the other.
-      const sequence = (["order_header", "item_master", "customer_list", "ar_aging", "vendor_cost", "price_list", "sales_history", "rebate_agreement", "purchases"] as const).filter(r => roles.has(r));
+      const sequence = (["order_header", "item_master", "customer_list", "ar_aging", "vendor_cost", "price_list", "sales_history", "rebate_agreement", "purchases", "cost_index"] as const).filter(r => roles.has(r));
       for (const role of sequence) {
         signal.throwIfAborted();
         if (role === "sales_history") {
@@ -620,12 +620,12 @@ export class Studio {
     const messages = kept.flatMap(f => CODES(f.role).map(code => `(${f.ord},${sqlText(code)},${sqlText(issueColumn(code, f))},${sqlText(issueMessage(code, f.settings))})`)).join(",");
     await engine.conn.query("BEGIN");
     try {
-      if (staged.replaces) await engine.conn.query(removeChildrenSql(staged.replaces,await hasRebates(engine),await hasSupplier(engine)));
+      if (staged.replaces) await engine.conn.query(removeChildrenSql(staged.replaces,await hasRebates(engine),await hasSupplier(engine),await hasCostIndex(engine)));
       await engine.conn.query(`CREATE TEMP TABLE studio_files AS SELECT * FROM (VALUES ${values}) v(file_ord, source_id, name);
 CREATE TEMP TABLE studio_messages AS SELECT * FROM (VALUES ${messages}) v(file_ord, code, column_name, message)`);
       for (const [i, f] of kept.entries()) {
         const r = report.files.find(x => x.id === staged.entries[f.ord].id)!;
-        await engine.conn.query(`INSERT INTO source_files VALUES (${sqlText(sources[i])},${sqlText(f.name)},${sqlText(["ar_aging","rebate_agreement","purchases"].includes(f.role) ? "customer_list" : f.role)},${f.bytes},${sqlText(now)});${["ar_aging","rebate_agreement","purchases"].includes(f.role) ? `INSERT INTO source_kinds VALUES (${sqlText(sources[i])},${sqlText(f.role)});` : ""}
+        await engine.conn.query(`INSERT INTO source_files VALUES (${sqlText(sources[i])},${sqlText(f.name)},${sqlText(["ar_aging","rebate_agreement","purchases","cost_index"].includes(f.role) ? "customer_list" : f.role)},${f.bytes},${sqlText(now)});${["ar_aging","rebate_agreement","purchases","cost_index"].includes(f.role) ? `INSERT INTO source_kinds VALUES (${sqlText(sources[i])},${sqlText(f.role)});` : ""}
 INSERT INTO import_batches(id,source_id,rows_loaded,rows_rejected,imported_at,content_sha256,fingerprint,rows_skipped,source_currency,workspace_currency,fx_rate,header_fx) VALUES (${sqlText(id())},${sqlText(sources[i])},${r.rowsLoaded},${r.rowsRejected},${sqlText(now)},NULL,${sqlText(f.fingerprint)},${r.rowsSkipped},${sqlText(f.settings.sourceCurrency ?? "USD")},${sqlText(await workspaceCurrency(engine))},${sqlText(f.settings.fxRate ?? "1")},${sqlText(JSON.stringify(staged.files.filter(h=>h.role === "order_header").map(h=>({sourceCurrency:h.settings.sourceCurrency,fxRate:h.settings.fxRate}))))})`);
       }
       await engine.conn.query(commitSql(new Set([...staged.roles].filter(r => r !== "order_header"))));
@@ -651,12 +651,14 @@ INSERT INTO import_batches(id,source_id,rows_loaded,rows_rejected,imported_at,co
   }
 }
 /** Remove one imported file and exactly its rows (two transactions; see finishRemovalSql). */
+/** 8B-1: cost index points exist from vault v18. */
+async function hasCostIndex(engine: Engine) { return (await engine.conn.query("SELECT count(*)::VARCHAR n FROM information_schema.tables WHERE table_catalog=current_database() AND table_name='cost_index_points'")).toArray()[0].n === "1"; }
 export async function removeSource(engine: Engine, source: string) {
   const row = (await engine.conn.query(`SELECT s.name,coalesce(k.kind,s.role) AS role FROM source_files s LEFT JOIN source_kinds k ON k.source_id=s.id WHERE s.id=${sqlText(source)}`)).toArray()[0];
   if (!row) throw new StudioError(msg("import.thatFileIsNo"));
   await engine.conn.query("BEGIN");
   try {
-    await engine.conn.query(removeChildrenSql(source,await hasRebates(engine),await hasSupplier(engine)));
+    await engine.conn.query(removeChildrenSql(source,await hasRebates(engine),await hasSupplier(engine),await hasCostIndex(engine)));
     await rebuildAccruals(engine);
     await appendAudit(engine, "import.removed", { source_id: source, ...(!["rebate_agreement","purchases"].includes(String(row.role))?{file_name:String(row.name)}:{}) });
     await engine.conn.query("COMMIT");

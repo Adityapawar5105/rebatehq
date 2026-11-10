@@ -24,6 +24,7 @@ import { RecordsView } from "./RecordsView";
 import { VendorsView } from "./VendorsView";
 import { RolesView } from "./RolesView";
 import { RelayPanel } from './RelayPanel';
+import { AgentsInbox } from './AgentsInbox';
 import { CommandPalette, OPEN_PALETTE_EVENT } from "./CommandPalette";
 import { GlossaryCard } from "./Glossary";
 import { tierName } from "./labels";
@@ -60,7 +61,7 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
       if (!active) return;
       if(event.event === "licence"){setStatus(event.status);}
       else if (event.event === "progress") { setProgress(event); window.dispatchEvent(new CustomEvent("vault-progress", { detail: { stage: event.stage } })); }
-      else if (event.event === "writable") { void c.call("status", {}).then(s => { if (active) setStatus(s); }).catch(() => undefined); }
+      else if (event.event === "writable" || event.event === "agents") { void c.call("status", {}).then(s => { if (active) setStatus(s); }).catch(() => undefined); }
       else { setPassphrase(""); setMessage(event.reason); void c.call("status", {}).then(s => { if (active) setStatus(s); }); }
     });
     client.current = c;
@@ -151,6 +152,7 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
             {licenceLine}
           </div>
           {shown === "Home" && client.current && <HomeView client={client.current} userId={scope.userId} version={`${status.lines}|${status.generation}|${access?.role}`} busy={busy} operation={operation} refresh={async () => setStatus(await client.current!.call("status", {}))}/>}
+          {shown === "Home" && client.current && caps.includes("cost") && status.licence?.tier !== "starter" && <AgentsInbox client={client.current} version={`${status.lines}|${status.generation}`} canPrice={caps.includes("pricing")} busy={busy} operation={operation}/>}
           {shown === "Home" && client.current && caps.includes('collaborate') && status.licence?.tier!=='starter' && <RelayPanel client={client.current} userId={scope.userId} tenantId={scope.tenantId} relayEnabled={relayEnabled} onChange={async()=>setStatus(await client.current!.call('status',{}))}/>}
           {shown === "Home" && <GlossaryCard/>}
           {shown === "Data Hub" && client.current && <>
@@ -175,7 +177,7 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
           {shown === "Margin" && client.current && <MarginView client={client.current} status={status} busy={busy} operation={operation} setMessage={setMessage} onStatus={setStatus}/>}
           {shown === "Pricing" && client.current && <PricingView tier={status.licence?.tier??'starter'} client={client.current} userId={scope.userId} caps={caps} busy={busy} operation={operation} refresh={async()=>setStatus(await client.current!.call("status",{}))}/>}
           {shown === "Quotes" && client.current && <QuotesView client={client.current} userId={scope.userId} caps={caps} tier={status.licence?.tier} busy={busy} operation={operation}/>}
-          {shown === "Vendors" && client.current && <VendorsView client={client.current} tier={status.licence?.tier} version={`${status.lines}|${status.generation}`} canImport={caps.includes("data")} canSimulate={caps.includes("pricing")} operation={operation}/>}
+          {shown === "Vendors" && client.current && <VendorsView client={client.current} tier={status.licence?.tier} version={`${status.lines}|${status.generation}`} canImport={caps.includes("data")} canSimulate={caps.includes("pricing")} canPrice={caps.includes("pricing")} busy={busy} operation={operation}/>}
           {shown === "Rebates & Contracts" && client.current && <RebatesView client={client.current} caps={caps} tier={status.licence?.tier} busy={busy} version={status.generation} operation={operation} refresh={async()=>setStatus(await client.current!.call("status",{}))}/>}
           {shown === "Reports" && client.current && <ReportsView client={client.current} caps={caps} tier={status.licence?.tier} busy={busy} version={`${status.lines}|${status.generation}`} operation={operation} refresh={async()=>setStatus(await client.current!.call("status",{}))}/>}
             {shown === "Reports" && caps.includes("cost") && client.current && <Card headingId="report-card-heading" title={t("shell.report.heading")} description={t("shell.report.body")}><LeakReportButton client={client.current} busy={busy || status.lines === "0"} operation={operation} setMessage={setMessage} onStatus={setStatus}/></Card>}

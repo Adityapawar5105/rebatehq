@@ -1,5 +1,5 @@
 import { msg } from "../i18n/core";
-export const SCHEMA_VERSION = 17;
+export const SCHEMA_VERSION = 18;
 const V1_TABLES = ["vault_meta", "products", "customers", "price_matrix", "price_guardrails", "source_files", "import_batches", "sales_lines", "vendor_costs", "cost_basis_settings", "rules", "rule_runs", "price_versions", "roi_ledger", "audit_log", "import_issues", "converter_recipes"] as const;
 const V4_TABLES = [...V1_TABLES, "rejected_rows"] as const;
 const V5_TABLES = [...V4_TABLES, "agg_cpm", "agg_cm", "agg_p", "recon_issues"] as const;
@@ -11,9 +11,10 @@ const V11_TABLES = [...V10_TABLES, "price_changesets", "price_changeset_rows"] a
 const V12_TABLES = [...V11_TABLES, "competitor_prices", "price_grid_drafts", "price_export_receipts", "price_landed_checks", "sales_service_flags"] as const;
 const V15_TABLES = [...V12_TABLES,"rebate_programs","rebate_tiers","rebate_accruals"] as const;
 const V16_TABLES = [...V15_TABLES,"supplier_claims","purchases"] as const;
-export const TABLES = [...V16_TABLES,"roi_recoveries","scorecard_consent","report_checks"] as const;
+const V17_TABLES = [...V16_TABLES,"roi_recoveries","scorecard_consent","report_checks"] as const;
+export const TABLES = [...V17_TABLES,"cost_index_points","cost_index_triggers","agent_settings","agent_runs","agent_inbox"] as const;
 /** Tables that exist at a schema version (in creation order, so copy-on-write inserts parents first). */
-export function tablesFor(version: number): readonly string[] { return version >= 17 ? TABLES : version >= 16 ? V16_TABLES : version >= 14 ? V15_TABLES : version >= 12 ? V12_TABLES : version >= 11 ? V11_TABLES : version >= 10 ? V10_TABLES : version >= 9 ? V9_TABLES : version >= 7 ? V7_TABLES : version >= 6 ? V6_TABLES : version >= 5 ? V5_TABLES : version >= 4 ? V4_TABLES : V1_TABLES; }
+export function tablesFor(version: number): readonly string[] { return version >= 18 ? TABLES : version >= 17 ? V17_TABLES : version >= 16 ? V16_TABLES : version >= 14 ? V15_TABLES : version >= 12 ? V12_TABLES : version >= 11 ? V11_TABLES : version >= 10 ? V10_TABLES : version >= 9 ? V9_TABLES : version >= 7 ? V7_TABLES : version >= 6 ? V6_TABLES : version >= 5 ? V5_TABLES : version >= 4 ? V4_TABLES : V1_TABLES; }
 // These are local DuckDB migrations, not Supabase migrations. V1 stays frozen
 // so the committed encrypted compatibility fixture exercises a real upgrade.
 export const V1_SQL = `
@@ -175,7 +176,19 @@ export const V17_SQL = `CREATE TABLE roi_recoveries(id VARCHAR PRIMARY KEY,ledge
 CREATE INDEX roi_recovery_ledger ON roi_recoveries(ledger_id);
 CREATE TABLE scorecard_consent(user_id VARCHAR PRIMARY KEY,opted_in BOOLEAN NOT NULL,updated_at VARCHAR NOT NULL);
 CREATE TABLE report_checks(kind VARCHAR PRIMARY KEY CHECK(kind IN ('monthly','weekly')),checked_at VARCHAR NOT NULL,period_start DATE NOT NULL,period_end DATE NOT NULL CHECK(period_end>=period_start),revision BIGINT NOT NULL CHECK(revision>=0));`;
-const STEPS = [V1_SQL, V2_SQL, V3_SQL, V4_SQL, V5_SQL, V6_SQL, V7_SQL, V8_SQL, V9_SQL, V10_SQL, V11_SQL, V12_SQL, V13_SQL,V14_SQL,V15_SQL,V16_SQL,V17_SQL];
+// V18 (8B-1): cost index files as an import role, cost-index triggers with the import-cost currency buffer, and the
+// Margin Drain agents' settings, run log and inbox. All local; nothing here is sent anywhere.
+export const V18_SQL = `CREATE TEMP TABLE md_v17_kinds AS SELECT * FROM source_kinds;
+DROP TABLE source_kinds;
+CREATE TABLE source_kinds(source_id VARCHAR PRIMARY KEY,kind VARCHAR NOT NULL CHECK(kind IN ('ar_aging','rebate_agreement','purchases','cost_index')));
+INSERT INTO source_kinds SELECT * FROM md_v17_kinds; DROP TABLE md_v17_kinds;
+CREATE TABLE cost_index_points(source_id VARCHAR NOT NULL,index_name VARCHAR NOT NULL,period_date DATE NOT NULL,index_value DECIMAL(18,4) NOT NULL CHECK(index_value>0),source_row BIGINT NOT NULL,PRIMARY KEY(index_name,period_date));
+CREATE TABLE cost_index_triggers(id VARCHAR PRIMARY KEY,name VARCHAR NOT NULL,index_name VARCHAR NOT NULL,scope VARCHAR NOT NULL CHECK(scope IN ('category','product')),scope_value VARCHAR NOT NULL,base_date DATE NOT NULL,threshold_bp INTEGER NOT NULL CHECK(threshold_bp BETWEEN 1 AND 100000),pass_through_bp INTEGER NOT NULL CHECK(pass_through_bp BETWEEN 0 AND 10000),fx_currency VARCHAR,fx_base DECIMAL(18,6),fx_now DECIMAL(18,6),fx_buffer_bp INTEGER,created_by VARCHAR NOT NULL,created_at VARCHAR NOT NULL,
+ CHECK((fx_currency IS NULL AND fx_base IS NULL AND fx_now IS NULL AND fx_buffer_bp IS NULL) OR (fx_currency IS NOT NULL AND fx_base>0 AND fx_now>0 AND fx_buffer_bp BETWEEN 0 AND 10000)));
+CREATE TABLE agent_settings(id INTEGER PRIMARY KEY CHECK(id=1),enabled BOOLEAN NOT NULL,interval_minutes INTEGER NOT NULL CHECK(interval_minutes BETWEEN 15 AND 1440),leak_threshold_cents BIGINT NOT NULL CHECK(leak_threshold_cents>=0),health_threshold_bp INTEGER NOT NULL CHECK(health_threshold_bp BETWEEN 1 AND 10000),expiry_days INTEGER NOT NULL CHECK(expiry_days IN (30,60,90)),cost_rise_bp INTEGER NOT NULL CHECK(cost_rise_bp BETWEEN 1 AND 100000),updated_at VARCHAR NOT NULL);
+CREATE TABLE agent_runs(id VARCHAR PRIMARY KEY,started_at VARCHAR NOT NULL,finished_at VARCHAR NOT NULL,reason VARCHAR NOT NULL CHECK(reason IN ('schedule','open','manual')),findings BIGINT NOT NULL CHECK(findings>=0),new_findings BIGINT NOT NULL CHECK(new_findings>=0),resolved BIGINT NOT NULL CHECK(resolved>=0));
+CREATE TABLE agent_inbox(key VARCHAR PRIMARY KEY,rule VARCHAR NOT NULL CHECK(rule IN ('leak','below_floor','contract_expiry','cost_rise','customer_health','index_trigger')),subject VARCHAR NOT NULL,detail VARCHAR NOT NULL,amount_cents BIGINT,first_seen VARCHAR NOT NULL,last_seen VARCHAR NOT NULL,status VARCHAR NOT NULL CHECK(status IN ('new','read','dismissed','resolved')));`;
+const STEPS = [V1_SQL, V2_SQL, V3_SQL, V4_SQL, V5_SQL, V6_SQL, V7_SQL, V8_SQL, V9_SQL, V10_SQL, V11_SQL, V12_SQL, V13_SQL,V14_SQL,V15_SQL,V16_SQL,V17_SQL,V18_SQL];
 function checkVersion(version: number) {
   if (!Number.isInteger(version) || version < 1 || version > SCHEMA_VERSION) throw new Error(msg("vault.schema.unsupportedVaultSchemaVersion"));
 }

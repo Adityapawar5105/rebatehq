@@ -181,6 +181,9 @@ export type Commands = {
   quoteCreate: { customerId: string }; quoteLines: { id: string; lines: LineInput[] }; quoteSubmit: { id: string; reason: string | null };
   quoteDecide: { id: string; decision: "approve" | "reject"; note: string | null }; quoteGet: { id: string }; quoteList: { pendingOnly?: boolean };
   quoteGuidance: { id: string }; quoteCrossSell: { id: string }; relayLocal: Record<string, never>;
+  agentState: Record<string, never>; agentRows: { offset?: number; grid?: GridQuery }; agentRun: Record<string, never>; agentMark: { key: string; status: "new" | "read" | "dismissed" };
+  agentSettingsSave: { input: Omit<import("../agents/agents").AgentSettings, "updatedAt"> }; indexState: Record<string, never>; indexSkus: { id: string; offset?: number; grid?: GridQuery };
+  indexTriggerSave: { input: import("../agents/costindex").TriggerInput }; indexTriggerDelete: { id: string };
   quoteShare: { id: string; preset: "standard" | "conservative" }; quoteRelaySync: { id: string };
   roi: Record<string, never>;
   reconcile: Record<string, never>;
@@ -205,7 +208,10 @@ export type Results = {
   vendorPpv:Awaited<ReturnType<VaultService["vendorPpv"]>>;
   vendorPpvLines:Awaited<ReturnType<VaultService["vendorPpvLines"]>>;
   simOptions:Awaited<ReturnType<VaultService["simOptions"]>>;
-  relayLocal:Awaited<ReturnType<VaultService["relayLocal"]>>; quoteGuidance:Awaited<ReturnType<VaultService["quoteGuidance"]>>; quoteCrossSell:Awaited<ReturnType<VaultService["quoteCrossSell"]>>;
+  relayLocal:Awaited<ReturnType<VaultService["relayLocal"]>>;
+  agentState:Awaited<ReturnType<VaultService["agentState"]>>; agentRows:Awaited<ReturnType<VaultService["agentRows"]>>; agentRun:Awaited<ReturnType<VaultService["agentRun"]>>; agentMark:Awaited<ReturnType<VaultService["agentMark"]>>;
+  agentSettingsSave:Awaited<ReturnType<VaultService["agentSettingsSave"]>>; indexState:Awaited<ReturnType<VaultService["indexState"]>>; indexSkus:Awaited<ReturnType<VaultService["indexSkus"]>>;
+  indexTriggerSave:Awaited<ReturnType<VaultService["indexTriggerSave"]>>; indexTriggerDelete:Awaited<ReturnType<VaultService["indexTriggerDelete"]>>; quoteGuidance:Awaited<ReturnType<VaultService["quoteGuidance"]>>; quoteCrossSell:Awaited<ReturnType<VaultService["quoteCrossSell"]>>;
   folderGet:Awaited<ReturnType<VaultService["folderGet"]>>; folderSet:Awaited<ReturnType<VaultService["folderSet"]>>; studioFolder:Awaited<ReturnType<VaultService["studioFolder"]>>;
   simRun:Awaited<ReturnType<VaultService["simRun"]>>;
   simRows:Awaited<ReturnType<VaultService["simRows"]>>;
@@ -291,6 +297,7 @@ export type Response = { [K in Action]: { id: string; action: K; result: Results
   | { event: "progress"; stage: string; done: string; total: string }
   | { event: "locked"; reason: string }
   | { event: "writable" }
+  | { event: "agents" }
   | { event: "licence"; status:VaultStatus };
 /** Command palette hit: IDs and names only, never cost or price (chunk 7U). */
 /** `note` is an excerpt of a matching note, only for a role allowed to see notes (never a Sales Rep). */
