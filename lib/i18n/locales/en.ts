@@ -1226,6 +1226,15 @@ const worker = {
 } as const;
 
 const patches = {
+  "offline.heading": "Offline use",
+  "offline.body": "This browser keeps a copy of the app itself so RebateHQ opens without a connection. Your data is already on this device, in the encrypted vault; you unlock it with your passphrase as usual.",
+  "offline.ready": "Ready: RebateHQ opens offline in this browser ({files} files stored).",
+  "offline.installing": "Preparing: open this page once more while online to finish ({files} files stored so far).",
+  "offline.off": "Off: no offline copy in this browser. It is set up automatically the next time you open RebateHQ online.",
+  "offline.unsupported": "This browser cannot keep an offline copy (service workers are off or unavailable). RebateHQ still works online.",
+  "offline.grace": "Working offline: this device's licence stays valid until {date}. Connect before then to keep making changes.",
+  "offline.noData": "The offline copy holds the page, the app's code and the calculation engine only. It never holds prices, costs, invoices or notes, and is removed when you sign out.",
+  "offline.remove": "Remove offline copy",
   "winloss.invalid": "Choose an outcome and a reason; the competitor can have up to 100 characters and the note up to 1,000.",
   "winloss.draft": "Record the outcome once the quote has been sent: submit it first.",
   "winloss.tab": "Win/loss",

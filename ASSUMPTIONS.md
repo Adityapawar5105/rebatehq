@@ -900,3 +900,23 @@ This proves the tested authenticated local-vault flow, not deployed/hosted authe
     It is marked as a draft to review before signing. RebateHQ holds no supplier company name, so that line is left blank.
 - **File exports are audited:** each file download (`audit.pack_exported`, `template.negotiation_sheet`, `template.rebate_agreement`) writes an audit entry with codes and IDs. These downloads therefore need a valid licence, like the other report exports.
 - **No JSON functions in vault SQL:** the DuckDB-Wasm vault has no JSON extension, and the vault never downloads extensions. JSON stored in the vault is parsed in JavaScript, not with DuckDB JSON functions. (This was found by the browser gate: Node's DuckDB has JSON built in, so unit tests could not catch it.)
+
+## 8C-2 — offline mode for the desktop app (11 November 2026)
+
+- Scope: blueprint Phase 3 chunk 8C item 2, the installable desktop app with offline use. Every tier. No vault schema change (v20, 58 tables), no Supabase migration, no dependency change. Chrome and Edge are the verified browsers; Firefox registers the same worker but offline use there is not verified by a gate.
+- **What is stored offline:** a service worker (`public/sw.js`) keeps one named cache (`rebatehq-shell-v1`) holding only:
+  - the signed-in page's HTML (`/home`; `/lab/vault` in the lab), stored on each successful online visit;
+  - the build's content-hashed files under `/_next/static/`;
+  - the engine files under `/spike/` (the vault worker still checks their pinned SHA-256 and the browser checks their SRI on every load, cached or not);
+  - the manifest and the icon.
+
+  The page HTML carries the signed-in identity metadata the server already puts in it (user, workspace, e-mail). It carries no pricing, costs, invoices, rules or notes: those live only in the encrypted vault in OPFS and never in HTTP responses. The gate's cache scan checks this on every stored response.
+- **What is never stored or intercepted:** `/api/` (so the licence call reaches the network, or fails and the existing offline grace applies), any request that isn't a GET, any URL with a query string, other pages (sign-in, account, legacy), other origins, and redirects. No background sync, periodic sync or push is registered, so the Margin Drain "checks only run while the app is open" rule stays true.
+- **Update strategy:** the page and the fixed-name engine files are network-first: an update is used whenever the network answers, and the stored copy is only the offline fallback. Content-hashed build files are cache-first. The worker activates at once and removes older caches.
+- **Signing out** deletes the offline copy and unregisters the worker before the sign-out request is sent. A `/home` visit that is redirected (the session ended elsewhere) also drops the stored page. Settings › Offline use shows whether this browser is ready to open offline, with a "Remove offline copy" button.
+- **Licence offline:** no change. The signed licence cached in this browser is used offline until `offlineUntil` (lib/licence-policy.ts). Settings shows that date while offline, and the app becomes read-only after it.
+- **Installable:** `app/manifest.ts` (`/manifest.webmanifest`, start `/home`, standalone) with an SVG icon. The browser's install prompt itself is not tested.
+- **Development builds** do not register the worker; it is registered only in production builds.
+- **Test method:**
+  - The browser gate blocks service workers in every check except the offline one, because Playwright's request routing (used for the gate's test-code and quota seams) cannot see requests a service worker answers.
+  - The offline check cuts the network for real: it reaches the app through a local TCP relay and closes it. Playwright's offline switch does not cover requests the service worker makes, so on its own it would not prove anything.

@@ -6,7 +6,7 @@ Blueprint Phase 3, chunk 8C (BLUEPRINT_EXECUTION_PLAN.md section 9): win/loss lo
 
 ## Part 1: win/loss log, audit and compliance pack, templates
 
-**8C-1 is not yet CI-verified.** The local checks below are not CI proof.
+**8C-1 is CI-verified** in [CI #140](https://github.com/Adityapawar5105/rebatehq/actions/runs/42896532114) on `efe4291`, 11 November 2026 (Asia/Kolkata): 346 unit tests (78 JS + 268 TS), **65 authenticated Chromium vault checks** (including `winLossUi`), **63 Firefox lab checks** (including `winLossUi`), **12 real-authenticated local-Supabase relay checks**, the high/critical dependency audit, and the fresh 152-check pgTAP suite twice. Local vault v20 / 58 tables; 11 locked migrations, zero pending; no restore drill needed (no Supabase change). Every job step passed.
 
 ### What was built
 
@@ -99,3 +99,67 @@ The first run of `winLossUi` failed on the audit-pack download with a generic er
 - Legal adequacy of the rebate agreement wording: it is a draft to review before signing.
 - Third-party audit tooling reading the pack. The format is documented in `verification.json` and was re-checked in the unit test with Node's SHA-256 only.
 - Native-language review of the new text.
+
+## Part 2: offline mode for the desktop app
+
+**8C-2 is not yet CI-verified.** The local checks below are not CI proof.
+
+### What was built
+
+- **Service worker** (`public/sw.js`): one cache holding only the app shell. The page and the fixed-name engine files are network-first with an offline fallback; content-hashed build files are cache-first. It never intercepts `/api/`, a non-GET request, a query string, other pages, other origins or redirects, and it registers no background or periodic sync.
+- **Registration and Settings** (`components/local/OfflineMode.tsx`):
+  - the worker is registered in production builds only;
+  - Settings › Offline use shows Ready, Preparing, Off or Unsupported, with the number of stored files;
+  - while offline, it shows how long the licence stays valid;
+  - a "Remove offline copy" button.
+- **Sign-out** deletes the offline copy and unregisters the worker before signing out.
+- **Installable app:** `app/manifest.ts` and `public/icon.svg`.
+- **Messages:** 9 keys (`offline.*`) in en, es and fr.
+
+Rules are in `ASSUMPTIONS.md`, section 8C-2.
+
+### Tests
+
+`tests/offline.test.ts` (3 tests) runs `public/sw.js` in a VM with fake caches and network:
+- it stores exactly the shell paths and serves them offline;
+- it does not invent an asset that was never fetched;
+- cache-first and network-first behave as described;
+- `/api/`, POST, query strings, other pages and other origins go straight to the network and are never stored;
+- a redirected visit drops the stored page;
+- the page can clear the copy;
+- old caches are removed on activation;
+- the source has no background sync, other storage or imported code.
+
+The browser gate adds `offlineUi` in Chrome and Edge (not Firefox), in a fresh profile under the request and console marker sensors:
+1. Online, through a local TCP relay to the app server: create a vault and import marked data; the service worker takes control; reload once and unlock, so the page and engine are stored; Settings shows Ready.
+2. Close the relay so the server is unreachable (a probe fetch is asserted to fail) and set the browser offline. Reload: the app opens from the stored copy, the vault unlocks, and both lines are there. The licence grace note shows.
+3. Cache scan: every stored response is one of the shell paths, none carries the import marker, none is `/api/`. There were 21 entries locally.
+4. No overflow at 375 px.
+5. "Remove offline copy" empties the cache.
+
+All other gate checks now run with service workers blocked, because Playwright routes cannot see requests a service worker answers.
+
+### Local checks (not CI proof)
+
+| Command | Result |
+| --- | --- |
+| `node node_modules/typescript/bin/tsc --noEmit` | passed |
+| `node --test tests/*.test.js` | 78 of 78 passed |
+| `node …/tsx/dist/cli.mjs --test --test-concurrency=2 tests/*.test.ts` | 271 of 271 passed (3 new in `tests/offline.test.ts`) |
+| `scripts/test-vault-browser.mjs --offline-ui-only --browser=chrome` on a production build (lab mode) | passed |
+| `scripts/test-vault-browser.mjs --browser=chrome` on a production build (lab mode) | passed, 64 checks (Chrome 157.0.8103.40), including `offlineUi` and `winLossUi` |
+| Same, `--browser=msedge` | passed, 64 checks (Edge 157.0.4341.42) |
+| `node scripts/check-migrations-lock.mjs` | 11 applied, 0 pending, unchanged |
+| Relay and Firefox gates | not run locally; CI runs both (`offlineUi` is skipped on Firefox by design) |
+
+### Found and fixed while building
+
+- **Playwright's offline switch does not cover service-worker requests.** The first version of the check called `setOffline(true)`, and a probe still reached the server. That version proved nothing. The check now closes a TCP relay so every connection fails, and asserts that a probe fetch fails.
+- **Fixed-name engine files.** They were cache-first at first, which would have kept an old vault worker after an update. They are now network-first.
+
+### Unverified
+
+- The browser's install prompt and the installed (standalone) window.
+- Offline use in Firefox; real-world network loss (Wi-Fi off, captive portals) rather than a closed relay.
+- An offline copy across an app update in the field: covered in the unit test, not in a browser.
+- The privacy claim "data never leaves your device" (blueprint v2.6 gap 3, decision 11) is a decision for the product owner, not a test result. This chunk adds evidence (the offline gate and the cache scan); it does not change any marketing text.

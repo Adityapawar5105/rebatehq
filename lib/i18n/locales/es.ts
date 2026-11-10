@@ -3,6 +3,15 @@
 import type { Catalog } from "../core";
 
 export const es: Catalog = {
+  "offline.heading": "Uso sin conexión",
+  "offline.body": "Este navegador guarda una copia de la propia aplicación para que RebateHQ abra sin conexión. Sus datos ya están en este dispositivo, en la bóveda cifrada; la desbloquea con su frase de contraseña como siempre.",
+  "offline.ready": "Listo: RebateHQ abre sin conexión en este navegador ({files} archivos guardados).",
+  "offline.installing": "Preparando: vuelva a abrir esta página con conexión para terminar ({files} archivos guardados por ahora).",
+  "offline.off": "Desactivado: no hay copia sin conexión en este navegador. Se configura sola la próxima vez que abra RebateHQ con conexión.",
+  "offline.unsupported": "Este navegador no puede guardar una copia sin conexión (los service workers están desactivados o no existen). RebateHQ sigue funcionando con conexión.",
+  "offline.grace": "Trabajando sin conexión: la licencia de este dispositivo es válida hasta el {date}. Conéctese antes para seguir haciendo cambios.",
+  "offline.noData": "La copia sin conexión contiene solo la página, el código de la aplicación y el motor de cálculo. Nunca contiene precios, costos, facturas ni notas, y se elimina al cerrar sesión.",
+  "offline.remove": "Eliminar copia sin conexión",
   "winloss.invalid": "Elija un resultado y un motivo; el competidor admite hasta 100 caracteres y la nota hasta 1.000.",
   "winloss.draft": "Registre el resultado cuando la cotización se haya enviado: envíela primero.",
   "winloss.tab": "Ganadas/perdidas",

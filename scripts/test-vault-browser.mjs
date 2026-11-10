@@ -7,6 +7,7 @@ import os from "node:os";
 import { Script } from "node:vm";
 import { build } from "esbuild";
 import JSZip from "jszip";
+import net from "node:net";
 import { chromium, firefox } from "@playwright/test";
 import { signInLocal } from "./vault-test-auth.mjs";
 const auth = process.argv.includes("--auth"), full = process.argv.includes("--full"), makeFixture = process.argv.includes("--make-fixture");
@@ -33,7 +34,9 @@ const productionWorkerCsp=(await fetch(base+'/spike/vault-worker.js')).headers.g
 assert.ok(productionWorkerCsp?.includes("connect-src 'self' blob:")&&!productionWorkerCsp.includes("'unsafe-eval'"),'Production worker must support verified WASM blobs under CSP');
 const profile = await mkdtemp(path.join(os.tmpdir(), "rebatehq-vault-"));
 const browserType = channel === "firefox" ? firefox : chromium;
-const browserOptions = { ...(["chromium","firefox"].includes(channel) ? {} : { channel }), headless: true, ...(channel === "firefox" ? {firefoxUserPrefs:{"dom.storageManager.prompt.testing":true,"dom.storageManager.prompt.testing.allow":true}} : {}), viewport: { width: 1365, height: 900 } };
+// Service workers are blocked except in the offline check: Playwright routes (the test-code and quota seams) do not see
+// requests a service worker answers.
+const browserOptions = { ...(["chromium","firefox"].includes(channel) ? {} : { channel }), headless: true, serviceWorkers: "block", ...(channel === "firefox" ? {firefoxUserPrefs:{"dom.storageManager.prompt.testing":true,"dom.storageManager.prompt.testing.allow":true}} : {}), viewport: { width: 1365, height: 900 } };
 let context = await browserType.launchPersistentContext(profile, browserOptions);
 const results = { date: new Date().toISOString(), auth, channel, browser: context.browser().version(), machine: { cpu: os.cpus()[0].model, ram: String(os.totalmem()), os: os.type() + " " + os.release() }, checks: {}, measurements: {} };
 let quotaActive = false;
@@ -64,7 +67,7 @@ context.on("request", r => {
     if (markers.some(m => text.includes(m))) failures.push("Private fixture value appeared in a network request");
   }).catch(() => { failures.push("Could not inspect complete request headers"); }));
   const url = new URL(r.url());
-  if (dataPlaneActive && (url.origin !== new URL(base).origin || !["GET", "HEAD"].includes(r.method()) || (url.pathname.startsWith("/api/") && !(url.pathname==="/api/licence"&&r.method()==="GET"&&[...url.searchParams.keys()].every(k=>k==="device")&&!r.postData())))) failures.push("Vault flow made an unexpected external or API request");
+  if (dataPlaneActive && (![new URL(base).origin, relayOrigin].includes(url.origin) || !["GET", "HEAD"].includes(r.method()) || (url.pathname.startsWith("/api/") && !(url.pathname==="/api/licence"&&r.method()==="GET"&&[...url.searchParams.keys()].every(k=>k==="device")&&!r.postData())))) failures.push("Vault flow made an unexpected external or API request");
   requests.push(new URL(r.url()).pathname);
 });
 context.on("console", m => {
@@ -444,6 +447,54 @@ async function winLossUi(){
  results.checks.winLossUi={outcomeRecorded:true,lostValue12000:true,lostMargin5000:true,auditPackVerified:true,noNotesInPack:true,negotiationSheet:true,repNoMargin:true,repNoPack:true,phone375:true,privacyMarkers:true};
  }catch(error){console.error('Win/loss UI diagnostics:',JSON.stringify(await diagnose()));throw error;}finally{await context.close();context=savedContext;page=savedPage;dataPlaneActive=active;}
 }
+// 8C-2: offline mode (Chrome and Edge). In a fresh profile: create a vault and import marked data online, let the
+// service worker take control, reload once online, then cut the network, reload and unlock: the app opens from the
+// stored shell and the data comes from the encrypted vault. The cache scan lists every stored response and proves it
+// holds only shell paths and no business data (no import marker, no /api/). "Remove offline copy" empties it.
+// A TCP relay to the app server on another port of the same host. Closing it cuts every connection, including the
+// service worker's own fetches, which Playwright's offline emulation does not cover.
+let relayOrigin=null;
+async function tcpRelay(target){
+ const t=new URL(target),sockets=new Set();
+ const server=net.createServer(c=>{const u=net.connect(Number(t.port||80),t.hostname);for(const x of [c,u]){sockets.add(x);x.on('error',()=>x.destroy());x.on('close',()=>{sockets.delete(x);c.destroy();u.destroy();});}c.pipe(u);u.pipe(c);});
+ await new Promise((ok,no)=>{server.once('error',no);server.listen(0,t.hostname,ok);});
+ let open=true;return {url:t.protocol+'//'+t.hostname+':'+server.address().port,close:()=>open?new Promise(ok=>{open=false;for(const x of sockets)x.destroy();server.close(()=>ok());}):Promise.resolve()};
+}
+async function offlineUi(){
+ const savedContext=context,savedPage=page,active=dataPlaneActive;
+ context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-offline-')),{...browserOptions,serviceWorkers:'allow'});await configureContext();page=await openPage();
+ const relay=await tcpRelay(base);relayOrigin=new URL(relay.url).origin;const cut=r=>r.abort('internetdisconnected');
+ try{
+ // Session cookies are per host, not per port, so a sign-in on the app server also signs in through the relay.
+ dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(relay.url+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic offline owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
+ const sku=marker+'-OFF',customer=marker+'-OFFC';
+ await page.locator('nav a[href="#data-hub"]').click();await importFiles([
+  {name:'offline-items.csv',mimeType:'text/csv',buffer:Buffer.from('product_id,description,category,uom,current_cost,list_price\n'+sku+',Synthetic offline item,Offline,EA,4.00,9.00\n')},
+  {name:'offline-customers.csv',mimeType:'text/csv',buffer:Buffer.from('customer_id,name,tier\n'+customer+',Synthetic,T1\n')},
+  {name:'offline-sales.csv',mimeType:'text/csv',buffer:Buffer.from('line_id,product_id,customer_id,sale_date,quantity,list_amount,discount_amount,freight_amount,rebate_amount,cost_amount\n1,'+sku+','+customer+',2026-01-05,2,18.00,0,0,0,8.00\n2,'+sku+','+customer+',2026-01-06,1,9.00,0,0,0,4.00\n')}],'2');
+ await page.waitForFunction(async()=>!!(await navigator.serviceWorker.ready)&&!!navigator.serviceWorker.controller,null,{timeout:60000});
+ // Online reload: the page and the engine go through the worker once, so they are stored.
+ dataPlaneActive=false;await page.reload();await ready();await unlock();await page.locator('[data-testid="line-count"][data-value="2"]').waitFor({timeout:60000});dataPlaneActive=true;
+ await page.locator('nav a[href="#settings"]').click();await page.locator('[data-testid="offline-card"][data-state="ready"]').waitFor({timeout:60000});
+ // Offline: reload, unlock, read the same data.
+ await relay.close();await context.route('**/api/licence?device=*',cut);await context.setOffline(true);dataPlaneActive=false;
+ await page.reload();await ready();await unlock();await page.locator('[data-testid="line-count"][data-value="2"]').waitFor({timeout:60000});dataPlaneActive=true;
+ assert.ok(await page.evaluate(()=>!navigator.onLine),'The browser was not offline');const probe=await page.evaluate(async()=>{try{await fetch('/spike/assets.json?probe=1',{cache:'no-store'});return 'reached';}catch{return 'blocked';}});assert.equal(probe,'blocked','The server was still reachable in the offline phase');
+ await page.locator('nav a[href="#settings"]').click();await page.getByTestId('offline-card').waitFor();const grace=(await page.getByTestId('offline-card').innerText()).includes('Working offline');
+ await page.setViewportSize({width:375,height:812});await page.waitForTimeout(300);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Settings overflows a phone offline');await page.screenshot({path:'test-results/offline-'+channel+'.png',fullPage:true});await page.setViewportSize({width:1280,height:800});
+ // The cache scan: every stored response, its path and whether its body carries the import marker.
+ const scan=await page.evaluate(async m=>{const out=[];for(const name of await caches.keys()){const c=await caches.open(name);for(const req of await c.keys()){const res=await c.match(req);const body=new Uint8Array(await res.arrayBuffer());let text='';try{text=new TextDecoder('utf-8',{fatal:false}).decode(body);}catch{}out.push({cache:name,path:new URL(req.url).pathname,search:new URL(req.url).search,bytes:body.length,marker:text.includes(m)});}}return out;},marker);
+ assert.ok(scan.length>5,'The offline copy is empty');
+ const allowed=/^(\/home|\/lab\/vault|\/_next\/static\/.+|\/spike\/.+|\/manifest\.webmanifest|\/icon\.svg)$/;
+ for(const e of scan){assert.equal(e.cache,'rebatehq-shell-v1');assert.ok(allowed.test(e.path)&&!e.search,'Unexpected cached path '+e.path);assert.ok(!e.marker,'Business data in the offline copy: '+e.path);}
+ assert.ok(scan.some(e=>e.path===route)&&scan.some(e=>/^\/spike\/.+\.wasm$/.test(e.path)),'The shell or the engine was not stored');
+ await context.setOffline(false);await context.unroute('**/api/licence?device=*',cut);
+ assert.ok(grace,'The offline licence grace note was not shown');
+ await page.getByTestId('offline-remove').click();await page.locator('[data-testid="offline-card"][data-state="off"]').waitFor({timeout:30000});
+ assert.equal(await page.evaluate(async()=>(await caches.keys()).length),0,'Remove offline copy left a cache');
+ results.checks.offlineUi={swControls:true,serverCut:true,offlineReloadUnlock:true,sameLines:true,cacheScan:{entries:scan.length,businessData:0,api:0},licenceGrace:true,removeCopy:true,phone375:true,privacyMarkers:true};
+ }catch(error){await context.setOffline(false).catch(()=>undefined);console.error('Offline UI diagnostics:',JSON.stringify(await diagnose()));throw error;}finally{await relay.close();relayOrigin=null;await context.close();context=savedContext;page=savedPage;dataPlaneActive=active;}
+}
 async function reportsUi(){
  const savedContext=context,savedPage=page,active=dataPlaneActive;
  context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-reports-')),browserOptions);await configureContext();page=await openPage();
@@ -535,7 +586,7 @@ async function monitorUi(){
 await build({ entryPoints: ["tests/helpers/studio-fixtures.ts"], outfile: "test-results/studio-fixtures.mjs", bundle: true, platform: "node", format: "esm" });
 const fixtures = await import(new URL("../test-results/studio-fixtures.mjs", import.meta.url).href);
 try {
- if(process.argv.includes('--winloss-ui-only')){await winLossUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Win/loss UI focused gate passed ('+channel+').');}else if(process.argv.includes('--dead-ui-only')){await deadStockUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Dead-stock UI focused gate passed ('+channel+').');}else if(process.argv.includes('--agents-ui-only')){await agentsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Agents UI focused gate passed ('+channel+').');}else if(process.argv.includes('--guidance-ui-only')){await guidanceUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Guidance UI focused gate passed ('+channel+').');}else if(process.argv.includes('--converters-ui-only')){await convertersUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Converters UI focused gate passed ('+channel+').');}else if(process.argv.includes('--reports-ui-only')){await reportsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Reports UI focused gate passed ('+channel+').');}else if(process.argv.includes('--sim-ui-only')){await simUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Simulator UI focused gate passed ('+channel+').');}else if(process.argv.includes('--vendors-ui-only')){await vendorsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Vendor UI focused gate passed ('+channel+').');}else if(process.argv.includes('--suppliers-ui-only')){await suppliersUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Supplier UI focused gate passed ('+channel+').');}else{
+ if(process.argv.includes('--offline-ui-only')){await offlineUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Offline UI focused gate passed ('+channel+').');}else if(process.argv.includes('--winloss-ui-only')){await winLossUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Win/loss UI focused gate passed ('+channel+').');}else if(process.argv.includes('--dead-ui-only')){await deadStockUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Dead-stock UI focused gate passed ('+channel+').');}else if(process.argv.includes('--agents-ui-only')){await agentsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Agents UI focused gate passed ('+channel+').');}else if(process.argv.includes('--guidance-ui-only')){await guidanceUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Guidance UI focused gate passed ('+channel+').');}else if(process.argv.includes('--converters-ui-only')){await convertersUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Converters UI focused gate passed ('+channel+').');}else if(process.argv.includes('--reports-ui-only')){await reportsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Reports UI focused gate passed ('+channel+').');}else if(process.argv.includes('--sim-ui-only')){await simUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Simulator UI focused gate passed ('+channel+').');}else if(process.argv.includes('--vendors-ui-only')){await vendorsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Vendor UI focused gate passed ('+channel+').');}else if(process.argv.includes('--suppliers-ui-only')){await suppliersUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Supplier UI focused gate passed ('+channel+').');}else{
   if (auth) {
     assert.notEqual(process.env.LEGACY_BUSINESS_ENABLED,'true','Privacy gate must run with legacy business routes OFF');
     await signInLocal(context,page,base);
@@ -983,7 +1034,7 @@ try {
   }
   await monitorUi();
   await rebatesUi();
-  await suppliersUi(); await vendorsUi(); await simUi(); await reportsUi(); await convertersUi(); await guidanceUi(); await agentsUi(); await deadStockUi(); await winLossUi();
+  await suppliersUi(); await vendorsUi(); await simUi(); await reportsUi(); await convertersUi(); await guidanceUi(); await agentsUi(); await deadStockUi(); await winLossUi(); if (channel !== 'firefox') await offlineUi();
   await recoveryUi();
   if(auth){
     const device=await page.evaluate(()=>{const key=Object.keys(localStorage).find(k=>k.startsWith('rebatehq-device-v1:'));return localStorage.getItem(key);});assert.ok(device);

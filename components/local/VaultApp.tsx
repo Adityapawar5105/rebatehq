@@ -26,6 +26,7 @@ import { RolesView } from "./RolesView";
 import { RelayPanel } from './RelayPanel';
 import { AgentsInbox } from './AgentsInbox';
 import { AuditPackButton } from './Templates';
+import { OfflineCard, clearOfflineCopy, useOfflineWorker } from './OfflineMode';
 import { CommandPalette, OPEN_PALETTE_EVENT } from "./CommandPalette";
 import { GlossaryCard } from "./Glossary";
 import { tierName } from "./labels";
@@ -45,6 +46,7 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
   // Every grid totals its selected rows through the worker (DuckDB), never in the page.
   const gridTotals = useCallback((types: GridType[], values: (string | null)[][]) => { if (!client.current) return Promise.reject(new Error("locked")); return client.current.call("gridTotals", { types, values }); }, []);
   const [status, setStatus] = useState<VaultStatus | null>(null), [section, setSection] = useState<Section>("Home");
+  useOfflineWorker(); // 8C-2: offline copy of the app shell (production builds only)
   // Status and error text are kept as message references, so a language switch re-renders them.
   useEffect(() => { setWorkspaceCurrency(status?.state === "unlocked" ? status.currency : "USD"); }, [status?.state, status?.currency]);
   const [error, setError] = useState(""), [message, setMessage] = useState(msg("shell.opening")), [busy, setBusy] = useState(false);
@@ -109,7 +111,7 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
         <button type="button" className={sh.search} aria-label={t("shell.paletteButton")} aria-keyshortcuts="Control+K Meta+K" onClick={() => window.dispatchEvent(new CustomEvent(OPEN_PALETTE_EVENT))}><Icon name="search" size={16}/><span className={sh.searchText}>{t("shell.searchLabel")}</span><kbd className={sh.kbd}>{t("shell.paletteShortcut")}</kbd></button>
         <div className={sh.tools}>
           <Preferences pseudo={lab} className={sh.prefs}/>
-          {!lab && <form className={sh.signout} method="post" action="/api/auth/logout"><Button type="submit" variant="ghost" size="sm" icon="logout">{t("shell.signOut")}</Button></form>}
+          {!lab && <form className={sh.signout} method="post" action="/api/auth/logout" onSubmit={e => { const form = e.currentTarget; e.preventDefault(); void clearOfflineCopy().finally(() => form.submit()); }}><Button type="submit" variant="ghost" size="sm" icon="logout">{t("shell.signOut")}</Button></form>}
         </div>
       </header>
       {lab && <p className={sh.labNotice} role="note"><Icon name="flask" size={15}/><span>{t("shell.labNotice")}</span></p>}
@@ -185,13 +187,14 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
           {shown === "Reports" && caps.includes("audit") && <Card headingId="audit-heading" title={t("shell.audit.heading")} description={t("shell.audit.body", { entries: Number(status.auditEntries), version: status.schemaVersion })}><Button variant="primary" icon="shield" disabled={busy} onClick={() => void operation(async () => { const result = await client.current!.call("verify", {}); if (!result.valid) throw new Error(msg("shell.audit.failed")); setMessage(msg("shell.audit.verified", { entries: Number(result.entries) })); })}>{t("shell.audit.button")}</Button> <AuditPackButton client={client.current!} busy={busy} operation={operation} setMessage={setMessage}/><p className={styles.muted}>{t("shell.audit.note")}</p><p className={styles.muted}>{t("auditpack.help")}</p></Card>}
           {shown === "Settings" && <JumpNav label={t("shell.onThisPage")} jumpLabel={name => t("shell.jumpTo", { name })} items={[
             { id: "prefs-heading", label: t("shell.prefs.heading"), icon: "palette" }, ...(caps.includes("backup") ? [{ id: "backup-heading", label: t("backup.encryptedBackupAndRestore"), icon: "download" as const }] : []),
-            { id: "roles-heading", label: t("roles.teamAndRoles"), icon: "users" }, { id: "storage-heading", label: t("shell.storage.heading"), icon: "database" },
+            { id: "roles-heading", label: t("roles.teamAndRoles"), icon: "users" }, { id: "storage-heading", label: t("shell.storage.heading"), icon: "database" }, { id: "offline-heading", label: t("offline.heading"), icon: "download" },
           ]}/>}
           {shown === "Settings" && <Card headingId="prefs-heading" title={t("shell.prefs.heading")} description={t("shell.prefs.body")}><Preferences pseudo={lab} className={styles.row}/><p>{t("fx.moneyNote", {code:status.currency})}</p></Card>}
           {shown === "Settings" && client.current && <CurrencySettings client={client.current} status={status} busy={busy} operation={operation} onStatus={setStatus}/>}
           {shown === "Settings" && client.current && caps.includes("backup") && <BackupView client={client.current} busy={busy} operation={operation} unlocked onStatus={setStatus}/>}
           {shown === "Settings" && client.current && <RolesView client={client.current} busy={busy} operation={operation} refresh={async () => setStatus(await client.current!.call("status", {}))}/>}
           {shown === "Settings" && <section className={styles.card} aria-labelledby="storage-heading"><h2 id="storage-heading">{t("shell.storage.heading")}</h2>{status.licence?.writable&&status.tier!==status.licence.tier&&caps.includes('roles')&&<button disabled={busy} onClick={()=>void operation(async()=>{setStatus(await client.current!.call('capacityUpgrade',{}));setMessage(msg("shell.storage.upgraded"));})}>{t("shell.storage.upgrade")}</button>}<p>{t("shell.storage.summary", { saved: status.lastSaved ? fmt.dateTime(status.lastSaved) : t("common.none") })}</p><p>{t("shell.storage.persistence", { persistence: storage ? t(storage.persistent ? "shell.storage.granted" : "shell.storage.notGranted") : t("common.unknown"), usage: storage?.usage ? fmt.int(storage.usage) : t("common.unknown"), quota: storage?.quota ? fmt.int(storage.quota) : t("common.unknown"), bytes: storage?.namedOpfsBytes ? fmt.int(storage.namedOpfsBytes) : t("common.unknown") })}</p><button className={styles.primary} onClick={() => void operation(async () => { await navigator.storage.persist(); setStorage(await client.current!.call("storage", {})); setMessage(msg("shell.storage.refreshed")); })}>{t("shell.storage.request")}</button><p className={styles.muted}>{t("shell.storage.note")}</p>{!lab && <p><a href="/account/users">{t("shell.storage.team")}</a>{t("common.listSeparator")}<a href="/account/workspace">{t("shell.storage.workspace")}</a></p>}</section>}
+          {shown === "Settings" && <OfflineCard licenceUntil={status.licence?.offline && status.licence.until ? new Date(Number(status.licence.until)).toISOString() : null}/>}
         </>}
       </main>
     </div>

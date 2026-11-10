@@ -3,6 +3,15 @@
 import type { Catalog } from "../core";
 
 export const fr: Catalog = {
+  "offline.heading": "Utilisation hors ligne",
+  "offline.body": "Ce navigateur garde une copie de l'application elle-même pour que RebateHQ s'ouvre sans connexion. Vos données sont déjà sur cet appareil, dans le coffre chiffré ; vous le déverrouillez avec votre phrase secrète comme d'habitude.",
+  "offline.ready": "Prêt : RebateHQ s'ouvre hors ligne dans ce navigateur ({files} fichiers stockés).",
+  "offline.installing": "Préparation : rouvrez cette page en ligne pour terminer ({files} fichiers stockés pour l'instant).",
+  "offline.off": "Désactivé : aucune copie hors ligne dans ce navigateur. Elle se crée automatiquement la prochaine fois que vous ouvrez RebateHQ en ligne.",
+  "offline.unsupported": "Ce navigateur ne peut pas garder de copie hors ligne (service workers désactivés ou indisponibles). RebateHQ fonctionne toujours en ligne.",
+  "offline.grace": "Hors ligne : la licence de cet appareil reste valide jusqu'au {date}. Connectez-vous avant pour continuer à modifier.",
+  "offline.noData": "La copie hors ligne ne contient que la page, le code de l'application et le moteur de calcul. Elle ne contient jamais de prix, de coûts, de factures ni de notes, et est supprimée à la déconnexion.",
+  "offline.remove": "Supprimer la copie hors ligne",
   "winloss.invalid": "Choisissez un résultat et un motif ; le concurrent accepte 100 caractères et la note 1 000.",
   "winloss.draft": "Enregistrez le résultat une fois le devis envoyé : soumettez-le d'abord.",
   "winloss.tab": "Gagnés/perdus",
