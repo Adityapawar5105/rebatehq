@@ -1,7 +1,7 @@
-# RebateHQ Blueprint v2.5
+# RebateHQ Blueprint v2.6
 
 *Local-first pricing and margin software for wholesale distributors.*
-*Last updated: 8 Nov 2026 (v2.1 adopted 2 Nov 2026; v2.2, v2.3, v2.4 and v2.5 changes listed in section 22)*
+*Last updated: 10 Nov 2026 (v2.1 adopted 2 Nov 2026; v2.2–v2.6 changes listed in section 22)*
 
 ---
 
@@ -457,7 +457,7 @@ Success metric: **time to first leak found under 2 minutes.**
 - Replace the hard-coded refund claim with a pilot offer: free Margin Leak Audit, then a 60-day money-back guarantee tied to leaks actually found
 - **Limit enforcement:** user and location caps are enforced through licences in the control plane; SKU and row caps through import checks. Upgrade prompts appear when a limit is hit.
 - **Extra seats / locations:** priced as optional add-ons, to be set after pilot feedback
-- Validate $299 / $599 / $999 in the first 10 conversations
+- Validate $299 / $599 / $999 **and the user-count limits per tier** in the first 10 conversations (see section 22 item 28, gap 8)
 
 ### Why these limits
 - **Starter capped at 1 location / 1 ERP profile:** keeps it a true single-site product and stops multi-warehouse firms from running everything on the cheapest plan.
@@ -675,3 +675,49 @@ Corrections after reviewing the repository and build history against v2.1. Produ
     - freeform row notes on customers and products, with the vault schema bump the item requires.
 
     No feature, tier or price changes.
+
+28. **10 Nov 2026 — v2.6: B2B buyer gap registry and fix plan.**
+
+    A buyer-perspective review after Phase 2 completion identified eight gaps. Each is classified below with its resolution path.
+
+    **Gap 1 — Background monitoring (alerts only fire when the app is open).**
+    Section 13 already carries this risk; the 7F-1 UI shows "last checked" and the caveat. The full fix is **8B** (background Margin Drain agents with a persistent check schedule). Until 8B ships, every surface that shows health alerts, the weekly digest trigger, or cash-leak warnings must display the "checks only run while the app is open" note. No new code before 8A.
+
+    **Gap 2 — Collaboration relay off by default.**
+    The relay (7A, `RELAY_ENABLED`) is correct to default-off for single-user Starter accounts, but Professional and Scale buyers paying for multi-user seats expect collaboration to be active on first login. **Pre-8A fix:** add a first-login onboarding card for Professional and Scale accounts that prompts the user to enable the relay and generate their device key, with a one-sentence explanation of the ciphertext-only model. No schema change; relay code is already built.
+
+    **Gap 3 — "Data never leaves your device" claim is locked.**
+    Decision 11 and section 13 already prohibit this claim until the CI privacy gate passes. The gate unlocks with **8C** (offline PWA + audit pack). Until 8C ships, marketing must not use this phrase; the architecture story ("processed on your machine, never stored by us") is allowed.
+
+    **Gap 4 — PDF import silently fails on scanned files.**
+    The 7F-2 PDF converter handles text-layer PDFs only. A scanned (image) PDF produces an empty-row result with no explanation, which breaks a demo. **Pre-8A fix:** detect when pdf.js extracts zero text from a page and show a clear inline error: "This PDF contains scanned images — only text-layer PDFs can be parsed. Try the fixed-width converter for a print-layout report, or export from your ERP as a CSV." No schema change.
+
+    **Gap 5 — Safari desktop not advertised.**
+    Decision 5 and section 13 already correctly gate this. The **8D** verification spike confirms Safari OPFS and DuckDB-Wasm threading before any marketing claim. No change to blueprint; documented here for completeness.
+
+    **Gap 6 — Mobile not yet built.**
+    Decision 15 and chunk 9A already cover this. Documented here for completeness. No change.
+
+    **Gap 7 — Manual re-import only; no live ERP sync.**
+    Automatic scheduled or background ERP ingestion (SFTP poll, email attachment, Sheets connector) was dropped from Phase 1 (section 2 "narrowed on purpose") and CRM connectors are deferred (decision 6). A background folder re-import (folder remembered across sessions, re-import prompted on open) exists from 7F-2. **Decision: defer full scheduled sync until a pilot explicitly requests it.** Add to the deferred list: "Scheduled / background ERP file sync — wait for a pilot to request it before scoping." No code before Phase 3; if a pilot requests it, it fits into 8B or becomes a Phase 4 item.
+
+    **Gap 8 — Starter tier single-user limit may force a premature upgrade.**
+    Starter's 1-user cap is correct for a solo pricing manager, but even 50-person firms often have two people involved in pricing. **Decision: validate in the first 10 paid-pilot conversations.** If buyers consistently hit the wall, adjust Starter to 2 users and Professional to 7 (keeping the 5-to-15 step intact). No code change now; a tier-table update here is the only change needed if pilots confirm the problem. The "validate $299 / $599 / $999 in the first 10 conversations" note in section 14 is extended to cover the user count as well.
+
+    **Gap 9 — Performance and capacity numbers are unverified targets.**
+    AGENTS.md and section 2 already state this. All benchmark numbers (import speed, query latency, row-count limits) are from a single local machine. **Rule reinforced:** any public-facing number (marketing page, whitepaper) must be labelled "benchmarked on [spec]" and must not imply a guaranteed SLA until measurements are reproduced in CI on a spec-matched runner. No code change; a documentation and marketing discipline rule.
+
+    **Summary: what ships before 8A.**
+    Two pre-8A fixes are added to the start of chunk 8A's scope (they are small enough to open the 8A PR):
+    - Gap 2: relay onboarding prompt for Professional/Scale first login.
+    - Gap 4: PDF scanned-file error message.
+
+    **Summary: what ships during Phase 3.**
+    - Gap 1 (background monitoring) → 8B.
+    - Gap 3 (privacy gate / "data never leaves" claim) → 8C.
+    - Gap 5 (Safari desktop) → 8D.
+
+    **Summary: validated with pilots, not code.**
+    - Gap 7 (manual re-import) → deferred until a pilot requests it.
+    - Gap 8 (Starter tier limit) → validate in first 10 pilot conversations.
+    - Gap 9 (performance targets) → labelling discipline, no code.
