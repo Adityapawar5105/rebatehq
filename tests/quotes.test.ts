@@ -154,7 +154,7 @@ test("7B Quote Desk and Price Check need Professional", async () => {
 // Decision 16 (blueprint section 22, item 21). Every command a Sales Rep can reach is listed here and
 // either scanned (its real payload is checked for cost and margin keys and for the cost value) or
 // reviewed (it cannot carry cost). Adding a rep-reachable command fails this test until it is classified.
-const SCANNED = ["quoteGuidance","quoteCrossSell","scorecard","scorecardOptIn","rebateProgress","status", "home", "checklist", "search", "roleList", "pricingState", "priceCheck", "quoteCreate", "quoteLines", "quoteSubmit", "quoteGet", "quoteList"] as const;
+const SCANNED = ["quoteOutcome","winLoss","quoteGuidance","quoteCrossSell","scorecard","scorecardOptIn","rebateProgress","status", "home", "checklist", "search", "roleList", "pricingState", "priceCheck", "quoteCreate", "quoteLines", "quoteSubmit", "quoteGet", "quoteList"] as const;
 const REVIEWED: Record<string, string> = {
   relayLocal: "v2.6 gap 2: a yes/no for this device's local relay identity, read from the vault; no cost, no network",
   gridTotals: "7V-3a: totals of numbers the caller already holds; returns only sums, counts, minimum and maximum of them",
@@ -184,6 +184,10 @@ test("decision 16: no Sales Rep payload contains cost or margin", async (context
     payloads.quoteLines = await call(s, "quoteLines", { id: created.id, lines: [{ productId: "P1", quantity: "10" }, { productId: "P2", quantity: "1", unitCents: "7000" }] });
     payloads.quoteSubmit = await call(s, "quoteSubmit", { id: created.id, reason: "Competitor" });
     payloads.quoteGet = await call(s, "quoteGet", { id: created.id });
+    // 8C-1: the rep records an outcome on their own quote and reads their win/loss report (stored line cost behind it).
+    payloads.quoteOutcome = await call(s, "quoteOutcome", { id: created.id, input: { outcome: "lost", reason: "competitor", competitor: "Other", note: "Lost on price" } });
+    payloads.winLoss = await call(s, "winLoss", { by: "rep" });
+    assert.equal((payloads.winLoss as { total: { lost: string } }).total.lost, "1", "the win/loss scan must cover a real outcome");
     payloads.quoteList = await call(s, "quoteList", {});
     const rebate = await import('../lib/rebate/store');
     c.query("INSERT INTO source_files VALUES('rebate-test','synthetic.csv','sales_history',0,'2026-01-01'); INSERT INTO sales_lines(source_id,line_id,product_id,customer_id,sale_date,quantity,list_cents,discount_cents,freight_cents,rebate_cents,cost_cents,source_row) VALUES('rebate-test',1,'P1','C1','2026-03-31',1,2950000,0,0,35000,4321,2)");

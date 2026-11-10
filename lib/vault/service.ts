@@ -16,6 +16,9 @@ import { quoteGuidance } from '../quotes/guidance';
 import * as agents from '../agents/agents';
 import * as costindex from '../agents/costindex';
 import * as deadstock from '../inventory/deadstock';
+import * as winloss from '../quotes/winloss';
+import { auditPack } from '../reports/auditpack';
+import * as templates from '../reports/templates';
 import { crossSell } from '../quotes/crosssell';
 import { parquetReader } from './parquet-engine';
 import { kindOf } from '../studio/formats';
@@ -517,6 +520,31 @@ export class VaultService {
     let run = ''; const details = { actor: this.identity.userId, run_id: '', items: String(picks.length) };
     await this.write('dead.draft_created', details, async w => { run = await ops.clearanceDraft(w, picks, this.identity.userId); details.run_id = run; });
     return this.rulePreview(run);
+  }
+  // 8C-1: the win/loss log. The quote's author, or a role that may approve or see cost, records the outcome; reports
+  // follow the quote list rule (a Sales Rep sees only their own quotes) and carry margin only for "cost".
+  async quoteOutcome(id: string, input: unknown) {
+    this.quoteTier(); await this.ownQuote(id); const sql = await winloss.outcomeSql(this.requireEngine(), id, input, this.identity.userId, new Date().toISOString());
+    const o = input as winloss.OutcomeInput; await this.write('quote.outcome', { quote_id: id, outcome: String(o.outcome), reason: String(o.reason) }, e => e.conn.query(sql).then(() => undefined)); return this.ownQuote(id);
+  }
+  async winLoss(input: winloss.ReportInput = {}) { this.quoteTier(); const a = await this.access(); const cost = a.caps.includes('cost'); return winloss.report(this.requireEngine(), input, { userId: this.identity.userId, mineOnly: !a.caps.includes('quoteApprove') && !cost, withCost: cost }); }
+  // 8C-1: the audit and compliance pack (every tier) and two local document templates (Professional/Scale).
+  private async exported(action: string, details: Record<string, string>) { if (this.licence.writable) await this.write(action, details, async () => undefined); }
+  async auditPack(locale: unknown) {
+    if (!isLocale(locale)) throw new VaultError('AUDIT', msg('cadence.invalid'));
+    const p = await auditPack(this.requireEngine(), locale); await this.exported('audit.pack_exported', { entries: p.verification.entries, valid: String(p.verification.chain_valid) });
+    return { name: p.name, blob: new Blob([p.bytes as BlobPart], { type: 'application/zip' }), verification: p.verification };
+  }
+  async templateVendors() { this.opsTier(); return (await this.requireEngine().conn.query("SELECT DISTINCT vendor FROM vendor_costs ORDER BY vendor LIMIT 1000")).toArray().map(r => String(r.vendor)); }
+  async negotiationSheet(vendor: unknown, locale: unknown) {
+    this.opsTier(); if (!isLocale(locale)) throw new VaultError('TEMPLATE', msg('templates.invalid'));
+    const e = this.requireEngine(), f = await templates.negotiationSheet(e, vendor, locale, await workspaceCurrency(e)); await this.exported('template.negotiation_sheet', { vendor: String(vendor), items: String(f.facts.items) });
+    return { name: f.name, blob: new Blob([f.bytes as BlobPart], { type: 'application/pdf' }) };
+  }
+  async rebateAgreement(id: unknown, locale: unknown) {
+    this.rebateTier(); if (!isLocale(locale)) throw new VaultError('TEMPLATE', msg('templates.invalid'));
+    const e = this.requireEngine(), f = await templates.rebateAgreement(e, id, locale, await workspaceCurrency(e)); await this.exported('template.rebate_agreement', { program_id: String(id) });
+    return { name: f.name, blob: new Blob([f.bytes as BlobPart], { type: 'application/pdf' }) };
   }
   // 8A: explainable deal guidance and cross-sell for a quote the caller may open. Both are rep-safe (decision 16).
   async quoteGuidance(id: string) { this.quoteTier(); await this.ownQuote(id); return quoteGuidance(this.requireEngine(), id); }

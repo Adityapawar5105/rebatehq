@@ -6,6 +6,7 @@ import path from "node:path";
 import os from "node:os";
 import { Script } from "node:vm";
 import { build } from "esbuild";
+import JSZip from "jszip";
 import { chromium, firefox } from "@playwright/test";
 import { signInLocal } from "./vault-test-auth.mjs";
 const auth = process.argv.includes("--auth"), full = process.argv.includes("--full"), makeFixture = process.argv.includes("--make-fixture");
@@ -401,6 +402,48 @@ async function deadStockUi(){
  results.checks.deadStockUi={stockFromFile:true,capital60000:true,carrying650:true,clearance9610:true,substitute:true,draftApproved:true,phone375:true,repHidden:true,privacyMarkers:true};
  }catch(error){console.error('Dead-stock UI diagnostics:',JSON.stringify(await diagnose()));throw error;}finally{await context.close();context=savedContext;page=savedPage;dataPlaneActive=active;}
 }
+// 8C-1: win/loss log, audit pack and negotiation sheet (fresh vault, under the request/console marker sensors). A quote
+// for one unit at the $120.00 list price, item cost $70.00, is submitted and recorded as lost to a competitor: lost value
+// $120.00 and lost margin $50.00 for the owner; the Sales Rep preview sees the value and no margin. The audit pack's
+// verification.json says the chain is valid; the negotiation sheet names the cheaper vendor.
+async function winLossUi(){
+ const savedContext=context,savedPage=page,active=dataPlaneActive;
+ context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-winloss-')),browserOptions);await configureContext();page=await openPage();
+ try{
+ dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic win/loss owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
+ const sku=marker+'-WL',customer=marker+'-WLC',day=new Date(Date.now()-20*86400000).toISOString().slice(0,10);
+ await page.locator('nav a[href="#data-hub"]').click();await importFiles([
+  {name:'winloss-items.csv',mimeType:'text/csv',buffer:Buffer.from('product_id,description,category,uom,current_cost,list_price\n'+sku+',Synthetic fitting,Fittings,EA,70.00,120.00\n')},
+  {name:'winloss-customers.csv',mimeType:'text/csv',buffer:Buffer.from('customer_id,name,tier\n'+customer+',Synthetic,T1\n')},
+  {name:'winloss-sales.csv',mimeType:'text/csv',buffer:Buffer.from('line_id,product_id,customer_id,sale_date,quantity,list_amount,discount_amount,freight_amount,rebate_amount,cost_amount,invoice_id\n1,'+sku+','+customer+','+day+',1,120.00,0,0,0,70.00,WL1\n')},
+  {name:'vendor-costs.csv',mimeType:'text/csv',buffer:Buffer.from('vendor,product_id,cost,effective_date\nVendor A,'+sku+',70.00,'+day+'\nVendor B,'+sku+',65.00,'+day+'\n')}],'1');
+ await page.locator('nav a[href="#quotes"]').click();await page.getByRole('button',{name:'Quote',exact:true}).click();await page.getByTestId('quote-customer').fill(customer);await page.getByTestId('quote-customer').press('Enter');
+ await page.getByTestId('add-sku').fill(sku);await page.getByTestId('add-sku').press('Enter');await page.getByTestId('quote-total').filter({hasText:'$120.00'}).waitFor();
+ await page.getByRole('button',{name:'Submit quote',exact:true}).click();await page.locator('[data-testid="quote"][data-status="submitted"]').waitFor({timeout:60000});
+ const panel=page.getByTestId('quote-outcome');await panel.waitFor();await page.getByTestId('outcome-select').selectOption('lost');await page.getByTestId('outcome-reason').selectOption('competitor');await page.getByTestId('outcome-competitor').fill('Rival '+marker);await page.getByTestId('outcome-note').fill('Lost on price '+marker);
+ await page.getByTestId('outcome-save').click();await page.locator('[data-testid="quote-outcome"][data-outcome="lost"]').waitFor({timeout:60000});
+ await page.getByRole('button',{name:'Win/loss',exact:true}).click();await page.getByTestId('winloss-report').waitFor();
+ await page.locator('[data-testid="winloss-lost-value"][data-value="12000"]').waitFor({timeout:60000});assert.equal(await page.getByTestId('winloss-lost-margin').getAttribute('data-value'),'5000');assert.equal(await page.getByTestId('winloss-lost').innerText(),'1');
+ await page.getByTestId('winloss-grid').locator('tbody tr[data-key="competitor"]').waitFor();
+ await page.setViewportSize({width:375,height:812});await page.waitForTimeout(300);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Win/loss overflows a phone');await page.screenshot({path:'test-results/winloss-'+channel+'.png',fullPage:true});await page.setViewportSize({width:1280,height:800});
+ // The audit pack: a ZIP whose verification.json says the chain is valid, with a PDF cover page.
+ await page.locator('nav a[href="#reports"]').click();const packEvent=page.waitForEvent('download');await page.getByTestId('audit-pack').click();const pack=await packEvent;
+ assert.ok(pack.suggestedFilename().endsWith('.zip'));const zip=await JSZip.loadAsync(await readFile(await pack.path()));const verification=JSON.parse(await zip.file('verification.json').async('string'));
+ assert.ok(verification.chain_valid===true&&Number(verification.entries)>0&&verification.files.length===8,'The audit pack does not verify');assert.ok((await zip.file('cover.pdf').async('string')).startsWith('%PDF-1.4'));
+ assert.ok(!(await Promise.all(Object.values(zip.files).map(x=>x.async('string')))).join('').includes('Lost on price '+marker),'The audit pack carries a win/loss note');
+ // The negotiation sheet for Vendor A names Vendor B's lower cost.
+ await page.locator('nav a[href="#vendors"]').click();await page.getByTestId('negotiation-sheet').waitFor({timeout:60000});await page.getByTestId('negotiation-vendor').selectOption('Vendor A');
+ const sheetEvent=page.waitForEvent('download');await page.getByTestId('negotiation-download').click();const sheet=(await readFile(await(await sheetEvent).path())).toString('latin1').replace(/\\([0-7]{3})/g,(_,o)=>String.fromCharCode(parseInt(o,8)));
+ assert.ok(sheet.startsWith('%PDF-1.4')&&sheet.includes('Negotiation sheet: Vendor A')&&sheet.includes('$65.00'),'The negotiation sheet lost its content');
+ // A Sales Rep: their own outcome and value, never margin; no audit pack.
+ await page.locator('nav a[href="#settings"]').click();await page.getByLabel('Preview as').selectOption('sales_rep');await page.getByTestId('preview-banner').waitFor();
+ await page.locator('nav a[href="#quotes"]').click();await page.getByRole('button',{name:'Win/loss',exact:true}).click();await page.locator('[data-testid="winloss-lost-value"][data-value="12000"]').waitFor({timeout:60000});
+ assert.equal(await page.getByTestId('winloss-lost-margin').count(),0,'A Sales Rep sees lost margin');
+ await page.locator('nav a[href="#reports"]').click();await page.waitForTimeout(500);assert.equal(await page.getByTestId('audit-pack').count(),0,'A Sales Rep can download the audit pack');
+ await page.getByTestId('preview-banner').getByRole('button',{name:'Return to my own view'}).click();await page.getByTestId('preview-banner').waitFor({state:'detached'});
+ results.checks.winLossUi={outcomeRecorded:true,lostValue12000:true,lostMargin5000:true,auditPackVerified:true,noNotesInPack:true,negotiationSheet:true,repNoMargin:true,repNoPack:true,phone375:true,privacyMarkers:true};
+ }catch(error){console.error('Win/loss UI diagnostics:',JSON.stringify(await diagnose()));throw error;}finally{await context.close();context=savedContext;page=savedPage;dataPlaneActive=active;}
+}
 async function reportsUi(){
  const savedContext=context,savedPage=page,active=dataPlaneActive;
  context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-reports-')),browserOptions);await configureContext();page=await openPage();
@@ -492,7 +535,7 @@ async function monitorUi(){
 await build({ entryPoints: ["tests/helpers/studio-fixtures.ts"], outfile: "test-results/studio-fixtures.mjs", bundle: true, platform: "node", format: "esm" });
 const fixtures = await import(new URL("../test-results/studio-fixtures.mjs", import.meta.url).href);
 try {
- if(process.argv.includes('--dead-ui-only')){await deadStockUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Dead-stock UI focused gate passed ('+channel+').');}else if(process.argv.includes('--agents-ui-only')){await agentsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Agents UI focused gate passed ('+channel+').');}else if(process.argv.includes('--guidance-ui-only')){await guidanceUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Guidance UI focused gate passed ('+channel+').');}else if(process.argv.includes('--converters-ui-only')){await convertersUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Converters UI focused gate passed ('+channel+').');}else if(process.argv.includes('--reports-ui-only')){await reportsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Reports UI focused gate passed ('+channel+').');}else if(process.argv.includes('--sim-ui-only')){await simUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Simulator UI focused gate passed ('+channel+').');}else if(process.argv.includes('--vendors-ui-only')){await vendorsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Vendor UI focused gate passed ('+channel+').');}else if(process.argv.includes('--suppliers-ui-only')){await suppliersUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Supplier UI focused gate passed ('+channel+').');}else{
+ if(process.argv.includes('--winloss-ui-only')){await winLossUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Win/loss UI focused gate passed ('+channel+').');}else if(process.argv.includes('--dead-ui-only')){await deadStockUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Dead-stock UI focused gate passed ('+channel+').');}else if(process.argv.includes('--agents-ui-only')){await agentsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Agents UI focused gate passed ('+channel+').');}else if(process.argv.includes('--guidance-ui-only')){await guidanceUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Guidance UI focused gate passed ('+channel+').');}else if(process.argv.includes('--converters-ui-only')){await convertersUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Converters UI focused gate passed ('+channel+').');}else if(process.argv.includes('--reports-ui-only')){await reportsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Reports UI focused gate passed ('+channel+').');}else if(process.argv.includes('--sim-ui-only')){await simUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Simulator UI focused gate passed ('+channel+').');}else if(process.argv.includes('--vendors-ui-only')){await vendorsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Vendor UI focused gate passed ('+channel+').');}else if(process.argv.includes('--suppliers-ui-only')){await suppliersUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Supplier UI focused gate passed ('+channel+').');}else{
   if (auth) {
     assert.notEqual(process.env.LEGACY_BUSINESS_ENABLED,'true','Privacy gate must run with legacy business routes OFF');
     await signInLocal(context,page,base);
@@ -940,7 +983,7 @@ try {
   }
   await monitorUi();
   await rebatesUi();
-  await suppliersUi(); await vendorsUi(); await simUi(); await reportsUi(); await convertersUi(); await guidanceUi(); await agentsUi(); await deadStockUi();
+  await suppliersUi(); await vendorsUi(); await simUi(); await reportsUi(); await convertersUi(); await guidanceUi(); await agentsUi(); await deadStockUi(); await winLossUi();
   await recoveryUi();
   if(auth){
     const device=await page.evaluate(()=>{const key=Object.keys(localStorage).find(k=>k.startsWith('rebatehq-device-v1:'));return localStorage.getItem(key);});assert.ok(device);

@@ -25,6 +25,7 @@ import { VendorsView } from "./VendorsView";
 import { RolesView } from "./RolesView";
 import { RelayPanel } from './RelayPanel';
 import { AgentsInbox } from './AgentsInbox';
+import { AuditPackButton } from './Templates';
 import { CommandPalette, OPEN_PALETTE_EVENT } from "./CommandPalette";
 import { GlossaryCard } from "./Glossary";
 import { tierName } from "./labels";
@@ -181,7 +182,7 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
           {shown === "Rebates & Contracts" && client.current && <RebatesView client={client.current} caps={caps} tier={status.licence?.tier} busy={busy} version={status.generation} operation={operation} refresh={async()=>setStatus(await client.current!.call("status",{}))}/>}
           {shown === "Reports" && client.current && <ReportsView client={client.current} caps={caps} tier={status.licence?.tier} busy={busy} version={`${status.lines}|${status.generation}`} operation={operation} refresh={async()=>setStatus(await client.current!.call("status",{}))}/>}
             {shown === "Reports" && caps.includes("cost") && client.current && <Card headingId="report-card-heading" title={t("shell.report.heading")} description={t("shell.report.body")}><LeakReportButton client={client.current} busy={busy || status.lines === "0"} operation={operation} setMessage={setMessage} onStatus={setStatus}/></Card>}
-          {shown === "Reports" && caps.includes("audit") && <Card headingId="audit-heading" title={t("shell.audit.heading")} description={t("shell.audit.body", { entries: Number(status.auditEntries), version: status.schemaVersion })}><Button variant="primary" icon="shield" disabled={busy} onClick={() => void operation(async () => { const result = await client.current!.call("verify", {}); if (!result.valid) throw new Error(msg("shell.audit.failed")); setMessage(msg("shell.audit.verified", { entries: Number(result.entries) })); })}>{t("shell.audit.button")}</Button><p className={styles.muted}>{t("shell.audit.note")}</p></Card>}
+          {shown === "Reports" && caps.includes("audit") && <Card headingId="audit-heading" title={t("shell.audit.heading")} description={t("shell.audit.body", { entries: Number(status.auditEntries), version: status.schemaVersion })}><Button variant="primary" icon="shield" disabled={busy} onClick={() => void operation(async () => { const result = await client.current!.call("verify", {}); if (!result.valid) throw new Error(msg("shell.audit.failed")); setMessage(msg("shell.audit.verified", { entries: Number(result.entries) })); })}>{t("shell.audit.button")}</Button> <AuditPackButton client={client.current!} busy={busy} operation={operation} setMessage={setMessage}/><p className={styles.muted}>{t("shell.audit.note")}</p><p className={styles.muted}>{t("auditpack.help")}</p></Card>}
           {shown === "Settings" && <JumpNav label={t("shell.onThisPage")} jumpLabel={name => t("shell.jumpTo", { name })} items={[
             { id: "prefs-heading", label: t("shell.prefs.heading"), icon: "palette" }, ...(caps.includes("backup") ? [{ id: "backup-heading", label: t("backup.encryptedBackupAndRestore"), icon: "download" as const }] : []),
             { id: "roles-heading", label: t("roles.teamAndRoles"), icon: "users" }, { id: "storage-heading", label: t("shell.storage.heading"), icon: "database" },

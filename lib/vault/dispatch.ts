@@ -166,6 +166,12 @@ export async function dispatch(service: VaultService, request: Request, hooks: H
     case "quoteSubmit": return service.quoteSubmit(request.data.id, request.data.reason);
     case "quoteDecide": return service.quoteDecide(request.data.id, request.data.decision, request.data.note);
     case "quoteGet": return service.quoteGet(request.data.id);
+    case "quoteOutcome": return service.quoteOutcome(request.data.id, request.data.input);
+    case "winLoss": return service.winLoss(request.data);
+    case "auditPack": return service.auditPack(request.data.locale);
+    case "templateVendors": return service.templateVendors();
+    case "negotiationSheet": return service.negotiationSheet(request.data.vendor, request.data.locale);
+    case "rebateAgreement": return service.rebateAgreement(request.data.id, request.data.locale);
     case "quoteList": return service.quoteList(!!request.data.pendingOnly);
     case "quoteShare": return service.quoteShare(request.data.id, request.data.preset, hooks.signal());
     case "quoteRelaySync": return service.quoteRelaySync(request.data.id, hooks.signal());

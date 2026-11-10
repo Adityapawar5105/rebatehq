@@ -11,6 +11,7 @@ import { rhaSql } from "../margin/sql";
 import { VaultError } from "../vault/protocol";
 import { msg } from "../i18n/core";
 import { creditSignal, type CreditSignal } from "./credit";
+import { outcomeOf, type OutcomeView } from "./winloss";
 
 export type Guard = "green" | "yellow" | "red" | "unset";
 export type PriceSource = "customer" | "tier" | "category" | "list" | "none";
@@ -30,6 +31,8 @@ export type QuoteView = {
   lines: QuoteLineView[]; totalCents: string; worst: Guard; credit: CreditSignal; warnings: string[];
   /** Price position: sum of quoted prices against the sum of targets, in basis points (no cost involved). */
   positionBp: string | null; needsApproval: boolean; mine: boolean;
+  /** 8C-1 win/loss outcome, when recorded. */
+  outcome: OutcomeView | null;
   costCents?: string | null; marginCents?: string | null; marginRate?: string | null; uncostedLines?: number;
 };
 export type QuoteSummary = { id: string; number: string; customerId: string; customerName: string; status: QuoteStatus; totalCents: string; worst: Guard; updatedAt: string; createdBy: string };
@@ -176,7 +179,7 @@ FROM quote_lines l LEFT JOIN products p USING(product_id) WHERE l.quote_id=${Q(i
     createdBy: String(q.created_by), createdAt: String(q.created_at), updatedAt: String(q.updated_at), exceptionReason: str(q.exception_reason), decidedBy: str(q.decided_by), decidedAt: str(q.decided_at), decisionNote: str(q.decision_note), relayObject: str(q.relay_object),
     lines, totalCents: sum.toString(), worst, credit: credit_, warnings,
     positionBp: targetSum > BigInt(0) ? (targeted * BigInt(10000) / targetSum).toString() : null,
-    needsApproval: lines.some(l => l.guard === "red"), mine: String(q.created_by) === userId,
+    needsApproval: lines.some(l => l.guard === "red"), mine: String(q.created_by) === userId, outcome: await outcomeOf(e, id),
   };
   if (withCost) { const m = costedPrice - cost; Object.assign(out, { costCents: uncosted === lines.length && lines.length ? null : cost.toString(), marginCents: costedPrice === BigInt(0) && uncosted ? null : m.toString(), marginRate: bp(rateBp(m, costedPrice)), uncostedLines: uncosted }); }
   return out;

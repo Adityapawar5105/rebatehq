@@ -11,10 +11,11 @@ import type { Results } from "@/lib/vault/protocol";
 import { fmt, msg, say, t, type MessageKey } from "@/lib/i18n";
 import styles from "./vault.module.css";
 import { DataGrid } from "@/components/ui/DataGrid";
+import { OutcomePanel, WinLossReport } from "./WinLoss";
 
 type Op = (f: () => Promise<void>) => Promise<void>;
-type Tab = "check" | "new" | "inbox" | "history";
-const TAB: Record<Tab, MessageKey> = { check: "quotes.tab.check", new: "quotes.tab.new", inbox: "quotes.tab.inbox", history: "quotes.tab.history" };
+type Tab = "check" | "new" | "inbox" | "history" | "winloss";
+const TAB: Record<Tab, MessageKey> = { check: "quotes.tab.check", new: "quotes.tab.new", inbox: "quotes.tab.inbox", history: "quotes.tab.history", winloss: "winloss.tab" };
 const GUARD: Record<Guard, MessageKey> = { green: "quotes.zone.green", yellow: "quotes.zone.yellow", red: "quotes.zone.red", unset: "quotes.zone.unset" };
 const SOURCE: Record<PriceSource, MessageKey> = { customer: "quotes.source.customer", tier: "quotes.source.tier", category: "quotes.source.category", list: "quotes.source.list", none: "quotes.source.none" };
 const STATUS: Record<QuoteStatus, MessageKey> = { draft: "quotes.status.draft", submitted: "quotes.status.submitted", pending: "quotes.status.pending", approved: "quotes.status.approved", rejected: "quotes.status.rejected" };
@@ -76,7 +77,7 @@ const BASIS: Record<Basis, MessageKey> = { history: "guidance.basis.history", si
 
 export function QuotesView({ client, userId, caps, tier, busy, operation }: { client: VaultClient; userId: string; caps: Cap[]; tier: string | undefined; busy: boolean; operation: Op }) {
   const canApprove = caps.includes("quoteApprove"), seesCost = caps.includes("cost"), canShare = caps.includes("collaborate");
-  const tabs: Tab[] = ["check", "new", ...(canApprove ? ["inbox" as const] : []), "history"];
+  const tabs: Tab[] = ["check", "new", ...(canApprove ? ["inbox" as const] : []), "history", "winloss"];
   const [tab, setTab] = useState<Tab>("check"), [note, setNote] = useState("");
   const [check, setCheck] = useState({ productId: "", customerId: "", quantity: "1" }), [point, setPoint] = useState<PricePoint | null>(null);
   const [customer, setCustomer] = useState(""), [quote, setQuote] = useState<QuoteView | null>(null), [lines, setLines] = useState<{ productId: string; quantity: string; price: string }[]>([]);
@@ -204,7 +205,9 @@ export function QuotesView({ client, userId, caps, tier, busy, operation }: { cl
           <button className={styles.primary} type="button" disabled={busy} onClick={() => void operation(async () => { show(await client.call("quoteDecide", { id: quote.id, decision: "approve", note: decisionNote.trim() || null })); setNote(msg("quotes.approvedNote")); })}>{t("quotes.approve")}</button>
           <button type="button" disabled={busy} onClick={() => void operation(async () => { show(await client.call("quoteDecide", { id: quote.id, decision: "reject", note: decisionNote.trim() || null })); setNote(msg("quotes.rejectedNote")); })}>{t("quotes.reject")}</button>
         </div></div>}
+      {quote.status !== "draft" && (quote.mine || canApprove || seesCost) && <OutcomePanel client={client} quote={quote} busy={busy} operation={operation} onSaved={v => { show(v); setNote(msg("winloss.saved")); }}/>}
     </section>}
+    {tab === "winloss" && <WinLossReport client={client} busy={busy} operation={operation}/>}
 
     {(tab === "inbox" || tab === "history") && <section className={styles.card} aria-labelledby="quote-list-heading"><h2 id="quote-list-heading">{t(tab === "inbox" ? "quotes.inbox.heading" : "quotes.history.heading")}</h2>
       {!list.length ? <p>{t(tab === "inbox" ? "quotes.inbox.empty" : "quotes.history.empty")}</p> : <DataGrid label={t(tab === "inbox" ? "quotes.inbox.heading" : "quotes.history.heading")} testId="quote-list" rows={list} rowKey={q => q.id} columns={[

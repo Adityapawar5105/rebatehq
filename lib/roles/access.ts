@@ -86,7 +86,7 @@ export const ACTION_CAP: Record<Action, Cap | null> = {
   priceLandedCheck:"pricing",
   serviceOrders:"cost",
   serviceFlag:"pricing",
-  marginBridge:"cost",priceOpsState:"pricing",priceExceptions:"cost",priceExpiry:"cost",pricePlan:"pricing",priceRollback:"pricing",priceLetter:"pricing",
+  marginBridge:"cost",priceOpsState:"pricing",priceExceptions:"cost",priceExpiry:"cost",pricePlan:"pricing",priceRollback:"pricing",priceLetter:"pricing",quoteOutcome:"quote",winLoss:"quote",auditPack:"audit",templateVendors:"cost",negotiationSheet:"cost",rebateAgreement:"rebateManage",
   relayView:"collaborate",relayRegister:"collaborate",relayJoin:"collaborate",relayRotate:"collaborate",relaySync:"collaborate",relayShare:"collaborate",relayRequest:"collaborate",relayDecide:"collaborate",relayComment:"collaborate",relayRetry:"collaborate",relayDiscard:"collaborate",
   capacityUpgrade: "roles", licenceSet: null, init: null, create: null, unlock: null, lock: null, touch: null, cancel: null, save: null, storage: null,
   status: null, search: "view", home: "view", checklist: "view", checklistMark: "roles", roleList: "view",

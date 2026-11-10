@@ -4,6 +4,15 @@
 import type { Catalog } from "../core";
 
 export const frCA: Partial<Catalog> = {
+  "winloss.draft": "Enregistrez le résultat une fois la soumission envoyée : soumettez-la d'abord.",
+  "winloss.tab": "Gagnées/perdues",
+  "winloss.notRecorded": "Aucun résultat pour l'instant. Indiquez si le client a accepté cette soumission, et pourquoi.",
+  "winloss.won": "Gagnées",
+  "winloss.lost": "Perdues",
+  "winloss.reportHeading": "Bilan gagnées/perdues",
+  "winloss.mineOnly": "Vos propres soumissions uniquement. Les valeurs sont les prix proposés multipliés par les quantités.",
+  "winloss.quotes": "Soumissions",
+  "winloss.method": "Taux de réussite = gagnées ÷ (gagnées + perdues) ; les soumissions sans décision sont comptées mais exclues du taux. La marge utilise les coûts enregistrés sur les lignes.",
   "cross.help": "D'après les factures des 12 derniers mois sur cet appareil : articles achetés ensemble au moins 3 fois, avec un lift de 1,2 ou plus. Les articles déjà dans cette soumission, ou achetés par ce client pendant cette période, sont exclus.",
   "cross.addFor": "Ajouter {sku} à la soumission",
   "app.description": "Tarification sécurisée, garde-fous pour les soumissions et suivi des ristournes pour les distributeurs.",

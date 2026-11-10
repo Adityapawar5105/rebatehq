@@ -10,6 +10,7 @@ import { Button, ButtonLink, Card, EmptyState, Field, Grid, Notice, SectionTabs,
 import { DataGrid } from "@/components/ui/DataGrid";
 import { CostIndexView } from "./CostIndexView";
 import { DeadStockView } from "./DeadStockView";
+import { NegotiationSheet } from "./Templates";
 import styles from "./vault.module.css";
 
 const STATUS: Record<string, MessageKey> = { unknown_sku: "vendor.status.unknown", conflict: "vendor.status.conflict", backdated: "vendor.status.backdated", first_cost: "vendor.status.first",
@@ -258,6 +259,7 @@ export function VendorsView({ client, tier, version, canImport, canSimulate, can
       ...(canSimulate ? [{ id: "sim", label: t("sim.tab"), href: "#vendors-sim", testId: "vendor-tab-sim" }] : []),
       { id: "index", label: t("index.tab"), href: "#vendors-index", testId: "vendor-tab-index" },
       { id: "dead", label: t("dead.tab"), href: "#vendors-dead", testId: "vendor-tab-dead" }]}/>
+    {tab === "review" && <NegotiationSheet client={client} busy={busy} operation={operation}/>}
     {tab === "dead" ? <DeadStockView client={client} version={version} canPrice={canPrice} canImport={canImport} busy={busy} operation={operation}/> : tab === "index" ? <CostIndexView client={client} version={version} canPrice={canPrice} canImport={canImport} busy={busy} operation={operation}/>
       : tab === "sim" && canSimulate ? tier === "scale" ? <Simulator client={client} version={version} operation={operation}/> : <Card title={t("sim.heading")}><Notice data-testid="sim-scale-required">{t("sim.needScale")}</Notice></Card>
       : tab === "ppv" ? <PriceVariance client={client} version={version}/> : <PriceReview client={client} version={version} canImport={canImport}/>}

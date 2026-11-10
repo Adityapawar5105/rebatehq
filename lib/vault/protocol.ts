@@ -181,6 +181,8 @@ export type Commands = {
   quoteCreate: { customerId: string }; quoteLines: { id: string; lines: LineInput[] }; quoteSubmit: { id: string; reason: string | null };
   quoteDecide: { id: string; decision: "approve" | "reject"; note: string | null }; quoteGet: { id: string }; quoteList: { pendingOnly?: boolean };
   quoteGuidance: { id: string }; quoteCrossSell: { id: string }; relayLocal: Record<string, never>;
+  quoteOutcome: { id: string; input: import("../quotes/winloss").OutcomeInput }; winLoss: import("../quotes/winloss").ReportInput; auditPack: { locale: import("../i18n/core").Locale };
+  templateVendors: Record<string, never>; negotiationSheet: { vendor: string; locale: import("../i18n/core").Locale }; rebateAgreement: { id: string; locale: import("../i18n/core").Locale };
   agentState: Record<string, never>; agentRows: { offset?: number; grid?: GridQuery }; agentRun: Record<string, never>; agentMark: { key: string; status: "new" | "read" | "dismissed" };
   agentSettingsSave: { input: Omit<import("../agents/agents").AgentSettings, "updatedAt"> }; indexState: Record<string, never>; indexSkus: { id: string; offset?: number; grid?: GridQuery };
   indexTriggerSave: { input: import("../agents/costindex").TriggerInput }; indexTriggerDelete: { id: string };
@@ -209,7 +211,8 @@ export type Results = {
   vendorPpv:Awaited<ReturnType<VaultService["vendorPpv"]>>;
   vendorPpvLines:Awaited<ReturnType<VaultService["vendorPpvLines"]>>;
   simOptions:Awaited<ReturnType<VaultService["simOptions"]>>;
-  relayLocal:Awaited<ReturnType<VaultService["relayLocal"]>>;
+  relayLocal:Awaited<ReturnType<VaultService["relayLocal"]>>; quoteOutcome:Awaited<ReturnType<VaultService["quoteOutcome"]>>; winLoss:Awaited<ReturnType<VaultService["winLoss"]>>; auditPack:Awaited<ReturnType<VaultService["auditPack"]>>;
+  templateVendors:Awaited<ReturnType<VaultService["templateVendors"]>>; negotiationSheet:Awaited<ReturnType<VaultService["negotiationSheet"]>>; rebateAgreement:Awaited<ReturnType<VaultService["rebateAgreement"]>>;
   agentState:Awaited<ReturnType<VaultService["agentState"]>>; agentRows:Awaited<ReturnType<VaultService["agentRows"]>>; agentRun:Awaited<ReturnType<VaultService["agentRun"]>>; agentMark:Awaited<ReturnType<VaultService["agentMark"]>>;
   agentSettingsSave:Awaited<ReturnType<VaultService["agentSettingsSave"]>>; indexState:Awaited<ReturnType<VaultService["indexState"]>>; indexSkus:Awaited<ReturnType<VaultService["indexSkus"]>>;
   indexTriggerSave:Awaited<ReturnType<VaultService["indexTriggerSave"]>>; indexTriggerDelete:Awaited<ReturnType<VaultService["indexTriggerDelete"]>>; deadState:Awaited<ReturnType<VaultService["deadState"]>>; deadRows:Awaited<ReturnType<VaultService["deadRows"]>>; deadSettingsSave:Awaited<ReturnType<VaultService["deadSettingsSave"]>>; deadDraft:Awaited<ReturnType<VaultService["deadDraft"]>>; quoteGuidance:Awaited<ReturnType<VaultService["quoteGuidance"]>>; quoteCrossSell:Awaited<ReturnType<VaultService["quoteCrossSell"]>>;

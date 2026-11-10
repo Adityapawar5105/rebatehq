@@ -858,3 +858,45 @@ This proves the tested authenticated local-vault flow, not deployed/hosted authe
 - **Clearance price** = list price minus what holding one unit over the horizon would cost (unit cost × rate × months / 12 + storage × months), never below replacement cost ("floored at replacement cost"). An item whose list price is already at or below replacement cost keeps its price. This is one explainable rule, not a demand forecast or price-elasticity model.
 - **Substitutes**: up to three items in the same category and unit of measure that sold in the same idle window, by units sold, then item. They are items the dead stock could be offered in place of; no compatibility data exists, so this is a suggestion to check.
 - **Drafts** reuse the segment planner's changeset: one row per item and per customer tier it ever sold to (its list-price row when it never sold). The new price is the clearance price, kept at or above that tier's guardrail floor and never above the current price; unchanged rows are left out. Live prices change only when the Pricing Owner approves the draft in Pricing, and they leave the device only through the normal ERP export. The Margin Drain inbox does not add a dead-stock rule in this part; the Dead stock tab is the flag.
+
+## 8C-1 — win/loss log, audit and compliance pack, templates (11 November 2026)
+
+- Scope: blueprint Phase 3 chunk 8C items 1, 3 and 4. The offline desktop PWA (item 2) is part 2. The Safari desktop verification spike is **not** in 8C: the v2.4 note in the 8C prompt put it here, but blueprint v2.6 (section 22 item 28, gap 5) later moved it to 8D, and v2.6 governs. Local vault v20 adds `quote_outcomes` (58 tables). No Supabase migration, no dependency change (JSZip and papaparse were already dependencies).
+- **Win/loss outcomes:**
+  - **What is recorded:** won, lost or no decision; a main reason from a fixed list (price, competitor offer, availability, lead time, product or specification, relationship, service, credit or payment terms, timing or budget, other); an optional competitor (up to 100 characters) and an optional note (up to 1,000).
+  - **When and by whom:** on a quote that has left draft, by the quote's author or a role that may approve quotes or see cost. Recording again replaces the outcome. Each recording is audited with codes only (the quote ID, outcome and reason, never the note).
+  - **Where it stays:** the competitor and note stay in the local vault. They are never exported, relayed or put in the audit pack.
+- **Win/loss report:**
+  - Outcomes are grouped by reason, customer or rep and filtered by the UTC date they were recorded (default: the last 365 days).
+  - Value = quoted unit price × quantity per line, rounded half away from zero, summed per quote.
+  - Win rate = won ÷ (won + lost); quotes with no decision are counted but left out of the rate, and "unknown" is shown when nothing was decided.
+  - Margin (won and lost) uses the cost stored on each quote line when the quote was priced; uncosted lines add no margin. Margin is sent only to roles with `cost`.
+  - Professional/Scale (Quote Desk tier).
+- **Who sees what (decision 16):** a Sales Rep's report covers only their own quotes and never carries margin. Both new commands are in the decision 16 payload scan with a real outcome and stored cost behind it.
+- **Audit and compliance pack** (every tier; the `audit` capability):
+  - **Format:** a ZIP built in the vault worker.
+  - **Log and its check:** the full hash-chained audit log, re-verified at export; `verification.json` with the hash rule, entry count, expected count and latest hash.
+  - **Activity files:**
+    - approvals: price-change approvals from price versions, and quote exception decisions;
+    - export events from the audit log;
+    - export receipts with their content hash;
+    - role and Pricing Owner changes;
+    - current role assignments as user IDs and role codes (no display names).
+  - **Cover:** a PDF page in the user's language.
+  - **Content rules:** the CSVs use codes and IDs only, with formula escaping. Prices, costs and notes are not read. Audit details are the code-and-ID payloads the vault already records.
+  - **When the chain does not verify:** the pack is still produced and says so, with the entry where the check stopped.
+  - **Reproducing the check:** a third party can re-run the check from `audit-log.csv` alone. The unit test does exactly that with Node's own SHA-256.
+- **Templates** (Professional/Scale; PDF, user's language):
+  - **Vendor negotiation sheet** (cost roles), for one vendor:
+    - each item's newest cost from that vendor, the previous cost and the change;
+    - the lowest newest cost from any other vendor;
+    - receipts net of returns and credits from the Purchases import, in the last 365 days;
+    - the value of matching cheaper vendors on those quantities;
+    - fixed talking points and blank "agreed" lines.
+    It shows the top 200 items by spend.
+  - **Rebate agreement** (rebate managers), drawn from a customer rebate program:
+    - customer, term, retroactive or incremental wording, tiers and rates, eligible and excluded items;
+    - a settlement paragraph, a blank supplier line, payment terms and signature blocks.
+    It is marked as a draft to review before signing. RebateHQ holds no supplier company name, so that line is left blank.
+- **File exports are audited:** each file download (`audit.pack_exported`, `template.negotiation_sheet`, `template.rebate_agreement`) writes an audit entry with codes and IDs. These downloads therefore need a valid licence, like the other report exports.
+- **No JSON functions in vault SQL:** the DuckDB-Wasm vault has no JSON extension, and the vault never downloads extensions. JSON stored in the vault is parsed in JavaScript, not with DuckDB JSON functions. (This was found by the browser gate: Node's DuckDB has JSON built in, so unit tests could not catch it.)

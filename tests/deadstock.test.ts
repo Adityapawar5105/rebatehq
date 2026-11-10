@@ -41,9 +41,9 @@ INSERT INTO inventory_levels(source_id,product_id,location,on_hand,source_row) V
 }
 
 test("8B-2 schema v19: stock on hand, dead-stock settings and clearance drafts", async () => {
-  assert.equal(SCHEMA_VERSION, 19);
+  assert.ok(SCHEMA_VERSION >= 19);
   assert.deepEqual(tablesFor(19).filter(t => !tablesFor(18).includes(t)), ["inventory_levels", "dead_stock_settings"]);
-  assert.equal(upgradeSql(19), "");
+  assert.ok(!upgradeSql(19).includes("inventory_levels"), "v19 tables are created once");
   const c = await duckdbConnection();
   try {
     c.query("DROP VIEW IF EXISTS rebate_sales"); for (const t of [...TABLES].reverse()) c.query("DROP TABLE IF EXISTS " + t);
