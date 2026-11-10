@@ -9,6 +9,7 @@ import { errorText, fmt, t, type MessageKey } from "@/lib/i18n";
 import { Button, ButtonLink, Card, EmptyState, Field, Grid, Notice, SectionTabs, Skeleton, StatTile, uiStyles as ui } from "@/components/ui/ui";
 import { DataGrid } from "@/components/ui/DataGrid";
 import { CostIndexView } from "./CostIndexView";
+import { DeadStockView } from "./DeadStockView";
 import styles from "./vault.module.css";
 
 const STATUS: Record<string, MessageKey> = { unknown_sku: "vendor.status.unknown", conflict: "vendor.status.conflict", backdated: "vendor.status.backdated", first_cost: "vendor.status.first",
@@ -248,15 +249,16 @@ function Simulator({ client, version, operation }: { client: VaultClient; versio
 }
 
 export function VendorsView({ client, tier, version, canImport, canSimulate, canPrice = false, busy = false, operation }: { client: VaultClient; tier?: Tier; version: string; canImport: boolean; canSimulate: boolean; canPrice?: boolean; busy?: boolean; operation: (work: () => Promise<void>) => Promise<void> }) {
-  const [tab, setTab] = useState<"review" | "ppv" | "sim" | "index">("review");
-  useEffect(() => { const read = () => setTab(location.hash === "#vendors-ppv" ? "ppv" : location.hash === "#vendors-sim" ? "sim" : location.hash === "#vendors-index" ? "index" : "review"); read(); window.addEventListener("hashchange", read); return () => window.removeEventListener("hashchange", read); }, []);
+  const [tab, setTab] = useState<"review" | "ppv" | "sim" | "index" | "dead">("review");
+  useEffect(() => { const read = () => setTab(location.hash === "#vendors-ppv" ? "ppv" : location.hash === "#vendors-sim" ? "sim" : location.hash === "#vendors-index" ? "index" : location.hash === "#vendors-dead" ? "dead" : "review"); read(); window.addEventListener("hashchange", read); return () => window.removeEventListener("hashchange", read); }, []);
   if (tier === "starter") return <Card title={t("vendor.review")}><Notice>{t("vendor.proRequired")}</Notice></Card>;
   return <>
-    <SectionTabs label={t("vendor.tabs")} current={tab} onSelect={id => setTab(id as "review" | "ppv" | "sim" | "index")} items={[
+    <SectionTabs label={t("vendor.tabs")} current={tab} onSelect={id => setTab(id as "review" | "ppv" | "sim" | "index" | "dead")} items={[
       { id: "review", label: t("vendor.review"), href: "#vendors", testId: "vendor-tab-review" }, { id: "ppv", label: t("vendor.ppv"), href: "#vendors-ppv", testId: "vendor-tab-ppv" },
       ...(canSimulate ? [{ id: "sim", label: t("sim.tab"), href: "#vendors-sim", testId: "vendor-tab-sim" }] : []),
-      { id: "index", label: t("index.tab"), href: "#vendors-index", testId: "vendor-tab-index" }]}/>
-    {tab === "index" ? <CostIndexView client={client} version={version} canPrice={canPrice} canImport={canImport} busy={busy} operation={operation}/>
+      { id: "index", label: t("index.tab"), href: "#vendors-index", testId: "vendor-tab-index" },
+      { id: "dead", label: t("dead.tab"), href: "#vendors-dead", testId: "vendor-tab-dead" }]}/>
+    {tab === "dead" ? <DeadStockView client={client} version={version} canPrice={canPrice} canImport={canImport} busy={busy} operation={operation}/> : tab === "index" ? <CostIndexView client={client} version={version} canPrice={canPrice} canImport={canImport} busy={busy} operation={operation}/>
       : tab === "sim" && canSimulate ? tier === "scale" ? <Simulator client={client} version={version} operation={operation}/> : <Card title={t("sim.heading")}><Notice data-testid="sim-scale-required">{t("sim.needScale")}</Notice></Card>
       : tab === "ppv" ? <PriceVariance client={client} version={version}/> : <PriceReview client={client} version={version} canImport={canImport}/>}
   </>;

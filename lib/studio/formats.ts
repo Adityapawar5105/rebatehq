@@ -1,7 +1,7 @@
 import { msg } from "../i18n/core";
 // Import Studio shared types, canonical role columns and header/role detection.
 // Pure functions: no DOM, DuckDB or Node APIs, so they run in the worker and in unit tests.
-export type Role = "cost_index" | "purchases" | "sales_history" | "item_master" | "customer_list" | "vendor_cost" | "rebate_agreement" | "price_list" | "order_header" | "ar_aging";
+export type Role = "inventory" | "cost_index" | "purchases" | "sales_history" | "item_master" | "customer_list" | "vendor_cost" | "rebate_agreement" | "price_list" | "order_header" | "ar_aging";
 export type Kind = "csv" | "tsv" | "txt" | "prn" | "xlsx" | "xlsm" | "xls" | "xlsb" | "ods" | "json" | "xml" | "parquet" | "pdf";
 export type Encoding = "utf-8" | "utf-16le" | "utf-16be" | "windows-1252";
 export type Delimiter = "," | ";" | "\t" | "|";
@@ -14,9 +14,9 @@ export type SettingsPatch = Omit<Partial<Settings>, "boundaries"> & { boundaries
 export type StudioIssue = { row: number; column: string; message: string };
 export class StudioError extends Error {}
 
-export const ROLES: Role[] = ["purchases","sales_history", "item_master", "customer_list", "vendor_cost", "price_list", "rebate_agreement", "order_header", "ar_aging", "cost_index"];
+export const ROLES: Role[] = ["purchases","sales_history", "item_master", "customer_list", "vendor_cost", "price_list", "rebate_agreement", "order_header", "ar_aging", "cost_index", "inventory"];
 export const ROLE_LABELS: Record<Role, string> = {
-  purchases:msg("supplier.purchaseRole"), cost_index:msg("filetype.costIndex"),
+  purchases:msg("supplier.purchaseRole"), cost_index:msg("filetype.costIndex"), inventory:msg("filetype.inventory"),
   sales_history: msg("filetype.salesHistory"), item_master: msg("filetype.itemMaster"), customer_list: msg("filetype.customerList"),
   vendor_cost: msg("filetype.vendorCostSheet"), rebate_agreement: msg("filetype.rebateAgreement"), price_list: msg("filetype.priceList"), order_header: msg("filetype.orderHeadersJoinedTo"), ar_aging: msg("filetype.arAging"),
 };
@@ -33,6 +33,7 @@ const f = (name: string, type: FieldType, required = false, max?: number): Field
 export const ROLE_FIELDS: Record<Role, Field[]> = {
   // 8B-1: a cost index series (a commodity or producer price index), uploaded by the user; never fetched from the web.
   cost_index:[f("index_name","text",true,100),f("period_date","date",true),f("index_value","quantity",true)],
+  inventory:[f("product_id","id",true),f("location","text",false,100),f("on_hand","quantity0",true)],
   purchases:[f("line_id","line_id",true),f("receipt_ref","text",true,100),f("supplier","id",true),f("product_id","id",true),f("receipt_date","date",true),f("quantity","quantity0",true),f("purchase_amount","amount",true),f("entry_kind","text",true,16),f("uom","code",false,16)],
   // Blank discount/freight/rebate load as 0; a blank cost stays unknown (NULL), never 0.
   // line_type (6A) only filters rows during conversion: non-item lines (G/L accounts, charges, comments) are skipped.
@@ -49,11 +50,11 @@ export const ROLE_FIELDS: Record<Role, Field[]> = {
   ar_aging: [f("customer_id", "id", true), f("as_of_date", "date"), f("current_amount", "amount"), f("due_1_30_amount", "amount"), f("due_31_60_amount", "amount"), f("due_61_90_amount", "amount"), f("due_over_90_amount", "amount"), f("credit_limit_amount", "amount"), f("dso_days", "quantity0")],
 };
 /** Roles whose rows load into the vault; customer rebate agreements are enabled in 7D-1. */
-export const LOADABLE: Role[] = ["cost_index","purchases","sales_history", "item_master", "customer_list", "vendor_cost", "price_list", "ar_aging","rebate_agreement"];
+export const LOADABLE: Role[] = ["inventory","cost_index","purchases","sales_history", "item_master", "customer_list", "vendor_cost", "price_list", "ar_aging","rebate_agreement"];
 /** Roles a batch can use: the loadable ones plus order headers, which fill in sales lines and are not stored themselves. */
 export const USABLE: Role[] = [...LOADABLE, "order_header"];
 export const FILE_HINTS: Array<[Role, RegExp]> = [
-  ["purchases",/purchase|receipts?|po[ _-]/i], ["cost_index", /\bindex\b|\bppi\b|\blme\b|commodit/i],
+  ["purchases",/purchase|receipts?|po[ _-]/i], ["cost_index", /\bindex\b|\bppi\b|\blme\b|commodit/i], ["inventory", /inventor|stock|on[ _-]?hand/i],
   ["sales_history", /sales|invoice|history|orders?/i], ["item_master", /item|product|catalog|sku/i],
   ["customer_list", /customer|account|client/i], ["vendor_cost", /vendor|supplier|cost/i],
   ["rebate_agreement", /rebate|program|agreement/i], ["price_list", /price|matrix|tariff/i], ["order_header", /head(er)?s?\b|^orders?\.\w+$/i], ["ar_aging", /aging|ageing|receivable|\bar[\s_-]|overdue|credit/i],

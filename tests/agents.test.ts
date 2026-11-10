@@ -40,9 +40,9 @@ INSERT INTO vendor_costs(id,vendor,product_id,cost,effective_date,source_file) V
 INSERT INTO cost_index_points VALUES('ix','Copper','2026-01-01',100,2),('ix','Copper','2026-06-01',106.5,3),('ix','Copper','2027-01-01',200,4);`;
 
 test("8B-1 schema v18: five local tables, cost_index source kind, earlier money untouched", async () => {
-  assert.equal(SCHEMA_VERSION, 18);
+  assert.equal(SCHEMA_VERSION >= 18, true);
   assert.deepEqual(tablesFor(18).filter(t => !tablesFor(17).includes(t)), ["cost_index_points", "cost_index_triggers", "agent_settings", "agent_runs", "agent_inbox"]);
-  assert.equal(upgradeSql(18), "");
+  assert.ok(!upgradeSql(18).includes("agent_inbox"), "v18 tables are created once");
   const c = await duckdbConnection();
   try {
     c.query("DROP VIEW IF EXISTS rebate_sales"); for (const t of [...TABLES].reverse()) c.query("DROP TABLE IF EXISTS " + t);

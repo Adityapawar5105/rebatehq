@@ -75,7 +75,7 @@ export function issueColumn(code: string, file: StagedFile) {
 }
 export const CODES = (role: Role) => [...ROLE_FIELDS[role].flatMap(f => [`${f.name}:required`, `${f.name}:invalid`, `${f.name}:negative`]), "duplicate_row", "duplicate_key", "exists", "scope", "valid_to:range", "no_header",...(role==='purchases'?['quantity:receipt']:[]),...(role==='rebate_agreement'?['program_id:incomplete','program_id:overlap','program_id:metadata','program_id:tiers','period_end:range']:[])];
 const KEYS: Record<Role, string[]> = {
-  purchases:["supplier","receipt_ref","line_id"], cost_index:["index_name","period_date"],
+  purchases:["supplier","receipt_ref","line_id"], cost_index:["index_name","period_date"], inventory:["product_id","location"],
   rebate_agreement:['program_id','threshold_amount'],
   sales_history: ["line_id"], item_master: ["product_id"], customer_list: ["customer_id"], order_header: ["invoice_id"],
   vendor_cost: ["vendor", "product_id", "effective_date"], price_list: ["product_id", "category", "customer_id", "tier", "qty_break", "valid_from"],
@@ -143,6 +143,8 @@ WHERE ${t}.file_ord=d.file_ord AND ${t}.src_row=d.src_row`);
   const exists: Record<typeof role, string> = {
     rebate_agreement:'false',
     cost_index: `EXISTS(SELECT 1 FROM cost_index_points x WHERE x.index_name=${t}.index_name AND x.period_date=${t}.period_date AND ${other('x.')})`,
+    // A stock file is a snapshot: a newer import replaces the same item and location (commitSql), never "exists".
+    inventory: 'false',
     purchases: `EXISTS(SELECT 1 FROM purchases p WHERE p.supplier=${t}.supplier AND p.receipt_ref=${t}.receipt_ref AND p.line_id=${t}.line_id AND ${other('p.')})`,
     sales_history: `line_id IN (SELECT line_id FROM sales_lines WHERE ${other()})`,
     item_master: `product_id IN (SELECT product_id FROM products WHERE source_id IS NOT NULL AND ${other()})`,
@@ -260,10 +262,11 @@ const CUSTOMER_RESET = "name='',tier='',branch='',region='',payment_terms='',sou
  * cannot delete a parent row in the transaction that deleted its children, so the
  * source row and now-unused products/customers go in step 2 (finishRemoval).
  */
-export function removeChildrenSql(source: string,rebates=false,purchases=false,costIndex=false) {
+export function removeChildrenSql(source: string,rebates=false,purchases=false,costIndex=false,inventory=false) {
   const s = sqlText(source);
   return `CREATE TEMP TABLE IF NOT EXISTS studio_affected(kind VARCHAR, id VARCHAR);
 ${costIndex?`DELETE FROM cost_index_points WHERE source_id=${s};`:''}
+${inventory?`DELETE FROM inventory_levels WHERE source_id=${s};`:''}
 ${purchases?`INSERT INTO studio_affected SELECT DISTINCT 'p',product_id FROM purchases WHERE source_id=${s};DELETE FROM purchases WHERE source_id=${s};`:''}
 INSERT INTO studio_affected SELECT DISTINCT 'p', product_id FROM sales_lines WHERE source_id=${s} UNION SELECT 'p', product_id FROM products WHERE source_id=${s}
  UNION SELECT DISTINCT 'c', customer_id FROM sales_lines WHERE source_id=${s} UNION SELECT 'c', customer_id FROM customers WHERE source_id=${s} UNION SELECT 'c', customer_id FROM credit_profiles WHERE source_id=${s};
@@ -285,6 +288,8 @@ export function commitSql(roles: Set<Role>) {
   if(roles.has('purchases'))out.push(`INSERT INTO products(product_id) SELECT DISTINCT product_id FROM ${v('purchases')} WHERE product_id NOT IN(SELECT product_id FROM products);
  INSERT INTO purchases(source_id,line_id,receipt_ref,supplier,product_id,receipt_date,quantity,amount_cents,entry_kind,uom,source_row) SELECT source_id,line_id,receipt_ref,supplier,product_id,receipt_date,CASE WHEN entry_kind='receipt' THEN quantity ELSE -quantity END,CASE WHEN entry_kind='receipt' THEN purchase_cents ELSE -purchase_cents END,entry_kind,coalesce(uom,''),src_row FROM ${v('purchases')} ORDER BY supplier,receipt_date,line_id;`);
   if(roles.has('rebate_agreement'))out.push(rebateCommitSql(v('rebate_agreement')));
+  if(roles.has('inventory'))out.push(`DELETE FROM inventory_levels WHERE (product_id,location) IN (SELECT product_id,coalesce(location,'') FROM ${v('inventory')});`);
+  if(roles.has('inventory'))out.push(`INSERT INTO inventory_levels(source_id,product_id,location,on_hand,source_row) SELECT source_id,product_id,coalesce(location,''),on_hand,src_row FROM ${v('inventory')};`);
   if(roles.has('cost_index'))out.push(`INSERT INTO cost_index_points(source_id,index_name,period_date,index_value,source_row) SELECT source_id,index_name,period_date,index_value,src_row FROM ${v('cost_index')};`);
   if (roles.has("sales_history")) out.push(`INSERT INTO products(product_id) SELECT DISTINCT product_id FROM ${v("sales_history")} WHERE product_id NOT IN (SELECT product_id FROM products);
 INSERT INTO customers(customer_id) SELECT DISTINCT customer_id FROM ${v("sales_history")} WHERE customer_id NOT IN (SELECT customer_id FROM customers);

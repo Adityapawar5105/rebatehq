@@ -184,6 +184,7 @@ export type Commands = {
   agentState: Record<string, never>; agentRows: { offset?: number; grid?: GridQuery }; agentRun: Record<string, never>; agentMark: { key: string; status: "new" | "read" | "dismissed" };
   agentSettingsSave: { input: Omit<import("../agents/agents").AgentSettings, "updatedAt"> }; indexState: Record<string, never>; indexSkus: { id: string; offset?: number; grid?: GridQuery };
   indexTriggerSave: { input: import("../agents/costindex").TriggerInput }; indexTriggerDelete: { id: string };
+  deadState: Record<string, never>; deadRows: { offset?: number; grid?: GridQuery }; deadSettingsSave: { input: Omit<import("../inventory/deadstock").DeadSettings, "updatedAt"> }; deadDraft: { ids: string[] };
   quoteShare: { id: string; preset: "standard" | "conservative" }; quoteRelaySync: { id: string };
   roi: Record<string, never>;
   reconcile: Record<string, never>;
@@ -211,7 +212,7 @@ export type Results = {
   relayLocal:Awaited<ReturnType<VaultService["relayLocal"]>>;
   agentState:Awaited<ReturnType<VaultService["agentState"]>>; agentRows:Awaited<ReturnType<VaultService["agentRows"]>>; agentRun:Awaited<ReturnType<VaultService["agentRun"]>>; agentMark:Awaited<ReturnType<VaultService["agentMark"]>>;
   agentSettingsSave:Awaited<ReturnType<VaultService["agentSettingsSave"]>>; indexState:Awaited<ReturnType<VaultService["indexState"]>>; indexSkus:Awaited<ReturnType<VaultService["indexSkus"]>>;
-  indexTriggerSave:Awaited<ReturnType<VaultService["indexTriggerSave"]>>; indexTriggerDelete:Awaited<ReturnType<VaultService["indexTriggerDelete"]>>; quoteGuidance:Awaited<ReturnType<VaultService["quoteGuidance"]>>; quoteCrossSell:Awaited<ReturnType<VaultService["quoteCrossSell"]>>;
+  indexTriggerSave:Awaited<ReturnType<VaultService["indexTriggerSave"]>>; indexTriggerDelete:Awaited<ReturnType<VaultService["indexTriggerDelete"]>>; deadState:Awaited<ReturnType<VaultService["deadState"]>>; deadRows:Awaited<ReturnType<VaultService["deadRows"]>>; deadSettingsSave:Awaited<ReturnType<VaultService["deadSettingsSave"]>>; deadDraft:Awaited<ReturnType<VaultService["deadDraft"]>>; quoteGuidance:Awaited<ReturnType<VaultService["quoteGuidance"]>>; quoteCrossSell:Awaited<ReturnType<VaultService["quoteCrossSell"]>>;
   folderGet:Awaited<ReturnType<VaultService["folderGet"]>>; folderSet:Awaited<ReturnType<VaultService["folderSet"]>>; studioFolder:Awaited<ReturnType<VaultService["studioFolder"]>>;
   simRun:Awaited<ReturnType<VaultService["simRun"]>>;
   simRows:Awaited<ReturnType<VaultService["simRows"]>>;

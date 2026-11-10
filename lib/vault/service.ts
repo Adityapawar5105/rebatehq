@@ -15,6 +15,7 @@ import * as sim from '../vendor/simulate';
 import { quoteGuidance } from '../quotes/guidance';
 import * as agents from '../agents/agents';
 import * as costindex from '../agents/costindex';
+import * as deadstock from '../inventory/deadstock';
 import { crossSell } from '../quotes/crosssell';
 import { parquetReader } from './parquet-engine';
 import { kindOf } from '../studio/formats';
@@ -504,6 +505,19 @@ export class VaultService {
   async indexSkus(id: unknown, offset = 0, grid?: unknown) { this.opsTier(); return costindex.triggerSkus(this.requireEngine(), id, offset, grid); }
   async indexTriggerSave(input: costindex.TriggerInput) { this.opsTier(); const p = await costindex.triggerSql(this.requireEngine(), input, this.identity.userId, new Date().toISOString()); await this.write('index.trigger_saved', { id: p.id }, e => e.conn.query(p.sql).then(() => undefined)); return this.indexState(); }
   async indexTriggerDelete(id: unknown) { this.opsTier(); const sql = costindex.deleteSql(id); await this.write('index.trigger_deleted', { id: String(id) }, e => e.conn.query(sql).then(() => undefined)); return this.indexState(); }
+  // 8B-2: the dead-stock clearance optimiser (Professional/Scale). Reads need cost; settings and drafts need pricing, and a
+  // draft goes through the normal changeset, Pricing Owner approval and export.
+  async deadState() { this.opsTier(); const e = this.requireEngine(), s = await deadstock.settings(e), today = new Date().toISOString().slice(0, 10); return { settings: s, summary: await deadstock.summary(e, s, today), page: await deadstock.page(e, s, today) }; }
+  async deadRows(offset = 0, grid?: unknown) { this.opsTier(); const e = this.requireEngine(); return deadstock.page(e, await deadstock.settings(e), new Date().toISOString().slice(0, 10), offset, grid); }
+  async deadSettingsSave(input: unknown) { this.opsTier(); const sql = deadstock.settingsSql(input, new Date().toISOString()); await this.write('dead.settings_saved', {}, e => e.conn.query(sql).then(() => undefined)); return this.deadState(); }
+  async deadDraft(ids: unknown) {
+    this.opsTier(); await this.requireOwnerNamed(); const e = this.requireEngine();
+    const picks = await deadstock.picks(e, await deadstock.settings(e), new Date().toISOString().slice(0, 10), ids);
+    if (!picks.length) throw new VaultError('DEADSTOCK', msg('dead.noneToDraft'));
+    let run = ''; const details = { actor: this.identity.userId, run_id: '', items: String(picks.length) };
+    await this.write('dead.draft_created', details, async w => { run = await ops.clearanceDraft(w, picks, this.identity.userId); details.run_id = run; });
+    return this.rulePreview(run);
+  }
   // 8A: explainable deal guidance and cross-sell for a quote the caller may open. Both are rep-safe (decision 16).
   async quoteGuidance(id: string) { this.quoteTier(); await this.ownQuote(id); return quoteGuidance(this.requireEngine(), id); }
   async quoteCrossSell(id: string) { this.quoteTier(); const v = await this.ownQuote(id); return { quoteId: id, suggestions: await crossSell(this.requireEngine(), v.customerId, v.lines.map(l => l.productId)) }; }

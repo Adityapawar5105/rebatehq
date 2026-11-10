@@ -22,8 +22,8 @@ export async function opsState(e:Engine){
  return {versions:await rows(e,"SELECT v.id,v.snapshot_id AS run,v.created_by AS actor,v.created_at,coalesce(o.kind,'rule') AS kind FROM price_versions v LEFT JOIN price_changesets o ON o.run_id=v.snapshot_id ORDER BY v.created_at DESC,v.id LIMIT 100"),
  segments:{tier:(await rows(e,"SELECT DISTINCT tier AS value FROM customers WHERE tier<>'' ORDER BY tier")).map(r=>String(r.value)),category:(await rows(e,"SELECT DISTINCT category AS value FROM products WHERE category<>'' ORDER BY category")).map(r=>String(r.value)),customer:(await rows(e,"SELECT customer_id AS value,name FROM customers ORDER BY customer_id")).map(r=>({id:String(r.value),name:String(r.name)}))}};
 }
-async function storeDraft(e:Engine,actor:string,kind:'planner'|'rollback',segment:Segment|'version',value:string,bp:string|null,version:string|null){
- const run='ops-'+crypto.randomUUID(),at=new Date().toISOString(),name=msg(kind==='planner'?'ops.planDescription':'ops.rollbackDescription',{value}),count=String((await rows(e,'SELECT count(*)::VARCHAR AS n FROM md_ops_copy WHERE before_cents<>after_cents'))[0].n);
+async function storeDraft(e:Engine,actor:string,kind:'planner'|'rollback'|'clearance',segment:Segment|'version'|'clearance',value:string,bp:string|null,version:string|null){
+ const run='ops-'+crypto.randomUUID(),at=new Date().toISOString(),name=msg(kind==='planner'?'ops.planDescription':kind==='clearance'?'ops.clearanceDescription':'ops.rollbackDescription',{value}),count=String((await rows(e,'SELECT count(*)::VARCHAR AS n FROM md_ops_copy WHERE before_cents<>after_cents'))[0].n);
  if(BigInt(String((await rows(e,'SELECT count(*)::VARCHAR n FROM md_ops_copy'))[0].n))>BigInt(OPS_LIMIT))throw new VaultError('PRICING',msg('ops.tooLarge'));
  const definition=JSON.stringify({name,category:'',vendor:'',threshold:'0',increase:bp??'0'});
  await e.conn.query(`INSERT INTO rules VALUES(${Q(run)},${Q(name)},${Q(definition)},${Q(value)},${Q(at)});
@@ -62,6 +62,23 @@ export async function planDraft(e:Engine,input:PlanInput,actor:string){
  CASE WHEN customer_id IS NOT NULL THEN CASE WHEN book_customer IS NOT NULL THEN book_tier ELSE NULL END ELSE tier END AS matrix_tier FROM b)
  SELECT *,CAST(${rhaSql(`CAST(before_cents AS HUGEINT)*(10000+${bp})`,'10000')} AS BIGINT) AS after_cents FROM base WHERE before_cents IS NOT NULL`);
  return storeDraft(e,actor,'planner',input.segment,value,String(bp),null);
+}
+/** 8B-2: clearance prices for dead stock, picked in the worker (lib/inventory/deadstock). For each item and each tier it
+ * sold to (or its list price row when it never sold), the new price is the clearance price, kept at or above the tier's
+ * guardrail floor and never above the current price; unchanged rows are left out. Approval and export are the normal path. */
+export async function clearanceDraft(e:Engine,picks:{product_id:string;suggested:string}[],actor:string){
+ if(!Array.isArray(picks)||!picks.length||picks.length>OPS_LIMIT)throw new VaultError('DEADSTOCK',msg('dead.noneToDraft'));
+ const values=picks.map(p=>{if(!/^(0|[1-9]\d{0,15})$/.test(p.suggested))bad();return `(${Q(id(p.product_id))},${p.suggested})`;}).join(',');
+ await e.conn.query(`DROP TABLE IF EXISTS temp.md_ops_clearance;CREATE TEMP TABLE md_ops_clearance(product_id VARCHAR PRIMARY KEY,suggested BIGINT NOT NULL);INSERT INTO md_ops_clearance VALUES ${values};
+ DROP TABLE IF EXISTS temp.md_ops_products;CREATE TEMP TABLE md_ops_products AS SELECT p.* FROM products p JOIN md_ops_clearance USING(product_id)`);
+ await quantities(e,'sales_lines l JOIN md_ops_products p USING(product_id) JOIN customers c ON c.customer_id=l.customer_id',"coalesce(c.tier,'')",'false');
+ await e.conn.query(`DROP TABLE IF EXISTS temp.md_ops_base;DROP TABLE IF EXISTS temp.md_ops_copy;
+ CREATE TEMP TABLE md_ops_base AS SELECT row_number() OVER()::VARCHAR lookup_id,p.*,NULL::VARCHAR customer_id,coalesce(h.tier,'') AS tier,0::DECIMAL(18,4) AS quantity,DATE ${Q(today())} AS as_of,coalesce(h.qty,0)::DECIMAL(18,4) AS qty FROM md_ops_products p LEFT JOIN md_ops_units h ON h.product_id=p.product_id LIMIT ${OPS_LIMIT+1}`);
+ await scopeCap(e);
+ await e.conn.query(`CREATE TEMP TABLE md_ops_copy AS WITH b AS(${resolvedBook('SELECT * FROM md_ops_base')}),base AS(SELECT product_id,category,current_cost,tier,customer_id,qty,coalesce(book_price,list_price) AS before_cents,book_valid_to AS valid_to,tier AS matrix_tier FROM b)
+ SELECT base.*,least(base.before_cents,greatest(k.suggested,coalesce(g.floor,0))) AS after_cents FROM base JOIN md_ops_clearance k USING(product_id) LEFT JOIN price_guardrails g ON g.tier=base.tier AND g.category=base.category WHERE base.before_cents IS NOT NULL`);
+ if((await rows(e,'SELECT count(*)::VARCHAR n FROM md_ops_copy WHERE before_cents<>after_cents'))[0].n==='0')throw new VaultError('DEADSTOCK',msg('dead.noneToDraft'));
+ return storeDraft(e,actor,'clearance','clearance',String(picks.length),null,null);
 }
 export async function rollbackDraft(e:Engine,version:string,actor:string){
  const v=(await rows(e,`SELECT snapshot_id FROM price_versions WHERE id=${Q(id(version))}`))[0];if(!v)bad();

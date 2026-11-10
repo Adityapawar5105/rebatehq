@@ -366,6 +366,41 @@ async function agentsUi(){
  results.checks.agentsUi={leakAtThreshold:true,manualCheck:true,indexFromFile:true,trigger325bp:true,expectedCost6195:true,inboxTrigger:true,markRead:true,phone375:true,repHidden:true,privacyMarkers:true};
  }catch(error){console.error('Agents UI diagnostics:',JSON.stringify(await diagnose()));throw error;}finally{await context.close();context=savedContext;page=savedPage;dataPlaneActive=active;}
 }
+// 8B-2: the dead-stock clearance optimiser (fresh vault, under the request/console marker sensors). Dates are relative to
+// today so CI on any day gives the same figures. D1 last sold 200 days ago with 10 on hand at $60.00 and a $100.00 list
+// price; with 12% cost of capital, $0.05 storage and a 6-month horizon: capital $600.00, carrying $6.50 a month, clearance
+// price $96.10. A1 sold 10 days ago in the same category and unit, so it is D1's substitute and not dead itself. The draft
+// is approved by the Pricing Owner through the normal path. A Sales Rep sees no Vendors.
+async function deadStockUi(){
+ const savedContext=context,savedPage=page,active=dataPlaneActive;
+ context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-dead-')),browserOptions);await configureContext();page=await openPage();
+ try{
+ dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic dead-stock owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
+ const d1=marker+'-DEAD',a1=marker+'-LIVE',customer=marker+'-DC',ago=n=>new Date(Date.now()-n*86400000).toISOString().slice(0,10);
+ await page.locator('nav a[href="#data-hub"]').click();await importFiles([
+  {name:'dead-items.csv',mimeType:'text/csv',buffer:Buffer.from('product_id,description,category,uom,current_cost,list_price\n'+d1+',Synthetic slow valve,Valves,EA,60.00,100.00\n'+a1+',Synthetic fast valve,Valves,EA,50.00,90.00\n')},
+  {name:'dead-customers.csv',mimeType:'text/csv',buffer:Buffer.from('customer_id,name,tier\n'+customer+',Synthetic,T1\n')},
+  {name:'dead-sales.csv',mimeType:'text/csv',buffer:Buffer.from('line_id,product_id,customer_id,sale_date,quantity,list_amount,discount_amount,freight_amount,rebate_amount,cost_amount,invoice_id\n1,'+d1+','+customer+','+ago(200)+',1,100.00,0,0,0,60.00,DS1\n2,'+a1+','+customer+','+ago(10)+',3,270.00,0,0,0,150.00,DS2\n')},
+  {name:'stock-on-hand.csv',mimeType:'text/csv',buffer:Buffer.from('product_id,location,on_hand\n'+d1+',North,4\n'+d1+',South,6\n'+a1+',North,5\n')}],'2');
+ await page.locator('nav a[href="#vendors"]').click();await page.getByTestId('vendor-tab-dead').click();await page.getByTestId('dead-stock').waitFor({timeout:60000});
+ await page.getByTestId('dead-settings').click();await page.getByTestId('dead-idle').fill('90');await page.getByTestId('dead-rate').fill('12');await page.getByTestId('dead-storage').fill('0.05');await page.getByTestId('dead-horizon').fill('6');await page.getByTestId('dead-settings-save').click();await page.getByTestId('dead-settings-form').waitFor({state:'detached'});
+ await page.locator('[data-testid="dead-capital"][data-value="60000"]').waitFor({timeout:60000});assert.equal(await page.getByTestId('dead-carrying').getAttribute('data-value'),'650');assert.equal(await page.getByTestId('dead-skus').innerText(),'1');
+ const grid=page.getByTestId('dead-grid'),row=grid.locator('tbody tr').filter({hasText:d1});await row.waitFor();
+ assert.equal(await row.getAttribute('data-suggested'),'9610');assert.equal(await row.getAttribute('data-status'),'suggested');const text=await row.innerText();
+ for(const want of ['$600.00','$6.50','$96.10','$3.90',a1])assert.ok(text.includes(want),'Dead-stock row is missing '+want);
+ assert.equal(await grid.locator('tbody tr').filter({hasText:a1+' ·'}).count(),0,'A selling item is listed as dead stock');
+ await page.setViewportSize({width:375,height:812});await page.waitForTimeout(300);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Dead stock overflows a phone');await page.screenshot({path:'test-results/dead-stock-'+channel+'.png',fullPage:true});await page.setViewportSize({width:1280,height:800});
+ await page.getByTestId('dead-pick-'+d1).check();await page.getByTestId('dead-draft').click();await page.locator('[data-testid="dead-draft-count"][data-value="1"]').waitFor({timeout:60000});
+ // The normal path: the run is a preview until the Pricing Owner approves it, then it can be exported.
+ await page.locator('nav a[href="#pricing"]').click();await page.getByRole('link',{name:'Rules',exact:true}).click().catch(()=>undefined);
+ await page.getByRole('button',{name:'Review run',exact:true}).first().click();await page.getByRole('cell',{name:'$96.10',exact:true}).first().waitFor({timeout:60000});
+ await page.getByRole('button',{name:'Approve as Pricing Owner',exact:true}).click();await page.getByRole('heading',{name:'Export Studio',exact:true}).waitFor({timeout:60000});
+ await page.locator('nav a[href="#settings"]').click();await page.getByLabel('Preview as').selectOption('sales_rep');await page.getByTestId('preview-banner').waitFor();await page.waitForTimeout(500);
+ assert.equal(await page.locator('nav a[href="#vendors"]').count(),0,'A Sales Rep sees Vendors');
+ await page.getByTestId('preview-banner').getByRole('button',{name:'Return to my own view'}).click();await page.getByTestId('preview-banner').waitFor({state:'detached'});
+ results.checks.deadStockUi={stockFromFile:true,capital60000:true,carrying650:true,clearance9610:true,substitute:true,draftApproved:true,phone375:true,repHidden:true,privacyMarkers:true};
+ }catch(error){console.error('Dead-stock UI diagnostics:',JSON.stringify(await diagnose()));throw error;}finally{await context.close();context=savedContext;page=savedPage;dataPlaneActive=active;}
+}
 async function reportsUi(){
  const savedContext=context,savedPage=page,active=dataPlaneActive;
  context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-reports-')),browserOptions);await configureContext();page=await openPage();
@@ -457,7 +492,7 @@ async function monitorUi(){
 await build({ entryPoints: ["tests/helpers/studio-fixtures.ts"], outfile: "test-results/studio-fixtures.mjs", bundle: true, platform: "node", format: "esm" });
 const fixtures = await import(new URL("../test-results/studio-fixtures.mjs", import.meta.url).href);
 try {
- if(process.argv.includes('--agents-ui-only')){await agentsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Agents UI focused gate passed ('+channel+').');}else if(process.argv.includes('--guidance-ui-only')){await guidanceUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Guidance UI focused gate passed ('+channel+').');}else if(process.argv.includes('--converters-ui-only')){await convertersUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Converters UI focused gate passed ('+channel+').');}else if(process.argv.includes('--reports-ui-only')){await reportsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Reports UI focused gate passed ('+channel+').');}else if(process.argv.includes('--sim-ui-only')){await simUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Simulator UI focused gate passed ('+channel+').');}else if(process.argv.includes('--vendors-ui-only')){await vendorsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Vendor UI focused gate passed ('+channel+').');}else if(process.argv.includes('--suppliers-ui-only')){await suppliersUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Supplier UI focused gate passed ('+channel+').');}else{
+ if(process.argv.includes('--dead-ui-only')){await deadStockUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Dead-stock UI focused gate passed ('+channel+').');}else if(process.argv.includes('--agents-ui-only')){await agentsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Agents UI focused gate passed ('+channel+').');}else if(process.argv.includes('--guidance-ui-only')){await guidanceUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Guidance UI focused gate passed ('+channel+').');}else if(process.argv.includes('--converters-ui-only')){await convertersUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Converters UI focused gate passed ('+channel+').');}else if(process.argv.includes('--reports-ui-only')){await reportsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Reports UI focused gate passed ('+channel+').');}else if(process.argv.includes('--sim-ui-only')){await simUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Simulator UI focused gate passed ('+channel+').');}else if(process.argv.includes('--vendors-ui-only')){await vendorsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Vendor UI focused gate passed ('+channel+').');}else if(process.argv.includes('--suppliers-ui-only')){await suppliersUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Supplier UI focused gate passed ('+channel+').');}else{
   if (auth) {
     assert.notEqual(process.env.LEGACY_BUSINESS_ENABLED,'true','Privacy gate must run with legacy business routes OFF');
     await signInLocal(context,page,base);
@@ -905,7 +940,7 @@ try {
   }
   await monitorUi();
   await rebatesUi();
-  await suppliersUi(); await vendorsUi(); await simUi(); await reportsUi(); await convertersUi(); await guidanceUi(); await agentsUi();
+  await suppliersUi(); await vendorsUi(); await simUi(); await reportsUi(); await convertersUi(); await guidanceUi(); await agentsUi(); await deadStockUi();
   await recoveryUi();
   if(auth){
     const device=await page.evaluate(()=>{const key=Object.keys(localStorage).find(k=>k.startsWith('rebatehq-device-v1:'));return localStorage.getItem(key);});assert.ok(device);

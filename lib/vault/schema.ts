@@ -1,5 +1,5 @@
 import { msg } from "../i18n/core";
-export const SCHEMA_VERSION = 18;
+export const SCHEMA_VERSION = 19;
 const V1_TABLES = ["vault_meta", "products", "customers", "price_matrix", "price_guardrails", "source_files", "import_batches", "sales_lines", "vendor_costs", "cost_basis_settings", "rules", "rule_runs", "price_versions", "roi_ledger", "audit_log", "import_issues", "converter_recipes"] as const;
 const V4_TABLES = [...V1_TABLES, "rejected_rows"] as const;
 const V5_TABLES = [...V4_TABLES, "agg_cpm", "agg_cm", "agg_p", "recon_issues"] as const;
@@ -12,9 +12,10 @@ const V12_TABLES = [...V11_TABLES, "competitor_prices", "price_grid_drafts", "pr
 const V15_TABLES = [...V12_TABLES,"rebate_programs","rebate_tiers","rebate_accruals"] as const;
 const V16_TABLES = [...V15_TABLES,"supplier_claims","purchases"] as const;
 const V17_TABLES = [...V16_TABLES,"roi_recoveries","scorecard_consent","report_checks"] as const;
-export const TABLES = [...V17_TABLES,"cost_index_points","cost_index_triggers","agent_settings","agent_runs","agent_inbox"] as const;
+const V18_TABLES = [...V17_TABLES,"cost_index_points","cost_index_triggers","agent_settings","agent_runs","agent_inbox"] as const;
+export const TABLES = [...V18_TABLES,"inventory_levels","dead_stock_settings"] as const;
 /** Tables that exist at a schema version (in creation order, so copy-on-write inserts parents first). */
-export function tablesFor(version: number): readonly string[] { return version >= 18 ? TABLES : version >= 17 ? V17_TABLES : version >= 16 ? V16_TABLES : version >= 14 ? V15_TABLES : version >= 12 ? V12_TABLES : version >= 11 ? V11_TABLES : version >= 10 ? V10_TABLES : version >= 9 ? V9_TABLES : version >= 7 ? V7_TABLES : version >= 6 ? V6_TABLES : version >= 5 ? V5_TABLES : version >= 4 ? V4_TABLES : V1_TABLES; }
+export function tablesFor(version: number): readonly string[] { return version >= 19 ? TABLES : version >= 18 ? V18_TABLES : version >= 17 ? V17_TABLES : version >= 16 ? V16_TABLES : version >= 14 ? V15_TABLES : version >= 12 ? V12_TABLES : version >= 11 ? V11_TABLES : version >= 10 ? V10_TABLES : version >= 9 ? V9_TABLES : version >= 7 ? V7_TABLES : version >= 6 ? V6_TABLES : version >= 5 ? V5_TABLES : version >= 4 ? V4_TABLES : V1_TABLES; }
 // These are local DuckDB migrations, not Supabase migrations. V1 stays frozen
 // so the committed encrypted compatibility fixture exercises a real upgrade.
 export const V1_SQL = `
@@ -188,7 +189,19 @@ CREATE TABLE cost_index_triggers(id VARCHAR PRIMARY KEY,name VARCHAR NOT NULL,in
 CREATE TABLE agent_settings(id INTEGER PRIMARY KEY CHECK(id=1),enabled BOOLEAN NOT NULL,interval_minutes INTEGER NOT NULL CHECK(interval_minutes BETWEEN 15 AND 1440),leak_threshold_cents BIGINT NOT NULL CHECK(leak_threshold_cents>=0),health_threshold_bp INTEGER NOT NULL CHECK(health_threshold_bp BETWEEN 1 AND 10000),expiry_days INTEGER NOT NULL CHECK(expiry_days IN (30,60,90)),cost_rise_bp INTEGER NOT NULL CHECK(cost_rise_bp BETWEEN 1 AND 100000),updated_at VARCHAR NOT NULL);
 CREATE TABLE agent_runs(id VARCHAR PRIMARY KEY,started_at VARCHAR NOT NULL,finished_at VARCHAR NOT NULL,reason VARCHAR NOT NULL CHECK(reason IN ('schedule','open','manual')),findings BIGINT NOT NULL CHECK(findings>=0),new_findings BIGINT NOT NULL CHECK(new_findings>=0),resolved BIGINT NOT NULL CHECK(resolved>=0));
 CREATE TABLE agent_inbox(key VARCHAR PRIMARY KEY,rule VARCHAR NOT NULL CHECK(rule IN ('leak','below_floor','contract_expiry','cost_rise','customer_health','index_trigger')),subject VARCHAR NOT NULL,detail VARCHAR NOT NULL,amount_cents BIGINT,first_seen VARCHAR NOT NULL,last_seen VARCHAR NOT NULL,status VARCHAR NOT NULL CHECK(status IN ('new','read','dismissed','resolved')));`;
-const STEPS = [V1_SQL, V2_SQL, V3_SQL, V4_SQL, V5_SQL, V6_SQL, V7_SQL, V8_SQL, V9_SQL, V10_SQL, V11_SQL, V12_SQL, V13_SQL,V14_SQL,V15_SQL,V16_SQL,V17_SQL,V18_SQL];
+// 8B-2: stock on hand (Import Studio role inventory), dead-stock carrying-cost settings, and clearance drafts in the
+// normal changeset tables. source_kinds and price_changesets are rebuilt to widen their CHECKs; rows are kept.
+export const V19_SQL = `CREATE TEMP TABLE md_v18_kinds AS SELECT * FROM source_kinds;
+DROP TABLE source_kinds;
+CREATE TABLE source_kinds(source_id VARCHAR PRIMARY KEY,kind VARCHAR NOT NULL CHECK(kind IN ('ar_aging','rebate_agreement','purchases','cost_index','inventory')));
+INSERT INTO source_kinds SELECT * FROM md_v18_kinds; DROP TABLE md_v18_kinds;
+CREATE TEMP TABLE md_v18_changesets AS SELECT * FROM price_changesets;
+DROP TABLE price_changesets;
+CREATE TABLE price_changesets(run_id VARCHAR PRIMARY KEY, kind VARCHAR NOT NULL CHECK(kind IN ('planner','rollback','clearance')), source_version VARCHAR, segment_type VARCHAR NOT NULL CHECK(segment_type IN ('tier','category','customer','version','clearance')), segment_value VARCHAR NOT NULL, increase_bp INTEGER, created_by VARCHAR NOT NULL, created_at VARCHAR NOT NULL);
+INSERT INTO price_changesets SELECT * FROM md_v18_changesets; DROP TABLE md_v18_changesets;
+CREATE TABLE inventory_levels(source_id VARCHAR NOT NULL,product_id VARCHAR NOT NULL,location VARCHAR NOT NULL DEFAULT '',on_hand DECIMAL(18,4) NOT NULL CHECK(on_hand>=0),source_row BIGINT NOT NULL,PRIMARY KEY(product_id,location));
+CREATE TABLE dead_stock_settings(id INTEGER PRIMARY KEY CHECK(id=1),idle_days INTEGER NOT NULL CHECK(idle_days BETWEEN 90 AND 730),capital_rate_bp INTEGER NOT NULL CHECK(capital_rate_bp BETWEEN 0 AND 10000),storage_cents BIGINT NOT NULL CHECK(storage_cents>=0),horizon_months INTEGER NOT NULL CHECK(horizon_months BETWEEN 1 AND 36),updated_at VARCHAR NOT NULL);`;
+const STEPS = [V1_SQL, V2_SQL, V3_SQL, V4_SQL, V5_SQL, V6_SQL, V7_SQL, V8_SQL, V9_SQL, V10_SQL, V11_SQL, V12_SQL, V13_SQL,V14_SQL,V15_SQL,V16_SQL,V17_SQL,V18_SQL,V19_SQL];
 function checkVersion(version: number) {
   if (!Number.isInteger(version) || version < 1 || version > SCHEMA_VERSION) throw new Error(msg("vault.schema.unsupportedVaultSchemaVersion"));
 }

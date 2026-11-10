@@ -38,6 +38,10 @@ export async function dispatch(service: VaultService, request: Request, hooks: H
     case "indexSkus":return service.indexSkus(request.data.id,request.data.offset,request.data.grid);
     case "indexTriggerSave":return service.indexTriggerSave(request.data.input);
     case "indexTriggerDelete":return service.indexTriggerDelete(request.data.id);
+    case "deadState":return service.deadState();
+    case "deadRows":return service.deadRows(request.data.offset, request.data.grid);
+    case "deadSettingsSave":return service.deadSettingsSave(request.data.input);
+    case "deadDraft":return service.deadDraft(request.data.ids);
     case "quoteGuidance":return service.quoteGuidance(request.data.id);
     case "quoteCrossSell":return service.quoteCrossSell(request.data.id);
     case "folderGet":return service.folderGet();
