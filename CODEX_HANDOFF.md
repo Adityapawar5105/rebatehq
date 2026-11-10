@@ -699,6 +699,15 @@ Precondition: 7F is CI-verified (7F-2 in CI #132 on 799c2f9; local vault v17, 50
 cents in the workspace currency, formula-safe exports without notes, long work with progress and cancel, a schema bump
 to v18 with the version-pin test updates, local Chrome and Edge gates on a production build, CI Chromium and Firefox.
 
+Pre-8A fixes first (blueprint v2.6, section 22 item 28):
+- Gap 2: a first-login onboarding card for Professional and Scale workspaces that explains the ciphertext-only relay
+  in one sentence and leads to Settings to turn sharing on and register this device's key. The relay is enabled by
+  the server (RELAY_ENABLED); show the card only where the relay is available and this device has no key yet, and let
+  the user dismiss it (remembered per workspace in this browser). No schema change.
+- Gap 4: 7F-2 already refuses a PDF with no text at all (message pdf.noText). Still to do: name the alternatives in
+  that message (the fixed-width converter for a print-layout report, or a CSV export from the ERP), and when only some
+  pages have no text, keep the readable pages and show a notice listing the skipped page numbers (no silent drop).
+
 1. Explainable deal guidance in Quote Desk: a suggested price per line with the "why" (guardrails, the
    customer's history, similar customers, recent cost moves), as message-key text. Reps see the suggested price
    and the reasons, never cost or margin.
