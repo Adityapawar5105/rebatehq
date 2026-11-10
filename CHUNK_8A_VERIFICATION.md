@@ -2,7 +2,7 @@
 
 Blueprint Phase 3, chunk 8A (BLUEPRINT_EXECUTION_PLAN.md section 9), opened by the two pre-8A fixes of blueprint v2.6 (section 22 item 28).
 
-**Status: built by Claude Code, 10 November 2026; CI result: pending.** Local vault schema unchanged (v17, 50 tables). No Supabase migration, no locked-hash change, no dependency change. Blueprint unchanged by this chunk (v2.6, commit `160e2bf`, governs).
+**8A is CI-verified** in [CI #135](https://github.com/Adityapawar5105/rebatehq/actions/runs/42786807751) on `666608f`, 10 November 2026 (Asia/Kolkata): 327 unit tests (78 JS + 249 TS), **62 authenticated Chromium vault checks** (including `guidanceUi`), **60 Firefox lab checks** (including `guidanceUi`), **12 real-authenticated local-Supabase relay checks**, the high/critical dependency audit, and the fresh 152-check pgTAP suite twice. Local vault v17 / 50 tables (unchanged); 11 locked migrations, zero pending; no restore drill needed (no Supabase change). Built by Claude Code. Local vault schema unchanged. No Supabase migration, no locked-hash change, no dependency change. Blueprint unchanged by this chunk (v2.6, commit `160e2bf`, governs).
 
 ## What was built
 
@@ -35,6 +35,10 @@ The browser gate adds `guidanceUi` (fresh vault, under the request and console m
 
 ## Unverified
 
-- The relay card with a real relay: the lab gate has no relay (the card stays hidden with no request); CI's authenticated gate runs with the relay enabled and checks dismissal.
+- The relay card with a real relay: the lab gate has no relay (the card stays hidden with no request). CI's authenticated gate runs with the relay enabled, so `guidanceUi` takes the card's dismiss path there, but the CI log lists check names only, so which branch ran is not shown in the evidence. The relay gate itself (12 checks) does not open the card.
 - Guidance quality on real pilot history (the windows and thresholds are starting points to tune with pilots); large-vault timings of guidance and cross-sell.
 - Native-language review of the new sentences; headed screen-reader use of the "Why" lists.
+
+## CI proof
+
+**8A is CI-verified** in [CI #135](https://github.com/Adityapawar5105/rebatehq/actions/runs/42786807751) on `666608f`, 10 November 2026 (Asia/Kolkata): 327 unit tests (78 JS + 249 TS), **62 authenticated Chromium vault checks** (including `guidanceUi`), **60 Firefox lab checks** (including `guidanceUi`), **12 real-authenticated local-Supabase relay checks**, the high/critical dependency audit, and the fresh 152-check pgTAP suite twice. Local vault v17 / 50 tables (unchanged); 11 locked migrations, zero pending; no restore drill needed (no Supabase change). Every job step passed, including both required browser gates; their result lists include `guidanceUi`. Next chunk: 8B, only on explicit instruction.
