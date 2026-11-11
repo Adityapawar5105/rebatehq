@@ -130,8 +130,10 @@ test("local data paths contain no business API, raw SQL protocol, or real OPFS w
   const workflow = readFileSync(".github/workflows/ci.yml", "utf8"); assert.ok(workflow.includes("pnpm test:vault:privacy")); assert.ok(!workflow.includes("continue-on-error"));
   // CI #87 hung for 6 hours in apt inside `playwright install --with-deps`: every job and the network-bound steps have limits.
   assert.match(workflow, /verify:\n\s+runs-on: [^\n]+\n(\s+#[^\n]*\n)*\s+timeout-minutes: \d+/); assert.match(readFileSync(".github/workflows/restore-drill.yml", "utf8"), /restore-drill:\n\s+runs-on: [^\n]+\n(\s+#[^\n]*\n)*\s+timeout-minutes: \d+/);
-  assert.ok(/timeout (-k \d+ )?\d+ pnpm exec playwright install --with-deps chromium/.test(workflow) && workflow.includes('Acquire::http::Timeout') && workflow.includes('DPkg::Lock::Timeout') && workflow.includes("pgrep -x 'apt-get|dpkg'") && !/^\s+pnpm exec playwright install/m.test(workflow), "the browser install is bounded and retried");
-  assert.match(workflow, /timeout (-k \d+ )?\d+ pnpm exec playwright install --with-deps firefox/);
+  // CI #145: a stalled mirror can still hang --with-deps, so both installs use one script with a browser-only fallback.
+  const install = readFileSync("scripts/ci-install-browser.sh", "utf8");
+  assert.ok(workflow.includes("run: bash scripts/ci-install-browser.sh chromium") && workflow.includes("run: bash scripts/ci-install-browser.sh firefox") && !/^\s+pnpm exec playwright install/m.test(workflow), "both browser installs go through the bounded script");
+  assert.ok(/timeout (-k \d+ )?\d+ pnpm exec playwright install --with-deps "\$browser"/.test(install) && /timeout (-k \d+ )?\d+ pnpm exec playwright install "\$browser"/.test(install) && install.includes('Acquire::http::Timeout') && install.includes('DPkg::Lock::Timeout') && install.includes("pgrep -x dpkg") && install.includes(".launch()"), "the browser install is bounded, retried, falls back without apt and proves a launch");
   assert.match(workflow, /Required Firefox local-vault lab gate\n\s+timeout-minutes: \d+/);
   assert.ok(workflow.includes('pnpm test:vault --browser=firefox'));
   assert.match(workflow,/verify:\n\s+runs-on: [^\n]+\n(\s+#[^\n]*\n)*\s+timeout-minutes: 60/);

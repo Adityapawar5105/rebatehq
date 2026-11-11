@@ -86,6 +86,13 @@ The request sensor allows `/api/bench` only inside that Owner-click phase.
 | Relay and Firefox gates, pgTAP on real Postgres | not run locally; CI runs them |
 | `scripts/webkit-precheck.mjs` (WebKit 27.2, Windows) | recorded, inconclusive; see SAFARI_SPIKE.md |
 
+## CI notes
+
+**[CI #145](https://github.com/Adityapawar5105/rebatehq/actions/runs/43045581322) on `baae101`:**
+- **Passed:** typecheck, unit tests, build, applying all migrations (including 8D) to a clean local Supabase, and the full pgTAP suite on real Postgres.
+- **Failed twice:** both attempts then timed out in "Install Playwright Chromium". The Azure Ubuntu package mirror stalled on font packages during `playwright install --with-deps`, before any browser test ran.
+- **Fix:** both browser steps now use `scripts/ci-install-browser.sh`. It makes one bounded attempt with system packages; if that fails, it stops a stalled apt download (never dpkg mid-install), downloads only the browser from Playwright's CDN, and proves it launches.
+
 ## Unverified
 
 - **CI on real Postgres and Supabase:** the pgTAP suite against real Postgres, and `benchUi` against the real API in the authenticated CI gate. These run in CI.
