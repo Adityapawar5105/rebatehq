@@ -7,9 +7,9 @@
   "hashUpdateDate": "2026-10-25",
   "hashUpdateReason": "Windows CRLF versus CI LF caused different raw-byte hashes; normalized hash matches the CI content hash.",
   "sqlContentUnchangedSinceBaselineRun": true,
-  "lockUpdateDate": "2026-11-05",
-  "lockUpdateReason": "Chunk 7A ciphertext-relay migration promoted from pending to locked after RebateHQ CI (run 42036039711) and Restore Drill #19 (local) passed on 7652013, with CI #82 on a65c395 covering the same migration plus the authenticated relay gate; CI #79-#81 failed only on test/proxy issues fixed in 6b05b0d, e95d53b and a65c395, not on the migration. Normalized hash and SQL content unchanged since ff2d5c6. Prior locked migrations unchanged.",
-  "appliedThrough": "20261105130000_chunk7a_ciphertext_relay.sql",
+  "lockUpdateDate": "2026-11-11",
+  "lockUpdateReason": "Chunk 8D benchmarks migration promoted from pending to locked after RebateHQ CI #146 (run 43059749723) on 63ba49c and the user-run Restore Drill #20 (run 43070833569, local target) on e7cb5fc passed; CI #145 on baae101 failed only in the Playwright Chromium install (stalled package mirror), fixed in 63ba49c, not on the migration. Normalized hash and SQL content unchanged since baae101. Prior locked migrations unchanged.",
+  "appliedThrough": "20261111120000_chunk8d_benchmarks.sql",
   "appliedMigrations": {
     "202610240001_phase1_foundation.sql": "8faa57997119f29b3921b0e15b4b9e964edbc7fa2ecd8b52fbe32392be38c3bb",
     "202610250001_revoke_platform_public_privileges.sql": "d4b48072fac75e3d5a6683fe4b13e00042c9feb5a6a65a9e5576e44ecb9214a2",
@@ -21,7 +21,8 @@
     "20261104120000_rename_app_role_to_rebatehq.sql": "5bb6e52a4b94e0b6710c79e952e4e8f7b23004800a47d6f503432551f3a57008",
     "20261104160022_chunk5b_control_plane.sql": "5eb84212424e1c3d92e0ef3768cabf5bb6335c6e53343073d7f4babad165c34d",
     "20261105120000_chunk6r_retire_wave1.sql": "855101531f9846b1f50dc088b370b3c21e4834a0deb72a7b25863ac9f662a668",
-    "20261105130000_chunk7a_ciphertext_relay.sql": "a5b51bc918c7fb4d5a619eed535090f5f4bd7ff711b1ad58722cd734e9338aeb"
+    "20261105130000_chunk7a_ciphertext_relay.sql": "a5b51bc918c7fb4d5a619eed535090f5f4bd7ff711b1ad58722cd734e9338aeb",
+    "20261111120000_chunk8d_benchmarks.sql": "a545e3519d2d56ec2f2bc97db2fa07d57dfd8d9caa593eacc60398e8216458b9"
   },
   "appliedOrder": [
     "202610240001_phase1_foundation.sql",
@@ -34,14 +35,11 @@
     "20261104120000_rename_app_role_to_rebatehq.sql",
     "20261104160022_chunk5b_control_plane.sql",
     "20261105120000_chunk6r_retire_wave1.sql",
-    "20261105130000_chunk7a_ciphertext_relay.sql"
-  ],
-  "pendingOrder": [
+    "20261105130000_chunk7a_ciphertext_relay.sql",
     "20261111120000_chunk8d_benchmarks.sql"
   ],
-  "pendingMigrations": {
-    "20261111120000_chunk8d_benchmarks.sql": "a545e3519d2d56ec2f2bc97db2fa07d57dfd8d9caa593eacc60398e8216458b9"
-  },
+  "pendingOrder": [],
+  "pendingMigrations": {},
   "appliedMigrationEvidence": {
     "202610250001_revoke_platform_public_privileges.sql": {
       "date": "2026-10-26",

@@ -163,7 +163,7 @@ re-signing after a competing append. Signed invalid content is quarantined
 without applying an approval. See RELAY_DESIGN.md for the trust ceremony and
 hash-chain limitations. No 7B or later features are included.
 
-## Chunk 8D benchmarks — pending CI and restore evidence
+## Chunk 8D benchmarks — CI-verified ([CI #146](https://github.com/Adityapawar5105/rebatehq/actions/runs/43059749723)) and [Restore Drill #20](https://github.com/Adityapawar5105/rebatehq/actions/runs/43070833569) passed; migration locked
 
 8D adds opt-in anonymous benchmarks (BENCHMARKS_DESIGN.md, approved 11 November 2026).
 

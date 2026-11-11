@@ -3,7 +3,7 @@
 Written 6 November 2026, after 7B (CI #89, #90, #91 green); updated 7 November 2026 after 7V (CI #95, #96 green). This file is the starting point for whoever builds
 the next chunk. It holds what a new session needs without the earlier chat history.
 
-**Current status (11 November 2026): 8C done and CI-verified (8C-1 [CI #140](https://github.com/Adityapawar5105/rebatehq/actions/runs/42896532114) on `efe4291`; 8C-2 [CI #142](https://github.com/Adityapawar5105/rebatehq/actions/runs/43028662048) on `16622a9`).** Local v20 / 58 tables. Next: **8D** (prompt 10), only on explicit instruction. See CHUNK_8C_VERIFICATION.md.
+**Current status (11 November 2026): 8D done ([CI #146](https://github.com/Adityapawar5105/rebatehq/actions/runs/43059749723); [Restore Drill #20](https://github.com/Adityapawar5105/rebatehq/actions/runs/43070833569); migration locked).** Local v21 / 61 tables; 25 public tenant tables; 12 locked migrations. Next: **8R** (prompt 11), only on explicit instruction. See CHUNK_8D_VERIFICATION.md.
 
 ## How to use this file
 1. Work **one chunk per session**, in the order below. Paste **Block A (shared context)** first, then that
@@ -30,8 +30,8 @@ the next chunk. It holds what a new session needs without the earlier chat histo
 | 7 | 8A Deal guidance and cross-sell | No | Done: [CI #135](https://github.com/Adityapawar5105/rebatehq/actions/runs/42786807751) on `666608f` (with the v2.6 pre-8A fixes) |
 | 8 | 8B Margin Drain agents, cost index, dead stock | Maybe (public index feed) | Done: 8B-1 [CI #137](https://github.com/Adityapawar5105/rebatehq/actions/runs/42847127386) on `509a0f8`; 8B-2 [CI #138](https://github.com/Adityapawar5105/rebatehq/actions/runs/42853411139) on `e23f5f7` (uploads only, no feed, no migration) |
 | 9 | 8C Win/loss, desktop offline mode, audit pack, templates | No | Done: 8C-1 [CI #140](https://github.com/Adityapawar5105/rebatehq/actions/runs/42896532114) on `efe4291`; 8C-2 [CI #142](https://github.com/Adityapawar5105/rebatehq/actions/runs/43028662048) on `16622a9` (Safari spike moved to 8D per v2.6 gap 5) |
-| 10 | 8D Opt-in anonymous benchmarks, Safari desktop spike | Yes (consent and aggregates) | **Next, only on explicit instruction** |
-| 11 | 8R Legacy table retirement, wave 2 | Yes (drops 12 tables) | — |
+| 10 | 8D Opt-in anonymous benchmarks, Safari desktop spike | Yes (consent and aggregates) | Done: [CI #146](https://github.com/Adityapawar5105/rebatehq/actions/runs/43059749723) on `63ba49c`, [Restore Drill #20](https://github.com/Adityapawar5105/rebatehq/actions/runs/43070833569); migration locked; Safari: WebKit pre-check only |
+| 11 | 8R Legacy table retirement, wave 2 | Yes (drops 12 tables) | **Next, only on explicit instruction** |
 | — | 9A Mobile field-rep PWA | — | **On hold until the user asks** |
 
 ---
@@ -51,7 +51,22 @@ Read before doing anything, in this order:
 5. The latest verification records: CHUNK_7V_VERIFICATION.md (UI components and layout rules), CHUNK_7B_VERIFICATION.md,
    CHUNK_7U_VERIFICATION.md, CHUNK_7A_VERIFICATION.md.
 
-Where things stand: chunks 4.0 through 7F, 7V and 8A-8C are CI-verified (local vault v20, 58 tables); Phase 2 is complete except mobile (9A, on hold). 8C (lib/quotes/winloss.ts, outcomes.ts; lib/reports/auditpack.ts, templates.ts; components/local/WinLoss.tsx, Templates.tsx, OfflineMode.tsx; public/sw.js; app/manifest.ts): 8C-1 [CI #140](https://github.com/Adityapawar5105/rebatehq/actions/runs/42896532114) on `efe4291`, 8C-2 [CI #142](https://github.com/Adityapawar5105/rebatehq/actions/runs/43028662048) on `16622a9`, 11 November 2026. The browser gate blocks service workers except in its offlineUi check (Playwright routes cannot see service-worker requests), and DuckDB-Wasm has no JSON extension: parse vault JSON in JavaScript. Next: 8D, only on explicit instruction.
+Where things stand: chunks 4.0 through 7F, 7V and 8A-8D are CI-verified (local vault v21, 61 tables; 25 public tenant tables; 12 locked migrations); Phase 2 is complete except mobile (9A, on hold).
+
+8D (opt-in anonymous benchmarks; BENCHMARKS_DESIGN.md) is in [CI #146](https://github.com/Adityapawar5105/rebatehq/actions/runs/43059749723) on `63ba49c` and [Restore Drill #20](https://github.com/Adityapawar5105/rebatehq/actions/runs/43070833569), 11 November 2026. Its code is in:
+- lib/bench/payload.ts, local.ts, store.ts and client.ts;
+- app/api/bench;
+- components/local/BenchmarksView.tsx;
+- migration 20261111120000_chunk8d_benchmarks.sql (locked);
+- supabase/tests/chunk8d_bench.sql.
+
+Things to know for the next chunk:
+- Browser installs in CI go through scripts/ci-install-browser.sh.
+- The browser gate blocks service workers except in its offlineUi check, and allows /api/bench only inside benchUi's Owner-click phase.
+- DuckDB-Wasm has no JSON extension: parse vault JSON in JavaScript.
+- Safari is unclaimed (SAFARI_SPIKE.md).
+
+Next: 8R, only on explicit instruction.
 Blueprint v2.4 (section 22, items 24-25) added work that 7C-3 covered. Blueprint v2.5 (items 26-27) adds a grid standard and row
 notes, built in 7V-3; from then on every new grid must meet that standard. New screens use the
 shared components in components/ui (ui.tsx, Icon.tsx, ui.module.css) inside the shell in components/local/VaultApp.tsx. The local vault is DuckDB-Wasm in a Web
@@ -825,7 +840,8 @@ Write CHUNK_8D_VERIFICATION.md.
 
 ```
 [Block A]
-Chunk 8R. Preconditions: 7A, 7B, 7D and 8B are CI-verified. Follow RETIREMENT_PROPOSAL.md "Wave 2" and repeat
+Chunk 8R. Preconditions: 7A, 7B, 7D and 8B are CI-verified (all are; 8D is too: CI #146, Restore Drill #20, 12 locked
+migrations, 25 public tenant tables). Follow RETIREMENT_PROPOSAL.md "Wave 2" and repeat
 exactly how 6R worked (read CHUNK_6R_VERIFICATION.md and migration 20261105120000_chunk6r_retire_wave1.sql).
 
 The tables: quote, quote_line, quote_share_link, approval, approval_rule, rebate_agreement, rebate_progress,
@@ -838,6 +854,9 @@ Steps:
 2. One new migration that drops them (plus dependent policies, functions and grants), following
    MIGRATION_RULES.md. Don't touch any applied migration. Update schema.sql or the schema check as 6R did.
 3. Update pgTAP and the inventory counts, run CI, then ask the user to run the Restore Drill (target local).
+   Since 8D, the tenant minimum is 25 (bench_consent counts), pgTAP plans 169/172 and the 5B check counts exactly 25
+   tables; adjust all three for the dropped tables. Keep bench_consent and the reviewed rebatehq_private benchmark
+   tables untouched.
 4. Keep the migration pending until CI and the drill both pass, then lock it in the close-out.
 
 Write CHUNK_8R_VERIFICATION.md. After 8R, every chunk except 9A is done. 9A waits for the user's explicit prompt.

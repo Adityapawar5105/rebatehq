@@ -138,6 +138,8 @@ The "data never leaves your device" claim (v2.6 gap 3) has new evidence from the
 - an operator-only k = 10 noisy release;
 - give to get, and withdrawal.
 
-It adds local vault **v21** (61 tables) and server migration `20261111120000_chunk8d_benchmarks.sql`. **8D passed CI** in [CI #146](https://github.com/Adityapawar5105/rebatehq/actions/runs/43059749723) on `63ba49c`: 357 unit tests, the 169-check pgTAP suite twice, 67 authenticated Chromium checks (`benchUi` against the real API), 64 Firefox and 12 relay checks. Because the package mirror stalled in [CI #145](https://github.com/Adityapawar5105/rebatehq/actions/runs/43045581322), browser installs now go through `scripts/ci-install-browser.sh`. **The migration is pending until a user-run Restore Drill passes; do not lock it before then.**
+It adds local vault **v21** (61 tables) and server migration `20261111120000_chunk8d_benchmarks.sql`. **8D passed CI** in [CI #146](https://github.com/Adityapawar5105/rebatehq/actions/runs/43059749723) on `63ba49c`: 357 unit tests, the 169-check pgTAP suite twice, 67 authenticated Chromium checks (`benchUi` against the real API), 64 Firefox and 12 relay checks. Because the package mirror stalled in [CI #145](https://github.com/Adityapawar5105/rebatehq/actions/runs/43045581322), browser installs now go through `scripts/ci-install-browser.sh`. The user-run [Restore Drill #20](https://github.com/Adityapawar5105/rebatehq/actions/runs/43070833569) (local target) on `e7cb5fc` passed, including the 8D benchmark-row comparison. **8D is complete**, and the migration is locked: 12 applied, 0 pending.
 
 The Safari desktop spike ran only as a WebKit pre-check, which was inconclusive (SAFARI_SPIKE.md). Safari stays unclaimed. See CHUNK_8D_VERIFICATION.md.
+
+**Next prompt: 8R** (wave-2 legacy table retirement), only on explicit instruction. Blueprint unchanged by this chunk.

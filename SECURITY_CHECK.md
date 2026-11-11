@@ -1,5 +1,26 @@
 # RebateHQ security verification
 
+## Chunk 8D — opt-in anonymous benchmarks (CI-verified, Restore Drill passed)
+
+Verified in [CI #146](https://github.com/Adityapawar5105/rebatehq/actions/runs/43059749723) on `63ba49c` (67 authenticated Chromium, 64 Firefox, 12 relay checks; 357 unit tests; 169-check pgTAP suite twice) and the user-run [Restore Drill #20](https://github.com/Adityapawar5105/rebatehq/actions/runs/43070833569) on `e7cb5fc`. Migration locked.
+
+**What leaves the device**
+- Only the exact payload of `lib/bench/payload.ts`: whole-point bands per standard family, the quarter and a size band. Both the device and `/api/bench` check it, and the server function `bench_submit` checks it again.
+- It is sent only on explicit Owner clicks. The browser gate proves there is no request before the first click, that the body is exactly the reviewed payload, and that no fixture marker appears in any request.
+
+**On the server**
+- Contributions are stored under HMAC pseudonyms whose key is only in the server environment. They live in reviewed `rebatehq_private` tables with no tenant, no privileges and no row audit.
+- Consent is an Owner-only, audited tenant table.
+- Release is operator-only, with k = 10, Laplace noise over 5-point ranges, and each quarter frozen once released.
+- Give to get and withdrawal are enforced in SQL.
+- The restore drill compares the benchmark rows by hash.
+
+**Unchanged**
+- Decision 16 holds: no benchmark command is reachable by a Sales Rep.
+- The CSP and the engine integrity pins are unchanged.
+
+Details: [CHUNK_8D_VERIFICATION.md](./CHUNK_8D_VERIFICATION.md), [BENCHMARKS_DESIGN.md](./BENCHMARKS_DESIGN.md).
+
 ## Chunk 8C — win/loss, audit pack, templates and offline mode (CI-verified)
 
 Verified in [CI #140](https://github.com/Adityapawar5105/rebatehq/actions/runs/42896532114) on `efe4291` (8C-1) and [CI #142](https://github.com/Adityapawar5105/rebatehq/actions/runs/43028662048) on `16622a9` (8C-2), 11 November 2026 (66 authenticated Chromium, 63 Firefox and 12 relay checks; 349 unit tests).

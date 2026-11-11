@@ -309,7 +309,7 @@ migration stays pending until CI and the user's manually triggered local-target
 Restore Drill both pass. Hosted target, independent protocol review, physical
 crash recovery and operational key-loss recovery remain unverified.
 
-## Chunk 8D benchmarks — operations (pending CI and Restore Drill)
+## Chunk 8D benchmarks — operations (CI-verified in [CI #146](https://github.com/Adityapawar5105/rebatehq/actions/runs/43059749723); [Restore Drill #20](https://github.com/Adityapawar5105/rebatehq/actions/runs/43070833569) passed)
 
 - **Turning it on:** set `BENCHMARKS_ENABLED=true` and `BENCH_PSEUDONYM_KEY` (32 random bytes in hex) in the server environment, from the secret manager.
   - Never store the key in the database or in git.

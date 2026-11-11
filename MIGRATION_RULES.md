@@ -44,9 +44,9 @@ the one function ACL registry. The pending migration must not be locked until
 both green CI and a **user-run** Restore Drill pass. Only pending lock entries
 may change in this chunk; all ten applied SQL hashes remain frozen.
 
-## 8D benchmark exception and inventory (pending evidence)
+## 8D benchmark exception and inventory (locked 11 November 2026)
 
-`20261111120000_chunk8d_benchmarks.sql` is **pending**: its hash is recorded under `pendingMigrations` in `migrations.lock`. Lock it only after green CI and a **user-run** Restore Drill.
+`20261111120000_chunk8d_benchmarks.sql` is **locked**. It passed [CI #146](https://github.com/Adityapawar5105/rebatehq/actions/runs/43059749723) on `63ba49c` and the user-run [Restore Drill #20](https://github.com/Adityapawar5105/rebatehq/actions/runs/43070833569) on `e7cb5fc`; 12 migrations are applied and 0 are pending.
 
 **Tenant inventory.** The public tenant-table minimum is now **25**: `bench_consent` joins the 24. It is tested in `supabase/tests/chunk8d_bench.sql`, loaded by the shared SQL loader, which has its own fixtures and is excluded from the generic fixture graph like the licence and relay tables. Fresh runs plan **169** checks; restore runs plan **172**.
 
