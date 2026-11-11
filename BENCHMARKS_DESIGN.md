@@ -1,12 +1,12 @@
 # Opt-in anonymous benchmarks: design (chunk 8D)
 
-**Status: draft for the user's approval (11 November 2026). No code is written until this is approved.** Blueprint v2.6 governs: Phase 3 lists "Opt-in anonymous benchmarks (aggregates only, explicit consent)", section 20 question 5 asks whether to do this "given the privacy wording it needs", and decision 11 (privacy gate before any privacy claim) applies.
+**Status: approved by the user on 11 November 2026**, with one change before build: publishing uses 5-point ranges (section 3). Blueprint v2.6 governs: Phase 3 lists "Opt-in anonymous benchmarks (aggregates only, explicit consent)", section 20 question 5 asks whether to do this "given the privacy wording it needs", and decision 11 (privacy gate before any privacy claim) applies.
 
 ## 1. What the user gets
 
 On a new **Benchmarks** screen, an opted-in workspace sees how its margins compare with anonymous peers in the same product family and size band. Each metric is shown as the peer 25th percentile, median and 75th percentile, next to the workspace's own value.
 
-> Example: Electrical, mid-size distributors, Q3 2026: pocket margin median 24% (middle half 21–27%); yours 22%.
+> Example: Electrical, mid-size distributors, Q3 2026: pocket margin median 20–24%, middle half 15–29%; yours 22%.
 
 ## 2. What is computed locally
 
@@ -67,11 +67,15 @@ Revenue in other currencies is converted with the workspace's own stored rates. 
 
 **k-anonymity.** The server publishes a family × size band × metric cell only when at least **k = 10** distinct workspaces contributed to it that quarter. Smaller cells show "not enough peers yet". Cells are not merged automatically, so a thin market never collapses into a group of one.
 
+**Publishing in 5-point ranges (decided 11 November 2026).** The device still sends 1-point bands. Before adding noise, the server groups them into 21 ranges of 5 points: −20 to −16, −15 to −11, … 75 to 79, and 80. It publishes each percentile as a range, for example 20–24%.
+
+A simulation of the first design (1-point bins, k = 10, ε = 1) showed a typical median error of 3 points, and 1 cell in 10 off by 12 points or more. With 5-point ranges the typical error is 2 points and 1 cell in 10 is off by 6 or more. The user chose 5-point ranges with k = 10 over k = 25 (more accurate, but needs far more peers) and over dropping the noise.
+
 **Noise (differential privacy).**
-- The server builds each cell's band histogram and adds Laplace noise with scale 1/ε to every bin. ε = 1 per cell per quarter.
-- Bins are clamped at 0, and the percentiles are read from the noisy histogram.
+- The server builds each cell's histogram over the 21 ranges and adds Laplace noise with scale 1/ε to every range. ε = 1 per cell per quarter.
+- Ranges are clamped at 0. The 25th, 50th and 75th percentiles are the ranges in which the noisy cumulative count first reaches 25%, 50% and 75% of the noisy total.
 - If the noisy total falls under 10, the cell is suppressed.
-- Each workspace adds at most 1 to one bin per cell, so the per-cell sensitivity is 1.
+- Each workspace adds at most 1 to one range per cell, so the per-cell sensitivity is 1.
 
 **Release once.** Each quarter's figures are computed once, when a quarter closes 45 days after quarter end, and then frozen. Repeated queries return the same noisy release, so averaging cannot strip the noise. Late contributions do not change a released quarter.
 
@@ -105,7 +109,7 @@ There is one new Supabase migration. Business data stays off the server; these a
 | --- | --- | --- |
 | `bench_consent` | `workspace_id`, `opted_in`, `consent_version`, `decided_by` (user ID), `decided_at` | the workspace's Owner (RLS) |
 | `bench_contributions` | `pseudonym`, `quarter`, `size_band`, `family`, `metric`, `band`, `received_at`; **no workspace ID** | nobody through the API (insert and delete only through RPCs) |
-| `bench_releases` | `quarter`, `size_band`, `family`, `metric`, `p25`, `p50`, `p75`, `epsilon`, `released_at` | opted-in workspaces that contributed that quarter |
+| `bench_releases` | `quarter`, `size_band`, `family`, `metric`, `p25`, `p50`, `p75` (each the lower edge of a 5-point range), `epsilon`, `released_at` | opted-in workspaces that contributed that quarter |
 
 - **Pseudonym** = HMAC-SHA256(server-only key, workspace ID ‖ quarter). The database never stores which workspace sent a contribution. The key lives in the server environment, never in the database or the client, so a database leak alone cannot link a contribution to a workspace. The operator, holding the key, could re-link; this is stated in the threat model and in the consent text.
 - **RPCs:**
@@ -187,13 +191,13 @@ Each of these would need a new design and approval.
 
 ## 12. Open decisions for you
 
-1. **Approve this design.** In particular:
+1. **Approve this design.** Approved 11 November 2026, with 5-point publishing ranges (section 3). In particular:
    - k = 10;
    - ε = 1 per cell per quarter;
    - 1-point bands;
    - the 12 families;
    - 4 size bands;
    - the family minimums (200 lines, 20 customers, at most 25% from one customer).
-2. **Tier:** Professional and Scale only (proposed), or every tier.
-3. **Give to get:** proposed yes (only contributors see a quarter's figures).
-4. **Safari spike:** can you run it on a Mac with Safari? If not, 8D records WebKit pre-check results only, and Safari stays unclaimed.
+2. **Tier:** Professional and Scale only. Decided.
+3. **Give to get:** yes; only contributors see a quarter's figures. Decided.
+4. **Safari spike:** no Mac is available for now, so 8D records WebKit pre-check results only, and Safari stays unclaimed. Decided.

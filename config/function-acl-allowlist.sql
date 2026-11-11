@@ -25,7 +25,13 @@ INSERT INTO pg_temp.phase1_function_allowlist(signature,grantees) VALUES
  ('public.invite_licence_limit()',ARRAY['$owner']),
  ('public.relay_allowed(uuid,boolean)',ARRAY['$owner','rebatehq_app']),
  ('public.relay_directory(uuid)',ARRAY['$owner','rebatehq_app']),
- ('public.relay_check_insert()',ARRAY['$owner']);
+ ('public.relay_check_insert()',ARRAY['$owner']),
+ ('public.bench_owner(uuid,boolean)',ARRAY['$owner','rebatehq_app']),
+ ('public.bench_quarter_end(text)',ARRAY['$owner','rebatehq_app']),
+ ('public.bench_submit(uuid,bytea,text,text,jsonb)',ARRAY['$owner','rebatehq_app']),
+ ('public.bench_withdraw(uuid,bytea[])',ARRAY['$owner','rebatehq_app']),
+ ('public.bench_figures(uuid,bytea,text)',ARRAY['$owner','rebatehq_app']),
+ ('public.bench_publish(text,numeric,integer)',ARRAY['$owner']);
 
 CREATE TEMP VIEW phase1_public_function_inventory AS
 SELECT p.oid,p.proowner,p.prosecdef,p.proacl,

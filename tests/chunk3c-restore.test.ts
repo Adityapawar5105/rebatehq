@@ -34,7 +34,7 @@ test("Restore inventory hashes wave-2 rows whose IDs outlived the retired tables
   await db.query("BEGIN");const rows=await seedRestoreData(db);await db.query("COMMIT");
   assert.equal((await db.query("SELECT name FROM public.rebate_agreement WHERE id=$1",[rows.agreement])).rows[0].name,"RESTORE-SENTINEL");
   const tableNames=(await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")).rows.map((r:any)=>r.tablename);
-  assert.equal(tableNames.length,24);
+  assert.equal(tableNames.length,25); // 8D adds bench_consent
   const columns=(await db.query(applicationColumnsSql,[tableNames])).rows;
   assert.equal(assertApplicationColumnsEqual(columns,structuredClone(columns)),true);
   assert.throws(()=>assertApplicationColumnsEqual(columns,columns.filter((c:any)=>c.column_name!=="uom_code")),/quote_line.uom_code/);

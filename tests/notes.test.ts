@@ -37,7 +37,7 @@ test('7V-3b schema v15 adds an empty note to every existing customer and product
     c.query(upgradeSql(14));
     assert.deepEqual(q(c, 'SELECT product_id, description FROM products'), before);
     assert.equal(note(c, 'products', 'product_id', 'P1'), null); assert.equal(note(c, 'customers', 'customer_id', 'C1'), null);
-    assert.equal(SCHEMA_VERSION,20); assert.equal(tablesFor(15).length, 45);
+    assert.equal(SCHEMA_VERSION,21); assert.equal(tablesFor(15).length, 45);
   } finally { c.close(); }
 });
 

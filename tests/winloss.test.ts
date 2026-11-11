@@ -40,9 +40,9 @@ const SEED: [string, wl.OutcomeInput][] = [["q1", { outcome: "won", reason: "pri
 const pdfText = (bytes: Uint8Array) => [...Buffer.from(bytes).toString("latin1").matchAll(/\(((?:\\.|[^\\)])*)\) Tj/g)].map(m => m[1].replace(/\\([0-7]{3}|.)/g, (_, x: string) => x.length === 3 ? String.fromCharCode(parseInt(x, 8)) : x)).join(" ");
 
 test("8C-1 schema v20: one outcome per quote, codes checked", async () => {
-  assert.equal(SCHEMA_VERSION, 20);
+  assert.ok(SCHEMA_VERSION >= 20);
   assert.deepEqual(tablesFor(20).filter(t => !tablesFor(19).includes(t)), ["quote_outcomes"]);
-  assert.ok(upgradeSql(19).startsWith("CREATE TABLE quote_outcomes")); assert.equal(upgradeSql(20), "");
+  assert.ok(upgradeSql(19).startsWith("CREATE TABLE quote_outcomes")); assert.ok(!upgradeSql(20).includes("quote_outcomes"), "v20 tables are created once");
   const { c } = await vault();
   try {
     assert.throws(() => c.query(`INSERT INTO quote_outcomes VALUES('q1','maybe','price',NULL,NULL,'rep','${AT}')`));

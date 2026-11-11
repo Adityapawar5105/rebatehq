@@ -920,3 +920,36 @@ This proves the tested authenticated local-vault flow, not deployed/hosted authe
 - **Test method:**
   - The browser gate blocks service workers in every check except the offline one, because Playwright's request routing (used for the gate's test-code and quota seams) cannot see requests a service worker answers.
   - The offline check cuts the network for real: it reaches the app through a local TCP relay and closes it. Playwright's offline switch does not cover requests the service worker makes, so on its own it would not prove anything.
+
+## 8D — opt-in anonymous benchmarks and the Safari pre-check (11 November 2026)
+
+- **Design:** BENCHMARKS_DESIGN.md, approved by the user on 11 November 2026 with one change before build. Peer figures are published as 5-point ranges, not 1-point bands. A simulation showed 1-point noisy histograms with k = 10 and ε = 1 put 1 published median in 10 off by 12 points or more; with 5-point ranges that falls to 6 or more.
+- **Decisions:** Professional and Scale only; give to get (only contributors see a quarter); no Mac, so the Safari spike is a WebKit pre-check only (SAFARI_SPIKE.md).
+- **On the device:**
+  - **Family map:** the Owner maps categories to 12 standard families, and the map stays in the vault.
+  - **What is computed:** for the last complete calendar quarter (UTC), the worker computes each mapped family's rates from sale lines (credits excluded) with the 4D waterfall. Pocket = list − discount − rebate − freight.
+    - pocket margin = (pocket − cost) ÷ pocket, over costed lines;
+    - discount and rebate are divided by list;
+    - freight is divided by pocket.
+  - **Bands:** each rate is rounded down to a whole point and clipped to −20…80.
+  - **Family minimums:** a family is shared only with at least 200 lines and 20 customers, and no customer above 25% of its pocket revenue.
+  - **Size band:** from the quarter's total pocket revenue in the workspace currency; S1 is under $1M, S2 up to $5M, S3 up to $20M, S4 above.
+  - **The payload:** checked by one shared function (`lib/bench/payload.ts`) on the device and the server. It holds only `v`, `quarter`, `sizeBand` and up to 48 rows of family code, metric code and integer band.
+- **Who does what:**
+  - Cost roles see the bands and any figures the Owner fetched (kept in the vault, so they read them offline).
+  - Only the local Owner role maps families and records shares, figures and withdrawal.
+  - The server checks that the caller is the workspace Owner, active and seated, with an active Professional or Scale licence. Opting out and withdrawing need no licence.
+  - A Sales Rep reaches no benchmark command (decision 16; every command needs `cost`).
+- **Network:** nothing is sent when a screen opens. "Check sharing status", "Turn on", "Share", "Get figures", "Turn off" and "Delete my shared bands" are each one explicit Owner request. There is no background, scheduled or service-worker sending. Each share writes a local audit entry with the quarter and a count; the bands themselves stay in `bench_shares`.
+- **On the server:**
+  - **Pseudonym:** HMAC-SHA256(`BENCH_PSEUDONYM_KEY`, tenant ‖ quarter), so a different pseudonym every quarter. The key is only in the server environment.
+  - **Storage:** contributions sit in the private schema without a tenant. Submissions are limited to 5 per workspace, quarter and day; a resubmission replaces the earlier rows.
+  - **What can be shared:** only a completed, unreleased quarter.
+  - **Withdrawal:** deletes the rows for every quarter from 2024-Q1 to now and records the opt-out. Released figures stay.
+- **Release (operator, `scripts/bench-release.mjs`):** once per quarter, at least 45 days after it ends.
+  - **Cells:** a size band × family × metric cell needs 10 contributing workspaces.
+  - **Noise:** a histogram over the 21 five-point ranges (−20…−16 up to 75…79, then 80), with Laplace(1/ε) noise on each range, ε = 1, clamped at 0.
+  - **Percentiles:** the ranges where the noisy cumulative count reaches 25%, 50% and 75%.
+  - **Suppression:** a cell is suppressed when its noisy total is under 10.
+  - **Freezing:** each quarter is released once and then frozen.
+- **WebKit pre-check:** recorded, not passed or failed; see SAFARI_SPIKE.md. Safari desktop remains unclaimed.

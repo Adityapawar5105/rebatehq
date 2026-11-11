@@ -67,7 +67,8 @@ context.on("request", r => {
     if (markers.some(m => text.includes(m))) failures.push("Private fixture value appeared in a network request");
   }).catch(() => { failures.push("Could not inspect complete request headers"); }));
   const url = new URL(r.url());
-  if (dataPlaneActive && (![new URL(base).origin, relayOrigin].includes(url.origin) || !["GET", "HEAD"].includes(r.method()) || (url.pathname.startsWith("/api/") && !(url.pathname==="/api/licence"&&r.method()==="GET"&&[...url.searchParams.keys()].every(k=>k==="device")&&!r.postData())))) failures.push("Vault flow made an unexpected external or API request");
+  // 8D: only while the benchmark check has opened the Owner-click phase may /api/bench be called (the check asserts each body).
+  if (dataPlaneActive && !(benchOpen && url.origin === new URL(base).origin && url.pathname === "/api/bench") && (![new URL(base).origin, relayOrigin].includes(url.origin) || !["GET", "HEAD"].includes(r.method()) || (url.pathname.startsWith("/api/") && !(url.pathname==="/api/licence"&&r.method()==="GET"&&[...url.searchParams.keys()].every(k=>k==="device")&&!r.postData())))) failures.push("Vault flow made an unexpected external or API request");
   requests.push(new URL(r.url()).pathname);
 });
 context.on("console", m => {
@@ -453,7 +454,7 @@ async function winLossUi(){
 // holds only shell paths and no business data (no import marker, no /api/). "Remove offline copy" empties it.
 // A TCP relay to the app server on another port of the same host. Closing it cuts every connection, including the
 // service worker's own fetches, which Playwright's offline emulation does not cover.
-let relayOrigin=null;
+let relayOrigin=null,benchOpen=false;
 async function tcpRelay(target){
  const t=new URL(target),sockets=new Set();
  const server=net.createServer(c=>{const u=net.connect(Number(t.port||80),t.hostname);for(const x of [c,u]){sockets.add(x);x.on('error',()=>x.destroy());x.on('close',()=>{sockets.delete(x);c.destroy();u.destroy();});}c.pipe(u);u.pipe(c);});
@@ -494,6 +495,58 @@ async function offlineUi(){
  assert.equal(await page.evaluate(async()=>(await caches.keys()).length),0,'Remove offline copy left a cache');
  results.checks.offlineUi={swControls:true,serverCut:true,offlineReloadUnlock:true,sameLines:true,cacheScan:{entries:scan.length,businessData:0,api:0},licenceGrace:true,removeCopy:true,phone375:true,privacyMarkers:true};
  }catch(error){await context.setOffline(false).catch(()=>undefined);console.error('Offline UI diagnostics:',JSON.stringify(await diagnose()));throw error;}finally{await relay.close();relayOrigin=null;await context.close();context=savedContext;page=savedPage;dataPlaneActive=active;}
+}
+// 8D: opt-in anonymous benchmarks. 240 Wire lines over 24 customers in the last complete quarter (list 100.00, discount
+// 10.00, rebate 2.00, freight 3.00, cost 60.00): bands pocket margin 29, discount 10, rebate 2, freight 3; size S1. Nothing
+// reaches /api/bench until the Owner clicks; the share request carries exactly that payload, with no fixture marker. In
+// lab mode a stand-in server answers /api/bench; in CI the real API and database do.
+async function benchUi(){
+ const savedContext=context,savedPage=page,active=dataPlaneActive;
+ context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-bench-')),browserOptions);await configureContext();page=await openPage();
+ const calls=[];context.on('request',r=>{const u=new URL(r.url());if(u.pathname==='/api/bench')calls.push({method:r.method(),mode:u.searchParams.get('mode'),body:r.postData()?JSON.parse(r.postData()):null});});
+ const now=new Date(),qn=Math.floor(now.getUTCMonth()/3)+1,qy=now.getUTCFullYear(),quarter=qn===1?(qy-1)+'-Q4':qy+'-Q'+(qn-1),[y,n]=[Number(quarter.slice(0,4)),Number(quarter.slice(6))],start=Date.UTC(y,(n-1)*3,1);
+ if(!auth){let state=null;await context.route('**/api/bench**',async r=>{const q=r.request(),u=new URL(q.url()),b=q.postData()?JSON.parse(q.postData()):{};
+  if(q.method()==='GET'&&u.searchParams.get('mode')==='state')return r.fulfill({json:{consent:state}});
+  if(b.action==='consent'){state={optedIn:b.optedIn,version:1,decidedAt:new Date().toISOString()};return r.fulfill({json:{consent:state}});}
+  if(b.action==='share')return r.fulfill({json:{quarter:b.payload.quarter,stored:b.payload.rows.length}});
+  if(q.method()==='GET'&&u.searchParams.get('mode')==='figures')return r.fulfill({json:{quarter,cells:[{sizeBand:'S1',family:'electrical',metric:'pocket_margin',p25:25,p50:25,p75:30,epsilon:'1.000',releasedAt:new Date().toISOString()}]}});
+  if(b.action==='withdraw'){state={optedIn:false,version:1,decidedAt:new Date().toISOString()};return r.fulfill({json:{deleted:1,consent:state}});}
+  return r.fulfill({status:400,json:{error:'unexpected'}});});}
+ try{
+ dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic benchmark owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
+ const wire='Wire '+marker,pipe='Pipe '+marker,w=marker+'-BW',p=marker+'-BP',day=i=>new Date(start+(i%60)*86400000).toISOString().slice(0,10),lines=['line_id,product_id,customer_id,sale_date,quantity,list_amount,discount_amount,freight_amount,rebate_amount,cost_amount'];
+ for(let i=1;i<=240;i++)lines.push([i,w,marker+'-BC'+(i%24+1),day(i),1,'100.00','10.00','3.00','2.00','60.00'].join(','));
+ for(let i=241;i<=245;i++)lines.push([i,p,marker+'-BC1',day(i),1,'50.00','10.00','0','0','30.00'].join(','));
+ await page.locator('nav a[href="#data-hub"]').click();await importFiles([
+  {name:'bench-items.csv',mimeType:'text/csv',buffer:Buffer.from('product_id,description,category,uom,current_cost,list_price\n'+w+',Synthetic wire,'+wire+',EA,60.00,100.00\n'+p+',Synthetic pipe,'+pipe+',EA,30.00,50.00\n')},
+  {name:'bench-customers.csv',mimeType:'text/csv',buffer:Buffer.from('customer_id,name,tier\n'+Array.from({length:24},(_,i)=>marker+'-BC'+(i+1)+',Synthetic '+(i+1)+',T1').join('\n')+'\n')},
+  {name:'bench-sales.csv',mimeType:'text/csv',buffer:Buffer.from(lines.join('\n')+'\n')}],'245');
+ await page.locator('nav a[href="#reports"]').click();await page.getByTestId('benchmarks').waitFor({timeout:60000});
+ await page.getByTestId('bench-family-'+wire).selectOption('electrical');await page.getByTestId('bench-family-'+pipe).selectOption('plumbing');await page.getByTestId('bench-map-save').click();
+ await page.getByTestId('bench-families').locator('tbody tr[data-included="yes"]').waitFor({timeout:60000});
+ const expected={v:1,quarter,sizeBand:'S1',rows:[{family:'electrical',metric:'pocket_margin',band:29},{family:'electrical',metric:'discount_rate',band:10},{family:'electrical',metric:'rebate_rate',band:2},{family:'electrical',metric:'freight_rate',band:3}]};
+ assert.deepEqual(JSON.parse(await page.getByTestId('bench-payload').innerText()),expected,'The reviewed payload is not the expected bands');
+ await page.waitForTimeout(800);assert.equal(calls.length,0,'The Benchmarks screen sent a request before any click');
+ // From here, only the Owner's clicks reach /api/bench.
+ benchOpen=true;
+ await page.getByTestId('bench-check').click();await page.locator('[data-testid="bench-consent"][data-state="off"]').waitFor({timeout:30000});
+ await page.getByTestId('bench-agree').check();await page.getByTestId('bench-optin').click();await page.getByTestId('bench-share').waitFor({timeout:30000});
+ await page.getByTestId('bench-share').click();await page.getByTestId('bench-note').filter({hasText:'shared: 4 bands'}).waitFor({timeout:30000});
+ const shares=calls.filter(c=>c.body?.action==='share');assert.equal(shares.length,1);assert.deepEqual(shares[0].body,{action:'share',payload:expected},'The share request is not exactly the reviewed payload');
+ await page.getByTestId('bench-figures-get').click();
+ if(auth)await page.getByTestId('bench-note').filter({hasText:'No figures released'}).waitFor({timeout:30000});
+ else await page.getByTestId('bench-figures-grid').locator('tbody tr').filter({hasText:'25–29%'}).waitFor({timeout:30000});
+ await page.setViewportSize({width:375,height:812});await page.waitForTimeout(300);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Benchmarks overflow a phone');await page.screenshot({path:'test-results/benchmarks-'+channel+'.png',fullPage:true});await page.setViewportSize({width:1280,height:800});
+ await page.getByTestId('bench-withdraw').click();await page.getByTestId('bench-withdraw-confirm').click();await page.getByTestId('bench-note').filter({hasText:'Deleted 1 shared quarters'}).waitFor({timeout:30000});
+ benchOpen=false;
+ assert.deepEqual(calls.map(c=>c.body?.action??c.mode),['state','consent','share','figures','withdraw'],'Unexpected benchmark requests');
+ assert.ok(!JSON.stringify(calls).includes(marker),'A fixture marker reached a benchmark request');
+ // A Sales Rep sees no benchmarks.
+ await page.locator('nav a[href="#settings"]').click();await page.getByLabel('Preview as').selectOption('sales_rep');await page.getByTestId('preview-banner').waitFor();
+ await page.locator('nav a[href="#reports"]').click();await page.waitForTimeout(600);assert.equal(await page.getByTestId('benchmarks').count(),0,'A Sales Rep sees benchmarks');
+ await page.getByTestId('preview-banner').getByRole('button',{name:'Return to my own view'}).click();await page.getByTestId('preview-banner').waitFor({state:'detached'});
+ results.checks.benchUi={noRequestBeforeClick:true,exactPayload:true,bands:[29,10,2,3],sizeBand:'S1',server:auth?'real API':'lab stand-in',figures:true,withdraw:true,repHidden:true,phone375:true,privacyMarkers:true};
+ }catch(error){console.error('Benchmarks UI diagnostics:',JSON.stringify(await diagnose()));throw error;}finally{benchOpen=false;await context.close();context=savedContext;page=savedPage;dataPlaneActive=active;}
 }
 async function reportsUi(){
  const savedContext=context,savedPage=page,active=dataPlaneActive;
@@ -586,7 +639,7 @@ async function monitorUi(){
 await build({ entryPoints: ["tests/helpers/studio-fixtures.ts"], outfile: "test-results/studio-fixtures.mjs", bundle: true, platform: "node", format: "esm" });
 const fixtures = await import(new URL("../test-results/studio-fixtures.mjs", import.meta.url).href);
 try {
- if(process.argv.includes('--offline-ui-only')){await offlineUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Offline UI focused gate passed ('+channel+').');}else if(process.argv.includes('--winloss-ui-only')){await winLossUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Win/loss UI focused gate passed ('+channel+').');}else if(process.argv.includes('--dead-ui-only')){await deadStockUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Dead-stock UI focused gate passed ('+channel+').');}else if(process.argv.includes('--agents-ui-only')){await agentsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Agents UI focused gate passed ('+channel+').');}else if(process.argv.includes('--guidance-ui-only')){await guidanceUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Guidance UI focused gate passed ('+channel+').');}else if(process.argv.includes('--converters-ui-only')){await convertersUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Converters UI focused gate passed ('+channel+').');}else if(process.argv.includes('--reports-ui-only')){await reportsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Reports UI focused gate passed ('+channel+').');}else if(process.argv.includes('--sim-ui-only')){await simUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Simulator UI focused gate passed ('+channel+').');}else if(process.argv.includes('--vendors-ui-only')){await vendorsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Vendor UI focused gate passed ('+channel+').');}else if(process.argv.includes('--suppliers-ui-only')){await suppliersUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Supplier UI focused gate passed ('+channel+').');}else{
+ if(process.argv.includes('--bench-ui-only')){await benchUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Benchmarks UI focused gate passed ('+channel+').');}else if(process.argv.includes('--offline-ui-only')){await offlineUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Offline UI focused gate passed ('+channel+').');}else if(process.argv.includes('--winloss-ui-only')){await winLossUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Win/loss UI focused gate passed ('+channel+').');}else if(process.argv.includes('--dead-ui-only')){await deadStockUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Dead-stock UI focused gate passed ('+channel+').');}else if(process.argv.includes('--agents-ui-only')){await agentsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Agents UI focused gate passed ('+channel+').');}else if(process.argv.includes('--guidance-ui-only')){await guidanceUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Guidance UI focused gate passed ('+channel+').');}else if(process.argv.includes('--converters-ui-only')){await convertersUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Converters UI focused gate passed ('+channel+').');}else if(process.argv.includes('--reports-ui-only')){await reportsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Reports UI focused gate passed ('+channel+').');}else if(process.argv.includes('--sim-ui-only')){await simUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Simulator UI focused gate passed ('+channel+').');}else if(process.argv.includes('--vendors-ui-only')){await vendorsUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Vendor UI focused gate passed ('+channel+').');}else if(process.argv.includes('--suppliers-ui-only')){await suppliersUi();await Promise.all(headerChecks);assert.deepEqual(failures,[]);results.status='passed';console.log('Supplier UI focused gate passed ('+channel+').');}else{
   if (auth) {
     assert.notEqual(process.env.LEGACY_BUSINESS_ENABLED,'true','Privacy gate must run with legacy business routes OFF');
     await signInLocal(context,page,base);
@@ -1034,7 +1087,7 @@ try {
   }
   await monitorUi();
   await rebatesUi();
-  await suppliersUi(); await vendorsUi(); await simUi(); await reportsUi(); await convertersUi(); await guidanceUi(); await agentsUi(); await deadStockUi(); await winLossUi(); if (channel !== 'firefox') await offlineUi();
+  await suppliersUi(); await vendorsUi(); await simUi(); await reportsUi(); await convertersUi(); await guidanceUi(); await agentsUi(); await deadStockUi(); await winLossUi(); await benchUi(); if (channel !== 'firefox') await offlineUi();
   await recoveryUi();
   if(auth){
     const device=await page.evaluate(()=>{const key=Object.keys(localStorage).find(k=>k.startsWith('rebatehq-device-v1:'));return localStorage.getItem(key);});assert.ok(device);

@@ -4,6 +4,13 @@ import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import pg from "pg";
 
 const { Pool } = pg;
+// 8D: pseudonymous benchmark rows in rebatehq_private, compared by hash only (no band or pseudonym is printed). Run only
+// when the 8D migration is present.
+export const benchPrivateSql=`SELECT
+ (SELECT md5(COALESCE(string_agg(encode(pseudonym,'hex')||quarter||size_band,'|' ORDER BY pseudonym,quarter),'')) FROM rebatehq_private.bench_submission) AS submissions,
+ (SELECT md5(COALESCE(string_agg(encode(pseudonym,'hex')||quarter||family||metric||band::text,'|' ORDER BY pseudonym,quarter,family,metric),'')) FROM rebatehq_private.bench_contribution) AS contributions,
+ (SELECT md5(COALESCE(string_agg(quarter||size_band||family||metric||p25::text||p50::text||p75::text,'|' ORDER BY quarter,size_band,family,metric),'')) FROM rebatehq_private.bench_release) AS releases,
+ (SELECT md5(COALESCE(string_agg(quarter||cells::text,'|' ORDER BY quarter),'')) FROM rebatehq_private.bench_release_log) AS release_log`;
 export const privateIssuerSql=`SELECT c.relname,c.relkind,c.relrowsecurity,c.relforcerowsecurity,pg_get_userbyid(c.relowner)::text AS owner,
  COALESCE((SELECT jsonb_agg(jsonb_build_object('grantor',pg_get_userbyid(a.grantor),'grantee',CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END,'privilege',a.privilege_type,'grantable',a.is_grantable) ORDER BY a.grantee,a.privilege_type) FROM aclexplode(COALESCE(c.relacl,acldefault(CASE WHEN c.relkind='S' THEN 's'::"char" ELSE 'r'::"char" END,c.relowner)))a),'[]'::jsonb) AS acl,
  CASE WHEN c.relname='actor_key' THEN (SELECT md5(COALESCE(string_agg(id||encode(secret,'hex'),'|' ORDER BY id),'')) FROM rebatehq_private.actor_key) ELSE NULL END AS key_fingerprint,
@@ -298,6 +305,7 @@ async function assertApplicationTablesExist(pool, applicationTableNames) {
 async function snapshot(pool, applicationTableNames, authUserIds) {
   await assertApplicationTablesExist(pool, applicationTableNames);
   const privateIssuer=(await pool.query(privateIssuerSql)).rows;
+  const benchPrivate=privateIssuer.some(r=>r.relname==='bench_submission')?(await pool.query(benchPrivateSql)).rows[0]:null;
   const role = (await pool.query(roleStateSql)).rows[0];
   assert.ok(role, "rebatehq_app must exist in both source and restored databases.");
   const applicationTables = (await pool.query(applicationTableAclSql, [applicationTableNames])).rows;
@@ -340,7 +348,7 @@ async function snapshot(pool, applicationTableNames, authUserIds) {
     WHERE a.tenant_id=$1::uuid AND a.id=$2::uuid AND a.name='RESTORE-SENTINEL'
     ORDER BY a.tenant_id,a.id
   `, ["61000000-0000-4000-8000-000000000001", "62000000-0000-4000-8000-000000000001"]);  const sentinel = sentinelResult.rows.length === 1 ? sentinelResult.rows[0] : null;
-  return { privateIssuer, role, applicationTableNames: [...applicationTableNames].sort(), applicationTables, applicationColumns, wave2Evidence, relayEvidence, securityDefiners, functions, schemas, defaultPrivileges, applicationRows, tenantRowCounts, authUserCount, sentinel };
+  return { privateIssuer, benchPrivate, role, applicationTableNames: [...applicationTableNames].sort(), applicationTables, applicationColumns, wave2Evidence, relayEvidence, securityDefiners, functions, schemas, defaultPrivileges, applicationRows, tenantRowCounts, authUserCount, sentinel };
 }
 
 function comparableAcl(items) {
@@ -422,6 +430,7 @@ async function main() {
 
     const failures = [];
     reportSection("private issuer key fingerprint, counter, RLS and ACL",()=>assert.deepEqual(targetState.privateIssuer,sourceState.privateIssuer,"Private issuer material differs (fingerprints only)."),failures);
+    reportSection("8D benchmark rows (hashes only)",()=>assert.deepEqual(targetState.benchPrivate,sourceState.benchPrivate,"Pseudonymous benchmark rows differ (hashes only)."),failures);
     reportSection("rebatehq_app role attributes and memberships", () => {
       assert.deepEqual(targetState.role, sourceState.role, "Role attributes/settings/memberships differ.");
       for (const [label, state] of [["source", sourceState.role], ["restored", targetState.role]]) {

@@ -43,3 +43,19 @@ No app UPDATE/DELETE/TRUNCATE is permitted on them. Every new helper remains in
 the one function ACL registry. The pending migration must not be locked until
 both green CI and a **user-run** Restore Drill pass. Only pending lock entries
 may change in this chunk; all ten applied SQL hashes remain frozen.
+
+## 8D benchmark exception and inventory (pending evidence)
+
+`20261111120000_chunk8d_benchmarks.sql` is **pending**: its hash is recorded under `pendingMigrations` in `migrations.lock`. Lock it only after green CI and a **user-run** Restore Drill.
+
+**Tenant inventory.** The public tenant-table minimum is now **25**: `bench_consent` joins the 24. It is tested in `supabase/tests/chunk8d_bench.sql`, loaded by the shared SQL loader, which has its own fixtures and is excluded from the generic fixture graph like the licence and relay tables. Fresh runs plan **169** checks; restore runs plan **172**.
+
+**Reviewed private exception.** The schema lint accepts exactly four new private tables, as listed in `scripts/check-schema.mjs` (`BENCH_PRIVATE`). Each must have:
+- `tenant_id uuid CHECK(tenant_id IS NULL)`;
+- RLS enabled and forced;
+- `REVOKE ALL … FROM PUBLIC,anon,authenticated,service_role,rebatehq_app`;
+- no grant and no trigger.
+
+A row audit is deliberately absent: it would link a pseudonymous contribution to its sender.
+
+**Functions.** The new functions are in the one function ACL registry. `bench_publish` is owner-only (no app grant).

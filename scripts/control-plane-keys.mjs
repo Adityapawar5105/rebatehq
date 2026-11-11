@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import pg from 'pg';
 export function generateKeys() {
  const pair=generateKeyPairSync('ed25519');
- return { ACTOR_SIGNING_SECRET:randomBytes(32).toString('hex'),LICENCE_SIGNING_KEY:pair.privateKey.export({format:'der',type:'pkcs8'}).toString('base64'),NEXT_PUBLIC_LICENCE_VERIFY_KEY:pair.publicKey.export({format:'der',type:'spki'}).toString('base64') };
+ return { ACTOR_SIGNING_SECRET:randomBytes(32).toString('hex'),BENCH_PSEUDONYM_KEY:randomBytes(32).toString('hex'),LICENCE_SIGNING_KEY:pair.privateKey.export({format:'der',type:'pkcs8'}).toString('base64'),NEXT_PUBLIC_LICENCE_VERIFY_KEY:pair.publicKey.export({format:'der',type:'spki'}).toString('base64') };
 }
 export async function installActorKey(client,secret) {
  if(!/^[a-f0-9]{64}$/i.test(secret||''))throw Error('A 32-byte actor secret is required.');

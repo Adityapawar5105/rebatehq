@@ -67,7 +67,7 @@ export const ACTION_CAP: Record<Action, Cap | null> = {
   // v2.6 gap 2: local yes/no for the relay set-up card (reviewed for decision 16 in tests/quotes.test.ts).
   relayLocal:'collaborate',
   // 8B-1: Margin Drain inbox and cost index triggers read cost; saving settings and triggers is a pricing decision.
-  agentState:'cost',agentRows:'cost',agentRun:'cost',agentMark:'cost',agentSettingsSave:'pricing',indexState:'cost',indexSkus:'cost',indexTriggerSave:'pricing',indexTriggerDelete:'pricing',deadState:'cost',deadRows:'cost',deadSettingsSave:'pricing',deadDraft:'pricing',
+  agentState:'cost',agentRows:'cost',agentRun:'cost',agentMark:'cost',agentSettingsSave:'pricing',indexState:'cost',indexSkus:'cost',indexTriggerSave:'pricing',indexTriggerDelete:'pricing',deadState:'cost',benchState:'cost',benchPreview:'cost',benchMapSave:'cost',benchShared:'cost',benchFiguresSave:'cost',benchWithdrawn:'cost',deadRows:'cost',deadSettingsSave:'pricing',deadDraft:'pricing',
   // 7F-2: folder re-import is an import (Import Studio, every tier).
   folderGet:'data',folderSet:'data',studioFolder:'data',
   supplierClaims:'cost',supplierPurchases:'cost',supplierProgress:'cost',supplierClaimPreview:'cost',supplierClaimSave:'rebateManage',supplierClaimStatus:'rebateManage',supplierClaimExport:'rebateManage',

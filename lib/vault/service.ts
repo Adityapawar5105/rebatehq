@@ -16,6 +16,8 @@ import { quoteGuidance } from '../quotes/guidance';
 import * as agents from '../agents/agents';
 import * as costindex from '../agents/costindex';
 import * as deadstock from '../inventory/deadstock';
+import * as bench from '../bench/local';
+import { lastCompleteQuarter } from '../bench/payload';
 import * as winloss from '../quotes/winloss';
 import { auditPack } from '../reports/auditpack';
 import * as templates from '../reports/templates';
@@ -508,6 +510,16 @@ export class VaultService {
   async indexSkus(id: unknown, offset = 0, grid?: unknown) { this.opsTier(); return costindex.triggerSkus(this.requireEngine(), id, offset, grid); }
   async indexTriggerSave(input: costindex.TriggerInput) { this.opsTier(); const p = await costindex.triggerSql(this.requireEngine(), input, this.identity.userId, new Date().toISOString()); await this.write('index.trigger_saved', { id: p.id }, e => e.conn.query(p.sql).then(() => undefined)); return this.indexState(); }
   async indexTriggerDelete(id: unknown) { this.opsTier(); const sql = costindex.deleteSql(id); await this.write('index.trigger_deleted', { id: String(id) }, e => e.conn.query(sql).then(() => undefined)); return this.indexState(); }
+  // 8D: opt-in anonymous benchmarks (BENCHMARKS_DESIGN.md). Professional/Scale. Cost roles read the bands and the
+  // fetched figures; only the local Owner maps categories and records shares, figures and withdrawal. The network call
+  // itself is the Owner's explicit click on the Benchmarks screen; the worker never sends anything.
+  private async benchOwner() { this.opsTier(); if ((await this.access()).role !== 'owner') throw new VaultError('FORBIDDEN', msg('bench.ownerOnly')); }
+  async benchState() { this.opsTier(); const a = await this.access(); return { ...await bench.state(this.requireEngine()), quarter: lastCompleteQuarter(), owner: a.role === 'owner' }; }
+  async benchPreview(quarter: unknown) { this.opsTier(); return bench.preview(this.requireEngine(), quarter); }
+  async benchMapSave(mapping: unknown) { await this.benchOwner(); const sql = bench.mappingSql(mapping, new Date().toISOString()); await this.write('bench.mapping_saved', { categories: String(Object.keys(mapping as object).length) }, e => e.conn.query(sql).then(() => undefined)); return this.benchState(); }
+  async benchShared(payload: unknown, stored: unknown) { await this.benchOwner(); const p = bench.shareSql(payload, stored, this.identity.userId, new Date().toISOString()); await this.write('bench.shared', { quarter: p.quarter, rows: String(p.rows) }, e => e.conn.query(p.sql).then(() => undefined)); return this.benchState(); }
+  async benchFiguresSave(quarter: unknown, cells: unknown) { await this.benchOwner(); const sql = bench.figuresSql(quarter, cells, new Date().toISOString()); await this.write('bench.figures_saved', { quarter: String(quarter), cells: String((cells as unknown[]).length) }, e => e.conn.query(sql).then(() => undefined)); return this.benchState(); }
+  async benchWithdrawn() { await this.benchOwner(); await this.write('bench.withdrawn', {}, e => e.conn.query(bench.withdrawnSql(new Date().toISOString())).then(() => undefined)); return this.benchState(); }
   // 8B-2: the dead-stock clearance optimiser (Professional/Scale). Reads need cost; settings and drafts need pricing, and a
   // draft goes through the normal changeset, Pricing Owner approval and export.
   async deadState() { this.opsTier(); const e = this.requireEngine(), s = await deadstock.settings(e), today = new Date().toISOString().slice(0, 10); return { settings: s, summary: await deadstock.summary(e, s, today), page: await deadstock.page(e, s, today) }; }

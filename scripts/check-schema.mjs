@@ -1,3 +1,4 @@
+const BENCH_PRIVATE = ["bench_submission","bench_contribution","bench_release","bench_release_log"];
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -149,7 +150,15 @@ export function lintMigrationSet(migrations, { frozenMigrationNames = [] } = {})
   }
   // The only global, non-tenant table is issuer material in an unexposed schema.
   for(const m of allSql.matchAll(/CREATE\s+TABLE\s+([a-z_][a-z0-9_]*)\.([a-z_][a-z0-9_]*)/gi)){
-    if(m[1]!=='public' && (m[1]!=='rebatehq_private'||m[2]!=='actor_key'))errors.push('Unreviewed private/global table '+m[1]+'.'+m[2]);
+    if(m[1]!=='public' && (m[1]!=='rebatehq_private'||!['actor_key',...BENCH_PRIVATE].includes(m[2])))errors.push('Unreviewed private/global table '+m[1]+'.'+m[2]);
+  }
+  // 8D (BENCHMARKS_DESIGN.md, reviewed 11 November 2026): pseudonymous benchmark tables. No tenant (constrained NULL),
+  // forced RLS, zero app/platform privileges, no app grant and no row audit (an audit row would re-link a contribution).
+  for(const t of BENCH_PRIVATE)if(new RegExp('CREATE TABLE rebatehq_private\\.'+t+'\\b','i').test(allSql)){
+    const body=(allSql.match(new RegExp('CREATE TABLE rebatehq_private\\.'+t+' \\(([\\s\\S]*?)\\n\\);','i'))||[])[1]||'';
+    if(!/^\s*tenant_id uuid CHECK\(tenant_id IS NULL\),/m.test(body))errors.push('Benchmark private table must constrain tenant_id to NULL: '+t);
+    for(const required of [`ALTER TABLE rebatehq_private.${t} ENABLE ROW LEVEL SECURITY`,`ALTER TABLE rebatehq_private.${t} FORCE ROW LEVEL SECURITY`,`REVOKE ALL ON rebatehq_private.${t} FROM PUBLIC,anon,authenticated,service_role,rebatehq_app`])if(!allSql.includes(required))errors.push('Benchmark private table protection missing: '+required);
+    if(new RegExp('GRANT[^;]*\\bON\\s+(?:TABLE\\s+)?rebatehq_private\\.'+t+'\\b','i').test(allSql)||new RegExp('TRIGGER[^;]*\\bON\\s+rebatehq_private\\.'+t+'\\b','i').test(allSql))errors.push('Benchmark private table must have no grant and no trigger: '+t);
   }
   if(/CREATE TABLE rebatehq_private.actor_key/i.test(allSql)){
     for(const required of ['tenant_id uuid CHECK(tenant_id IS NULL)','ALTER TABLE rebatehq_private.actor_key ENABLE ROW LEVEL SECURITY','ALTER TABLE rebatehq_private.actor_key FORCE ROW LEVEL SECURITY','REVOKE ALL ON rebatehq_private.actor_key FROM PUBLIC,anon,authenticated,service_role,rebatehq_app','ON rebatehq_private.actor_key'])if(!allSql.includes(required))errors.push('Private issuer key protection missing: '+required);

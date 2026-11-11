@@ -1,5 +1,5 @@
 import { msg } from "../i18n/core";
-export const SCHEMA_VERSION = 20;
+export const SCHEMA_VERSION = 21;
 const V1_TABLES = ["vault_meta", "products", "customers", "price_matrix", "price_guardrails", "source_files", "import_batches", "sales_lines", "vendor_costs", "cost_basis_settings", "rules", "rule_runs", "price_versions", "roi_ledger", "audit_log", "import_issues", "converter_recipes"] as const;
 const V4_TABLES = [...V1_TABLES, "rejected_rows"] as const;
 const V5_TABLES = [...V4_TABLES, "agg_cpm", "agg_cm", "agg_p", "recon_issues"] as const;
@@ -14,9 +14,10 @@ const V16_TABLES = [...V15_TABLES,"supplier_claims","purchases"] as const;
 const V17_TABLES = [...V16_TABLES,"roi_recoveries","scorecard_consent","report_checks"] as const;
 const V18_TABLES = [...V17_TABLES,"cost_index_points","cost_index_triggers","agent_settings","agent_runs","agent_inbox"] as const;
 const V19_TABLES = [...V18_TABLES,"inventory_levels","dead_stock_settings"] as const;
-export const TABLES = [...V19_TABLES,"quote_outcomes"] as const;
+const V20_TABLES = [...V19_TABLES,"quote_outcomes"] as const;
+export const TABLES = [...V20_TABLES,"bench_family_map","bench_shares","bench_figures"] as const;
 /** Tables that exist at a schema version (in creation order, so copy-on-write inserts parents first). */
-export function tablesFor(version: number): readonly string[] { return version >= 20 ? TABLES : version >= 19 ? V19_TABLES : version >= 18 ? V18_TABLES : version >= 17 ? V17_TABLES : version >= 16 ? V16_TABLES : version >= 14 ? V15_TABLES : version >= 12 ? V12_TABLES : version >= 11 ? V11_TABLES : version >= 10 ? V10_TABLES : version >= 9 ? V9_TABLES : version >= 7 ? V7_TABLES : version >= 6 ? V6_TABLES : version >= 5 ? V5_TABLES : version >= 4 ? V4_TABLES : V1_TABLES; }
+export function tablesFor(version: number): readonly string[] { return version >= 21 ? TABLES : version >= 20 ? V20_TABLES : version >= 19 ? V19_TABLES : version >= 18 ? V18_TABLES : version >= 17 ? V17_TABLES : version >= 16 ? V16_TABLES : version >= 14 ? V15_TABLES : version >= 12 ? V12_TABLES : version >= 11 ? V11_TABLES : version >= 10 ? V10_TABLES : version >= 9 ? V9_TABLES : version >= 7 ? V7_TABLES : version >= 6 ? V6_TABLES : version >= 5 ? V5_TABLES : version >= 4 ? V4_TABLES : V1_TABLES; }
 // These are local DuckDB migrations, not Supabase migrations. V1 stays frozen
 // so the committed encrypted compatibility fixture exercises a real upgrade.
 export const V1_SQL = `
@@ -204,7 +205,12 @@ CREATE TABLE inventory_levels(source_id VARCHAR NOT NULL,product_id VARCHAR NOT 
 CREATE TABLE dead_stock_settings(id INTEGER PRIMARY KEY CHECK(id=1),idle_days INTEGER NOT NULL CHECK(idle_days BETWEEN 90 AND 730),capital_rate_bp INTEGER NOT NULL CHECK(capital_rate_bp BETWEEN 0 AND 10000),storage_cents BIGINT NOT NULL CHECK(storage_cents>=0),horizon_months INTEGER NOT NULL CHECK(horizon_months BETWEEN 1 AND 36),updated_at VARCHAR NOT NULL);`;
 // 8C-1: the win/loss log, one outcome per quote (local only; never exported or relayed).
 export const V20_SQL = `CREATE TABLE quote_outcomes(quote_id VARCHAR PRIMARY KEY,outcome VARCHAR NOT NULL CHECK(outcome IN ('won','lost','no_decision')),reason VARCHAR NOT NULL CHECK(reason IN ('price','competitor','availability','lead_time','specification','relationship','service','credit_terms','timing','other')),competitor VARCHAR CHECK(length(competitor)<=100),note VARCHAR CHECK(length(note)<=1000),recorded_by VARCHAR NOT NULL,recorded_at VARCHAR NOT NULL);`;
-const STEPS = [V1_SQL, V2_SQL, V3_SQL, V4_SQL, V5_SQL, V6_SQL, V7_SQL, V8_SQL, V9_SQL, V10_SQL, V11_SQL, V12_SQL, V13_SQL,V14_SQL,V15_SQL,V16_SQL,V17_SQL,V18_SQL,V19_SQL,V20_SQL];
+// 8D: benchmarks on this device: the Owner's category-to-family map, the exact payload of each share, and released
+// figures fetched by the Owner (kept so cost roles can read them offline).
+export const V21_SQL = `CREATE TABLE bench_family_map(category VARCHAR PRIMARY KEY,family VARCHAR NOT NULL CHECK(family IN ('electrical','plumbing','hvac','industrial_mro','fasteners','safety','janitorial','packaging','building_materials','foodservice','medical','other')),updated_at VARCHAR NOT NULL);
+CREATE TABLE bench_shares(quarter VARCHAR PRIMARY KEY,payload VARCHAR NOT NULL,rows INTEGER NOT NULL CHECK(rows BETWEEN 1 AND 48),shared_by VARCHAR NOT NULL,shared_at VARCHAR NOT NULL,withdrawn_at VARCHAR);
+CREATE TABLE bench_figures(quarter VARCHAR NOT NULL,size_band VARCHAR NOT NULL,family VARCHAR NOT NULL,metric VARCHAR NOT NULL,p25 INTEGER NOT NULL,p50 INTEGER NOT NULL,p75 INTEGER NOT NULL,released_at VARCHAR NOT NULL,fetched_at VARCHAR NOT NULL,PRIMARY KEY(quarter,size_band,family,metric));`;
+const STEPS = [V1_SQL, V2_SQL, V3_SQL, V4_SQL, V5_SQL, V6_SQL, V7_SQL, V8_SQL, V9_SQL, V10_SQL, V11_SQL, V12_SQL, V13_SQL,V14_SQL,V15_SQL,V16_SQL,V17_SQL,V18_SQL,V19_SQL,V20_SQL,V21_SQL];
 function checkVersion(version: number) {
   if (!Number.isInteger(version) || version < 1 || version > SCHEMA_VERSION) throw new Error(msg("vault.schema.unsupportedVaultSchemaVersion"));
 }

@@ -162,3 +162,23 @@ raw SQL access. Lost acknowledgements use an encrypted durable outbox; no silent
 re-signing after a competing append. Signed invalid content is quarantined
 without applying an approval. See RELAY_DESIGN.md for the trust ceremony and
 hash-chain limitations. No 7B or later features are included.
+
+## Chunk 8D benchmarks — pending CI and restore evidence
+
+8D adds opt-in anonymous benchmarks (BENCHMARKS_DESIGN.md, approved 11 November 2026).
+
+**New public tenant table.** One class A table, `bench_consent`, brings the public tenant inventory from 24 to 25. It holds the Owner's decision only: opted in or not, the consent version, who decided and when. It has forced RLS, only the Owner can read or write it, and it is audited.
+
+**Private tables.** Four reviewed private tables in `rebatehq_private`:
+- `bench_submission`
+- `bench_contribution`
+- `bench_release`
+- `bench_release_log`
+
+They hold no tenant (`tenant_id` constrained to NULL) and are keyed by HMAC pseudonyms, whose key lives only in the server environment. They have zero app or platform privileges and no row audit. They are reached only through the SECURITY DEFINER functions `bench_submit`, `bench_withdraw` and `bench_figures`; `bench_publish` is operator-only.
+
+**What is stored.** Only whole-point bands, with family and metric codes, a quarter and a size band. No price, cost, customer, item, category name or revenue reaches the server.
+
+**API.** `/api/bench` accepts only the exact payload of `lib/bench/payload.ts`. It is default-off (`BENCHMARKS_ENABLED`).
+
+**Local vault.** v21 adds `bench_family_map`, `bench_shares` and `bench_figures`, for 61 local tables.

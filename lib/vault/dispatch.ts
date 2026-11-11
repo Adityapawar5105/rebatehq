@@ -39,6 +39,12 @@ export async function dispatch(service: VaultService, request: Request, hooks: H
     case "indexTriggerSave":return service.indexTriggerSave(request.data.input);
     case "indexTriggerDelete":return service.indexTriggerDelete(request.data.id);
     case "deadState":return service.deadState();
+    case "benchState":return service.benchState();
+    case "benchPreview":return service.benchPreview(request.data.quarter);
+    case "benchMapSave":return service.benchMapSave(request.data.mapping);
+    case "benchShared":return service.benchShared(request.data.payload, request.data.stored);
+    case "benchFiguresSave":return service.benchFiguresSave(request.data.quarter, request.data.cells);
+    case "benchWithdrawn":return service.benchWithdrawn();
     case "deadRows":return service.deadRows(request.data.offset, request.data.grid);
     case "deadSettingsSave":return service.deadSettingsSave(request.data.input);
     case "deadDraft":return service.deadDraft(request.data.ids);

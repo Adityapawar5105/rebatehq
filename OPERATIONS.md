@@ -308,3 +308,18 @@ suite twice with no row-count residue (fresh CI suite: **152** checks). The new
 migration stays pending until CI and the user's manually triggered local-target
 Restore Drill both pass. Hosted target, independent protocol review, physical
 crash recovery and operational key-loss recovery remain unverified.
+
+## Chunk 8D benchmarks — operations (pending CI and Restore Drill)
+
+- **Turning it on:** set `BENCHMARKS_ENABLED=true` and `BENCH_PSEUDONYM_KEY` (32 random bytes in hex) in the server environment, from the secret manager.
+  - Never store the key in the database or in git.
+  - Rotating the key unlinks every earlier contribution from its workspace. Withdrawal then cannot find old rows, so rotate only with a documented reason.
+  - CI generates a per-run key with `scripts/control-plane-keys.mjs --ci-env`.
+- **Releasing a quarter:** once per quarter, 45 days or more after it ends, run:
+
+  ```
+  SEED_DATABASE_URL=… node scripts/bench-release.mjs 2026-Q3
+  ```
+
+  This uses the migration administrator's connection. The database refuses an early, repeated or under-k release, and the app role cannot run it. The script prints counts only.
+- **Restore:** the pseudonymous `rebatehq_private` benchmark tables are included in the dump and in the restore inventory like `actor_key`. Restoring them without the matching `BENCH_PSEUDONYM_KEY` keeps the released figures but unlinks withdrawals.
