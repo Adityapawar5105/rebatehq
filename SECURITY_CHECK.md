@@ -1,5 +1,26 @@
 # RebateHQ security verification
 
+## Chunk 8C — win/loss, audit pack, templates and offline mode (CI-verified)
+
+Verified in [CI #140](https://github.com/Adityapawar5105/rebatehq/actions/runs/42896532114) on `efe4291` (8C-1) and [CI #142](https://github.com/Adityapawar5105/rebatehq/actions/runs/43028662048) on `16622a9` (8C-2), 11 November 2026 (66 authenticated Chromium, 63 Firefox and 12 relay checks; 349 unit tests).
+
+- **Win/loss:** outcomes and notes stay in the local vault; their audit entries carry codes and IDs only.
+  - `quoteOutcome` and `winLoss` are reachable by Sales Reps and are in the decision 16 payload scan with real data.
+  - A rep records outcomes only on their own quotes, sees only their own outcomes, and never receives margin.
+- **Audit pack:** built locally for the `audit` capability.
+  - It re-verifies the hash chain at export and reports a broken chain with the entry where the check stopped.
+  - It reads no prices, costs or notes; the unit test re-checks the exported chain with Node's own SHA-256 and confirms a tampered log is reported.
+- **Templates:** generated in the worker as PDFs (text only, no links or actions).
+- **Downloads:** each of these file downloads writes an audit entry.
+- **Offline mode:** the service worker stores only the app shell.
+  - It never intercepts `/api/`, non-GET requests, query strings, other pages or origins, or redirects, and registers no background sync.
+  - The engine files it stores are still checked against their pinned SHA-256 and SRI on every load.
+  - Signing out deletes the offline copy.
+  - The browser gate cuts the network for real (a closed TCP relay) and scans every stored response: no business data and no `/api/` response.
+  - The CSP, COOP/COEP and engine integrity pins are unchanged.
+
+Details: [CHUNK_8C_VERIFICATION.md](./CHUNK_8C_VERIFICATION.md).
+
 ## Chunk 8B — Margin Drain agents, cost index triggers and dead stock (CI-verified)
 
 Verified in [CI #137](https://github.com/Adityapawar5105/rebatehq/actions/runs/42847127386) on `509a0f8` (8B-1) and [CI #138](https://github.com/Adityapawar5105/rebatehq/actions/runs/42853411139) on `e23f5f7` (8B-2), 10 November 2026 (64 authenticated Chromium, 62 Firefox and 12 relay checks; 340 unit tests).

@@ -2,6 +2,8 @@
 
 Blueprint Phase 3, chunk 8C (BLUEPRINT_EXECUTION_PLAN.md section 9): win/loss log, desktop offline mode, audit and compliance pack, templates. Built by Claude Code in two parts. Blueprint v2.6 governs and is unchanged by this chunk.
 
+**8C is CI-verified:** 8C-1 in [CI #140](https://github.com/Adityapawar5105/rebatehq/actions/runs/42896532114) on `efe4291` and 8C-2 in [CI #142](https://github.com/Adityapawar5105/rebatehq/actions/runs/43028662048) on `16622a9`, 11 November 2026. Local vault v20 / 58 tables; no Supabase migration. Next chunk: 8D, only on explicit instruction.
+
 **Scope note:** the 8C prompt also listed a Safari desktop verification spike (a v2.4 addition). Blueprint v2.6, section 22 item 28 (gap 5), later placed that spike in **8D**, and v2.6 governs. So it is not part of 8C, and Safari desktop is still not claimed or advertised.
 
 ## Part 1: win/loss log, audit and compliance pack, templates
@@ -102,7 +104,7 @@ The first run of `winLossUi` failed on the audit-pack download with a generic er
 
 ## Part 2: offline mode for the desktop app
 
-**8C-2 is not yet CI-verified.** The local checks below are not CI proof.
+**8C-2 is CI-verified** in [CI #142](https://github.com/Adityapawar5105/rebatehq/actions/runs/43028662048) on `16622a9`, 11 November 2026 (Asia/Kolkata): 349 unit tests (78 JS + 271 TS), **66 authenticated Chromium vault checks** (including `winLossUi` and `offlineUi`), **63 Firefox lab checks** (including `winLossUi`; `offlineUi` runs in Chrome and Edge only), **12 real-authenticated local-Supabase relay checks**, the high/critical dependency audit, and the fresh 152-check pgTAP suite twice. Local vault v20 / 58 tables (unchanged by part 2); 11 locked migrations, zero pending; no restore drill needed (no Supabase change). Every job step passed.
 
 ### What was built
 

@@ -3,7 +3,7 @@
 Written 6 November 2026, after 7B (CI #89, #90, #91 green); updated 7 November 2026 after 7V (CI #95, #96 green). This file is the starting point for whoever builds
 the next chunk. It holds what a new session needs without the earlier chat history.
 
-**Current status (10 November 2026): 8B done and CI-verified (8B-1 [CI #137](https://github.com/Adityapawar5105/rebatehq/actions/runs/42847127386) on `509a0f8`; 8B-2 [CI #138](https://github.com/Adityapawar5105/rebatehq/actions/runs/42853411139) on `e23f5f7`).** Local v19 / 57 tables. Next: **8C** (prompt 9), only on explicit instruction. See CHUNK_8B_VERIFICATION.md.
+**Current status (11 November 2026): 8C done and CI-verified (8C-1 [CI #140](https://github.com/Adityapawar5105/rebatehq/actions/runs/42896532114) on `efe4291`; 8C-2 [CI #142](https://github.com/Adityapawar5105/rebatehq/actions/runs/43028662048) on `16622a9`).** Local v20 / 58 tables. Next: **8D** (prompt 10), only on explicit instruction. See CHUNK_8C_VERIFICATION.md.
 
 ## How to use this file
 1. Work **one chunk per session**, in the order below. Paste **Block A (shared context)** first, then that
@@ -29,8 +29,8 @@ the next chunk. It holds what a new session needs without the earlier chat histo
 | 6 | 7F Reporting and reach (7F-1, 7F-2) | No | Done: 7F-1 [CI #130](https://github.com/Adityapawar5105/rebatehq/actions/runs/42674285171) on `1903986`; 7F-2 [CI #132](https://github.com/Adityapawar5105/rebatehq/actions/runs/42687463097) on `799c2f9` |
 | 7 | 8A Deal guidance and cross-sell | No | Done: [CI #135](https://github.com/Adityapawar5105/rebatehq/actions/runs/42786807751) on `666608f` (with the v2.6 pre-8A fixes) |
 | 8 | 8B Margin Drain agents, cost index, dead stock | Maybe (public index feed) | Done: 8B-1 [CI #137](https://github.com/Adityapawar5105/rebatehq/actions/runs/42847127386) on `509a0f8`; 8B-2 [CI #138](https://github.com/Adityapawar5105/rebatehq/actions/runs/42853411139) on `e23f5f7` (uploads only, no feed, no migration) |
-| 9 | 8C Win/loss, desktop offline mode, audit pack, templates | No | **Next, only on explicit instruction** |
-| 10 | 8D Opt-in anonymous benchmarks | Yes (consent and aggregates) | — |
+| 9 | 8C Win/loss, desktop offline mode, audit pack, templates | No | Done: 8C-1 [CI #140](https://github.com/Adityapawar5105/rebatehq/actions/runs/42896532114) on `efe4291`; 8C-2 [CI #142](https://github.com/Adityapawar5105/rebatehq/actions/runs/43028662048) on `16622a9` (Safari spike moved to 8D per v2.6 gap 5) |
+| 10 | 8D Opt-in anonymous benchmarks, Safari desktop spike | Yes (consent and aggregates) | **Next, only on explicit instruction** |
 | 11 | 8R Legacy table retirement, wave 2 | Yes (drops 12 tables) | — |
 | — | 9A Mobile field-rep PWA | — | **On hold until the user asks** |
 
@@ -51,7 +51,7 @@ Read before doing anything, in this order:
 5. The latest verification records: CHUNK_7V_VERIFICATION.md (UI components and layout rules), CHUNK_7B_VERIFICATION.md,
    CHUNK_7U_VERIFICATION.md, CHUNK_7A_VERIFICATION.md.
 
-Where things stand: chunks 4.0 through 7F, 7V, 8A and 8B are CI-verified (local vault v19, 57 tables); Phase 2 is complete except mobile (9A, on hold). 8B (lib/agents/agents.ts, costindex.ts; lib/inventory/deadstock.ts; clearanceDraft in lib/pricing/ops.ts; components/local/AgentsInbox.tsx, CostIndexView.tsx, DeadStockView.tsx; Import Studio roles cost_index and inventory): 8B-1 [CI #137](https://github.com/Adityapawar5105/rebatehq/actions/runs/42847127386) on `509a0f8`, 8B-2 [CI #138](https://github.com/Adityapawar5105/rebatehq/actions/runs/42853411139) on `e23f5f7`, 10 November 2026. Next: 8C, only on explicit instruction.
+Where things stand: chunks 4.0 through 7F, 7V and 8A-8C are CI-verified (local vault v20, 58 tables); Phase 2 is complete except mobile (9A, on hold). 8C (lib/quotes/winloss.ts, outcomes.ts; lib/reports/auditpack.ts, templates.ts; components/local/WinLoss.tsx, Templates.tsx, OfflineMode.tsx; public/sw.js; app/manifest.ts): 8C-1 [CI #140](https://github.com/Adityapawar5105/rebatehq/actions/runs/42896532114) on `efe4291`, 8C-2 [CI #142](https://github.com/Adityapawar5105/rebatehq/actions/runs/43028662048) on `16622a9`, 11 November 2026. The browser gate blocks service workers except in its offlineUi check (Playwright routes cannot see service-worker requests), and DuckDB-Wasm has no JSON extension: parse vault JSON in JavaScript. Next: 8D, only on explicit instruction.
 Blueprint v2.4 (section 22, items 24-25) added work that 7C-3 covered. Blueprint v2.5 (items 26-27) adds a grid standard and row
 notes, built in 7V-3; from then on every new grid must meet that standard. New screens use the
 shared components in components/ui (ui.tsx, Icon.tsx, ui.module.css) inside the shell in components/local/VaultApp.tsx. The local vault is DuckDB-Wasm in a Web
@@ -794,6 +794,13 @@ the results; do not claim or advertise Safari desktop support unless the spike p
 ```
 [Block A]
 Chunk 8D. Only with an explicit consent design (blueprint section 6, Phase 3 and "Deferred").
+Precondition: 8C is CI-verified (8C-1 CI #140 on efe4291, 8C-2 CI #142 on 16622a9; local vault v20, 58 tables). Carry the
+7E-8C standards (grid standard, integer cents, formula-safe exports without notes, decision 16 classification and scan
+for any rep-reachable command, local Chrome and Edge gates, CI Chromium and Firefox, no automatic network request from a
+vault screen, the offline service worker never caching business data or /api/ responses).
+Blueprint v2.6 (section 22 item 28, gap 5) also places the Safari desktop verification spike in 8D: OPFS persistence,
+DuckDB-Wasm threading and COOP/COEP in Safari desktop. Record the results; do not claim or advertise Safari desktop
+support unless the spike passes on real Safari.
 
 Before writing code, write BENCHMARKS_DESIGN.md and stop for the user's approval. It covers:
 - what aggregate is computed locally;
