@@ -129,3 +129,15 @@ The Safari desktop spike stays in 8D, where blueprint v2.6 gap 5 puts it.
 **8C is CI-verified:** 8C-1 in [CI #140](https://github.com/Adityapawar5105/rebatehq/actions/runs/42896532114) on `efe4291` and 8C-2 in [CI #142](https://github.com/Adityapawar5105/rebatehq/actions/runs/43028662048) on `16622a9`, 11 November 2026 (Asia/Kolkata): 349 unit tests (78 JS + 271 TS), **66 authenticated Chromium vault checks** (including `winLossUi` and `offlineUi`), **63 Firefox lab checks** (including `winLossUi`; `offlineUi` runs in Chrome and Edge only), **12 real-authenticated local-Supabase relay checks**, the high/critical dependency audit, and the fresh 152-check pgTAP suite twice. Local vault **v20 / 58 tables**; 11 locked migrations, zero pending; no restore drill needed (no Supabase change). See CHUNK_8C_VERIFICATION.md.
 
 The "data never leaves your device" claim (v2.6 gap 3) has new evidence from the offline gate, but using it remains the product owner's decision. **Next prompt: 8D** (opt-in anonymous benchmarks with a consent design first; the Safari desktop spike), only on explicit instruction. Blueprint unchanged by this chunk.
+
+8D (blueprint Phase 3; built by Claude Code on BENCHMARKS_DESIGN.md, which the user approved on 11 November 2026, with 5-point publishing ranges) adds **opt-in anonymous benchmarks**:
+- an Owner-only consent;
+- whole-point bands per standard family, computed on the device, with family minimums;
+- an exact payload, sent only on explicit Owner clicks;
+- pseudonymous server storage in reviewed `rebatehq_private` tables;
+- an operator-only k = 10 noisy release;
+- give to get, and withdrawal.
+
+It adds local vault **v21** (61 tables) and server migration `20261111120000_chunk8d_benchmarks.sql`. **8D passed CI** in [CI #146](https://github.com/Adityapawar5105/rebatehq/actions/runs/43059749723) on `63ba49c`: 357 unit tests, the 169-check pgTAP suite twice, 67 authenticated Chromium checks (`benchUi` against the real API), 64 Firefox and 12 relay checks. Because the package mirror stalled in [CI #145](https://github.com/Adityapawar5105/rebatehq/actions/runs/43045581322), browser installs now go through `scripts/ci-install-browser.sh`. **The migration is pending until a user-run Restore Drill passes; do not lock it before then.**
+
+The Safari desktop spike ran only as a WebKit pre-check, which was inconclusive (SAFARI_SPIKE.md). Safari stays unclaimed. See CHUNK_8D_VERIFICATION.md.

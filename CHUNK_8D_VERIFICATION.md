@@ -2,7 +2,17 @@
 
 Blueprint Phase 3, chunk 8D: opt-in anonymous benchmarks (design in BENCHMARKS_DESIGN.md, approved 11 November 2026) and the Safari desktop spike, which blueprint v2.6 gap 5 places here. Built by Claude Code. Blueprint v2.6 governs and is unchanged by this chunk.
 
-**8D is not yet CI-verified, and its migration is pending.** The local checks below are not CI proof. The migration `20261111120000_chunk8d_benchmarks.sql` is recorded under `pendingMigrations` in `migrations.lock`. It is locked only after green CI and a **user-run** Restore Drill.
+**8D passed CI** in [CI #146](https://github.com/Adityapawar5105/rebatehq/actions/runs/43059749723) on `63ba49c`, 11 November 2026 (Asia/Kolkata):
+- 357 unit tests (78 JS + 279 TS);
+- the 8D migration applied to a clean local Supabase, and the fresh **169-check pgTAP suite** twice on real Postgres;
+- **67 authenticated Chromium vault checks**, including `benchUi` against the real `/api/bench` and database, and `offlineUi`;
+- **64 Firefox lab checks**, including `benchUi`;
+- **12 real-authenticated local-Supabase relay checks**;
+- the high/critical dependency audit.
+
+Every job step passed. The new browser-install fallback was used once, because the package mirror was still stalling.
+
+**The migration stays pending** under `pendingMigrations` in `migrations.lock` until a **user-run** Restore Drill passes. 8D is complete only then. The migration `20261111120000_chunk8d_benchmarks.sql` is recorded under `pendingMigrations` in `migrations.lock`. It is locked only after green CI and a **user-run** Restore Drill.
 
 ## What was built
 
