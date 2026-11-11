@@ -24,7 +24,8 @@ try{
  if(auth){assert.equal(process.env.RELAY_ENABLED,'true','Authenticated CI relay gate must be explicitly enabled');localDatabaseUrl(process.env.SEED_DATABASE_URL,'Relay test database');db=new pg.Client({connectionString:process.env.SEED_DATABASE_URL});await db.connect();}
  else{const compiled=await build({entryPoints:['scripts/relay-browser-db.ts'],bundle:true,platform:'node',format:'esm',packages:'external',write:false});await writeFile('test-results/relay-browser-db.mjs',compiled.outputFiles[0].contents);local=await (await import('../test-results/relay-browser-db.mjs')).localRelayDatabase();db=local;}
  for(let i=0;i<3;i++){
-  const context=await browser.newContext({viewport:{width:1365,height:900}});contexts.push(context);
+  // Service workers are blocked: Playwright routes (identity, licence, relay seams) do not see requests a service worker answers.
+  const context=await browser.newContext({viewport:{width:1365,height:900},serviceWorkers:"block"});contexts.push(context);
   context.on('request',r=>{inspections.push(r.allHeaders().then(headers=>{assertNoRelayPlaintext([r.url(),headers,r.postDataBuffer()??''],markers,'request');const u=new URL(r.url());if(active){assert.equal(u.origin,new URL(base).origin,'Unexpected external request');if(u.pathname.startsWith('/api/'))assert.ok(u.pathname==='/api/licence'&&r.method()==='GET'||u.pathname==='/api/relay'&&['GET','POST'].includes(r.method()),'Unexpected API in relay flow');}}).catch(()=>failures.push('Private content or unapproved request reached the network')));});
   context.on('console',m=>{inspections.push(Promise.all(m.args().map(a=>a.jsonValue())).then(args=>assertNoRelayPlaintext([m.text(),args],markers,'console')).catch(()=>failures.push('Private fixture content appeared in console output')));});
   const page=await context.newPage();pages.push(page);page.setDefaultTimeout(45000);page.on('pageerror',()=>failures.push('Unhandled relay page error'));

@@ -14,7 +14,7 @@ const secret = "synthetic-ui-review-passphrase";
 
 await mkdir(out, { recursive: true });
 const browser = await chromium.launch({ ...(channel === "chromium" ? {} : { channel }), headless: true });
-const context = await browser.newContext({ viewport: SIZES.desktop, reducedMotion: "reduce" });
+const context = await browser.newContext({ viewport: SIZES.desktop, reducedMotion: "reduce", serviceWorkers: "block" });
 const page = await context.newPage(); page.setDefaultTimeout(60000);
 const settle = async () => { await page.waitForLoadState("networkidle", { timeout: 3000 }).catch(() => undefined); await page.waitForTimeout(500); };
 // Grow the viewport to the page height instead of a stitched full-page capture, so sticky bars stay at the top.

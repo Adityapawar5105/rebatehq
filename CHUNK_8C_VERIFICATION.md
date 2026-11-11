@@ -155,6 +155,7 @@ All other gate checks now run with service workers blocked, because Playwright r
 ### Found and fixed while building
 
 - **Playwright's offline switch does not cover service-worker requests.** The first version of the check called `setOffline(true)`, and a probe still reached the server. That version proved nothing. The check now closes a TCP relay so every connection fails, and asserts that a probe fetch fails.
+- **[CI #141](https://github.com/Adityapawar5105/rebatehq/actions/runs/42902454977) on `96fc7ab` failed:** the authenticated vault gate passed (including `offlineUi`), but the relay gate that runs next in the same step stalled until the step’s 25-minute limit. Its browser contexts did not block service workers, so the worker, now registered by the app, answered `/lab/vault` itself and the gate’s identity route never ran. The relay, spike and screenshot scripts now block service workers like the vault gate; the relay gate passes locally again (12 checks, lab transport).
 - **Fixed-name engine files.** They were cache-first at first, which would have kept an old vault worker after an update. They are now network-first.
 
 ### Unverified

@@ -13,7 +13,7 @@ const results={date:new Date().toISOString(),scope:full?"full":"smoke",channel,m
 const measurements=results.measurements,checks=results.checks;
 let context,page,memorySampler;const failures=[],requests=[];
 async function launch(){
- context=await chromium.launchPersistentContext(profile,{channel,headless:true,viewport:{width:1365,height:950}});
+ context=await chromium.launchPersistentContext(profile,{channel,headless:true,serviceWorkers:"block",viewport:{width:1365,height:950}});
  results.browser=context.browser()?.version()||"";
  context.on("request",request=>{
   const u=new URL(request.url());
@@ -97,7 +97,7 @@ try{
  assert.ok(cancelled);assert.deepEqual((await call("query")).totals,expected);checks.cancel_no_partial_rows=true;
  checks.storage=await page.evaluate(async()=>({persisted:await navigator.storage.persisted(),estimate:await navigator.storage.estimate()}));
  memorySampler?.kill();await context.close();
- context=await chromium.launchPersistentContext(profile,{channel,headless:true,viewport:{width:390,height:844}});page=await context.newPage();
+ context=await chromium.launchPersistentContext(profile,{channel,headless:true,serviceWorkers:"block",viewport:{width:390,height:844}});page=await context.newPage();
  await page.route(new RegExp("/lab/spike$"),async route=>{const r=await route.fetch();const headers={...r.headers()};delete headers["cross-origin-embedder-policy"];await route.fulfill({response:r,headers});});
  await page.goto(base+"/lab/spike");await page.waitForFunction(()=>Boolean(window.__spike),undefined,{timeout:45_000});const fallback=await call("ready");
  assert.equal(fallback.isolated,false);assert.equal(fallback.threads,"1");assert.deepEqual(fallback.totals,expected);checks.nonisolated_fallback=true;
