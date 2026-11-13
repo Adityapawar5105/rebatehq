@@ -16,7 +16,7 @@ Every job step passed.
 - the sentinel licence location restored with its source content hash;
 - restore equivalence: every section passed, including **PASS licence, seat, location and device content hashes**, the relay and benchmark hashes, and per-tenant row counts for **13 tenant tables**.
 
-The migration `20261113120000_chunk8r_retire_wave2.sql` is now locked in `migrations.lock`: 13 applied, 0 pending.
+The migration `20261113120000_chunk8r_retire_wave2.sql` is now locked in `migrations.lock`: 13 applied, 0 pending. The locked state passed [CI #152](https://github.com/Adityapawar5105/rebatehq/actions/runs/43469014775) on `db03d4d`.
 
 ## Precondition
 
