@@ -27,26 +27,27 @@ test("Chunk 3C migration upgrades existing invoice rows without inventing actual
   }
  }finally{await db.close();}
 });
-test("Restore inventory hashes wave-2 rows whose IDs outlived the retired tables; column mismatches stay fatal (6R)",async()=>{
+test("Restore inventory hashes the licence rows and the location sentinel; column mismatches stay fatal (8R)",async()=>{
  const executed=new Set<string>(),db=await testDatabase(executed);
- const {applicationColumnsSql,assertApplicationColumnsEqual,wave2EvidenceSql,relayEvidenceSql,assertRelayEvidenceEqual}=await import("../scripts/verify-restore-equivalence.mjs");
+ const {applicationColumnsSql,assertApplicationColumnsEqual,controlEvidenceSql,relayEvidenceSql,assertRelayEvidenceEqual}=await import("../scripts/verify-restore-equivalence.mjs");
  try{
   await db.query("BEGIN");const rows=await seedRestoreData(db);await db.query("COMMIT");
-  assert.equal((await db.query("SELECT name FROM public.rebate_agreement WHERE id=$1",[rows.agreement])).rows[0].name,"RESTORE-SENTINEL");
+  assert.equal((await db.query("SELECT name FROM public.licence_location WHERE id=$1",[rows.location])).rows[0].name,"RESTORE-SENTINEL");
   const tableNames=(await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")).rows.map((r:any)=>r.tablename);
-  assert.equal(tableNames.length,25); // 8D adds bench_consent
+  assert.equal(tableNames.length,13); // 8R drops the 12 wave-2 tables
   const columns=(await db.query(applicationColumnsSql,[tableNames])).rows;
   assert.equal(assertApplicationColumnsEqual(columns,structuredClone(columns)),true);
-  assert.throws(()=>assertApplicationColumnsEqual(columns,columns.filter((c:any)=>c.column_name!=="uom_code")),/quote_line.uom_code/);
-  assert.throws(()=>assertApplicationColumnsEqual(columns,columns.map((c:any)=>c.column_name==="threshold_amount"?{...c,data_type:"real"}:c)),/rebate_agreement.threshold_amount/);
+  assert.throws(()=>assertApplicationColumnsEqual(columns,columns.filter((c:any)=>c.column_name!=="erp_profile")),/licence_location.erp_profile/);
+  assert.throws(()=>assertApplicationColumnsEqual(columns,columns.map((c:any)=>c.column_name==="valid_until"?{...c,data_type:"date"}:c)),/workspace_licence.valid_until/);
   assert.throws(()=>assertApplicationColumnsEqual([],[]),/empty/);
-  const content=(await db.query(wave2EvidenceSql)).rows[0];
-  for(const change of ["UPDATE public.quote_line SET list_price=21 WHERE id=$1","UPDATE public.quote_line SET product_id=gen_random_uuid() WHERE id=$1"]){
-   await db.exec("BEGIN;");await db.query(change,[rows.line]);
-   assert.notDeepEqual((await db.query(wave2EvidenceSql)).rows[0],content,"changing a quote line must change the restore evidence hash");
+  const content=(await db.query(controlEvidenceSql)).rows[0];
+  assert.ok(Object.values(content).every(v=>/^[0-9a-f]{32}$/.test(String(v))),"four licence-table hashes");
+  for(const change of ["UPDATE public.licence_location SET erp_profile='netsuite' WHERE id=$1","UPDATE public.licence_location SET created_at=created_at+interval '1 microsecond' WHERE id=$1"]){
+   await db.exec("BEGIN;");await db.query(change,[rows.location]);
+   assert.notDeepEqual((await db.query(controlEvidenceSql)).rows[0],content,"changing a licence location must change the restore evidence hash");
    await db.exec("ROLLBACK;");
   }
-  assert.deepEqual((await db.query(wave2EvidenceSql)).rows[0],content);
+  assert.deepEqual((await db.query(controlEvidenceSql)).rows[0],content);
   // The seeded source is now pre-existing data. Repeated checks preserve it.
   const relayEvidence=(await db.query(relayEvidenceSql)).rows;
   assert.equal(assertRelayEvidenceEqual(relayEvidence,structuredClone(relayEvidence)),true);
@@ -58,6 +59,6 @@ test("Restore inventory hashes wave-2 rows whose IDs outlived the retired tables
   for(let i=0;i<2;i++){await db.query("BEGIN");await assert.rejects(seedRestoreData(db),/sentinel UUID collision/);await db.query("ROLLBACK");assert.deepEqual(await tenantCounts(db),baseline);}
   const source=ts.createSourceFile("seed",readFileSync("scripts/seed-restore-drill.ts","utf8"),ts.ScriptTarget.Latest,true);
   let checked=0;
-  const visit=(node:ts.Node)=>{if(ts.isCallExpression(node)&&ts.isPropertyAccessExpression(node.expression)&&node.expression.name.text==="query"){const sql=node.arguments[0];if(sql&&(ts.isStringLiteral(sql)||ts.isNoSubstitutionTemplateLiteral(sql))){checked++;assert.ok(executed.has(normalizedSql(sql.text)),`Unexecuted restore seed SQL: ${sql.text}`);}}ts.forEachChild(node,visit);};visit(source);assert.ok(checked>=10);
+  const visit=(node:ts.Node)=>{if(ts.isCallExpression(node)&&ts.isPropertyAccessExpression(node.expression)&&node.expression.name.text==="query"){const sql=node.arguments[0];if(sql&&(ts.isStringLiteral(sql)||ts.isNoSubstitutionTemplateLiteral(sql))){checked++;assert.ok(executed.has(normalizedSql(sql.text)),`Unexecuted restore seed SQL: ${sql.text}`);}}ts.forEachChild(node,visit);};visit(source);assert.ok(checked>=8);
  }finally{await db.close();}
 });

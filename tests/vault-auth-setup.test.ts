@@ -23,6 +23,6 @@ test('CI Auth workspace bootstrap uses the production signed context on PGlite t
  const {testDatabase}=await import('./helpers/database');const {installTestIdentityKey}=await import('./helpers/signed-context');
  const {createPrivacyWorkspace}=await import('../scripts/vault-test-auth.mjs');const db=await testDatabase();const prior=process.env.ACTOR_SIGNING_SECRET;
  try{process.env.ACTOR_SIGNING_SECRET=await installTestIdentityKey(db);
- for(let i=0;i<2;i++){const id=randomUUID();await db.query('INSERT INTO auth.users VALUES($1,$2,now())',[id,id+'@example.test']);const tenant=await createPrivacyWorkspace(db,id);assert.ok(tenant);assert.equal((await db.query('SELECT (SELECT count(*) FROM quote WHERE tenant_id=$1)+(SELECT count(*) FROM alert WHERE tenant_id=$1) AS n',[tenant])).rows[0].n,0);}
+ for(let i=0;i<2;i++){const id=randomUUID();await db.query('INSERT INTO auth.users VALUES($1,$2,now())',[id,id+'@example.test']);const tenant=await createPrivacyWorkspace(db,id);assert.ok(tenant);assert.equal((await db.query("SELECT to_regclass('public.quote') IS NULL AND to_regclass('public.rebate_agreement') IS NULL AND to_regclass('public.alert') IS NULL AS gone")).rows[0].gone,true,'8R: no server business table remains for a new workspace to fill');}
  }finally{if(prior===undefined)delete process.env.ACTOR_SIGNING_SECRET;else process.env.ACTOR_SIGNING_SECRET=prior;await db.close();}
 });

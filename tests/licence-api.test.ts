@@ -27,7 +27,8 @@ test('all licence admin endpoint SQL branches run against PGlite with signed RLS
   assert.equal((await call('locations',{name:'One metadata location',erpProfile:'p21'})).status,200);
   assert.equal((await call('devices',{id:device,status:'revoked'})).status,200);
   role='rep';assert.equal((await call('seats',{userId:member})).status,403);
-  const empty=(await db.query('SELECT (SELECT count(*) FROM quote)::int AS quotes,(SELECT count(*) FROM rebate_agreement)::int AS agreements,(SELECT count(*) FROM alert)::int AS alerts')).rows[0];assert.deepEqual(empty,{quotes:0,agreements:0,alerts:0});
+  // 8R: the wave-2 business tables are gone, so the licence API has no server business table to write.
+  assert.equal((await db.query("SELECT to_regclass('public.quote') IS NULL AND to_regclass('public.rebate_agreement') IS NULL AND to_regclass('public.alert') IS NULL AS gone")).rows[0].gone,true);
   await db.exec('ROLLBACK');
  }finally{await db.close();}
 });

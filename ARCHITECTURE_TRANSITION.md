@@ -182,3 +182,22 @@ They hold no tenant (`tenant_id` constrained to NULL) and are keyed by HMAC pseu
 **API.** `/api/bench` accepts only the exact payload of `lib/bench/payload.ts`. It is default-off (`BENCHMARKS_ENABLED`).
 
 **Local vault.** v21 adds `bench_family_map`, `bench_shares` and `bench_figures`, for 61 local tables.
+
+## Chunk 8R transition (wave 2) — pending CI and restore evidence
+
+The migration `20261113120000_chunk8r_retire_wave2.sql` drops the 12 wave-2 tables: `quote`, `quote_line`, `quote_share_link`, `approval`, `approval_rule`, `rebate_agreement`, `rebate_progress`, `rebate_tier`, `rebate_entry`, `supplier_credit`, `alert` and `fx_rate`. Every foreign key into them comes from another table in the same list, so one `DROP TABLE` removes them without CASCADE. Their policies, indexes and audit triggers go with them. No function served only these tables, so no function is dropped.
+
+**What the server stores now.** 13 public tenant tables, all class A control plane:
+- identity and workspaces: `tenant`, `membership`, `invite`, `audit_log`;
+- licences: `workspace_licence`, `licence_seat`, `licence_location`, `licence_device`;
+- the ciphertext relay: `relay_device_key`, `relay_epoch`, `relay_key_wrap`, `relay_event`;
+- `bench_consent`.
+
+It also keeps the reviewed `rebatehq_private` objects (the actor key, the login budget and the four pseudonymous benchmark tables). No quote, approval, rebate, credit, alert, exchange-rate, customer, product, price, cost or invoice table remains on the server.
+
+**Code.** `lib/rebates.ts`, the last server helper that read the wave-2 tables, is removed. `/legacy/rebates` is a fixed not-found, like the 6R pages. The quote API routes were already fixed 410 responses from 6R and stay registered in `config/http-boundary.mjs`. Pure logic stays: `rebate-engine.js` and its golden cases, the margin engine, `lib/quote-approval.ts` and the rep-safe projection.
+
+**Tests and restore tooling.**
+- The generic pgTAP fixture graph covers `tenant`, `membership`, `invite` and `audit_log`.
+- The checks that used `alert` and `quote` now use `invite` (owner positive UPDATE and DELETE, anon ACL probes) and `membership` (the `auth.uid()` policy evaluation, the rep DELETE denial, the no-context query).
+- The restore sentinel is a licence location. Its quote and rebate-agreement hashes are replaced by full-content hashes of the four licence tables.

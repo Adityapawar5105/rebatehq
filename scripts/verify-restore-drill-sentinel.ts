@@ -12,7 +12,7 @@ async function main() {
     await client.connect();
     const result = await client.query(`
       SELECT EXISTS (
-        SELECT 1 FROM public.rebate_agreement
+        SELECT 1 FROM public.licence_location
         WHERE tenant_id='61000000-0000-4000-8000-000000000001'
           AND id='62000000-0000-4000-8000-000000000001'
           AND name='RESTORE-SENTINEL'

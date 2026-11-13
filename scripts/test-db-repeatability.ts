@@ -17,7 +17,7 @@ async function snapshotTenantRows(pool: Pool): Promise<Record<string, Array<{ te
     GROUP BY c.relname
     ORDER BY c.relname
   `);
-  assert.ok(tables.rows.length >= 24, `Repeatability check found only ${tables.rows.length} tenant tables; expected at least 24 after Chunk 7A.`);
+  assert.ok(tables.rows.length >= 13, `Repeatability check found only ${tables.rows.length} tenant tables; expected at least 13 after Chunk 8R.`);
   const result: Record<string, Array<{ tenant_id: string | null; row_count: string }>> = {};
   for (const { table_name: table } of tables.rows) {
     result[table] = (await pool.query<{ tenant_id: string | null; row_count: string }>(

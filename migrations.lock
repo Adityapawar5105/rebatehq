@@ -38,8 +38,12 @@
     "20261105130000_chunk7a_ciphertext_relay.sql",
     "20261111120000_chunk8d_benchmarks.sql"
   ],
-  "pendingOrder": [],
-  "pendingMigrations": {},
+  "pendingOrder": [
+    "20261113120000_chunk8r_retire_wave2.sql"
+  ],
+  "pendingMigrations": {
+    "20261113120000_chunk8r_retire_wave2.sql": "745570eb0461997b3499bc0ebfd81173d44146390d9b766f02b99495efb4a13d"
+  },
   "appliedMigrationEvidence": {
     "202610250001_revoke_platform_public_privileges.sql": {
       "date": "2026-10-26",

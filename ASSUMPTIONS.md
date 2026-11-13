@@ -953,3 +953,20 @@ This proves the tested authenticated local-vault flow, not deployed/hosted authe
   - **Suppression:** a cell is suppressed when its noisy total is under 10.
   - **Freezing:** each quarter is released once and then frozen.
 - **WebKit pre-check:** recorded, not passed or failed; see SAFARI_SPIKE.md. Safari desktop remains unclaimed.
+
+## 8R — wave-2 legacy table retirement (13 November 2026)
+
+- **Precondition.** The Supabase connector listed no projects for the user's organisation, so no hosted database holds rows in the dropped tables. If a hosted project appears before the migration is applied there, its business rows need an approved retention decision first.
+- **`fx_rate`.** It is dropped because the vault has kept per-workspace exchange rates since 7C-3a (CI #108). Nothing on the server read `fx_rate` after 5B. This meets the condition in RETIREMENT_PROPOSAL.md and blueprint item 15 ("once a local FX table exists").
+- **Self-approval.** The pgTAP check "a user cannot decide their own quote approval" tested the server `approval` table, so it goes with that table. The rule itself stays tested in three places:
+  - local Quote Desk (`tests/quotes.test.ts`, "nobody approves their own quote");
+  - the relay (`tests/relay-state.test.ts`, no self-approval);
+  - `lib/quote-approval.ts` (`tests/security-foundation.test.ts`).
+- **Replacement checks use the closest remaining policy.**
+  - `invite` is owner-only for every operation, so it carries the owner's positive UPDATE and DELETE, the anon probes and the manager denial.
+  - `membership`'s SELECT policy (`user_id=auth.uid()` or owner) carries the `auth.uid()` evaluation and the rep's visible-but-not-deletable row.
+- **Restore sentinel.** It is the licence location `62000000-…-0001` named RESTORE-SENTINEL (same ID as the old agreement). It hashes the ID, name, ERP profile and UTC creation time. The quote and agreement hashes are replaced by hashes of the four licence tables.
+- **History.**
+  - `schema.sql` is a historical snapshot and is not edited.
+  - `tests/chunk6r-retirement.test.ts` still tests 6R over the migrations before it.
+  - Audit-log rows that name the dropped tables stay, and the hash chain is never rewritten.

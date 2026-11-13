@@ -1,5 +1,19 @@
 # RebateHQ security verification
 
+## Chunk 8R — wave-2 legacy table retirement (pending CI and Restore Drill)
+
+The migration `20261113120000_chunk8r_retire_wave2.sql` drops the last 12 server business tables: quotes, quote lines, share links, approvals, approval rules, rebate agreements, progress, tiers, entries, supplier credits, alerts and exchange rates. It stays pending until CI and a user-run Restore Drill pass.
+
+**After it, the server database holds only the control plane.** That is 13 tables:
+- workspaces, membership, invites and the audit log;
+- licences, seats, locations and devices;
+- the four ciphertext relay tables;
+- benchmark consent.
+
+It also keeps the reviewed private objects. No customer pricing, cost, quote, rebate, alert or exchange-rate table remains.
+
+The last server page that read these tables is a fixed not-found. The pgTAP suite still proves forced RLS, exact ACLs, cross-tenant denials and platform-role denials on every remaining table. See [CHUNK_8R_VERIFICATION.md](./CHUNK_8R_VERIFICATION.md).
+
 ## Chunk 8D — opt-in anonymous benchmarks (CI-verified, Restore Drill passed)
 
 Verified in [CI #146](https://github.com/Adityapawar5105/rebatehq/actions/runs/43059749723) on `63ba49c` (67 authenticated Chromium, 64 Firefox, 12 relay checks; 357 unit tests; 169-check pgTAP suite twice) and the user-run [Restore Drill #20](https://github.com/Adityapawar5105/rebatehq/actions/runs/43070833569) on `e7cb5fc`. Migration locked.

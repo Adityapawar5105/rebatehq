@@ -100,7 +100,7 @@ test("full pgTAP SQL executes in PGlite with assertion stubs and planned checks 
     );
     const snapshot = async () => {
       const tables=(await db.query("SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('r','p') AND EXISTS(SELECT 1 FROM pg_attribute a WHERE a.attrelid=c.oid AND a.attname='tenant_id') ORDER BY c.relname")).rows;
-      assert.ok(tables.length>=24);
+      assert.ok(tables.length>=13);
       const counts={};
       for(const t of tables) counts[t.relname]=(await db.query(`SELECT count(*)::text AS n FROM public.${t.relname}`)).rows[0].n;
       return counts;
@@ -128,36 +128,31 @@ test("full pgTAP SQL executes in PGlite with assertion stubs and planned checks 
     // Exercise the restore-only baseline and real-tenant isolation branches on
     // an already populated database, as Restore Drill does after data restore.
     const sentinelTenant = "61000000-0000-4000-8000-000000000001";
-    const sentinelAgreement = "62000000-0000-4000-8000-000000000001";
+    // 8R: the sentinel is a licence location; the wave-2 business tables are gone.
+    const sentinelLocation = "62000000-0000-4000-8000-000000000001";
     await db.query("INSERT INTO public.tenant(tenant_id,name,currency) VALUES($1,'PGlite restore sentinel','USD')", [sentinelTenant]);
-    await db.query(`INSERT INTO public.rebate_agreement(tenant_id,id,party_type,party_id,name,rate_pct,threshold_amount,period_start,period_end,currency)
-      VALUES($1,$2,'vendor','RESTORE-VENDOR','RESTORE-SENTINEL',2.5,1000,'2026-01-01','2026-12-31','USD')`, [sentinelTenant,sentinelAgreement]);
     const restoredUser = randomUUID();
-    const restoredQuote = randomUUID();
     await db.query("INSERT INTO auth.users(id,email) VALUES($1,'restore-row@example.invalid')", [restoredUser]);
     await db.query("INSERT INTO public.membership(tenant_id,user_id,email,role) VALUES($1,$2,'restore-row@example.invalid','owner')",[sentinelTenant,restoredUser]);
     await db.query("INSERT INTO public.workspace_licence(tenant_id,tier,valid_until) VALUES($1,'scale',now()+interval '7 days')",[sentinelTenant]);
     await db.query('INSERT INTO public.licence_seat(tenant_id,user_id) VALUES($1,$2)',[sentinelTenant,restoredUser]);
-    await db.query("INSERT INTO public.licence_location(tenant_id,name,erp_profile) VALUES($1,'Restored location','generic')",[sentinelTenant]);
+    await db.query("INSERT INTO public.licence_location(id,tenant_id,name,erp_profile) VALUES($1,$2,'RESTORE-SENTINEL','generic')",[sentinelLocation,sentinelTenant]);
     const restoredDevice=randomUUID();
     await db.query('INSERT INTO public.licence_device(id,tenant_id,user_id) VALUES($1,$2,$3)',[restoredDevice,sentinelTenant,restoredUser]);
     const {build}=await import('esbuild');
     const compiled=await build({entryPoints:['scripts/seed-restore-relay.ts'],bundle:true,platform:'node',format:'esm',write:false});
     const {seedRestoreRelay}=await import('data:text/javascript;base64,'+Buffer.from(compiled.outputFiles[0].text).toString('base64'));
     await seedRestoreRelay(db,sentinelTenant,restoredUser,restoredDevice);
-    // 6R: the quote's customer ID no longer references a server table.
-    await db.query("INSERT INTO public.quote(id,tenant_id,customer_id,created_by,status,margin_zone) VALUES($1,$2,$3,$4,'draft','green')", [restoredQuote,sentinelTenant,randomUUID(),restoredUser]);
+    // Restored rows in a fixture-graph table too, so the isolation loop sees real restored invites.
     for (let i=0;i<2;i++) {
-      await db.query("INSERT INTO public.quote_share_link(tenant_id,quote_id,token_hash,expires_at) VALUES($1,$2,$3,now()+interval '1 day')", [sentinelTenant,restoredQuote,randomUUID().replaceAll('-','')+randomUUID().replaceAll('-','')]);
-      await db.query("INSERT INTO public.approval_rule(tenant_id,name,minimum_margin_pct,approver_role) VALUES($1,$2,20,'manager')", [sentinelTenant,`Restored rule ${i}`]);
-      await db.query("INSERT INTO public.alert(tenant_id,severity,message) VALUES($1,'review',$2)", [sentinelTenant,`Restored alert ${i}`]);
+      const invite=randomUUID();
+      await db.query("INSERT INTO public.invite(id,tenant_id,email,role,token_hash,invited_by,expires_at) VALUES($1,$2,$3,'rep',$4,$5,now()+interval '7 days')", [invite,sentinelTenant,`restored-${i}@example.invalid`,invite.replaceAll('-',''),restoredUser]);
     }
     const sentinel = (await db.query(`SELECT md5(jsonb_build_object(
-      'tenant_id',a.tenant_id,'id',a.id,'party_type',a.party_type,'party_id',a.party_id,'name',a.name,
-      'rate_pct',a.rate_pct,'threshold_amount',a.threshold_amount,'period_start',a.period_start,'period_end',a.period_end,
-      'currency',a.currency,'calculation_mode',a.calculation_mode,
-      'created_at_utc',to_char(a.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
-    )::text) AS content_hash FROM public.rebate_agreement a WHERE a.tenant_id=$1 AND a.id=$2`, [sentinelTenant,sentinelAgreement])).rows[0].content_hash;    await db.exec(`
+      'tenant_id',l.tenant_id,'id',l.id,'name',l.name,'erp_profile',l.erp_profile,
+      'created_at_utc',to_char(l.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
+    )::text) AS content_hash FROM public.licence_location l WHERE l.tenant_id=$1 AND l.id=$2`, [sentinelTenant,sentinelLocation])).rows[0].content_hash;
+    await db.exec(`
       CREATE TEMP TABLE phase1_restore_expected_tenant_counts(table_name text NOT NULL,tenant_id text,row_count bigint NOT NULL);
       DO $$ DECLARE t text; BEGIN
         FOR t IN SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
@@ -171,7 +166,7 @@ test("full pgTAP SQL executes in PGlite with assertion stubs and planned checks 
     await db.query(`SELECT set_config('app.restore_test_mode','true',false),
       set_config('app.restore_sentinel_tenant_id',$1,false),
       set_config('app.restore_sentinel_record_id',$2,false),
-      set_config('app.restore_sentinel_content_hash',$3,false)`, [sentinelTenant,sentinelAgreement,sentinel]);
+      set_config('app.restore_sentinel_content_hash',$3,false)`, [sentinelTenant,sentinelLocation,sentinel]);
     await runTwice();
   } finally {
     await db.close();

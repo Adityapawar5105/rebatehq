@@ -721,3 +721,12 @@ Corrections after reviewing the repository and build history against v2.1. Produ
     - Gap 7 (manual re-import) → deferred until a pilot requests it.
     - Gap 8 (Starter tier limit) → validate in first 10 pilot conversations.
     - Gap 9 (performance targets) → labelling discipline, no code.
+
+29. **13 Nov 2026, chunk 8R — wave 2 of the table retirement (section 17 roadmap; items 15 and 18).** The 8R migration drops the last 12 legacy business tables: `quote`, `quote_line`, `quote_share_link`, `approval`, `approval_rule`, `rebate_agreement`, `rebate_progress`, `rebate_tier`, `rebate_entry`, `supplier_credit`, `alert` and `fx_rate`. Item 15 called them tables "with no local equivalent yet"; each now has one:
+    - quotes, quote lines and approvals in the local vault (7B), with signed approvals over the ciphertext relay (7A);
+    - approval rules as the versioned local guardrails (4E);
+    - rebate agreements, tiers, accruals, progress and supplier credits in the vault (7D-1, 7D-2);
+    - alerts as the local Margin Drain agents (8B);
+    - exchange rates as the vault's per-workspace rates (7C-3a). This is the condition item 15 set for dropping `fx_rate`: a local FX table exists, so the server table is unnecessary.
+
+    The server database now holds only the 13 control-plane tables: workspaces, membership, invites, the audit log, the four licence tables, the four relay tables and benchmark consent. The last legacy page that read the dropped tables (`/legacy/rebates`) is a fixed not-found. Audit-log rows written before the drop stay, and the hash chain is not rewritten. Before the drop, a check confirmed that the user's Supabase account had no projects, so no hosted database held rows. Scope, tiers and prices are unchanged.

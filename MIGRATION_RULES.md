@@ -59,3 +59,23 @@ may change in this chunk; all ten applied SQL hashes remain frozen.
 A row audit is deliberately absent: it would link a pseudonymous contribution to its sender.
 
 **Functions.** The new functions are in the one function ACL registry. `bench_publish` is owner-only (no app grant).
+
+## 8R inventory (pending evidence)
+
+`20261113120000_chunk8r_retire_wave2.sql` is **pending**: its hash is recorded under `pendingMigrations` in `migrations.lock`. Lock it only after green CI and a **user-run** Restore Drill. All 12 applied hashes stay frozen.
+
+**Tenant inventory.** The public tenant-table minimum is now **13**, superseding the 25 above. The 5B check counts exactly 13 and asserts that `quote` and `fx_rate` are gone. The restore tooling and the repeatability check use the same minimum:
+- `verify-restore-equivalence.mjs`;
+- `inspect-restore-dump.mjs`;
+- `test-db-repeatability.ts`;
+- `tests/helpers/database.ts`.
+
+**pgTAP.** Fresh runs plan **136** checks; restore runs plan **139**. The 33 removed checks tested only the dropped tables:
+- ACLs, positive controls and constraint checks for `fx_rate`, `rebate_tier`, `rebate_entry`, `quote_share_link` and `approval_rule`;
+- the server self-approval check on `approval`.
+
+Two checks were rewritten for tables that remain:
+- the no-context check now covers every readable public tenant table;
+- the manager-governance check now covers `invite`.
+
+**Fixture graph.** The generic graph keeps four tables: `tenant`, `membership`, `invite` and `audit_log`. The licence, relay and benchmark-consent tables keep their own fixtures in the 5B, 7A and 8D include files.

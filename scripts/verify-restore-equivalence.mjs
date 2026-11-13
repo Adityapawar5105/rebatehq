@@ -36,19 +36,20 @@ export function assertApplicationColumnsEqual(source,restored){
  if(diff.length)throw new Error("Application column inventory mismatch: "+JSON.stringify(diff,null,2));
  return true;
 }
-// 6R: wave-2 rows keep customer/product IDs that no longer reference a server table.
-// Compare their contents by hash only; amounts and IDs are never printed.
-export const wave2EvidenceSql=`
+// 8R: the wave-2 business tables are gone. The licence rows are the remaining plain-text tenant records, so
+// compare their full contents by hash only (timestamps rendered in UTC); IDs and values are never printed.
+const utc = column => `to_char(${column} AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
+export const controlEvidenceSql=`
  SELECT
- (SELECT md5(COALESCE(string_agg(jsonb_build_object('id',id,'tenant',tenant_id,'customer',customer_id,'status',status,
-  'currency',currency,'pocket',pocket_price::text,'cogs',cogs_total::text,'creator',created_by)::text,'|' ORDER BY tenant_id,id),''))
-  FROM public.quote) AS quotes,
- (SELECT md5(COALESCE(string_agg(jsonb_build_object('id',id,'tenant',tenant_id,'quote',quote_id,'product',product_id,
-  'quantity',quantity::text,'list',list_price::text,'uom',uom_code)::text,'|' ORDER BY tenant_id,id),''))
-  FROM public.quote_line) AS quote_lines,
- (SELECT md5(COALESCE(string_agg(jsonb_build_object('id',id,'tenant',tenant_id,'party',party_id,'name',name,
-  'rate',rate_pct::text,'threshold',threshold_amount::text,'start',period_start,'end',period_end)::text,'|' ORDER BY tenant_id,id),''))
-  FROM public.rebate_agreement) AS rebate_agreements`;
+ (SELECT md5(COALESCE(string_agg(jsonb_build_object('id',id,'tenant',tenant_id,'tier',tier,'status',status,
+  'valid_until',${utc('valid_until')},'issued_at',${utc('issued_at')})::text,'|' ORDER BY tenant_id,id),''))
+  FROM public.workspace_licence) AS licences,
+ (SELECT md5(COALESCE(string_agg(jsonb_build_object('id',id,'tenant',tenant_id,'user',user_id,'created_at',${utc('created_at')})::text,'|' ORDER BY tenant_id,id),''))
+  FROM public.licence_seat) AS seats,
+ (SELECT md5(COALESCE(string_agg(jsonb_build_object('id',id,'tenant',tenant_id,'name',name,'erp',erp_profile,'created_at',${utc('created_at')})::text,'|' ORDER BY tenant_id,id),''))
+  FROM public.licence_location) AS locations,
+ (SELECT md5(COALESCE(string_agg(jsonb_build_object('id',id,'tenant',tenant_id,'user',user_id,'status',status,'created_at',${utc('created_at')})::text,'|' ORDER BY tenant_id,id),''))
+  FROM public.licence_device) AS devices`;
 // UTC rendering plus all columns preserves ciphertext, signatures, keys and metadata.
 export const relayEvidenceSql=`SELECT 'relay_device_key'::text AS table_name,md5(COALESCE(string_agg(((to_jsonb(t)-'signed_at'-'received_at')||jsonb_build_object('signed_at_utc',to_char((to_jsonb(t)->>'signed_at')::timestamptz AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),'received_at_utc',to_char(t.received_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')))::text,'|' ORDER BY tenant_id,id),'')) AS content_hash FROM public.relay_device_key t
  UNION ALL SELECT 'relay_epoch',md5(COALESCE(string_agg(((to_jsonb(t)-'signed_at'-'received_at')||jsonb_build_object('signed_at_utc',to_char((to_jsonb(t)->>'signed_at')::timestamptz AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),'received_at_utc',to_char(t.received_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')))::text,'|' ORDER BY tenant_id,id),'')) FROM public.relay_epoch t
@@ -310,7 +311,7 @@ async function snapshot(pool, applicationTableNames, authUserIds) {
   assert.ok(role, "rebatehq_app must exist in both source and restored databases.");
   const applicationTables = (await pool.query(applicationTableAclSql, [applicationTableNames])).rows;
   const applicationColumns=(await pool.query(applicationColumnsSql,[applicationTableNames])).rows;
-  const wave2Evidence=(await pool.query(wave2EvidenceSql)).rows[0];
+  const controlEvidence=(await pool.query(controlEvidenceSql)).rows[0];
   const relayEvidence=(await pool.query(relayEvidenceSql)).rows;
   const functions = (await pool.query(publicFunctionAclSql)).rows;
   const securityDefiners = functions.filter(fn => fn.security_type === "DEFINER");
@@ -334,21 +335,19 @@ async function snapshot(pool, applicationTableNames, authUserIds) {
   const authUserCount = authUserIds.length
     ? Number((await pool.query("SELECT count(*)::int AS count FROM auth.users WHERE id=ANY($1::uuid[])", [authUserIds])).rows[0].count)
     : 0;
-  assert.ok(Object.keys(tenantRowCounts).length >= 24,
-    `Restore equivalence found only ${Object.keys(tenantRowCounts).length} tenant tables; expected at least 24 after Chunk 7A.`);
+  assert.ok(Object.keys(tenantRowCounts).length >= 13,
+    `Restore equivalence found only ${Object.keys(tenantRowCounts).length} tenant tables; expected at least 13 after Chunk 8R.`);
   assert.equal(authUserCount, authUserIds.length, "A referenced auth.users ID is missing from the source or restored target.");
   const sentinelResult = await pool.query(`
-    SELECT a.tenant_id::text,a.id::text,md5(jsonb_build_object(
-      'tenant_id',a.tenant_id,'id',a.id,'party_type',a.party_type,'party_id',a.party_id,'name',a.name,
-      'rate_pct',a.rate_pct,'threshold_amount',a.threshold_amount,'period_start',a.period_start,'period_end',a.period_end,
-      'currency',a.currency,'calculation_mode',a.calculation_mode,
-      'created_at_utc',to_char(a.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
+    SELECT l.tenant_id::text,l.id::text,md5(jsonb_build_object(
+      'tenant_id',l.tenant_id,'id',l.id,'name',l.name,'erp_profile',l.erp_profile,
+      'created_at_utc',to_char(l.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
     )::text) AS content_hash
-    FROM public.rebate_agreement a
-    WHERE a.tenant_id=$1::uuid AND a.id=$2::uuid AND a.name='RESTORE-SENTINEL'
-    ORDER BY a.tenant_id,a.id
+    FROM public.licence_location l
+    WHERE l.tenant_id=$1::uuid AND l.id=$2::uuid AND l.name='RESTORE-SENTINEL'
+    ORDER BY l.tenant_id,l.id
   `, ["61000000-0000-4000-8000-000000000001", "62000000-0000-4000-8000-000000000001"]);  const sentinel = sentinelResult.rows.length === 1 ? sentinelResult.rows[0] : null;
-  return { privateIssuer, benchPrivate, role, applicationTableNames: [...applicationTableNames].sort(), applicationTables, applicationColumns, wave2Evidence, relayEvidence, securityDefiners, functions, schemas, defaultPrivileges, applicationRows, tenantRowCounts, authUserCount, sentinel };
+  return { privateIssuer, benchPrivate, role, applicationTableNames: [...applicationTableNames].sort(), applicationTables, applicationColumns, controlEvidence, relayEvidence, securityDefiners, functions, schemas, defaultPrivileges, applicationRows, tenantRowCounts, authUserCount, sentinel };
 }
 
 function comparableAcl(items) {
@@ -377,8 +376,8 @@ async function main() {
   if (!databaseUrl) throw new Error(`${mode === "--snapshot" ? "RESTORE_TEST_SOURCE_DATABASE_URL" : "RESTORE_TEST_TARGET_DATABASE_URL"} is required.`);
   const inventory = JSON.parse(readFileSync(inventoryPath, "utf8"));
   assert.deepEqual(inventory.applicationSchemas, [...APPLICATION_SCHEMAS], "Restore equivalence only accepts the reviewed public application schema allowlist.");
-  assert.ok(Array.isArray(inventory.schemaTables) && inventory.schemaTables.filter(t=>t.schema==='public').length >= 24,
-    `Dump inventory contains ${inventory.schemaTables?.length ?? 0} application tables; expected at least 24 after Chunk 7A.`);
+  assert.ok(Array.isArray(inventory.schemaTables) && inventory.schemaTables.filter(t=>t.schema==='public').length >= 13,
+    `Dump inventory contains ${inventory.schemaTables?.length ?? 0} application tables; expected at least 13 after Chunk 8R.`);
   const applicationTableNames = inventory.schemaTables.filter(t=>t.schema==='public').map(item => {
     assert.equal(item.schema, "public", `Unexpected non-application table ${item.schema}.${item.table}.`);
     return item.table;
@@ -389,7 +388,7 @@ async function main() {
   try {
   if (mode === "--snapshot") {
     const sourceState = await snapshot(db, applicationTableNames, inventory.authUserIds);
-    assert.ok(sourceState.sentinel, "Expected exactly one source RESTORE-SENTINEL rebate agreement for the drill.");
+    assert.ok(sourceState.sentinel, "Expected exactly one source RESTORE-SENTINEL licence location for the drill.");
     assert.ok(sourceState.applicationTables.length > 0, "Source must contain application tables; refusing a vacuous ACL/row-count snapshot.");
     assert.ok(sourceState.securityDefiners.length > 0, "Source must contain public SECURITY DEFINER functions; refusing a vacuous function-ACL snapshot.");
     assert.ok(sourceState.functions.length > 0, "Source must contain public functions; refusing a vacuous complete function ACL snapshot.");
@@ -458,12 +457,12 @@ async function main() {
     reportSection("public schema ACL", () => assert.deepEqual(comparableAcl(sourceState.schemas), comparableAcl(targetState.schemas), "Public schema ACL differs."), failures);
     reportSection("application table inventory", () => assert.deepEqual(sourceState.applicationTableNames, targetState.applicationTableNames, "Application table inventory differs."), failures);
     reportSection("application column inventory",()=>assertApplicationColumnsEqual(sourceState.applicationColumns,targetState.applicationColumns),failures);
-    reportSection("quote, quote line and rebate agreement content hashes",()=>assert.deepEqual(sourceState.wave2Evidence,targetState.wave2Evidence,"Quote, quote line or rebate agreement contents differ (hashes only)."),failures);
+    reportSection("licence, seat, location and device content hashes",()=>assert.deepEqual(sourceState.controlEvidence,targetState.controlEvidence,"Licence, seat, location or device contents differ (hashes only)."),failures);
     reportSection("relay ciphertext, keys, signatures and metadata hashes",()=>assertRelayEvidenceEqual(sourceState.relayEvidence,targetState.relayEvidence),failures);
     reportSection("application row counts", () => assert.deepEqual(sourceState.applicationRows, targetState.applicationRows, "Application row counts differ."), failures);
     reportSection("per-tenant row counts", () => assert.deepEqual(sourceState.tenantRowCounts, targetState.tenantRowCounts, "Per-tenant row counts differ."), failures);
     reportSection("referenced auth.users IDs", () => assert.equal(targetState.authUserCount, sourceState.authUserCount, "Referenced auth.users IDs differ."), failures);
-    reportSection("restore sentinel identity and content hash", () => assert.deepEqual(targetState.sentinel, sourceState.sentinel, "Sentinel tenant, agreement ID, or content hash differs."), failures);
+    reportSection("restore sentinel identity and content hash", () => assert.deepEqual(targetState.sentinel, sourceState.sentinel, "Sentinel tenant, location ID, or content hash differs."), failures);
     if (failures.length) throw new Error(`Restore equivalence failed in ${failures.length} section(s):\n${failures.map(item => `- ${item}`).join("\n")}`);
 
     process.stdout.write(`Restored rebatehq_app attributes and memberships match: ${JSON.stringify(targetState.role)}\n`);
@@ -484,9 +483,9 @@ async function main() {
         "- Restricted `rebatehq_app` attributes and empty membership state matched.",
         `- Matched ACLs for ${sourceState.applicationTables.length} application tables, all ${sourceState.functions.length} public functions (${sourceState.securityDefiners.length} SECURITY DEFINER), and the public schema.`,
         `- Matched ${sourceState.applicationColumns.length} application column names/types/nullability/defaults.`,
-        "- Matched content hashes for quotes, quote lines (whose customer/product IDs no longer reference a server table) and rebate agreements; values are never printed.",
+        "- Matched content hashes for licences, seats, locations and devices; values are never printed.",
         `- Verified ${targetState.authUserCount} synthetic or existing target auth.users IDs required by application foreign keys. No source credential fields were copied.`,
-        `- Restored sentinel tenant/agreement identity and content hash matched: \`${JSON.stringify(targetState.sentinel)}\`.`,
+        `- Restored sentinel tenant/location identity and content hash matched: \`${JSON.stringify(targetState.sentinel)}\`.`,
         "- Application table row counts:",
         "",
         "| Table | Source rows | Restored rows |",

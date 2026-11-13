@@ -14,7 +14,7 @@ export async function testDatabase(executed=new Set<string>()){
 }
 export async function tenantCounts(db:any){
  const tables=(await db.query("SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='r' AND EXISTS(SELECT 1 FROM pg_attribute a WHERE a.attrelid=c.oid AND a.attname='tenant_id' AND NOT a.attisdropped) ORDER BY c.relname")).rows;
- if(tables.length<24)throw new Error("Expected at least 24 tenant tables after 7A.");
+ if(tables.length<13)throw new Error("Expected at least 13 tenant tables after 8R.");
  const counts:Record<string,number>={};for(const t of tables)counts[t.relname]=(await db.query(`SELECT count(*)::integer AS n FROM public."${t.relname}"`)).rows[0].n;
  return counts;
 }

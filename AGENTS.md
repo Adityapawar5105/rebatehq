@@ -2,7 +2,7 @@
 
 ## Governing blueprint
 
-Read `BLUEPRINT.md` before planning or implementing RebateHQ work. The user-approved **Blueprint v2.6** governs (v2.6, 10 Nov 2026: B2B buyer gap registry, section 22 item 28; two pre-8A fixes). Section 22 records its approved changes. v2.3 UX/quoting/pricing, v2.4 multi-currency/Firefox, and v2.5 selection aggregates/row notes/grid filter-sort work have been implemented only as the verified chunks below state; other roadmap items remain future work. Later explicit user instructions take precedence. Any blueprint edit must add a section 22 entry and be reported to the user.
+Read `BLUEPRINT.md` before planning or implementing RebateHQ work. The user-approved **Blueprint v2.6** governs (v2.6, 10 Nov 2026: B2B buyer gap registry, section 22 item 28; two pre-8A fixes; item 29 records the 8R retirement). Section 22 records its approved changes. v2.3 UX/quoting/pricing, v2.4 multi-currency/Firefox, and v2.5 selection aggregates/row notes/grid filter-sort work have been implemented only as the verified chunks below state; other roadmap items remain future work. Later explicit user instructions take precedence. Any blueprint edit must add a section 22 entry and be reported to the user.
 
 `BLUEPRINT_EXECUTION_PLAN.md` sequences the work into repo chunks (4.0, 4A-4E,
 5A-5B, 6A, 6R, 6B, 7A, 7U, 7B, 7V (7V-1, 7V-2, 7V-3), 7C (7C-1, 7C-2, 7C-3), 7D (7D-1, 7D-2), 7E-7F, 8A-8D, 8R, 9A) with a standard preamble and "Done when" criteria.
@@ -143,3 +143,5 @@ It adds local vault **v21** (61 tables) and server migration `20261111120000_chu
 The Safari desktop spike ran only as a WebKit pre-check, which was inconclusive (SAFARI_SPIKE.md). Safari stays unclaimed. See CHUNK_8D_VERIFICATION.md.
 
 **Next prompt: 8R** (wave-2 legacy table retirement), only on explicit instruction. Blueprint unchanged by this chunk.
+
+8R (wave 2 of the legacy table retirement; built by Claude Code, 13 November 2026) drops the last 12 server business tables (quote, quote_line, quote_share_link, approval, approval_rule, rebate_agreement, rebate_progress, rebate_tier, rebate_entry, supplier_credit, alert, fx_rate) in `20261113120000_chunk8r_retire_wave2.sql`, with no CASCADE. `fx_rate` goes because the vault has kept exchange rates since 7C-3a. `lib/rebates.ts` is removed and `/legacy/rebates` is a fixed not-found. The server keeps 13 control-plane tables. pgTAP plans **136** fresh and **139** restore checks, the tenant-table minimum is **13**, and the restore sentinel is a licence location. Blueprint section 22, item 29 records it. **The migration is pending until CI and a user-run Restore Drill pass; do not lock it before then.** See CHUNK_8R_VERIFICATION.md. After 8R only 9A (mobile, on hold) remains.

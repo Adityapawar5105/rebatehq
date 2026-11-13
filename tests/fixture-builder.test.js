@@ -8,22 +8,14 @@ const repoRoot = path.join(__dirname, "..");
 const phase1Sql = fs.readFileSync(path.join(repoRoot, "supabase", "tests", "phase1_rls.sql"), "utf8").replace(/\r\n/g,"\n");
 const pgliteModule = import("@electric-sql/pglite");
 
-// 6R: the 16 tables that keep fixtures in phase1_rls.sql (wave-1 tables were dropped).
-const tables = [
-  "tenant", "membership", "invite", "quote", "quote_line", "approval", "rebate_agreement", "rebate_progress",
-  "supplier_credit", "alert", "audit_log", "fx_rate", "rebate_tier", "rebate_entry", "quote_share_link", "approval_rule",
-];
+// 8R: the 4 tables that keep fixtures in phase1_rls.sql (wave-1 and wave-2 tables were dropped). The quote and
+// approval tables whose FK edge once broke arbitrary cloning (6R era) no longer exist on the server.
+const tables = ["tenant", "membership", "invite", "audit_log"];
 const existingTenant = "20000000-0000-4000-8000-000000000001";
 const otherTenant = "20000000-0000-4000-8000-000000000002";
 const existingOwner = "30000000-0000-4000-8000-000000000001";
 const existingRep = "30000000-0000-4000-8000-000000000002";
 const otherOwner = "30000000-0000-4000-8000-000000000003";
-const quoteOne = "37000000-0000-4000-8000-000000000002";
-const quoteTwo = "37000000-0000-4000-8000-000000000012";
-const otherQuote = "37000000-0000-4000-8000-000000000022";
-const approvalForQuoteTwo = "38000000-0000-4000-8000-000000000002";
-const approvalForQuoteOne = "38000000-0000-4000-8000-000000000012";
-const otherApproval = "38000000-0000-4000-8000-000000000022";
 
 function extractFixtureGraph() {
   const startMarker = "-- Suite-owned auth users and tenants are inserted before dependent rows.";
@@ -74,53 +66,10 @@ async function createHarnessSchema(db) {
       tenant_id uuid NOT NULL REFERENCES public.tenant(tenant_id), user_id uuid NOT NULL REFERENCES auth.users(id),
       email text, role text, PRIMARY KEY(tenant_id,user_id)
     );
-    CREATE TABLE public.fx_rate (
-      id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES public.tenant(tenant_id), rate_date date NOT NULL,
-      from_currency text NOT NULL, to_currency text NOT NULL, rate numeric NOT NULL, source text NOT NULL,
-      created_at timestamptz DEFAULT now(), UNIQUE(tenant_id,id)
-    );
     CREATE TABLE public.invite (
       id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES public.tenant(tenant_id), email text, role text,
       token_hash text NOT NULL UNIQUE, invited_by uuid REFERENCES auth.users(id), expires_at timestamptz
     );
-    CREATE TABLE public.quote (
-      id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES public.tenant(tenant_id), customer_id uuid,
-      created_by uuid REFERENCES auth.users(id), status text, pocket_price numeric, cogs_total numeric,
-      pocket_margin numeric, margin_pct numeric, margin_zone text, headroom numeric, UNIQUE(tenant_id,id)
-    );
-    CREATE TABLE public.quote_line (
-      id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES public.tenant(tenant_id), quote_id uuid,
-      product_id uuid, quantity numeric, list_price numeric, pocket_price numeric, cogs_total numeric,
-      pocket_margin numeric, margin_pct numeric, currency text, uom_code text, UNIQUE(tenant_id,id),
-      FOREIGN KEY(tenant_id,quote_id) REFERENCES public.quote(tenant_id,id)
-    );
-    CREATE TABLE public.approval (
-      id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES public.tenant(tenant_id), quote_id uuid NOT NULL,
-      requested_by uuid REFERENCES auth.users(id), status text, margin_pct_at_decision numeric,
-      policy_version integer, UNIQUE(tenant_id,id),
-      CONSTRAINT approval_tenant_id_quote_id_fkey FOREIGN KEY(tenant_id,quote_id)
-        REFERENCES public.quote(tenant_id,id)
-    );
-    CREATE TABLE public.rebate_agreement (
-      id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES public.tenant(tenant_id), party_type text,
-      party_id text, name text, rate_pct numeric, threshold_amount numeric, period_start date, period_end date, currency text,
-      UNIQUE(tenant_id,id)
-    );
-    CREATE TABLE public.rebate_progress (
-      id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES public.tenant(tenant_id), agreement_id uuid,
-      period_start date, period_end date, eligible_spend numeric, modeled_amount numeric, recorded_credits numeric, currency text,
-      UNIQUE(tenant_id,id), FOREIGN KEY(tenant_id,agreement_id) REFERENCES public.rebate_agreement(tenant_id,id)
-    );
-    CREATE TABLE public.supplier_credit (
-      id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES public.tenant(tenant_id), vendor_name text,
-      credit_date date, amount numeric, reference text, currency text, UNIQUE(tenant_id,id)
-    );
-    CREATE TABLE public.alert (
-      id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES public.tenant(tenant_id), severity text,
-      message text, UNIQUE(tenant_id,id)
-    );
-    CREATE TABLE public.quote_share_link(id uuid PRIMARY KEY,tenant_id uuid NOT NULL REFERENCES tenant(tenant_id),quote_id uuid,token_hash text UNIQUE,expires_at timestamptz,UNIQUE(tenant_id,id),FOREIGN KEY(tenant_id,quote_id) REFERENCES quote(tenant_id,id));
-    CREATE TABLE public.approval_rule(id uuid PRIMARY KEY,tenant_id uuid NOT NULL REFERENCES tenant(tenant_id),name text,minimum_margin_pct numeric,approver_role text,UNIQUE(tenant_id,id),UNIQUE(tenant_id,name));
     CREATE TABLE public.audit_log (
       id uuid PRIMARY KEY, tenant_id uuid, actor_id uuid, action text, entity_type text, entity_id text
     );
@@ -128,11 +77,6 @@ async function createHarnessSchema(db) {
 }
 
 async function seedRestoredRows(db) {
-  await db.exec(`
-    CREATE TABLE public.rebate_tier(id uuid PRIMARY KEY,tenant_id uuid NOT NULL REFERENCES tenant(tenant_id),agreement_id uuid,from_amount numeric,rate numeric,UNIQUE(tenant_id,id),FOREIGN KEY(tenant_id,agreement_id) REFERENCES rebate_agreement(tenant_id,id));
-    CREATE TABLE public.rebate_entry(id uuid PRIMARY KEY,tenant_id uuid NOT NULL REFERENCES tenant(tenant_id),agreement_id uuid,entry_type text,amount numeric,currency text,occurred_on date,source_ref text,UNIQUE(tenant_id,id),FOREIGN KEY(tenant_id,agreement_id) REFERENCES rebate_agreement(tenant_id,id));
-  `);
-
   await db.query(`INSERT INTO auth.users(id,aud,role,email,encrypted_password,created_at,updated_at) VALUES
     ($1,'authenticated','authenticated','old-owner@example.invalid','',now(),now()),
     ($2,'authenticated','authenticated','old-rep@example.invalid','',now(),now()),
@@ -143,16 +87,6 @@ async function seedRestoredRows(db) {
     ($1,$3,'old-owner@example.invalid','owner'),($1,$4,'old-rep@example.invalid','rep'),
     ($2,$5,'other-owner@example.invalid','owner')`, [existingTenant, otherTenant, existingOwner, existingRep, otherOwner]);
 
-  // 6R: quote customer IDs no longer reference a server table.
-  const customerIds = ["40000000-0000-4000-8000-000000000001", "40000000-0000-4000-8000-000000000002", "40000000-0000-4000-8000-000000000003"];
-  await db.query(`INSERT INTO public.fx_rate(id,tenant_id,rate_date,from_currency,to_currency,rate,source) VALUES
-    ($1,$4,'2026-10-01','USD','EUR',0.9,'restored fx'),($2,$4,'2026-10-02','USD','EUR',0.91,'restored fx'),
-    ($3,$5,'2026-10-01','USD','EUR',0.9,'other tenant fx')`, [randomUUID(), randomUUID(), randomUUID(), existingTenant, otherTenant]);
-  await db.query(`INSERT INTO public.quote(id,tenant_id,customer_id,created_by) VALUES
-    ($1,$2,$3,$4),($5,$2,$6,$4),($7,$8,$9,$10)`, [quoteOne, existingTenant, customerIds[0], existingOwner, quoteTwo, customerIds[1], otherQuote, otherTenant, customerIds[2], otherOwner]);
-  await db.query(`INSERT INTO public.approval(id,tenant_id,quote_id,requested_by) VALUES
-    ($1,$2,$3,$4),($5,$2,$6,$4),($7,$8,$9,$10)`, [approvalForQuoteTwo, existingTenant, quoteTwo, existingOwner, approvalForQuoteOne, quoteOne, otherApproval, otherTenant, otherQuote, otherOwner]);
-
   await db.query(`INSERT INTO public.invite(id,tenant_id,email,role,token_hash,invited_by,expires_at) VALUES
     ($1,$2,'old-one@example.invalid','rep','old-invite-token-one',$3,now()+interval '7 days'),
     ($4,$2,'old-two@example.invalid','manager','old-invite-token-two',$3,now()+interval '7 days'),
@@ -160,14 +94,10 @@ async function seedRestoredRows(db) {
       randomUUID(), existingTenant, existingOwner, randomUUID(), randomUUID(), otherTenant, otherOwner,
     ]);
 
-  const skip = new Set(["tenant", "membership", "quote", "approval", "invite", "fx_rate"]);
   let counter = 1;
-  for (const table of tables) {
-    if (skip.has(table)) continue;
-    for (const tenantId of [existingTenant, existingTenant, otherTenant]) {
-      const id = `90000000-0000-4000-8000-${String(counter++).padStart(12, "0")}`;
-      await db.query(`INSERT INTO public."${table}"(id,tenant_id) VALUES($1,$2)`, [id, tenantId]);
-    }
+  for (const tenantId of [existingTenant, existingTenant, otherTenant]) {
+    const id = `90000000-0000-4000-8000-${String(counter++).padStart(12, "0")}`;
+    await db.query("INSERT INTO public.audit_log(id,tenant_id,action,entity_type,entity_id) VALUES($1,$2,'restored.row','tenant',$3)", [id, tenantId, tenantId]);
   }
 }
 
@@ -180,7 +110,7 @@ async function snapshotAllTenantTables(db) {
   return snapshot;
 }
 
-test("PGlite reproduces the arbitrary-clone FK failure and runs the explicit fixture graph against restored rows", async () => {
+test("PGlite runs the explicit fixture graph against restored rows and rolls back cleanly", async () => {
   const { PGlite } = await pgliteModule;
   const db = new PGlite();
   try {
@@ -192,8 +122,8 @@ test("PGlite reproduces the arbitrary-clone FK failure and runs the explicit fix
       const count = await db.query(`SELECT count(*)::int AS count FROM public."${table}" WHERE tenant_id=$1`, [existingTenant]);
       sourceCounts[table] = count.rows[0].count;
     }
-    assert.equal(sourceCounts.quote, 2);
-    assert.equal(sourceCounts.approval, 2);
+    assert.equal(sourceCounts.membership, 2);
+    assert.equal(sourceCounts.invite, 2);
     assert.ok(tables.every(table => sourceCounts[table] >= 1), "Every tenant table has pre-existing source rows.");
 
     const positiveInvite = await db.query(`
@@ -204,28 +134,6 @@ test("PGlite reproduces the arbitrary-clone FK failure and runs the explicit fix
     `, [randomUUID()]);
     assert.match(positiveInvite.rows[0].with_token.token_hash, /^[0-9a-f]{32}$/);
     assert.match(positiveInvite.rows[0].with_email.email, /^phase1-positive-[0-9a-f-]{36}@example\.invalid$/);
-
-    const selectedQuote = (await db.query("SELECT id::text FROM public.quote WHERE tenant_id=$1 LIMIT 1", [existingTenant])).rows[0].id;
-    const selectedApproval = (await db.query("SELECT id::text,quote_id::text FROM public.approval WHERE tenant_id=$1 LIMIT 1", [existingTenant])).rows[0];
-    const clonedQuoteId = (await db.query("SELECT regexp_replace($1::text,'2$','3') AS id", [selectedQuote])).rows[0].id;
-    const clonedApprovalId = (await db.query("SELECT regexp_replace($1::text,'2$','3') AS id", [selectedApproval.id])).rows[0].id;
-    const clonedApprovalQuoteId = (await db.query("SELECT regexp_replace($1::text,'2$','3') AS id", [selectedApproval.quote_id])).rows[0].id;
-    const selectedQuoteSourceIds = [selectedQuote];
-    console.log(`Old-helper Tenant B source counts before cloning: ${tables.map(table => `${table}=${sourceCounts[table]}`).join(", ")}`);
-    console.log(`Old-helper selected source approval ${selectedApproval.id} references quote_id ${selectedApproval.quote_id}; selected source quote row ${selectedQuote}; referenced parent was among selected source quote rows=${selectedQuoteSourceIds.includes(selectedApproval.quote_id)}; selected quote maps to ${clonedQuoteId} while approval FK maps to ${clonedApprovalQuoteId}.`);
-
-    await db.exec("BEGIN; SAVEPOINT old_arbitrary_clone;");
-    await db.query("INSERT INTO public.quote(tenant_id,id) VALUES($1,$2)", [otherTenant, clonedQuoteId]);
-    let oldCloneError;
-    try {
-      await db.query("INSERT INTO public.approval(tenant_id,id,quote_id) VALUES($1,$2,$3)", [otherTenant, clonedApprovalId, clonedApprovalQuoteId]);
-    } catch (error) {
-      oldCloneError = error;
-    }
-    assert.equal(oldCloneError?.code, "23503", "The old independent LIMIT 1 cloning pattern should fail on the broken approval-to-quote edge.");
-    assert.match(oldCloneError.constraint, /approval_tenant_id_quote_id_fkey/);
-    await db.exec("ROLLBACK TO SAVEPOINT old_arbitrary_clone; RELEASE SAVEPOINT old_arbitrary_clone; COMMIT;");
-    console.log(`Old arbitrary clone reproduced: SQLSTATE ${oldCloneError.code}, constraint=${oldCloneError.constraint}.`);
 
     const tableInventory = extractTableInventory();
     const beforeGraph = await snapshotAllTenantTables(db);
@@ -243,29 +151,22 @@ test("PGlite reproduces the arbitrary-clone FK failure and runs the explicit fix
       assert.deepEqual(actualTables, [...tables].sort());
       const tenantAFixtures = await db.query("SELECT table_name,row_data FROM pg_temp.phase1_rls_tenant_a_fixtures ORDER BY table_name");
       const tenantBFixtures = await db.query("SELECT table_name,row_data FROM pg_temp.phase1_rls_insert_fixtures ORDER BY table_name");
-      assert.equal(tenantAFixtures.rows.length, 16);
-      assert.equal(tenantBFixtures.rows.length, 16);
+      assert.equal(tenantAFixtures.rows.length, 4);
+      assert.equal(tenantBFixtures.rows.length, 4);
 
       const ids = runGraph.ids;
       const tenantA = ids.get("__PHASE1_TENANT_A_ID__");
       const tenantB = ids.get("__PHASE1_TENANT_B_ID__");
       for (const row of tenantAFixtures.rows) assert.equal(row.row_data.tenant_id, tenantA, `Tenant A map must reference the suite-created tenant for ${row.table_name}.`);
       for (const row of tenantBFixtures.rows) assert.equal(row.row_data.tenant_id, tenantB, `Tenant B map must reference the suite-created tenant for ${row.table_name}.`);
-      const approvalGraph = await db.query(`
-        SELECT a.row_data->>'quote_id' AS approval_quote_id,q.row_data->>'id' AS quote_id
-        FROM pg_temp.phase1_rls_tenant_a_fixtures a
-        JOIN pg_temp.phase1_rls_tenant_a_fixtures q ON q.table_name='quote'
-        WHERE a.table_name='approval'
-      `);
-      assert.equal(approvalGraph.rows[0].approval_quote_id, approvalGraph.rows[0].quote_id);
-      const storedApproval = await db.query("SELECT quote_id::text FROM public.approval WHERE tenant_id=$1 AND id=$2", [tenantA, ids.get("__PHASE1_APPROVAL_A_ID__")]);
-      assert.equal(storedApproval.rows[0].quote_id, ids.get("__PHASE1_QUOTE_A_ID__"));
-      const preservedSourceRows = await db.query("SELECT count(*)::int AS count FROM public.approval WHERE tenant_id=$1", [existingTenant]);
-      assert.equal(preservedSourceRows.rows[0].count, 2, "The builder must leave restored source approvals untouched.");
+      const storedInvite = await db.query("SELECT invited_by::text FROM public.invite WHERE tenant_id=$1 AND id=$2", [tenantA, ids.get("__PHASE1_INVITE_A_ID__")]);
+      assert.equal(storedInvite.rows[0].invited_by, ids.get("__PHASE1_USER_A_ID__"));
+      const preservedSourceRows = await db.query("SELECT count(*)::int AS count FROM public.invite WHERE tenant_id=$1", [existingTenant]);
+      assert.equal(preservedSourceRows.rows[0].count, 2, "The builder must leave restored source invites untouched.");
       await db.exec("ROLLBACK;");
       assert.deepEqual(await snapshotAllTenantTables(db), beforeGraph, `Fixture graph run ${run} must leave every tenant table unchanged after rollback.`);
     }
-    console.log("Explicit Tenant A/B fixture graph passed twice with 16 tenant tables and pre-existing multi-row restored data; both transactions rolled back with unchanged row counts.");
+    console.log("Explicit Tenant A/B fixture graph passed twice with 4 tenant tables and pre-existing multi-row restored data; both transactions rolled back with unchanged row counts.");
   } finally {
     await db.close();
   }
