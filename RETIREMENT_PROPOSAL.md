@@ -63,6 +63,6 @@ rebate_tier, rebate_entry, supplier_credit (7D), alert (8B), and fx_rate (once a
 local FX table exists or is confirmed unnecessary). Same precondition, review
 and verification steps as wave 1.
 
-**Wave 2 status (13 Nov 2026): built; pending CI and the user-run Restore Drill.** Chunk 8R drops all 12 tables in `20261113120000_chunk8r_retire_wave2.sql`, which stays under `pendingMigrations` until both pass. Every table now has a CI-verified local equivalent, so "no local equivalent yet" no longer holds. `fx_rate` goes because the vault has kept per-workspace exchange rates since 7C-3a. The server keeps 13 control-plane tables. See [CHUNK_8R_VERIFICATION.md](./CHUNK_8R_VERIFICATION.md) and blueprint section 22, item 29.
+**Wave 2 status (13 Nov 2026): CI-verified in [CI #150](https://github.com/Adityapawar5105/rebatehq/actions/runs/43453893489); pending the user-run Restore Drill.** Chunk 8R drops all 12 tables in `20261113120000_chunk8r_retire_wave2.sql`, which stays under `pendingMigrations` until the drill passes. Every table now has a CI-verified local equivalent, so "no local equivalent yet" no longer holds. `fx_rate` goes because the vault has kept per-workspace exchange rates since 7C-3a. The server keeps 13 control-plane tables. See [CHUNK_8R_VERIFICATION.md](./CHUNK_8R_VERIFICATION.md) and blueprint section 22, item 29.
 
 No 6A work is included in this document.

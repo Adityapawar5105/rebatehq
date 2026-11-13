@@ -2,7 +2,16 @@
 
 Blueprint Phase 3, chunk 8R: wave 2 of the legacy table retirement (RETIREMENT_PROPOSAL.md, approved 5 November 2026; blueprint section 22, items 15 and 29). Built by Claude Code, 13 November 2026.
 
-**Status: built and checked locally; pending CI and the user-run Restore Drill.** The migration `20261113120000_chunk8r_retire_wave2.sql` stays under `pendingMigrations` in `migrations.lock` until both pass.
+**8R passed CI** in [CI #150](https://github.com/Adityapawar5105/rebatehq/actions/runs/43453893489) on `436459c`, 13 November 2026 (Asia/Kolkata):
+- 361 unit tests (78 JS + 283 TS);
+- the 8R migration applied to a clean local Supabase, and the fresh **136-check pgTAP suite** twice on real Postgres;
+- **67 authenticated Chromium vault checks** and **64 Firefox lab checks**;
+- **12 real-authenticated local-Supabase relay checks**;
+- the high/critical dependency audit.
+
+Every job step passed.
+
+**The migration stays pending** under `pendingMigrations` in `migrations.lock` until a **user-run** Restore Drill (target local) passes. 8R is complete only then.
 
 ## Precondition
 
@@ -64,6 +73,5 @@ Pure logic is kept: `rebate-engine.js`, the margin engine, `lib/quote-approval.t
 
 ## Unverified
 
-- **CI:** the pgTAP suite on real Postgres with the migration applied to a clean local Supabase, and the browser, Firefox and relay gates.
 - **Restore Drill:** the user has to run it. Until it passes, the migration stays pending.
 - **Hosted databases:** none exist today. A hosted project created later needs this migration applied through the normal path.

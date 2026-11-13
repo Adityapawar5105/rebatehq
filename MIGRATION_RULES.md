@@ -60,7 +60,7 @@ A row audit is deliberately absent: it would link a pseudonymous contribution to
 
 **Functions.** The new functions are in the one function ACL registry. `bench_publish` is owner-only (no app grant).
 
-## 8R inventory (pending evidence)
+## 8R inventory (CI-verified in [CI #150](https://github.com/Adityapawar5105/rebatehq/actions/runs/43453893489); Restore Drill pending)
 
 `20261113120000_chunk8r_retire_wave2.sql` is **pending**: its hash is recorded under `pendingMigrations` in `migrations.lock`. Lock it only after green CI and a **user-run** Restore Drill. All 12 applied hashes stay frozen.
 
