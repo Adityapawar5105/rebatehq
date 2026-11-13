@@ -16,7 +16,7 @@ Every job step passed. The new browser-install fallback was used once, because t
 - restore-mode pgTAP, 172 checks;
 - restore equivalence, including **PASS 8D benchmark rows (hashes only)**.
 
-The migration `20261111120000_chunk8d_benchmarks.sql` is now locked in `migrations.lock`: 12 applied, 0 pending. The migration `20261111120000_chunk8d_benchmarks.sql` is recorded under `pendingMigrations` in `migrations.lock`. It is locked only after green CI and a **user-run** Restore Drill.
+The migration `20261111120000_chunk8d_benchmarks.sql` is now locked in `migrations.lock`: 12 applied, 0 pending. The locked state passed [CI #148](https://github.com/Adityapawar5105/rebatehq/actions/runs/43072012276) on `6cb868b`. The migration `20261111120000_chunk8d_benchmarks.sql` is recorded under `pendingMigrations` in `migrations.lock`. It is locked only after green CI and a **user-run** Restore Drill.
 
 ## What was built
 
