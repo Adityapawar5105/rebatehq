@@ -183,7 +183,7 @@ They hold no tenant (`tenant_id` constrained to NULL) and are keyed by HMAC pseu
 
 **Local vault.** v21 adds `bench_family_map`, `bench_shares` and `bench_figures`, for 61 local tables.
 
-## Chunk 8R transition (wave 2) — CI-verified ([CI #150](https://github.com/Adityapawar5105/rebatehq/actions/runs/43453893489)); Restore Drill pending
+## Chunk 8R transition (wave 2) — CI-verified ([CI #150](https://github.com/Adityapawar5105/rebatehq/actions/runs/43453893489)) and [Restore Drill #21](https://github.com/Adityapawar5105/rebatehq/actions/runs/43467938552) passed; migration locked
 
 The migration `20261113120000_chunk8r_retire_wave2.sql` drops the 12 wave-2 tables: `quote`, `quote_line`, `quote_share_link`, `approval`, `approval_rule`, `rebate_agreement`, `rebate_progress`, `rebate_tier`, `rebate_entry`, `supplier_credit`, `alert` and `fx_rate`. Every foreign key into them comes from another table in the same list, so one `DROP TABLE` removes them without CASCADE. Their policies, indexes and audit triggers go with them. No function served only these tables, so no function is dropped.
 

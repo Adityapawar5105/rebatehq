@@ -1,8 +1,8 @@
 # RebateHQ security verification
 
-## Chunk 8R — wave-2 legacy table retirement (CI-verified in [CI #150](https://github.com/Adityapawar5105/rebatehq/actions/runs/43453893489); Restore Drill pending)
+## Chunk 8R — wave-2 legacy table retirement (CI-verified in [CI #150](https://github.com/Adityapawar5105/rebatehq/actions/runs/43453893489); [Restore Drill #21](https://github.com/Adityapawar5105/rebatehq/actions/runs/43467938552) passed)
 
-The migration `20261113120000_chunk8r_retire_wave2.sql` drops the last 12 server business tables: quotes, quote lines, share links, approvals, approval rules, rebate agreements, progress, tiers, entries, supplier credits, alerts and exchange rates. It passed CI and stays pending until a user-run Restore Drill passes.
+The migration `20261113120000_chunk8r_retire_wave2.sql` drops the last 12 server business tables: quotes, quote lines, share links, approvals, approval rules, rebate agreements, progress, tiers, entries, supplier credits, alerts and exchange rates. It passed CI and the user-run Restore Drill, and is locked.
 
 **After it, the server database holds only the control plane.** That is 13 tables:
 - workspaces, membership, invites and the audit log;

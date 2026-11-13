@@ -3,7 +3,7 @@
 Written 6 November 2026, after 7B (CI #89, #90, #91 green); updated 7 November 2026 after 7V (CI #95, #96 green). This file is the starting point for whoever builds
 the next chunk. It holds what a new session needs without the earlier chat history.
 
-**Current status (13 November 2026): 8R built (wave-2 retirement; migration `20261113120000_chunk8r_retire_wave2.sql` CI-verified in CI #150; pending the user-run Restore Drill).** Server: 13 control-plane tables; pgTAP 136/139; 12 locked migrations + 1 pending. Local v21 / 61 tables. After 8R only 9A remains (on hold). See CHUNK_8R_VERIFICATION.md.
+**Current status (13 November 2026): 8R done ([CI #150](https://github.com/Adityapawar5105/rebatehq/actions/runs/43453893489); [Restore Drill #21](https://github.com/Adityapawar5105/rebatehq/actions/runs/43467938552); migration locked).** Server: 13 control-plane tables; pgTAP 136/139; 13 locked migrations, 0 pending. Local v21 / 61 tables. Every chunk except 9A is done; 9A waits for the user's explicit prompt. See CHUNK_8R_VERIFICATION.md.
 
 ## How to use this file
 1. Work **one chunk per session**, in the order below. Paste **Block A (shared context)** first, then that
@@ -31,7 +31,7 @@ the next chunk. It holds what a new session needs without the earlier chat histo
 | 8 | 8B Margin Drain agents, cost index, dead stock | Maybe (public index feed) | Done: 8B-1 [CI #137](https://github.com/Adityapawar5105/rebatehq/actions/runs/42847127386) on `509a0f8`; 8B-2 [CI #138](https://github.com/Adityapawar5105/rebatehq/actions/runs/42853411139) on `e23f5f7` (uploads only, no feed, no migration) |
 | 9 | 8C Win/loss, desktop offline mode, audit pack, templates | No | Done: 8C-1 [CI #140](https://github.com/Adityapawar5105/rebatehq/actions/runs/42896532114) on `efe4291`; 8C-2 [CI #142](https://github.com/Adityapawar5105/rebatehq/actions/runs/43028662048) on `16622a9` (Safari spike moved to 8D per v2.6 gap 5) |
 | 10 | 8D Opt-in anonymous benchmarks, Safari desktop spike | Yes (consent and aggregates) | Done: [CI #146](https://github.com/Adityapawar5105/rebatehq/actions/runs/43059749723) on `63ba49c`, [Restore Drill #20](https://github.com/Adityapawar5105/rebatehq/actions/runs/43070833569); migration locked; Safari: WebKit pre-check only |
-| 11 | 8R Legacy table retirement, wave 2 | Yes (drops 12 tables) | CI-verified in [CI #150](https://github.com/Adityapawar5105/rebatehq/actions/runs/43453893489) on `436459c`; migration pending the user-run Restore Drill |
+| 11 | 8R Legacy table retirement, wave 2 | Yes (drops 12 tables) | Done: [CI #150](https://github.com/Adityapawar5105/rebatehq/actions/runs/43453893489) on `436459c`, [Restore Drill #21](https://github.com/Adityapawar5105/rebatehq/actions/runs/43467938552); migration locked |
 | — | 9A Mobile field-rep PWA | — | **On hold until the user asks** |
 
 ---
@@ -66,7 +66,7 @@ Things to know for the next chunk:
 - DuckDB-Wasm has no JSON extension: parse vault JSON in JavaScript.
 - Safari is unclaimed (SAFARI_SPIKE.md).
 
-Next: 8R, only on explicit instruction.
+8R (wave-2 retirement) is done in [CI #150](https://github.com/Adityapawar5105/rebatehq/actions/runs/43453893489) and [Restore Drill #21](https://github.com/Adityapawar5105/rebatehq/actions/runs/43467938552), 13 November 2026: the server keeps 13 control-plane tables, pgTAP plans 136/139, and the restore sentinel is a licence location. Next: only 9A, on the user's explicit prompt.
 Blueprint v2.4 (section 22, items 24-25) added work that 7C-3 covered. Blueprint v2.5 (items 26-27) adds a grid standard and row
 notes, built in 7V-3; from then on every new grid must meet that standard. New screens use the
 shared components in components/ui (ui.tsx, Icon.tsx, ui.module.css) inside the shell in components/local/VaultApp.tsx. The local vault is DuckDB-Wasm in a Web

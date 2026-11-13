@@ -60,9 +60,9 @@ A row audit is deliberately absent: it would link a pseudonymous contribution to
 
 **Functions.** The new functions are in the one function ACL registry. `bench_publish` is owner-only (no app grant).
 
-## 8R inventory (CI-verified in [CI #150](https://github.com/Adityapawar5105/rebatehq/actions/runs/43453893489); Restore Drill pending)
+## 8R inventory (locked 13 November 2026)
 
-`20261113120000_chunk8r_retire_wave2.sql` is **pending**: its hash is recorded under `pendingMigrations` in `migrations.lock`. Lock it only after green CI and a **user-run** Restore Drill. All 12 applied hashes stay frozen.
+`20261113120000_chunk8r_retire_wave2.sql` is **locked**. It passed [CI #150](https://github.com/Adityapawar5105/rebatehq/actions/runs/43453893489) on `436459c` and the user-run [Restore Drill #21](https://github.com/Adityapawar5105/rebatehq/actions/runs/43467938552) on `7683d7b`; 13 migrations are applied and 0 are pending.
 
 **Tenant inventory.** The public tenant-table minimum is now **13**, superseding the 25 above. The 5B check counts exactly 13 and asserts that `quote` and `fx_rate` are gone. The restore tooling and the repeatability check use the same minimum:
 - `verify-restore-equivalence.mjs`;

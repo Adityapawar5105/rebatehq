@@ -11,7 +11,12 @@ Blueprint Phase 3, chunk 8R: wave 2 of the legacy table retirement (RETIREMENT_P
 
 Every job step passed.
 
-**The migration stays pending** under `pendingMigrations` in `migrations.lock` until a **user-run** Restore Drill (target local) passes. 8R is complete only then.
+**8R is complete.** The user-run [Restore Drill #21](https://github.com/Adityapawar5105/rebatehq/actions/runs/43467938552) (local target) on `7683d7b` passed:
+- restore-mode pgTAP, **139 checks**, twice;
+- the sentinel licence location restored with its source content hash;
+- restore equivalence: every section passed, including **PASS licence, seat, location and device content hashes**, the relay and benchmark hashes, and per-tenant row counts for **13 tenant tables**.
+
+The migration `20261113120000_chunk8r_retire_wave2.sql` is now locked in `migrations.lock`: 13 applied, 0 pending.
 
 ## Precondition
 
@@ -73,5 +78,4 @@ Pure logic is kept: `rebate-engine.js`, the margin engine, `lib/quote-approval.t
 
 ## Unverified
 
-- **Restore Drill:** the user has to run it. Until it passes, the migration stays pending.
 - **Hosted databases:** none exist today. A hosted project created later needs this migration applied through the normal path.
