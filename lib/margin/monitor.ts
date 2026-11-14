@@ -18,7 +18,8 @@ export type CustomerHealth={window:ReturnType<typeof monitoringWindow>;threshold
 /** Complete months use agg_cm. Only partial boundary months read the invoice lines.
  * Sales only; credits are not orders. Rates use known-cost pocket; incomplete cost
  * coverage suppresses the margin rule. Order identity matches the service-cost finder. */
-export async function customerHealth(e:Engine,thresholdBp='500',today?:string):Promise<CustomerHealth>{
+export async function customerHealth(e:Engine,thresholdBp='500',today?:string,limit=50):Promise<CustomerHealth>{
+ const cap=Math.max(1,Math.min(1000,Math.floor(limit)));
  if(typeof thresholdBp!=='string'||!/^\d{1,5}$/.test(thresholdBp)||BigInt(thresholdBp)>BigInt(10000))throw new VaultError('INPUT',msg('monitor.badThreshold'));
  const window=monitoringWindow(today),w=`SELECT 'before' period,DATE ${Q(window.priorFrom)} lo,DATE ${Q(window.from)} hi UNION ALL SELECT 'after',DATE ${Q(window.from)},DATE ${Q(window.to)}`;
  const input=await salesInput(e);
@@ -39,9 +40,9 @@ export async function customerHealth(e:Engine,thresholdBp='500',today?:string):P
  (ao<bo AND bl>0 AND al>0 AND ad*bl>bd*al) frequency_drop FROM paired)
  SELECT *,count(*) OVER()::VARCHAR AS alert_count,CASE WHEN bn=bk THEN ${rateBpSql('bp-bc','bp')}::VARCHAR END before_rate,CASE WHEN an=ak THEN ${rateBpSql('ap-ac','ap')}::VARCHAR END after_rate,
  ${rateBpSql('bd','bl')}::VARCHAR before_discount,${rateBpSql('ad','al')}::VARCHAR after_discount
- FROM rules WHERE margin_drop OR frequency_drop ORDER BY customer_id LIMIT 50`);
+ FROM rules WHERE margin_drop OR frequency_drop ORDER BY customer_id LIMIT ${cap}`);
  const data=raw.map(r=>Object.fromEntries(Object.entries(r).map(([k,v])=>[k,v==null?null:String(v)])));
- const alerts=data.slice(0,50).map(r=>{
+ const alerts=data.slice(0,cap).map(r=>{
   const period=(p:'b'|'a'):HealthPeriod=>({pocket:String(r[p+'p']),cost:String(r[p+'c']),list:String(r[p+'l']),discount:String(r[p+'d']),lines:String(r[p+'n']),costed:String(r[p+'k']),orders:String(r[p+'o']),rate:r[p==='b'?'before_rate':'after_rate'],discountBp:r[p==='b'?'before_discount':'after_discount']});
   return {customer:String(r.customer_id),name:String(r.name),marginDrop:r.margin_drop==='true',frequencyDrop:r.frequency_drop==='true',before:period('b'),after:period('a')};
  });

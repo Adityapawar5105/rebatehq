@@ -44,7 +44,7 @@ type StatProps = { label: ReactNode; value: ReactNode; hint?: ReactNode; icon?: 
 export function StatTile({ label, value, hint, icon, tone, wide, valueProps }: StatProps) {
   return <div className={s.stat} data-tone={tone} data-wide={wide ? "yes" : undefined}>
     <span className={s.statLabel}>{icon && <span className={s.statIcon}><Icon name={icon} size={16}/></span>}{label}</span>
-    <strong className={s.statValue} {...valueProps}>{value}</strong>
+    <strong className={s.statValue} style={typeof value === "string" ? { ["--len" as string]: Math.max(4, value.length) } : undefined} {...valueProps}>{value}</strong>
     {hint && <span className={s.statHint}>{hint}</span>}
   </div>;
 }

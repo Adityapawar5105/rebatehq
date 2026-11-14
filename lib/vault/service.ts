@@ -51,7 +51,7 @@ import { PLAYGROUND_PREFIX, generatePlayground } from "../studio/playground";
 import { AUTO_LOCK_MS, LEASE_WAIT_MS, VaultError, type LeaksView, type Scope, type Tier, type VaultStatus } from "./protocol";
 import { REBUILD_SQL, effectiveRebuildSql, findDifferences, reconSummary, recordSql } from "../margin/aggregate";
 import { drill, math, waterfall, whale, type Dim, type Filters, type Metric } from "../margin/views";
-import { findLeaks, leakRows, type LeakResult } from "../margin/leaks";
+import { findLeaks, leakRows, scopeTotals, type LeakResult } from "../margin/leaks";
 import { REMOVE_SAMPLE_SQL, ledgerSql, roiSummary } from "../margin/roi";
 import { leakReport } from "../margin/report";
 import { loadCredits } from "../margin/credits";
@@ -439,7 +439,7 @@ export class VaultService {
   async homeMonitor(thresholdBp='500'){
     const e=this.requireEngine();
     try{
-      const health=await customerHealth(e,thresholdBp),leaks=await findLeaks(e,this.licence.tier!=='starter',health.window);
+      const health=await customerHealth(e,thresholdBp,undefined,500),leaks=await findLeaks(e,this.licence.tier!=='starter',health.window);
       return {health,leaks,currency:await workspaceCurrency(e),checkedAt:new Date().toISOString()};
     }catch(error){if(error instanceof VaultError)throw error;throw new VaultError('QUERY',msg('monitor.failed'));}
     finally{this.leakCache=null;}
@@ -616,18 +616,27 @@ export class VaultService {
     const hit = (kind: SearchHit["kind"]) => (r: Record<string, unknown>): SearchHit => ({ kind, id: String(r.id), label: String(r.label ?? ""), detail: String(r.detail ?? ""), ...(withNotes && r.note !== null && r.note !== undefined ? { note: String(r.note) } : {}) });
     return [...products.map(hit("product")), ...customers.map(hit("customer"))];
   }
-  /** Build the Margin Leak Report PDF in this worker (no upload), in the user's language; the export is audited. */
-  async leakReport(locale?: string) {
-    const view = await this.leaks(), engine = this.requireEngine(), result = view.result;
+  /** Build the Margin Leak Report PDF in this worker (no upload), in the user's language; the export is audited.
+   * `ids` limits the report to the findings selected on screen; without it every finding is in the report. */
+  async leakReport(locale?: string, ids?: unknown) {
+    const view = await this.leaks(), engine = this.requireEngine(), all = view.result;
+    let chosen = all.findings;
+    if (ids !== undefined && ids !== null) {
+      if (!Array.isArray(ids) || !ids.length || ids.length > all.findings.length || ids.some(id => typeof id !== "string") || new Set(ids).size !== ids.length) throw new VaultError("INPUT", msg("report.badSelection"));
+      const known = new Set(all.findings.map(f => f.id)); if (ids.some(id => !known.has(id as string))) throw new VaultError("INPUT", msg("report.badSelection"));
+      const pick = new Set(ids as string[]); chosen = all.findings.filter(f => pick.has(f.id));
+    }
+    const totals = await scopeTotals(engine, chosen.map(f => f.id));
+    const result = { ...all, findings: chosen, totalCents: totals.totalCents, overlapCents: totals.overlapCents, overlapLines: totals.overlapLines, dedupedCents: totals.dedupedCents };
     const evidence: Record<string, Awaited<ReturnType<typeof leakRows>>["rows"]> = {};
     for (const f of result.findings.slice(0, 6)) evidence[f.id] = (await leakRows(engine, f.id, 0)).rows.slice(0, 5);
     const meta = (await engine.conn.query("SELECT count(*)::VARCHAR AS n, strftime(min(sale_date), '%Y-%m-%d') AS a, strftime(max(sale_date), '%Y-%m-%d') AS b FROM sales_lines")).toArray()[0];
     const sources = (await listSources(engine)).filter(s => s.role === "sales_history").map(s => s.name);
     const generatedAt = new Date().toISOString();
-    const bytes = leakReport({ currency: await workspaceCurrency(engine), locale: isLocale(locale) ? locale : "en", generatedAt, sample: view.sample, lines: String(meta.n), from: meta.a === null ? null : String(meta.a), to: meta.b === null ? null : String(meta.b), sources, waterfall: await waterfall(engine), leaks: result, roi: view.roi, evidence });
+    const bytes = leakReport({ currency: await workspaceCurrency(engine), locale: isLocale(locale) ? locale : "en", generatedAt, sample: view.sample, lines: String(meta.n), from: meta.a === null ? null : String(meta.a), to: meta.b === null ? null : String(meta.b), sources, waterfall: await waterfall(engine), leaks: result, roi: view.roi, evidence, scope: { chosen: chosen.length, of: all.findings.length, affectedLines: totals.affectedLines } });
     const w = await this.writable();
     await w.conn.query("BEGIN");
-    try { await appendAudit(w, "report.leak_pdf", { findings: String(result.findings.length), bytes: String(bytes.byteLength), sample: String(view.sample) }); await w.conn.query("COMMIT"); }
+    try { await appendAudit(w, "report.leak_pdf", { findings: String(result.findings.length), of: String(all.findings.length), bytes: String(bytes.byteLength), sample: String(view.sample) }); await w.conn.query("COMMIT"); }
     catch (error) { await w.conn.query("ROLLBACK").catch(() => undefined); throw error; }
     this.dirty = true; await this.save(); this.touch();
     return { name: `rebatehq-leak-report-${generatedAt.slice(0, 10)}.pdf`, blob: new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "application/pdf" }), bytes: String(bytes.byteLength), status: await this.status() };

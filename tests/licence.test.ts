@@ -22,8 +22,8 @@ test('one-hour online assertion, bounded 24h offline grace, expiry and revocatio
  for(const action of ['unlock','marginWaterfall','verify','backupExport','lock'] as const)licence.guard(action);
  await assert.rejects(licence.set({...envelope(claims),signature:'bad'}, {userId:'u',tenantId:'w'},'d',false));assert.equal(licence.writable,false);
 });
-test('every tier boundary is exact and Scale retains the measured 1M provisional cap',()=>{
- assert.deepEqual(LICENCE_LIMITS,{starter:{users:1,locations:1,products:20000,lines:200000},professional:{users:5,locations:null,products:100000,lines:1000000},scale:{users:15,locations:null,products:200000,lines:1000000}});
+test('every tier boundary is exact and Scale has the blueprint 2M-line cap',()=>{
+ assert.deepEqual(LICENCE_LIMITS,{starter:{users:1,locations:1,products:20000,lines:200000},professional:{users:5,locations:null,products:100000,lines:1000000},scale:{users:15,locations:null,products:200000,lines:2000000}});
  for(const tier of ['starter','professional','scale'] as const){const cap=LICENCE_LIMITS[tier];assert.equal(fitsLicenceCapacity(tier,BigInt(cap.products),BigInt(cap.lines)),true);assert.equal(fitsLicenceCapacity(tier,BigInt(cap.products)+BigInt(1),BigInt(cap.lines)),false);assert.equal(fitsLicenceCapacity(tier,BigInt(cap.products),BigInt(cap.lines)+BigInt(1)),false);}
  assert.equal(lowerTier('starter','scale'),'starter');assert.equal(lowerTier('scale','starter'),'starter');
 });

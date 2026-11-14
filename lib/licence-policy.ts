@@ -1,8 +1,8 @@
-// Metadata only. Scale's provisional cap is deliberately below the blueprint target.
+// Metadata only. The tier caps follow blueprint section 2 (Scale 2M lines since 14 Nov 2026, at the user's request).
 export const LICENCE_LIMITS = {
   starter: { users: 1, locations: 1, products: 20_000, lines: 200_000 },
   professional: { users: 5, locations: null, products: 100_000, lines: 1_000_000 },
-  scale: { users: 15, locations: null, products: 200_000, lines: 1_000_000 },
+  scale: { users: 15, locations: null, products: 200_000, lines: 2_000_000 },
 } as const;
 export type LicenceTier = keyof typeof LICENCE_LIMITS;
 export const ASSERTION_SECONDS = 3600;

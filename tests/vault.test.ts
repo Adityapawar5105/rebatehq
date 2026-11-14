@@ -114,7 +114,7 @@ test("schema inventory, forward-only migration, capacity and memory warning are 
   assert.deepEqual([...tablesFor(7)].filter(t => !tablesFor(6).includes(t)), ["role_assignments", "access_settings", "cleanup_fixes", "cleanup_changes", "setup_progress"]);
   assert.deepEqual([...tablesFor(5)].filter(t => !tablesFor(4).includes(t)), ["agg_cpm", "agg_cm", "agg_p", "recon_issues"]);
   assert.equal(schemaSql(21), [V1_SQL, upgradeSql(1)].join("\n"));
-  assert.equal(CAPS.scale.lines, 1000000); assert.equal(CAPS.starter.products, 20000);
+  assert.equal(CAPS.scale.lines, 2000000); assert.equal(CAPS.starter.products, 20000);
   assert.equal(estimateImport({ name: "sales.csv", size: 1000 }, "professional").estimatedMemoryBytes, "6000");
   assert.throws(() => estimateImport({ name: "sales.xlsx", size: 1000 }, "starter"));
   assert.throws(() => estimateImport({ name: "sales.csv", size: 257 * 1024 * 1024 }, "starter"));

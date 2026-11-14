@@ -41,7 +41,7 @@ Privacy acceptance covers the **local vault flow only**. Legacy server business-
   not a redesign in this chunk. 4C-1 has not started.
   The resumed first change measured 7.586/7.611 seconds at 1M and
   14.781/16.332 seconds at 2M (Chrome/Edge); no UI long task >=50 ms was
-  observed. The 2M latency is an explicit open item; Scale remains capped at 1M.
+  observed. The 2M latency is an explicit open item; Scale was capped at 1M until 14 Nov 2026 (now 2M; see below).
 
 - Only 4B is implemented. No 4C-1 converter/mapping work, licence enforcement,
   server business-data retirement or new Supabase schema is included. All seven
@@ -82,9 +82,10 @@ Privacy acceptance covers the **local vault flow only**. Legacy server business-
   Mapping, UoM/dated-cost resolution, file deduplication and other formats remain
   later chunks. No master price/current cost is guessed from invoice totals.
 - Local profiles enforce Starter 20k products/200k lines, Professional 100k/1M,
-  Scale 200k/1M. Profile selection is a guardrail, not authoritative billing or
-  licensing. A 2M pre-existing synthetic vault can open for benchmarking; new
-  imports still obey the provisional 1M cap. The blueprint's tiers are unchanged.
+  Scale 200k/2M. Profile selection is a guardrail, not authoritative billing or
+  licensing. Scale was held at a provisional 1M until 14 Nov 2026, when the user
+  asked for the blueprint's 2M (blueprint section 22, item 30); 2M timing targets
+  remain unverified.
 - `persist()` requires a window user action; all heavy work, storage enumeration
   and queries remain in the worker. Both headless browsers denied persistence
   normally and the UI showed that. See `STORAGE_FINDINGS.md`: the new path's
@@ -409,7 +410,7 @@ Only 5A; no 5B. Supabase migrations and `migrations.lock` are untouched. New loc
 - Scope is control-plane slimming, authoritative pilot licences and the carried security items. No 6A and no destructive table retirement. RETIREMENT_PROPOSAL.md needed separate user approval; it was approved with revisions on 5 Nov 2026 (tables drop in chunks 6R and 8R, not in 5B).
 - LEGACY_BUSINESS_ENABLED defaults off and is server-only. Class C/X APIs stop before reading a request or accessing data; pages 404. Historical business audit JSON is never returned by the control audit endpoint.
 - Licence assertions are Ed25519-signed server-side, bound to workspace/user/device, with a one-hour normal life and up to 24 hours of offline grace, never beyond the licence end date. Online refresh is attempted every five minutes. Expiry, an explicit revocation/unseated result, invalid signature, or no valid cached assertion makes the vault read-only; no data is deleted. Revocation while truly offline can only take effect by the fixed grace deadline.
-- Starter: one seat and one location/ERP profile; Professional: five seats and multiple locations/profiles; Scale: 15 seats, multiple locations/profiles, 200k SKUs and the provisional 1M-line cap. Professional remains 100k/1M, Starter 20k/200k. No artificial numerical location cap is added to the two multi-location tiers. plan_feature is never authoritative.
+- Starter: one seat and one location/ERP profile; Professional: five seats and multiple locations/profiles; Scale: 15 seats, multiple locations/profiles, 200k SKUs and 2M lines (provisional 1M until 14 Nov 2026). Professional remains 100k/1M, Starter 20k/200k. No artificial numerical location cap is added to the two multi-location tiers. plan_feature is never authoritative.
 - Untracked .claude/ belongs to the existing workspace and is left alone.
 
 - 5B adds four public tenant tables (42 total) and 26 pgTAP checks (188/191). New tables have operation-specific grants: licence read only; seats SELECT/INSERT/DELETE; locations CRUD; devices SELECT/INSERT/UPDATE. No TRUNCATE, no platform grantees. Devices remain revocation tombstones unless an owner explicitly removes their seat (cascading its devices).

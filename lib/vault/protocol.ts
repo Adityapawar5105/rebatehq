@@ -175,7 +175,7 @@ export type Commands = {
   marginMath: { metric: Metric; filters?: Filters; offset?: number; grid?: GridQuery };
   leaks: Record<string, never>;
   leakRows: { id: string; offset?: number; grid?: GridQuery };
-  leakReport: { locale?: string };
+  leakReport: { locale?: string; ids?: string[] };
   search: { text: string };
   priceCheck: { productId: string; customerId: string | null; quantity: string };
   quoteCreate: { customerId: string }; quoteLines: { id: string; lines: LineInput[] }; quoteSubmit: { id: string; reason: string | null };

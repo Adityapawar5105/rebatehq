@@ -6,8 +6,23 @@ export class Pdf {
   private pages: string[][] = [];
   readonly width = 612; readonly height = 792;
   page() { this.pages.push([]); return this; }
-  private get ops() { if (!this.pages.length) this.page(); return this.pages[this.pages.length - 1]; }
+  private cursor: number | null = null;
+  private get ops() { if (!this.pages.length) this.page(); return this.pages[this.cursor ?? this.pages.length - 1]; }
   get pageCount() { return this.pages.length; }
+  /** Draws on every page after the layout is done (page numbers, footers), then returns to the last page. */
+  eachPage(draw: (index: number, count: number) => void) { const n = this.pages.length; try { for (let i = 0; i < n; i++) { this.cursor = i; draw(i, n); } } finally { this.cursor = null; } return this; }
+  /** Word-wraps text into lines no wider than `max` points; a single over-long word is truncated. */
+  static wrap(s: string, size: number, max: number): string[] {
+    const out: string[] = []; let line = "";
+    for (const word of s.split(/\s+/).filter(Boolean)) {
+      const next = line ? line + " " + word : word;
+      if (Pdf.widthOf(next, size) <= max) { line = next; continue; }
+      if (line) out.push(line);
+      line = Pdf.widthOf(word, size) <= max ? word : Pdf.fit(word, size, max);
+    }
+    if (line) out.push(line);
+    return out.length ? out : [""];
+  }
   static ascii(s: string) { return s.replace(/[‒-―]/g, "-").replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/×/g, "x").replace(/[^\x20-\x7e]/g, "?"); }
   /**
    * PDF string escape in WinAnsiEncoding (chunk 7U): accented Latin letters used by Spanish and

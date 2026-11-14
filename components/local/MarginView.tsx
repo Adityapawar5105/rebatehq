@@ -3,6 +3,7 @@ import {CompetitorLog,ServiceOrders} from './PricingTools';
 import {RebateReconciliation} from "./RebatesView";
 import {MarginBridge} from "./PricingOps";
 import {SectionTabs} from "@/components/ui/ui";
+import {CustomerHealthView} from "./HomeMonitor";
 
 // Margin section (chunk 4D): waterfall, drill-down, whale curve, leaks, ROI and the
 // "show me the math" panel. Every number is computed in the vault worker; this file only draws.
@@ -143,10 +144,12 @@ function WhaleCard({ whale, open }: { whale: Whale | null; open: (m: Metric, t: 
   </Card>;
 }
 function LeaksCard({ client, leaks, busy, operation, setMessage, onStatus, onEvidence }: { client: VaultClient; leaks: LeaksView | null; busy: boolean; operation: Shared["operation"]; setMessage: Shared["setMessage"]; onStatus: Shared["onStatus"]; onEvidence: (f: Finding) => void }) {
-  return <Card headingId="leaks-heading" title={<Term id="leak">{t("margin.leaks")}</Term>} actions={leaks && <LeakReportButton client={client} busy={busy} operation={operation} setMessage={setMessage} onStatus={onStatus}/>}>
+  const [picked, setPicked] = useState<Finding[]>([]);
+  return <Card headingId="leaks-heading" title={<Term id="leak">{t("margin.leaks")}</Term>} actions={leaks && <LeakReportButton client={client} busy={busy} operation={operation} setMessage={setMessage} onStatus={onStatus} ids={picked.length ? picked.map(f => f.id) : undefined}/>}>
     {!leaks ? <div aria-busy="true"><p className={styles.muted}>{t("margin.lookingForLeaks")}</p><Skeleton/></div> : <>
       <p>{t("margin.leakDollarsFound")}{" "}<strong data-testid="leak-total">{$(leaks.result.dedupedCents)}</strong>{" "}{t(leaks.sample ? "margin.acrossFindingsSample" : "margin.acrossFindings", { count: leaks.result.findings.length })}{leaks.result.overlapLines !== "0" ? " " + t("margin.overlap", { count: Number(leaks.result.overlapLines), overlapCents: $(leaks.result.overlapCents) }) : ""}</p>
-      {leaks.result.findings.length ? <DataGrid label={t("margin.leakFindings")} testId="leak-findings" rows={leaks.result.findings} rowKey={f => f.id} columns={[
+      {leaks.result.findings.length > 1 && <p className={styles.small}>{t("margin.reportSelectionHint")}</p>}
+      {leaks.result.findings.length ? <DataGrid label={t("margin.leakFindings")} testId="leak-findings" rows={leaks.result.findings} rowKey={f => f.id} onSelectionChange={setPicked} columns={[
         { id: "type", name: t("margin.col.type"), value: f => say(f.label), cell: f => <Badge tone="warn">{say(f.label)}</Badge> },
         { id: "finding", name: t("margin.col.finding"), value: f => say(f.title), cell: f => <span className={styles.wrap}>{say(f.title)}</span> },
         { id: "lines", name: t("margin.col.lines"), type: "int", num: true, value: f => f.lines },
@@ -156,12 +159,13 @@ function LeaksCard({ client, leaks, busy, operation, setMessage, onStatus, onEvi
     </>}
   </Card>;
 }
-export function LeakReportButton({ client, busy, operation, setMessage, onStatus }: Pick<Shared, "client" | "busy" | "operation" | "setMessage" | "onStatus">) {
-  return <Button variant="primary" icon="download" disabled={busy} onClick={() => void operation(async () => {
-    const out = await client.call("leakReport", { locale: getLocale() }); onStatus(out.status);
+/** Downloads the Leak Report PDF; with `ids` (findings ticked on screen) the report covers only those findings. */
+export function LeakReportButton({ client, busy, operation, setMessage, onStatus, ids }: Pick<Shared, "client" | "busy" | "operation" | "setMessage" | "onStatus"> & { ids?: string[] }) {
+  return <Button variant="primary" icon="download" disabled={busy} data-testid="leak-report-download" onClick={() => void operation(async () => {
+    const out = await client.call("leakReport", ids ? { locale: getLocale(), ids } : { locale: getLocale() }); onStatus(out.status);
     const url = URL.createObjectURL(out.blob), a = document.createElement("a"); a.href = url; a.download = out.name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 10_000);
     setMessage(msg("margin.reportCreated", { bytes: Number(out.bytes) }));
-  })}>{t("margin.downloadLeakReportPdf")}</Button>;
+  })}>{ids ? t("margin.downloadSelected", { count: ids.length }) : t("margin.downloadLeakReportPdf")}</Button>;
 }
 export function RoiCard({ client, version }: { client: VaultClient; version: string }) {
   const [roi, setRoi] = useState<RoiSummary | null>(null);
@@ -214,7 +218,9 @@ function MathView({ client, target, onClose }: { client: VaultClient; target: No
 
 export function MarginView(props:Shared){
  const [tab,setTab]=useState('waterfall');
- const canBridge=props.status.licence?.tier==='professional'||props.status.licence?.tier==='scale',shown=canBridge?tab:'waterfall';
- useEffect(()=>{const read=()=>setTab(['#margin-bridge','#margin-competitors','#margin-service'].includes(location.hash)?location.hash.slice(8):'waterfall');read();window.addEventListener('hashchange',read);return()=>window.removeEventListener('hashchange',read);},[]);
- return <>{canBridge&&<SectionTabs label={t('ops.bridge')} current={shown} onSelect={setTab} items={[{id:'waterfall',label:t('margin.waterfall'),href:'#margin-waterfall'},{id:'bridge',label:t('ops.bridge'),href:'#margin-bridge',testId:'ops-tab-margin-bridge'},{id:'competitors',label:t('pc2.competitors'),href:'#margin-competitors',testId:'ops-tab-competitors'},{id:'service',label:t('pc2.service'),href:'#margin-service',testId:'ops-tab-service'}]}/>} {shown==='competitors'?<CompetitorLog client={props.client} canEdit={!!props.status.access?.caps.includes('pricing')}/>:shown==='service'?<ServiceOrders client={props.client} canEdit={!!props.status.access?.caps.includes('pricing')}/>:shown==='bridge'?<MarginBridge client={props.client}/>:<WaterfallView {...props}/>}</>;
+ const canBridge=props.status.licence?.tier==='professional'||props.status.licence?.tier==='scale',shown=canBridge||tab==='health'?tab:'waterfall';
+ useEffect(()=>{const read=()=>setTab(['#margin-bridge','#margin-competitors','#margin-service','#margin-health'].includes(location.hash)?location.hash.slice(8):'waterfall');read();window.addEventListener('hashchange',read);return()=>window.removeEventListener('hashchange',read);},[]);
+ const items=[{id:'waterfall',label:t('margin.waterfall'),href:'#margin-waterfall'},{id:'health',label:t('monitor.healthTab'),href:'#margin-health',testId:'ops-tab-health'},...(canBridge?[{id:'bridge',label:t('ops.bridge'),href:'#margin-bridge',testId:'ops-tab-margin-bridge'},{id:'competitors',label:t('pc2.competitors'),href:'#margin-competitors',testId:'ops-tab-competitors'},{id:'service',label:t('pc2.service'),href:'#margin-service',testId:'ops-tab-service'}]:[])];
+ const version=`${props.status.lines}|${props.status.generation}`;
+ return <><SectionTabs label={t('margin.views')} current={shown} onSelect={setTab} items={items}/> {shown==='health'?<CustomerHealthView client={props.client} version={version}/>:shown==='competitors'?<CompetitorLog client={props.client} canEdit={!!props.status.access?.caps.includes('pricing')}/>:shown==='service'?<ServiceOrders client={props.client} canEdit={!!props.status.access?.caps.includes('pricing')}/>:shown==='bridge'?<MarginBridge client={props.client}/>:<WaterfallView {...props}/>}</>;
 }

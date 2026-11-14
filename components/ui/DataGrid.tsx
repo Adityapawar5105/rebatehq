@@ -73,8 +73,10 @@ type Props<R> = {
   testId?: string;
   rowProps?: (row: R) => Record<string, string | undefined>;
   caption?: ReactNode;
+  /** Local grids: called with the selected rows (in screen order) whenever the selection changes. */
+  onSelectionChange?: (rows: R[]) => void;
 };
-export function DataGrid<R>({ label, columns, rows, rowKey, remote, footer, selectable = true, tall, className, testId, rowProps, caption }: Props<R>) {
+export function DataGrid<R>({ label, columns, rows, rowKey, remote, footer, selectable = true, tall, className, testId, rowProps, caption, onSelectionChange }: Props<R>) {
   useLocale();
   const locale = getLocale();
   const [local, setLocal] = useState<GridQuery>({});
@@ -108,6 +110,14 @@ export function DataGrid<R>({ label, columns, rows, rowKey, remote, footer, sele
     anchor.current = i;
   };
   const everyShown = visibleKeys.length > 0 && visibleKeys.every(k => picked.has(k));
+  const onSelect = useRef(onSelectionChange); onSelect.current = onSelectionChange;
+  // Report only real changes: callers build rowKey inline, so the key list is a new array on every render.
+  const emitted = useRef<string | null>(null);
+  useEffect(() => {
+    const chosen = all ? visibleKeys : visibleKeys.filter(k => picked.has(k)), sig = chosen.join("\u0001");
+    if (sig === emitted.current) return; emitted.current = sig;
+    onSelect.current?.(all ? visible : visible.filter((_, i) => picked.has(visibleKeys[i])));
+  }, [all, picked, visible, visibleKeys]);
   // Header checkbox: clear when everything shown is selected; otherwise select every row (a worker grid selects
   // every row matching its filters, including rows on other pages).
   const toggleAll = () => { if (all || everyShown) { setAll(false); setPicked(new Set()); } else { setAll(!!remote); setPicked(new Set(visibleKeys)); } };
@@ -217,11 +227,18 @@ function FilterPanel({ anchor, name, type, label, current, distinct, onClose, on
   const isOn = (v: string | null) => chosen === null || chosen.has(v);
   const flip = (v: string | null) => setChosen(c => { const base = c ?? new Set(list?.values.map(x => x.value) ?? []); const next = new Set(base); if (next.has(v)) next.delete(v); else next.add(v); return next; });
   const shown = list?.values ?? [];
-  const apply = () => { if (chosen === null) return onApply(null); const everything = !search && !list?.more && shown.every(v => chosen.has(v.value)); onApply(everything ? null : [...chosen]); };
+  const searching = search.trim() !== "";
+  // With a search, the filter keeps the matching values that are ticked (all of them until the user unticks one).
+  const apply = () => {
+    if (searching) { const keep = shown.filter(v => isOn(v.value)).map(v => v.value); if (keep.length) onApply(keep); return; }
+    if (chosen === null) return onApply(null); const everything = !list?.more && shown.every(v => chosen.has(v.value)); onApply(everything ? null : [...chosen]);
+  };
+  const ticked = shown.filter(v => isOn(v.value)).length;
   // Rendered on <body> so no stacking context (the sidebar, a scrolling table) can cover it.
   return createPortal(<div ref={box} className={s.filterPanel} style={pos ? { top: pos.top, left: pos.left } : { visibility: "hidden" }} role="dialog" aria-labelledby={headingId} onKeyDown={e => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } }}>
     <strong id={headingId} className={s.filterTitle}>{t("grid.filter", { name })}</strong>
-    <label className={s.field}><span className={s.fieldLabel}>{t("grid.searchValues")}</span><input ref={searchRef} value={search} maxLength={160} onChange={e => setSearch(e.target.value)} data-testid="grid-filter-search"/></label>
+    <label className={s.field}><span className={s.fieldLabel}>{t("grid.searchValues")}</span><input ref={searchRef} type="search" value={search} maxLength={160} placeholder={t("grid.searchPlaceholder")} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); apply(); } }} data-testid="grid-filter-search"/></label>
+    {searching && list && <p className={s.fieldHint} role="status">{t("grid.matches", { count: shown.length })}</p>}
     <div className={s.row}>
       <button type="button" className={s.chip} onClick={() => setChosen(new Set([...(chosen ?? []), ...shown.map(v => v.value)]))}>{t("grid.selectAll")}</button>
       <button type="button" className={s.chip} onClick={() => setChosen(new Set([...(chosen ?? [])].filter(v => !shown.some(x => x.value === v))))}>{t("grid.selectNone")}</button>
@@ -229,14 +246,22 @@ function FilterPanel({ anchor, name, type, label, current, distinct, onClose, on
     {error ? <p className={s.fieldError} role="alert">{t("grid.valuesFailed")}</p> : !list ? <p className={s.fieldHint}>{t("grid.loadingValues")}</p> :
       <ul className={s.filterList} aria-label={t("grid.values", { name })}>
         {!shown.length && <li className={s.fieldHint}>{t("grid.noValues")}</li>}
-        {shown.map(v => <li key={v.value ?? "\u0000"}><label><input type="checkbox" checked={isOn(v.value)} onChange={() => flip(v.value)}/> <span translate={type === "text" && !label ? "no" : undefined}>{v.value !== null && label ? label(v.value) : showValue(type, v.value)}</span> <span className={s.fieldHint}>{fmt.int(v.count)}</span></label></li>)}
+        {shown.map(v => { const text = v.value !== null && label ? label(v.value) : showValue(type, v.value);
+          return <li key={v.value ?? "\u0000"} className={s.filterItem}><label><input type="checkbox" checked={isOn(v.value)} onChange={() => flip(v.value)}/> <span translate={type === "text" && !label ? "no" : undefined}><Highlight text={text} find={search}/></span> <span className={s.fieldHint}>{fmt.int(v.count)}</span></label>
+            <button type="button" className={s.onlyBtn} onClick={() => onApply([v.value])} aria-label={t("grid.onlyValue", { value: text })} data-testid="grid-filter-only">{t("grid.only")}</button></li>; })}
       </ul>}
     {list?.more && <p className={s.fieldHint}>{t("grid.moreValues", { count: fmt.int(shown.length) })}</p>}
     <div className={s.row}>
-      <button type="button" className={cx(s.btn, s.primary, s.sm)} onClick={apply} data-testid="grid-filter-apply">{t("grid.apply")}</button>
+      <button type="button" className={cx(s.btn, s.primary, s.sm)} onClick={apply} disabled={searching && !ticked} data-testid="grid-filter-apply">{searching ? t("grid.applyMatches", { count: ticked }) : t("grid.apply")}</button>
       <button type="button" className={cx(s.btn, s.secondary, s.sm)} onClick={() => onApply(null)}>{t("grid.clearFilter")}</button>
       <button type="button" className={cx(s.btn, s.ghost, s.sm)} onClick={onClose}>{t("common.close")}</button>
     </div>
   </div>, document.body);
+}
+/** Marks the searched text inside a value (case-insensitive), so matches stand out in the list. */
+function Highlight({ text, find }: { text: string; find: string }) {
+  const q = find.trim(); if (!q) return <>{text}</>;
+  const at = text.toLocaleLowerCase().indexOf(q.toLocaleLowerCase()); if (at < 0) return <>{text}</>;
+  return <>{text.slice(0, at)}<mark className={s.match}>{text.slice(at, at + q.length)}</mark>{text.slice(at + q.length)}</>;
 }
 export { sameQuery };

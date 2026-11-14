@@ -625,9 +625,12 @@ async function monitorUi(){
   const items=Buffer.from('product_id,category,current_cost,list_price\n'+[[sku,'Parts','50.00','100.00'],[sku+'-A','Parts','60.00','120.00'],[sku+'-B','Parts','60.00','110.00'],[sku+'-C','Parts','60.00','110.00']].map(r=>r.join(',')).join('\n')+'\n');
   const values=[[1,sku,customer,before,1,'100.00','0','0','0','50.00','OLD-1'],[2,sku,customer,before,1,'100.00','0','0','0','50.00','OLD-2'],[3,sku,customer,before,1,'100.00','0','0','0','50.00','OLD-3'],[4,sku,customer,today,1,'100.00','10.00','20.00','0','90.00','NEW'],[5,sku+'-A',customer,today,1,'120.00','0','0','0','60.00','NEW'],[6,sku+'-B',customer,today,1,'110.00','0','0','0','60.00','NEW'],[7,sku+'-C',customer,today,1,'110.00','0','0','0','60.00','NEW']];
   await page.locator('nav a[href="#data-hub"]').click();await importFiles([{name:'monitor-items.csv',mimeType:'text/csv',buffer:items},{name:'monitor-sales.csv',mimeType:'text/csv',buffer:Buffer.from(header.trim()+',invoice_id\n'+values.map(r=>r.join(',')).join('\n')+'\n')}],'7');
-  await page.locator('nav a[href="#home"]').click();await page.getByTestId('cash-leak-value').filter({hasText:'CA$20.00'}).waitFor();await page.getByTestId('health-last-checked').waitFor();
-  const health=page.getByTestId('customer-health');assert.ok((await health.innerText()).includes('50.00%'),'Health basis points were not formatted as percentages');if(!auth)await page.screenshot({path:'test-results/7c3b-'+channel+'-home-cad.png',fullPage:true});await health.getByRole('button',{name:'Show the math',exact:true}).click();await page.getByRole('dialog').getByRole('table',{name:'Customer health alerts',exact:true}).waitFor();await page.getByRole('dialog').getByRole('button',{name:'Close',exact:true}).click();
+  await page.locator('nav a[href="#home"]').click();await page.getByTestId('cash-leak-value').filter({hasText:'CA$20.00'}).waitFor();await page.getByTestId('home-health-count').waitFor();if(!auth)await page.screenshot({path:'test-results/7c3b-'+channel+'-home-cad.png',fullPage:true});
   await page.getByTestId('cash-leak').getByRole('button',{name:'Show the math',exact:true}).click();assert.ok((await page.getByRole('dialog').innerText()).includes('CA$20.00'),'Hero math lost the CAD symbol');await page.getByRole('dialog').getByRole('button',{name:'Close',exact:true}).click();
+  // 14 Nov 2026: customer health has its own Margin tab, reached from the Home card.
+  await page.getByTestId('home-health').getByRole('link',{name:'Open customer health',exact:true}).click();await page.getByTestId('health-last-checked').waitFor();
+  const health=page.getByTestId('customer-health');assert.ok((await health.innerText()).includes('50.00%'),'Health basis points were not formatted as percentages');if(!auth)await page.screenshot({path:'test-results/7c3b-'+channel+'-health-cad.png',fullPage:true});await health.getByRole('button',{name:/^Show the math for /}).first().click();await page.getByRole('dialog').getByRole('table',{name:'Customer health alerts',exact:true}).waitFor();await page.getByRole('dialog').getByRole('button',{name:'Close',exact:true}).click();
+  await page.locator('nav a[href="#home"]').click();await page.getByTestId('cash-leak-value').waitFor();
   await page.locator('nav a[href="#margin"]').click();await page.getByRole('link',{name:'Competitor prices',exact:true}).click();await page.getByTestId('competitor-product').fill(sku);await page.getByTestId('competitor-log').getByLabel('Customer',{exact:true}).fill(customer);await page.getByLabel('Competitor',{exact:true}).fill(marker+'-MON-COMP');await page.getByLabel('New unit price',{exact:true}).fill('99.00');await page.getByLabel('Source (plain text; never fetched)',{exact:true}).fill(marker+'-MON-SOURCE');await page.getByRole('button',{name:'Save observation locally',exact:true}).click();await page.getByTestId('competitor-alternative').first().waitFor();
   const alts=page.getByTestId('competitor-alternative');assert.equal(await alts.count(),3);assert.ok((await alts.first().innerText()).includes(sku+'-A'));assert.ok((await alts.first().innerText()).includes('CA$60.00'),'Alternative amount/currency differs');assert.ok((await alts.first().innerText()).includes('CA$120.00'));
   for(const hash of ['#home','#margin-competitors']){await page.evaluate(h=>{location.hash=h;},hash);await page.setViewportSize({width:375,height:812});await page.waitForTimeout(500);await page.waitForFunction(()=>!document.querySelector('main [aria-busy="true"]'));assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Monitor UI overflow at 375px');}
@@ -828,14 +831,20 @@ try {
   const pdfBytes = await readFile(await pdf.path());
   assert.ok(/^rebatehq-leak-report-\d{4}-\d{2}-\d{2}\.pdf$/.test(pdf.suggestedFilename()) && pdfBytes.subarray(0, 8).toString("latin1") === "%PDF-1.4" && pdfBytes.toString("latin1").includes("Margin Leak Report"), "Leak Report PDF download malformed");
   await page.getByRole("status").filter({ hasText: /nothing was uploaded/ }).waitFor();
+  // A ticked finding limits the report to that finding (14 Nov 2026).
+  const findingCount = await page.getByTestId("leak-findings").getByTestId("grid-select").count();
+  await page.getByTestId("leak-findings").getByTestId("grid-select").first().click();
+  await page.getByRole("button", { name: "Download report for 1 selected finding (PDF)", exact: true }).waitFor();
+  const [onePdf] = await Promise.all([page.waitForEvent("download"), page.getByTestId("leak-report-download").click()]);
+  const oneText = (await readFile(await onePdf.path())).toString("latin1");
+  assert.ok(oneText.includes("Margin Leak Report") && (findingCount < 2 || oneText.includes("Scope: 1 of " + findingCount + " findings")), "The selected-finding Leak Report does not cover only the selection");
+  await page.getByTestId("leak-findings").getByRole("button", { name: "Clear selection", exact: true }).click();
   await page.getByRole("link", { name: "Home", exact: true }).click(); await page.getByTestId("roi-total").waitFor();
-  results.checks.marginUi = { creditLoaded: true, mathPanel: true, leakReportBytes: pdfBytes.length, roiTracker: true };
-  // 5A UI: role banner, 7-day checklist, cleanup and cost basis panels, and a role preview that hides cost.
-  await page.getByTestId("setup-checklist").waitFor();
-  assert.match(await page.getByTestId("setup-progress-text").innerText(), /of 7 steps done/);
-  assert.equal(await page.getByTestId("setup-import").getAttribute("data-done"), "yes", "A real import did not complete the first checklist step");
-  assert.equal(await page.getByTestId("setup-team").getAttribute("data-done"), "no");
+  results.checks.marginUi = { creditLoaded: true, mathPanel: true, leakReportBytes: pdfBytes.length, selectedReportBytes: oneText.length, roiTracker: true };
+  // 5A UI: role banner, cleanup and cost basis panels, and a role preview that hides cost. The 7-day checklist
+  // was removed from Home on 14 Nov 2026 (blueprint section 22, item 30); its worker command is unchanged.
   await page.getByTestId("role-banner").getByText("Owner / CFO").waitFor();
+  assert.equal(await page.getByTestId("setup-checklist").count(), 0, "The removed 7-day checklist is still on Home");
   await page.getByRole("link", { name: "Data Hub", exact: true }).click();
   await page.getByTestId("cleanup").waitFor({ timeout: 60000 }); await page.getByTestId("cost-basis").waitFor({ timeout: 60000 });
   await page.getByRole("table", { name: "Margin by cost basis" }).waitFor();
@@ -846,7 +855,7 @@ try {
   assert.equal(await page.getByTestId("roi-total").count(), 0, "The Sales Rep preview shows the ROI total"); assert.equal(await page.getByTestId("home-margin").count(), 0, "The Sales Rep preview shows margin");
   await page.getByRole("button", { name: "Return to my own view" }).click(); await page.getByTestId("preview-banner").waitFor({ state: "detached" });
   await page.getByRole("link", { name: "Margin", exact: true }).waitFor(); await page.getByTestId("roi-total").waitFor();
-  results.checks.roleViewsUi = { banner: true, checklist: true, cleanupPanel: true, costBasisPanel: true, repPreviewHidesCost: true };
+  results.checks.roleViewsUi = { banner: true, checklistRemoved: true, cleanupPanel: true, costBasisPanel: true, repPreviewHidesCost: true };
 
   // 4E: UI flow stays under the same marker sensors, including --auth in CI.
   await page.getByRole('link',{name:'Data Hub',exact:true}).click();
@@ -989,7 +998,7 @@ try {
     await page.getByTestId('theme').first().selectOption(theme);
     for(const size of [{width:1366,height:768},{width:375,height:812}]){
       await page.setViewportSize(size);
-      for(const hash of ['#home','#data-hub','#margin','#margin-bridge','#pricing','#pricing-planner','#pricing-versions','#pricing-exceptions','#pricing-expiry','#quotes','#rebates','#vendors','#vendors-ppv','#vendors-sim','#reports','#settings']){
+      for(const hash of ['#home','#data-hub','#margin','#margin-health','#margin-bridge','#pricing','#pricing-planner','#pricing-versions','#pricing-exceptions','#pricing-expiry','#quotes','#rebates','#vendors','#vendors-ppv','#vendors-sim','#reports','#settings']){
         await page.evaluate(h=>{location.hash=h;},hash);await page.waitForTimeout(300);await page.waitForFunction(()=>!document.querySelector('main [aria-busy="true"]'),null,{timeout:60000});if(hash==='#pricing-versions'&&theme==='dark'&&size.width===375)await opsShot('versions-dark-mobile');
         if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1))overflowed.push(`${hash} ${theme} ${size.width}px`);
       }
