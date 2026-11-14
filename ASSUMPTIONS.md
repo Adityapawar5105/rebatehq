@@ -970,3 +970,11 @@ This proves the tested authenticated local-vault flow, not deployed/hosted authe
   - `schema.sql` is a historical snapshot and is not edited.
   - `tests/chunk6r-retirement.test.ts` still tests 6R over the migrations before it.
   - Audit-log rows that name the dropped tables stay, and the hash chain is never rewritten.
+
+## Netlify deployment — 14 November 2026
+
+- The user explicitly selected the real-sign-in application, not the synthetic Scale lab. Netlify builds keep lab, legacy, impersonation, relay and benchmark flags off. The connected `rebatehq-staging` project remains staging; no customer production-launch claim follows from this deployment task.
+- Browser vaults are origin-scoped and are not uploaded with the application. Local environment files, private issuer/admin credentials and customer files are excluded from the build source package. The public licence verification key must match the runtime issuer key and be set before worker bundling.
+- Netlify's Next.js adapter is required; this app cannot be published as a static folder while preserving auth/callbacks/licences. The local Next.js build passes. Windows adapter packaging failed first on directory symlinks, then on a Windows drive path in middleware bundling; use the Linux builder rather than changing auth or CSP. Hosted behavior remains unverified until deployed and exercised.
+- The user authorized Netlify, signed into Upstash and reset the staging database password. A free Upstash Redis database now supplies distributed sign-in rate limiting. The dedicated `rebatehq_netlify_login` is NOINHERIT, NOSUPERUSER and NOBYPASSRLS, with only SET membership in `rebatehq_app`. A real TLS-verified pooler connection returned zero tenants without authenticated context and verified the signed actor helper. The matching actor signing key was installed because the key table was empty. No migration or locked hash changed.
+- App runtime secrets are in Netlify, separate from the local administrator credential. Supabase's site URL and exact callback point to `https://rebatehq-aditya.netlify.app`. The public database CA is bundled without disabling TLS verification; its deployed path, email delivery, callback exchange and vault behavior still need hosted verification. See NETLIFY_DEPLOYMENT.md.
