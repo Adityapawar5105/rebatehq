@@ -2893,4 +2893,9 @@ export const fr: Catalog = {
   "report.action.belowFloor": "Les prix sont sous le plancher de ce niveau et de cette catégorie : appliquez le garde-fou ou approuvez une exception.",
   "report.action.smallOrder": "Les petites commandes coûtent plus qu’elles ne rapportent : fixez un minimum de commande ou des frais de petite commande.",
   "report.action.freeDelivery": "La livraison gratuite coûte plus que ces commandes ne rapportent : ajoutez un seuil ou des frais de livraison.",
+  "api.login.emailLimit": "Trop d’e-mails de connexion ont été envoyés au cours de la dernière heure. Patientez quelques minutes puis réessayez ; les liens déjà envoyés restent valables.",
+  "page.login.errorLink": "Ce lien de connexion n’a pas pu être utilisé. Demandez un nouveau lien ci-dessous.",
+  "page.login.errorExpired": "Ce lien de connexion a expiré ou a déjà servi. Chaque lien ne fonctionne qu’une fois ; demandez-en un nouveau ci-dessous et ouvrez l’e-mail le plus récent.",
+  "page.login.errorBrowser": "Ce lien a été ouvert dans un autre navigateur ou appareil que celui qui l’a demandé. Demandez un nouveau lien ici et ouvrez-le dans ce navigateur.",
+  "page.login.errorInvite": "Vous êtes connecté, mais l’invitation à l’espace de travail n’a pas pu être acceptée. Demandez une nouvelle invitation au propriétaire.",
 };

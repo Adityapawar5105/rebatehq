@@ -2893,4 +2893,9 @@ export const es: Catalog = {
   "report.action.belowFloor": "Los precios están por debajo del mínimo de este nivel y categoría: aplique el límite o apruebe una excepción.",
   "report.action.smallOrder": "Los pedidos pequeños cuestan más de lo que aportan: fije un pedido mínimo o un cargo por pedido pequeño.",
   "report.action.freeDelivery": "La entrega gratuita cuesta más de lo que aportan estos pedidos: fije un umbral o un cargo de entrega.",
+  "api.login.emailLimit": "Se enviaron demasiados correos de acceso en la última hora. Espere unos minutos e inténtelo de nuevo; los enlaces ya enviados siguen funcionando.",
+  "page.login.errorLink": "No se pudo usar ese enlace de acceso. Solicite uno nuevo abajo.",
+  "page.login.errorExpired": "Ese enlace de acceso caducó o ya se usó. Cada enlace funciona una sola vez; solicite uno nuevo abajo y abra el correo más reciente.",
+  "page.login.errorBrowser": "Ese enlace se abrió en un navegador o dispositivo distinto del que lo solicitó. Solicite un enlace nuevo aquí y ábralo en este navegador.",
+  "page.login.errorInvite": "Inició sesión, pero no se pudo aceptar la invitación al espacio de trabajo. Pida una nueva invitación al propietario.",
 };

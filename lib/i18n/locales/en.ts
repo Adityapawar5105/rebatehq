@@ -2868,6 +2868,14 @@ const ux = {
   "report.action.smallOrder": "Small orders cost more to serve than they earn: set a minimum order or a small-order fee.",
   "report.action.freeDelivery": "Free delivery costs more than these orders earn: add a delivery threshold or a delivery charge.",
 } as const;
+// 14 Nov 2026 sign-in fixes: email limit and link failure reasons.
+const auth2 = {
+  "api.login.emailLimit": "Too many sign-in emails were sent in the last hour. Wait a few minutes, then try again; links already sent still work.",
+  "page.login.errorLink": "That sign-in link could not be used. Request a new link below.",
+  "page.login.errorExpired": "That sign-in link has expired or was already used. Each link works once; request a new one below and open the newest email.",
+  "page.login.errorBrowser": "That link was opened in a different browser or device from the one that asked for it. Request a new link here and open it in this browser.",
+  "page.login.errorInvite": "You are signed in, but the workspace invitation could not be accepted. Ask the owner for a new invitation.",
+} as const;
 export const en = {
   "cadence.overlap":"Findings can overlap. Do not add their amounts: each line contributes only its largest finding to the deduplicated total.",
   "cadence.monthly":"Monthly Pricing Review Pack",
@@ -2961,4 +2969,4 @@ export const en = {
   "cadence.marginAlert":"Margin-drop threshold exceeded",
   "cadence.frequencyAlert":"Fewer orders with deeper discounts",
   "cadence.nextActions":"Decisions and next actions",
-  "cadence.actions":"Validate source gaps, assign owners to exceptions, review approvals, and verify the next ERP file before recording recovery.",...supplier, ...rebate, ...monitor, ...ux, ...fx, ...pc2, ...ops, ...common, ...shell, ...home, ...backup, ...basis, ...roles, ...cleanup, ...pricing, ...margin, ...relay, ...studio, ...domain, ...worker, ...patches, ...glossary, ...palette, ...account, ...api } as const;
+  "cadence.actions":"Validate source gaps, assign owners to exceptions, review approvals, and verify the next ERP file before recording recovery.",...supplier, ...rebate, ...monitor, ...ux, ...auth2, ...ux, ...fx, ...pc2, ...ops, ...common, ...shell, ...home, ...backup, ...basis, ...roles, ...cleanup, ...pricing, ...margin, ...relay, ...studio, ...domain, ...worker, ...patches, ...glossary, ...palette, ...account, ...api } as const;
