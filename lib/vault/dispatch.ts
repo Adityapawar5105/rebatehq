@@ -164,7 +164,7 @@ export async function dispatch(service: VaultService, request: Request, hooks: H
     case "marginMath": return service.marginMath(request.data.metric, request.data.filters, request.data.offset ?? 0, request.data.grid);
     case "leaks": return service.leaks();
     case "leakRows": return service.leakRows(request.data.id, request.data.offset ?? 0, request.data.grid);
-    case "leakReport": return service.leakReport(request.data.locale);
+    case "leakReport": return service.leakReport(request.data.locale, request.data.ids);
     case "search": return service.search(request.data.text);
     case "priceCheck": return service.priceCheck(request.data.productId, request.data.customerId, request.data.quantity);
     case "quoteCreate": return service.quoteCreate(request.data.customerId);

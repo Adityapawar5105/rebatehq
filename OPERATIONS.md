@@ -323,3 +323,26 @@ crash recovery and operational key-loss recovery remain unverified.
 
   This uses the migration administrator's connection. The database refuses an early, repeated or under-k release, and the app role cannot run it. The script prints counts only.
 - **Restore:** the pseudonymous `rebatehq_private` benchmark tables are included in the dump and in the restore inventory like `actor_key`. Restoring them without the matching `BENCH_PSEUDONYM_KEY` keeps the released figures but unlinks withdrawals.
+
+## Operator: subscriptions (14 November 2026; migration locked 15 November 2026)
+
+Every customer workspace has one licence: a tier (`starter`, `professional`, `scale`), a plan type (`pilot` or `paid`), a status and an expiry. These are control-plane fields only; no pricing data is on the server.
+
+**Look a customer up by email.** In the Supabase dashboard open Table Editor, choose schema `rebatehq_private` and view `subscriptions`, then filter `email`. Each row is one sign-in email and one workspace it belongs to, with `tier`, `plan_type` (pilot or paid), `licence_status`, `valid_until`, `licence_current`, seats used/allowed and the line cap. `tier = none` means the workspace has no licence yet; an empty `workspace` means the person has signed in but not created or joined a workspace. The same lookup in the SQL editor:
+
+```sql
+SELECT email, workspace, workspace_role, tier, plan_type, licence_status, valid_until, seats_used, seats_allowed
+FROM rebatehq_private.subscriptions WHERE email ILIKE '%customer@example.com%';
+-- Everyone on a pilot:
+SELECT email, workspace, tier, valid_until FROM rebatehq_private.subscriptions WHERE plan_type = 'pilot' AND workspace_role = 'owner';
+```
+
+**Change a plan.** In the SQL editor, with the workspace owner's email:
+
+```sql
+SELECT * FROM rebatehq_private.set_subscription('owner@example.com', 'professional');                       -- change tier, keep pilot/paid and expiry
+SELECT * FROM rebatehq_private.set_subscription('owner@example.com', 'scale', 'paid', '2027-11-14');         -- tier, paid, new expiry
+SELECT * FROM rebatehq_private.set_subscription('owner@example.com', 'starter', 'pilot');                     -- back to a Starter pilot
+```
+
+It creates the licence if the workspace has none (pilot, 90 days, unless you pass a type and expiry), reactivates a revoked one, gives the owner the first seat, and refuses a downgrade that would leave more seats or locations than the new tier allows. If one email owns several workspaces, edit the right row of `public.workspace_licence` in Table Editor instead (columns `tier`, `plan_type`, `status`, `valid_until`). Every change is written to the audit log by the existing licence trigger. The app picks it up within about five minutes (the next licence refresh); a larger vault capacity is applied from Settings → Storage. Nothing here processes a payment.

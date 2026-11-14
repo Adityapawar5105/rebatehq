@@ -13,8 +13,8 @@ type RestoreBaseline = {
   sentinel?: { tenant_id: string; id: string; content_hash: string };
 };
 
-const expectedFixturePlan = 136;
-const restoreFixturePlan = 139;
+const expectedFixturePlan = 139;
+const restoreFixturePlan = 142;
 
 function quoteIdentifier(identifier: string): string {
   return `"${identifier.replace(/"/g, '""')}"`;

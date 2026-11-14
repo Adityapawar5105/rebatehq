@@ -162,6 +162,15 @@ WHERE p.h = hash(${sqlText(id)})`, LEAK_ROWS_GRID, gridQuery(LEAK_ROWS_GRID, gri
   });
   return { rows: out, count: S(agg.n), sum: S(agg.c), engineAgrees: agrees, grid: paged.grid };
 }
+/** Totals over the chosen findings only (the Leak Report for a selection). Needs the finder's temp tables. */
+export async function scopeTotals(engine: Engine, ids: string[]): Promise<{ totalCents: string; overlapCents: string; overlapLines: string; dedupedCents: string; affectedLines: string }> {
+  if (!ids.length) return { totalCents: "0", overlapCents: "0", overlapLines: "0", dedupedCents: "0", affectedLines: "0" };
+  const scope = `h IN (${ids.map(id => `hash(${sqlText(id)})`).join(", ")})`;
+  const r = (await q(engine, `WITH l AS (SELECT sum(leak) AS t, max(leak) AS mx, count(*) AS n FROM lf_hits WHERE ${scope} GROUP BY sid, line_id)
+SELECT coalesce(sum(t),0)::VARCHAR AS total, coalesce(sum(t - mx) FILTER (WHERE n > 1),0)::VARCHAR AS overlap, count(*) FILTER (WHERE n > 1)::VARCHAR AS overlap_lines, count(*)::VARCHAR AS lines FROM l`))[0];
+  const total = BigInt(S(r.total)), overlap = BigInt(S(r.overlap));
+  return { totalCents: String(total), overlapCents: String(overlap), overlapLines: S(r.overlap_lines), dedupedCents: String(total - overlap), affectedLines: S(r.lines) };
+}
 /** All hits of one finding, for tests: source, line, leak and the line's amounts. */
 export async function hitRows(engine: Engine, id: string) {
   return (await q(engine, `SELECT l.source_id, h.line_id::VARCHAR AS line_id, h.leak::VARCHAR AS leak, h.basis_bp::VARCHAR AS basis, k.type, l.list_cents::VARCHAR AS list, l.discount_cents::VARCHAR AS discount, l.rebate_cents::VARCHAR AS rebate, l.freight_cents::VARCHAR AS freight, l.cost_cents::VARCHAR AS cost

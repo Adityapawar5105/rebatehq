@@ -3,7 +3,7 @@
 Written 6 November 2026, after 7B (CI #89, #90, #91 green); updated 7 November 2026 after 7V (CI #95, #96 green). This file is the starting point for whoever builds
 the next chunk. It holds what a new session needs without the earlier chat history.
 
-**Current status (13 November 2026): 8R done ([CI #150](https://github.com/Adityapawar5105/rebatehq/actions/runs/43453893489); [Restore Drill #21](https://github.com/Adityapawar5105/rebatehq/actions/runs/43467938552); migration locked).** Server: 13 control-plane tables; pgTAP 136/139; 13 locked migrations, 0 pending. Local v21 / 61 tables. Every chunk except 9A is done; 9A waits for the user's explicit prompt. See CHUNK_8R_VERIFICATION.md.
+**Current status (13 November 2026): 8R done ([CI #150](https://github.com/Adityapawar5105/rebatehq/actions/runs/43453893489); [Restore Drill #21](https://github.com/Adityapawar5105/rebatehq/actions/runs/43467938552); migration locked).** Server: 13 control-plane tables; pgTAP 136/139; 14 locked migrations (the 14 Nov 2026 operator subscriptions migration locked after CI #160 and Restore Drill #22), 0 pending. Local v21 / 61 tables. Every chunk except 9A is done; 9A waits for the user's explicit prompt. See CHUNK_8R_VERIFICATION.md.
 
 ## How to use this file
 1. Work **one chunk per session**, in the order below. Paste **Block A (shared context)** first, then that

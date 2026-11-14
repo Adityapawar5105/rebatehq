@@ -1,7 +1,7 @@
 # RebateHQ Blueprint v2.6
 
 *Local-first pricing and margin software for wholesale distributors.*
-*Last updated: 10 Nov 2026 (v2.1 adopted 2 Nov 2026; v2.2–v2.6 changes listed in section 22)*
+*Last updated: 14 Nov 2026 (v2.1 adopted 2 Nov 2026; v2.2–v2.6 changes and later approved edits listed in section 22)*
 
 ---
 
@@ -730,3 +730,12 @@ Corrections after reviewing the repository and build history against v2.1. Produ
     - exchange rates as the vault's per-workspace rates (7C-3a). This is the condition item 15 set for dropping `fx_rate`: a local FX table exists, so the server table is unnecessary.
 
     The server database now holds only the 13 control-plane tables: workspaces, membership, invites, the audit log, the four licence tables, the four relay tables and benchmark consent. The last legacy page that read the dropped tables (`/legacy/rebates`) is a fixed not-found. Audit-log rows written before the drop stay, and the hash chain is not rewritten. Before the drop, a check confirmed that the user's Supabase account had no projects, so no hosted database held rows. Scope, tiers and prices are unchanged.
+
+30. **14 Nov 2026 — user feedback pass after hands-on use (no chunk; user's explicit instruction).**
+    - **7-day setup checklist removed from Home** (sections 8, 17, 18 and 21 still name it as a past 5A deliverable). The user judged that nobody would look at it. The worker's `checklist` command and its stored progress are kept, so nothing in the vault changes; only the Home card is gone. The "7-day checklist completion rate" metric in section 18 is retired with it.
+    - **Scale's line cap is now the 2M lines in section 14.** It had been held at a provisional 1M until 2M performance was measured (ASSUMPTIONS.md). The user asked for the tier's published 2M. The section 5 timing targets at 2M stay unverified.
+    - **Margin Leak Report** gets an owner's first page (headline numbers, what needs attention first with a recommended action per finding type, leak by type), then the waterfall, every finding in scope with a priority, the evidence and the method. Findings ticked on screen limit the report, and its totals, to those findings.
+    - **Customer health alerts** move from Home to their own Margin tab as a grid-standard table. Home keeps the 90-day cash leak and the count of customers needing attention.
+    - Grid filters show matching values as you type, with "Only" and Enter-to-apply; customer and product fields in Competitor prices suggest matching IDs.
+
+31. **14 Nov 2026 — operator view of subscriptions (user's explicit instruction; control plane only).** The operator looks a customer up by email in the Supabase dashboard and sees their workspace, tier (Starter, Professional or Scale), whether the licence is a **pilot or paid**, its status, expiry and seats. A new column `workspace_licence.plan_type` (`pilot` or `paid`; every earlier licence is a pilot) records it. The read-only view `rebatehq_private.subscriptions` and the operator function `rebatehq_private.set_subscription(email, tier, plan_type, expiry)` live in the private schema and are closed to the app and every API role. Migration `20261114120000_operator_subscriptions.sql` is pending until CI and a user-run Restore Drill pass. No customer business data is involved: the server still holds only control-plane tables. How to use it: OPERATIONS.md, "Operator: subscriptions".

@@ -3,18 +3,19 @@ import { useEffect, useState } from "react";
 import type { VaultClient } from "@/lib/vault/client";
 import type { HomeData } from "@/lib/vault/protocol";
 import { fmt, msg, say, t } from "@/lib/i18n";
-import { Button, ButtonLink, Card, Field, Grid, Meter, Notice, Skeleton, Split, StatTile, StepList, SrOnly } from "@/components/ui/ui";
+import { Button, ButtonLink, Card, Field, Grid, Notice, Skeleton, StatTile } from "@/components/ui/ui";
 import { Term } from "./Glossary";
 import {HomeMonitor} from './HomeMonitor';
 import styles from "./vault.module.css";
 const money = (cents: string) => fmt.currency(cents);
-/** Home: who you are here, the numbers your role may see, the 7-day setup checklist and the ROI tracker. */
+/** Home: who you are here, the numbers your role may see, the cash leak and customer health headline, and the ROI tracker.
+ * The 7-day setup checklist was removed from Home on 14 Nov 2026 at the user's request (blueprint section 22). */
 export function HomeView({ client, userId, version, busy, operation, refresh }: { client: VaultClient; userId: string; version: string; busy: boolean; operation: (f: () => Promise<void>) => Promise<void>; refresh: () => Promise<void> }) {
   const [home, setHome] = useState<HomeData | null>(null), [owner, setOwner] = useState(""), [note, setNote] = useState("");
   const load = async () => setHome(await client.call("home", {}));
   useEffect(() => { let on = true; void client.call("home", {}).then(h => { if (on) setHome(h); }).catch(() => { if (on) setNote(msg("home.couldNotLoadHome")); }); return () => { on = false; }; }, [client, version]);
   if (!home) return <Card aria-busy="true"><p role="status" className={styles.muted}>{say(note) || t("home.loadingYourHome")}</p><Skeleton lines={4}/></Card>;
-  const { access, checklist: list } = home, has = (c: string) => access.caps.some(x => x === c);
+  const { access } = home, has = (c: string) => access.caps.some(x => x === c);
   return <>
     <Card headingId="role-heading" title={t("home.yourRole", { roleLabel: access.roleLabel })} description={home.pricingOwner ? t("home.pricingOwnerTheyApprove", { pricingOwner: home.pricingOwner }) : t("home.noPricingOwnerIs")} data-testid="role-banner">
       {access.viewAs && <Notice tone="warn">{t("home.previewingTheViewYou", { roleLabel: access.roleLabel })}</Notice>}
@@ -41,26 +42,11 @@ export function HomeView({ client, userId, version, busy, operation, refresh }: 
       {!has("cost") && <p className={styles.muted}>{t("home.costAndMarginAre")}</p>}
     </Card>
     {has('cost')&&<HomeMonitor client={client} version={version}/>}
-    <Split>
-      <Card headingId="setup-heading" title={t("home.your7DaySetup")} data-testid="setup-checklist" actions={<strong data-testid="setup-progress-text">{t("home.ofStepsDone", { done: Number(list.done), total: Number(list.total) })}</strong>}>
-        <Meter value={Number(list.done)} max={Number(list.total)} label={t("home.setupProgress")} detail={t("home.setupDetail", { day: Math.min(list.day, 99) })}/>
-        <StepList steps={list.steps.map(s => ({
-          id: s.step, done: s.done, "data-testid": `setup-${s.step}`,
-          title: <><SrOnly>{s.done ? t("home.done") : t("home.toDo")}</SrOnly>{say(s.label)}</>,
-          meta: s.done ? (s.doneAt ? t(s.how === "manual" ? "home.markedByHand" : "home.detected", { date: fmt.date(s.doneAt.slice(0, 10)) }) : t("home.day", { day: s.day })) : <>{t("home.day", { day: s.day })} {say(s.hint)}</>,
-          actions: s.done ? undefined : <>{s.manual && has("roles") && <Button size="sm" disabled={busy} onClick={() => void operation(async () => { await client.call("checklistMark", { step: s.step }); await load(); await refresh(); })}>{t("home.markDone")}</Button>}<ButtonLink size="sm" variant="ghost" href={s.where}>{t("home.go")}</ButtonLink></>,
-        }))}/>
-        {list.complete && <Notice tone="ok" role="status" title={t("home.setupComplete")}>{t("home.yourPricingWorkflowIs")}</Notice>}
-        <p className={styles.muted}>{t("home.progressIsStoredIn")}</p>
-      </Card>
-      {home.roi ? <Card headingId="roi-heading" title={<Term id="roi">{t("home.roiTracker")}</Term>}>
-        <StatTile icon="coins" tone="ok" label={t("home.leakDollarsFoundSo")} value={money(home.roi.identifiedCents)} valueProps={{ "data-testid": "roi-total" }}
-          hint={t(home.roi.since ? "home.acrossFindingsSince" : "home.acrossFindings", { count: Number(home.roi.findings), since: fmt.date(home.roi.since?.slice(0, 10)) })}/>
-        {home.roi.sampleFindings !== "0" && <p className={styles.small}>{t("home.playgroundSampleFindingsAre", { sampleCents: money(home.roi.sampleCents) })}</p>}
-        {home.roi.updated && <p className={styles.small}>{t("home.lastUpdated", { updated: fmt.date(home.roi.updated.slice(0, 10)) })}</p>}
-        <p className={styles.muted}>{t("home.aRunningTotalOf")}</p>
-        <ButtonLink href="#margin" icon="chart">{t("home.openMargin")}</ButtonLink>
-      </Card> : <div/>}
-    </Split>
+    {home.roi && <Card headingId="roi-heading" title={<Term id="roi">{t("home.roiTracker")}</Term>} description={t("home.aRunningTotalOf")} actions={<ButtonLink href="#margin" icon="chart">{t("home.openMargin")}</ButtonLink>}>
+      <StatTile icon="coins" tone="ok" label={t("home.leakDollarsFoundSo")} value={money(home.roi.identifiedCents)} valueProps={{ "data-testid": "roi-total" }}
+        hint={t(home.roi.since ? "home.acrossFindingsSince" : "home.acrossFindings", { count: Number(home.roi.findings), since: fmt.date(home.roi.since?.slice(0, 10)) })}/>
+      {home.roi.sampleFindings !== "0" && <p className={styles.small}>{t("home.playgroundSampleFindingsAre", { sampleCents: money(home.roi.sampleCents) })}</p>}
+      {home.roi.updated && <p className={styles.small}>{t("home.lastUpdated", { updated: fmt.date(home.roi.updated.slice(0, 10)) })}</p>}
+    </Card>}
   </>;
 }

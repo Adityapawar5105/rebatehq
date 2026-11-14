@@ -41,7 +41,7 @@ export function assertApplicationColumnsEqual(source,restored){
 const utc = column => `to_char(${column} AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
 export const controlEvidenceSql=`
  SELECT
- (SELECT md5(COALESCE(string_agg(jsonb_build_object('id',id,'tenant',tenant_id,'tier',tier,'status',status,
+ (SELECT md5(COALESCE(string_agg(jsonb_build_object('id',id,'tenant',tenant_id,'tier',tier,'plan_type',plan_type,'status',status,
   'valid_until',${utc('valid_until')},'issued_at',${utc('issued_at')})::text,'|' ORDER BY tenant_id,id),''))
   FROM public.workspace_licence) AS licences,
  (SELECT md5(COALESCE(string_agg(jsonb_build_object('id',id,'tenant',tenant_id,'user',user_id,'created_at',${utc('created_at')})::text,'|' ORDER BY tenant_id,id),''))
