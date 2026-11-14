@@ -479,6 +479,11 @@ async function margin() {
   assert(text.startsWith("%PDF-1.4") && text.trimEnd().endsWith("%%EOF") && text.includes("Margin Leak Report") && text.includes("SAMPLE DATA"), "Leak Report PDF malformed");
   for (const leak of manifest.leaks) assert(text.includes("$" + moneyText(leak.cents)), `Leak Report lacks ${leak.id} dollars`);
   result.pdf = { bytes: rep.bytes, ms: pdfMs, name: rep.name };
+  // A selection limits the report and its totals to the chosen findings; unknown ids are refused.
+  const chosen = found[0], oneRep = await service.leakReport("en", [chosen.id]), oneText = await oneRep.blob.text();
+  assert(oneText.includes(`Scope: 1 of ${found.length} findings`) && oneText.includes("$" + moneyText(chosen.cents)), "Selected-finding Leak Report does not cover only the selection");
+  let refused = false; try { await service.leakReport("en", ["not-a-finding"]); } catch { refused = true; }
+  assert(refused, "A Leak Report for an unknown finding id must be refused");
   // 6. Whale curve on Professional.
   const whaleView = await service.marginWhale();
   const buyers = (await rowsOf(service, "SELECT count(DISTINCT customer_id)::VARCHAR AS n FROM sales_lines"))[0].n;
