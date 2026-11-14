@@ -2876,6 +2876,13 @@ const auth2 = {
   "page.login.errorBrowser": "That link was opened in a different browser or device from the one that asked for it. Request a new link here and open it in this browser.",
   "page.login.errorInvite": "You are signed in, but the workspace invitation could not be accepted. Ask the owner for a new invitation.",
 } as const;
+// 14 Nov 2026: one-click confirm page for email sign-in links.
+const auth3 = {
+  "page.confirm.title": "Finish signing in",
+  "page.confirm.body": "Press the button to sign in to RebateHQ on this device. This works on any laptop, phone or browser.",
+  "page.confirm.button": "Sign in",
+  "page.confirm.note": "If you did not ask for this link, close this page. The link works once.",
+} as const;
 export const en = {
   "cadence.overlap":"Findings can overlap. Do not add their amounts: each line contributes only its largest finding to the deduplicated total.",
   "cadence.monthly":"Monthly Pricing Review Pack",
@@ -2969,4 +2976,4 @@ export const en = {
   "cadence.marginAlert":"Margin-drop threshold exceeded",
   "cadence.frequencyAlert":"Fewer orders with deeper discounts",
   "cadence.nextActions":"Decisions and next actions",
-  "cadence.actions":"Validate source gaps, assign owners to exceptions, review approvals, and verify the next ERP file before recording recovery.",...supplier, ...rebate, ...monitor, ...ux, ...auth2, ...ux, ...fx, ...pc2, ...ops, ...common, ...shell, ...home, ...backup, ...basis, ...roles, ...cleanup, ...pricing, ...margin, ...relay, ...studio, ...domain, ...worker, ...patches, ...glossary, ...palette, ...account, ...api } as const;
+  "cadence.actions":"Validate source gaps, assign owners to exceptions, review approvals, and verify the next ERP file before recording recovery.",...supplier, ...rebate, ...monitor, ...ux, ...auth2, ...auth3, ...ux, ...fx, ...pc2, ...ops, ...common, ...shell, ...home, ...backup, ...basis, ...roles, ...cleanup, ...pricing, ...margin, ...relay, ...studio, ...domain, ...worker, ...patches, ...glossary, ...palette, ...account, ...api } as const;

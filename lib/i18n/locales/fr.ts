@@ -2898,4 +2898,8 @@ export const fr: Catalog = {
   "page.login.errorExpired": "Ce lien de connexion a expiré ou a déjà servi. Chaque lien ne fonctionne qu’une fois ; demandez-en un nouveau ci-dessous et ouvrez l’e-mail le plus récent.",
   "page.login.errorBrowser": "Ce lien a été ouvert dans un autre navigateur ou appareil que celui qui l’a demandé. Demandez un nouveau lien ici et ouvrez-le dans ce navigateur.",
   "page.login.errorInvite": "Vous êtes connecté, mais l’invitation à l’espace de travail n’a pas pu être acceptée. Demandez une nouvelle invitation au propriétaire.",
+  "page.confirm.title": "Terminez la connexion",
+  "page.confirm.body": "Appuyez sur le bouton pour vous connecter à RebateHQ sur cet appareil. Cela fonctionne sur tout ordinateur, téléphone ou navigateur.",
+  "page.confirm.button": "Se connecter",
+  "page.confirm.note": "Si vous n’avez pas demandé ce lien, fermez cette page. Le lien ne fonctionne qu’une fois.",
 };

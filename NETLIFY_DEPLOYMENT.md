@@ -79,3 +79,32 @@ The production deploy of `b0bd94b` (Netlify deploy `6af843f434aef2ddc58c3bb6`, b
 **Still unverified on staging:** invitations (Resend is not configured, so invite email delivery is off), a second user and device, sign-out and an expired or reused magic link on this origin, the relay and benchmarks (both deliberately off), and a hosted Restore Drill.
 
 **14 November 2026 (later).** The Netlify site is now named `rebatehq`, so production is at **https://rebatehq.netlify.app**; the old `rebatehq-aditya.netlify.app` address returns 404. Supabase Auth's site URL and redirect list must use the new origin (`https://rebatehq.netlify.app` and `https://rebatehq.netlify.app/auth/callback`), or magic-link sign-in returns to the dead address. Netlify also refuses every build that a Git push starts ("Build blocked: Unrecognized Git contributor"): `9ce1df3` on main and every PR #1 preview, including `127a731`, which has no co-author line and is authored by the owner's own linked GitHub account (`Adityapawar5105`). The only successful builds of `b0bd94b` were started manually or through the API. Production therefore still serves `b0bd94b`. The cause is on the Netlify account side and is not yet resolved: check Team settings → Members (Git contributors / pending approvals) in the Netlify UI, or start builds manually until it is fixed.
+
+## Sign-in for testers on other devices (14 November 2026)
+
+**What went wrong.** Testers got "We couldn't send a sign-in link", and a link that did arrive bounced back to `/login`:
+- Supabase's built-in mailer allows only a few emails per hour for the whole project (`429 over_email_send_rate_limit` in the auth log).
+- Netlify `APP_BASE_URL` still named `rebatehq-aditya.netlify.app`, and Supabase allowed only `https://rebatehq.netlify.app`. So every link fell back to the Site URL root, which sent the visitor to `/login` and dropped the code.
+- Supabase's default link is PKCE: it only works in the browser that asked for it, not on another laptop or a phone's mail app.
+
+**Fixed.**
+- Netlify `APP_BASE_URL` = `https://rebatehq.netlify.app`.
+- Supabase redirect URLs include `https://rebatehq.netlify.app/auth/callback**`.
+- The app finishes a sign-in from `/`, `/login` or `/auth/callback`, accepts server-verified `token_hash` links, and tells the user why a link failed.
+- The Supabase **Magic link** and **Confirm signup** templates link to `{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=email`, which works on any device.
+
+Template body used for both (subject "Your RebateHQ sign-in link" / "Confirm your RebateHQ email"):
+
+```html
+<h2>Sign in to RebateHQ</h2>
+<p>Use this link to sign in. It works once, expires in an hour, and works on any device or browser.</p>
+<p><a href="{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=email">Sign in to RebateHQ</a></p>
+<p>If you did not ask to sign in, you can ignore this email.</p>
+```
+
+**Email sender (owner action).** Use custom SMTP so testers are not limited to a few emails per hour. With Gmail:
+1. Turn on 2-Step Verification for the Google account, then create an app password at https://myaccount.google.com/apppasswords.
+2. In Supabase → Authentication → Emails → SMTP Settings, enable custom SMTP: host `smtp.gmail.com`, port `587`, username = the Gmail address, password = the app password, sender email = the same Gmail address, sender name `RebateHQ`.
+3. In Supabase → Authentication → Rate Limits, raise "emails sent per hour" (for example 100).
+
+Gmail allows about 500 messages a day. The app password is a secret: it goes only into the Supabase dashboard, never into this repo or chat.

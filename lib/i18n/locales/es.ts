@@ -2898,4 +2898,8 @@ export const es: Catalog = {
   "page.login.errorExpired": "Ese enlace de acceso caducó o ya se usó. Cada enlace funciona una sola vez; solicite uno nuevo abajo y abra el correo más reciente.",
   "page.login.errorBrowser": "Ese enlace se abrió en un navegador o dispositivo distinto del que lo solicitó. Solicite un enlace nuevo aquí y ábralo en este navegador.",
   "page.login.errorInvite": "Inició sesión, pero no se pudo aceptar la invitación al espacio de trabajo. Pida una nueva invitación al propietario.",
+  "page.confirm.title": "Termine de iniciar sesión",
+  "page.confirm.body": "Pulse el botón para iniciar sesión en RebateHQ en este dispositivo. Funciona en cualquier portátil, teléfono o navegador.",
+  "page.confirm.button": "Iniciar sesión",
+  "page.confirm.note": "Si no solicitó este enlace, cierre esta página. El enlace funciona una sola vez.",
 };
