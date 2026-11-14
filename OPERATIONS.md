@@ -324,7 +324,7 @@ crash recovery and operational key-loss recovery remain unverified.
   This uses the migration administrator's connection. The database refuses an early, repeated or under-k release, and the app role cannot run it. The script prints counts only.
 - **Restore:** the pseudonymous `rebatehq_private` benchmark tables are included in the dump and in the restore inventory like `actor_key`. Restoring them without the matching `BENCH_PSEUDONYM_KEY` keeps the released figures but unlinks withdrawals.
 
-## Operator: subscriptions (14 November 2026; migration pending until CI and a Restore Drill pass)
+## Operator: subscriptions (14 November 2026; migration locked 15 November 2026)
 
 Every customer workspace has one licence: a tier (`starter`, `professional`, `scale`), a plan type (`pilot` or `paid`), a status and an expiry. These are control-plane fields only; no pricing data is on the server.
 

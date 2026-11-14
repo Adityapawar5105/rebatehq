@@ -7,9 +7,9 @@
   "hashUpdateDate": "2026-10-25",
   "hashUpdateReason": "Windows CRLF versus CI LF caused different raw-byte hashes; normalized hash matches the CI content hash.",
   "sqlContentUnchangedSinceBaselineRun": true,
-  "lockUpdateDate": "2026-11-13",
-  "lockUpdateReason": "Chunk 8R wave-2 retirement migration promoted from pending to locked after RebateHQ CI #150 (run 43453893489) on 436459c and the user-run Restore Drill #21 (run 43467938552, local target) on 7683d7b passed. Normalized hash and SQL content unchanged since 436459c. Prior locked migrations unchanged.",
-  "appliedThrough": "20261113120000_chunk8r_retire_wave2.sql",
+  "lockUpdateDate": "2026-11-15",
+  "lockUpdateReason": "Operator subscriptions migration (blueprint section 22 item 31) promoted from pending to locked after RebateHQ CI #160 (run 43623569198) and Restore Drill #22 (run 43623613500, local target) passed on ceea3af; CI #161 (run 43623806190) also passed on 4ad0960. It was applied to the rebatehq-staging Supabase project on 14 Nov 2026 after CI #158. Normalized hash and SQL content unchanged since it was added. Prior locked migrations unchanged.",
+  "appliedThrough": "20261114120000_operator_subscriptions.sql",
   "appliedMigrations": {
     "202610240001_phase1_foundation.sql": "8faa57997119f29b3921b0e15b4b9e964edbc7fa2ecd8b52fbe32392be38c3bb",
     "202610250001_revoke_platform_public_privileges.sql": "d4b48072fac75e3d5a6683fe4b13e00042c9feb5a6a65a9e5576e44ecb9214a2",
@@ -23,7 +23,8 @@
     "20261105120000_chunk6r_retire_wave1.sql": "855101531f9846b1f50dc088b370b3c21e4834a0deb72a7b25863ac9f662a668",
     "20261105130000_chunk7a_ciphertext_relay.sql": "a5b51bc918c7fb4d5a619eed535090f5f4bd7ff711b1ad58722cd734e9338aeb",
     "20261111120000_chunk8d_benchmarks.sql": "a545e3519d2d56ec2f2bc97db2fa07d57dfd8d9caa593eacc60398e8216458b9",
-    "20261113120000_chunk8r_retire_wave2.sql": "745570eb0461997b3499bc0ebfd81173d44146390d9b766f02b99495efb4a13d"
+    "20261113120000_chunk8r_retire_wave2.sql": "745570eb0461997b3499bc0ebfd81173d44146390d9b766f02b99495efb4a13d",
+    "20261114120000_operator_subscriptions.sql": "93009b04b1041f45ede8ef1258404ac15a3244f0b137454ac187493cdd2601a2"
   },
   "appliedOrder": [
     "202610240001_phase1_foundation.sql",
@@ -38,14 +39,11 @@
     "20261105120000_chunk6r_retire_wave1.sql",
     "20261105130000_chunk7a_ciphertext_relay.sql",
     "20261111120000_chunk8d_benchmarks.sql",
-    "20261113120000_chunk8r_retire_wave2.sql"
-  ],
-  "pendingOrder": [
+    "20261113120000_chunk8r_retire_wave2.sql",
     "20261114120000_operator_subscriptions.sql"
   ],
-  "pendingMigrations": {
-    "20261114120000_operator_subscriptions.sql": "93009b04b1041f45ede8ef1258404ac15a3244f0b137454ac187493cdd2601a2"
-  },
+  "pendingOrder": [],
+  "pendingMigrations": {},
   "appliedMigrationEvidence": {
     "202610250001_revoke_platform_public_privileges.sql": {
       "date": "2026-10-26",
@@ -118,6 +116,12 @@
       "commit": "7683d7b",
       "ciRun": "https://github.com/Adityapawar5105/rebatehq/actions/runs/43453893489",
       "restoreRun": "https://github.com/Adityapawar5105/rebatehq/actions/runs/43467938552"
+    },
+    "20261114120000_operator_subscriptions.sql": {
+      "date": "2026-11-15",
+      "commit": "ceea3af",
+      "ciRun": "https://github.com/Adityapawar5105/rebatehq/actions/runs/43623569198",
+      "restoreRun": "https://github.com/Adityapawar5105/rebatehq/actions/runs/43623613500"
     }
   }
 }
