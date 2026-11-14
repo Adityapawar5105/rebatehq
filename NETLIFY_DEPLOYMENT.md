@@ -46,3 +46,34 @@ Netlify account authorization, complete runtime configuration, hosted magic-link
 - Free Upstash Redis database `rebatehq-staging-rate-limit` (AWS us-east-1, TLS) is configured for the sign-in limiter. The REST token is stored as a Netlify secret; no paid tier or payment method was activated. Supabase Auth's site URL is the exact Netlify origin, and the redirect list contains its exact `/auth/callback` URL. Email delivery, callback exchange, production licence/seat assignment, hosted-function DB access and worker privacy on Netlify remain **unverified** until exercised.
 
 References: [Netlify Next.js adapter](https://docs.netlify.com/build/frameworks/framework-setup-guides/nextjs/overview/), [CLI deployment](https://cli.netlify.com/commands/deploy/), [Supabase redirect URLs](https://supabase.com/docs/guides/auth/redirect-urls).
+
+## Staging verification — 14 November 2026 (Claude Code)
+
+The production deploy of `b0bd94b` (Netlify deploy `6af843f434aef2ddc58c3bb6`, built by Netlify's Linux builder from the connected GitHub repo) is live at `https://rebatehq-aditya.netlify.app`. These checks were run against the live site and the hosted database; they are not CI evidence.
+
+**Site access.** Netlify team login protected every deploy, including production, so no pilot user could reach the sign-in page. At the user's choice it now protects only non-production deploys (`sso_login_context=non_production`): production is public and RebateHQ's own sign-in decides access, while preview and branch deploys still require Netlify team login.
+
+**Live site** (anonymous requests):
+- `/api/health` returns 200 from the hosted function.
+- Every page carries a per-request nonce CSP: the nonce changes on each request, 16 inline scripts carry it, `frame-ancestors 'none'` is set, `'unsafe-inline'` is not allowed for scripts, and HSTS is on.
+- COOP `same-origin` and COEP `require-corp` are on every page and API response. `/spike/vault-worker.js` is served as `application/javascript` and `/spike/duckdb-eh.wasm` as `application/wasm`, both with CORP `same-origin`.
+- Signed-out `/` and `/home` send the visitor to `/login`. Because the app has a root `loading.tsx`, Next.js streams this redirect (`NEXT_REDIRECT;replace;/login;307` plus a meta refresh) with HTTP status 200 rather than sending a 307 header.
+- `/lab/vault` and `/legacy/rebates` render the not-found page; the lab vault and legacy page content are never sent. For the same streaming reason the status is 200, not 404. An unknown path returns a real 404.
+- `/api/quotes` returns the fixed 410; `/api/relay` and `/api/bench` return 404 (both are off); `/api/licence` refuses an unauthenticated request (400); an invalid `/auth/callback` code redirects away without a session.
+
+**Hosted database** (`rebatehq-staging`):
+- All 13 locked migrations are recorded under their file versions. A catalog fingerprint of the hosted schema matches a database built locally from the same files: columns, constraints, indexes, policies, triggers, function bodies, function owners and privileges, and table privileges. The only differences are the local engine's extra NOT NULL catalog rows, CRLF line endings in the local copy of the first migration, and Supabase's own default USAGE grants on `public` to its platform roles.
+- `rebatehq_netlify_login` is LOGIN, NOINHERIT, NOSUPERUSER, NOBYPASSRLS, NOCREATEDB, NOCREATEROLE and NOREPLICATION, with one membership: `rebatehq_app`, INHERIT FALSE, SET TRUE.
+- The installed actor signing key equals `ACTOR_SIGNING_SECRET` in the operator's environment file. The admin connection verified the server certificate against `certs/supabase-root-ca.crt`.
+- **The full pgTAP suite passed on the hosted database: 136 of 136 checks, run twice.** Tenant table row counts, `auth.users` and the extension list were identical before and after. As in CI, the `postgres` login needed SET membership in `rebatehq_app` to run the suite; that one grant was added (granted by `postgres`) for the runs and then revoked, leaving Supabase's original membership unchanged.
+- Supabase security advisors: five INFO notes for RLS-enabled tables without policies, all in `rebatehq_private` (`actor_key` and the four benchmark tables), which deny every app and platform role by design; and one WARN that `prevent_audit_mutation()` has no fixed `search_path`. That trigger function only raises an error and reads no table. Fixing it needs a new migration, so it is recorded here rather than changed.
+
+**Sign-in fix.** The first real sign-in failed with a 500 before any request reached Supabase. The rate limiter runs before input validation, and the Netlify `UPSTASH_REDIS_REST_TOKEN` was not a working token for `rebatehq-staging-rate-limit`. The user supplied the REST token (not the read-only one) through the git-ignored operator file. It was checked against Upstash for PING, SET with expiry and EVAL (the rate limiter needs all three), stored as a Netlify secret for every context through the API without being printed, and the site was rebuilt (deploy `6af849c41105814a0f24319a`, same commit). An invalid email then reached validation (400), and no email was sent by that probe.
+
+**Hosted end-to-end run, 14 November 2026** (the user, in a real browser on the production URL):
+- The magic-link email arrived and the callback created a session; the account's email is confirmed in `auth.users`.
+- The setup page created workspace `RAMBO` through `/api/tenants`, which runs as `rebatehq_netlify_login` under `rebatehq_app`. This proves the hosted function's TLS-verified database connection with the bundled CA. The `tenant.insert` and `membership.insert` audit rows carry the user as actor, so the server's `ACTOR_SIGNING_SECRET` matches the key installed in the database.
+- `scripts/issue-licence.ts` (operator, admin connection) issued a **Scale pilot licence valid until 14 February 2027** with the owner's seat; `workspace_licence.insert` and `licence_seat.insert` are audited. No payment was processed.
+- After a reload, `/home` loaded and the user created an encrypted vault. The browser verified the signed licence with the public key built into this deploy, and the owner's first device registered as `active` (`licence_device.insert`, actor = the user). The server still has only its 13 control-plane tables; no business data reached it.
+
+**Still unverified on staging:** invitations (Resend is not configured, so invite email delivery is off), a second user and device, sign-out and an expired or reused magic link on this origin, the relay and benchmarks (both deliberately off), and a hosted Restore Drill.
