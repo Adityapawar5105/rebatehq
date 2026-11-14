@@ -79,3 +79,7 @@ Two checks were rewritten for tables that remain:
 - the manager-governance check now covers `invite`.
 
 **Fixture graph.** The generic graph keeps four tables: `tenant`, `membership`, `invite` and `audit_log`. The licence, relay and benchmark-consent tables keep their own fixtures in the 5B, 7A and 8D include files.
+
+## Operator subscriptions (pending, 14 November 2026)
+
+`20261114120000_operator_subscriptions.sql` adds `workspace_licence.plan_type` (`pilot`/`paid`, default `pilot`), the read-only view `rebatehq_private.subscriptions` and the SECURITY INVOKER function `rebatehq_private.set_subscription(text,text,text,timestamptz)`. No table is added, so the tenant-table minimum stays **13**. The view and function are revoked from `PUBLIC, anon, authenticated, service_role, rebatehq_app`, and the private schema's USAGE was already revoked from those roles; the public function ACL registry does not cover the private schema. pgTAP now plans **139** fresh and **142** restore checks (three new checks in `chunk5b_control.sql`: the pilot default, the closed ACLs, and a real `set_subscription` call that is then undone). The restore licence hash includes `plan_type`. A rolled-back dry run on `rebatehq-staging` succeeded on 14 November 2026. Lock it only after green CI and a user-run Restore Drill.

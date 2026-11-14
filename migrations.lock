@@ -40,8 +40,12 @@
     "20261111120000_chunk8d_benchmarks.sql",
     "20261113120000_chunk8r_retire_wave2.sql"
   ],
-  "pendingOrder": [],
-  "pendingMigrations": {},
+  "pendingOrder": [
+    "20261114120000_operator_subscriptions.sql"
+  ],
+  "pendingMigrations": {
+    "20261114120000_operator_subscriptions.sql": "93009b04b1041f45ede8ef1258404ac15a3244f0b137454ac187493cdd2601a2"
+  },
   "appliedMigrationEvidence": {
     "202610250001_revoke_platform_public_privileges.sql": {
       "date": "2026-10-26",
