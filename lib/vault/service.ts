@@ -702,7 +702,10 @@ export class VaultService {
   }
   async home(): Promise<HomeData> {
     const e = this.requireEngine(), access = await this.access(), has = (c: Cap) => access.caps.includes(c), state = await pricing.pricingState(e);
-    const out: HomeData = { access, checklist: await this.checklist(), pricingOwner: state.owner?.name ?? null, guardrails: String(state.guards.length) };
+    // The greeting uses the caller's own name only: their role assignment, else the Pricing Owner name when that is them.
+    const named = (await e.conn.query(`SELECT display_name FROM role_assignments WHERE user_id=${sqlText(this.identity.userId)} AND display_name<>'Vault owner'`)).toArray()[0];
+    const displayName = named ? String(named.display_name) : state.owner?.id === this.identity.userId ? state.owner.name : null;
+    const out: HomeData = { access, checklist: await this.checklist(), pricingOwner: state.owner?.name ?? null, guardrails: String(state.guards.length), displayName };
     const count = async (sql: string) => String((await e.conn.query(sql)).toArray()[0].n);
     if (has("cost")) { const w = await waterfall(e); out.margin = { netPocket: w.netPocket, margin: w.margin, rate: w.rate, uncostedLines: w.uncostedLines, lines: w.lines }; out.roi = await roiSummary(e); }
     if (has("data")) out.openFixLater = await count("SELECT count(*) AS n FROM rejected_rows WHERE status='open'");

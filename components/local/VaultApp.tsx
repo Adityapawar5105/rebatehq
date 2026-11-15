@@ -1,6 +1,7 @@
 "use client";
 import {ReportsView} from './ReportsView';
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { HomeData } from "@/lib/vault/protocol";
 import { CurrencySettings } from './CurrencySettings';
 import { VaultClient } from "@/lib/vault/client";
 import type { Scope, StorageStatus, Tier, VaultStatus } from "@/lib/vault/protocol";
@@ -17,7 +18,8 @@ import { QuotesView } from "./QuotesView";
 import { BackupView } from "./BackupView";
 import { ImportStudio } from "./ImportStudio";
 import { MarginView, LeakReportButton } from "./MarginView";
-import { HomeView } from "./HomeView";
+import { CreateNew, HomeView } from "./HomeView";
+import hs from "./home.module.css";
 import { CleanupView } from "./CleanupView";
 import { CostBasisView } from "./CostBasisView";
 import { RecordsView } from "./RecordsView";
@@ -54,6 +56,9 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
   const [passphrase, setPassphrase] = useState(""), [tier, setTier] = useState<Tier>("starter"), [ownerName, setOwnerName] = useState("");
   const [storage, setStorage] = useState<StorageStatus | null>(null), [progress, setProgress] = useState<{ stage: string; done: string; total: string } | null>(null);
   const [supported, setSupported] = useState(true);
+  // Home header: the caller's own name, role label and Pricing Owner, from the role-checked `home` read.
+  const [homeInfo, setHomeInfo] = useState<{ name: string | null; role: string; owner: string | null } | null>(null);
+  const onHome = useCallback((h: HomeData) => setHomeInfo({ name: h.displayName, role: h.access.roleLabel, owner: h.pricingOwner }), []);
   // Layout preferences only (never business data): a collapsed sidebar is remembered in this browser.
   const [collapsed, setCollapsed] = useState(false), [drawer, setDrawer] = useState(false);
   useEffect(() => { try { setCollapsed(localStorage.getItem(NAV_KEY) === "collapsed"); } catch {} }, []);
@@ -76,7 +81,7 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
     const touch = () => { if (Date.now() - lastActivity > 5000) { lastActivity = Date.now(); void c.call("touch", {}).catch(() => undefined); } };
     const leaving = () => { void c.call("lock", {}).catch(() => undefined); };
     window.addEventListener("pointerdown", touch); window.addEventListener("keydown", touch); window.addEventListener("pagehide", leaving);
-    const hash = () => { const raw = location.hash.slice(1); const value=raw.startsWith('pricing-')?'pricing':raw.startsWith('margin-')?'margin':raw.startsWith('rebates-')?'rebates':raw.startsWith('vendors-')?'vendors':raw.startsWith('reports-')?'reports':raw; const match = sections.find(s => sectionHash(s) === value); if (match) setSection(match); };
+    const hash = () => { const raw = location.hash.slice(1); const value=raw.startsWith('pricing-')?'pricing':raw.startsWith('quotes-')?'quotes':raw.startsWith('margin-')?'margin':raw.startsWith('rebates-')?'rebates':raw.startsWith('vendors-')?'vendors':raw.startsWith('reports-')?'reports':raw; const match = sections.find(s => sectionHash(s) === value); if (match) setSection(match); };
     hash(); window.addEventListener("hashchange", hash);
     return () => { active = false; window.removeEventListener("pointerdown", touch); window.removeEventListener("keydown", touch); window.removeEventListener("pagehide", leaving); window.removeEventListener("hashchange", hash); c.close(); client.current = null; };
   }, [scope.userId, scope.tenantId]);
@@ -116,12 +121,19 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
         </div>
       </header>
       {lab && <p className={sh.labNotice} role="note"><Icon name="flask" size={15}/><span>{t("shell.labNotice")}</span></p>}
-      <CommandPalette client={unlocked ? client.current : null} caps={caps} sections={navItems} go={item => { setSection(item); location.hash = sectionHash(item); }} commands={{
+      <CommandPalette client={unlocked ? client.current : null} caps={caps} sections={navItems} storageKey={`rebatehq.palette.recent:${scope.tenantId}:${scope.userId}`} go={item => { setSection(item); location.hash = sectionHash(item); }} commands={{
         lock: unlocked ? lock : undefined,
         save: unlocked && status?.dirty ? () => void operation(async () => { setStatus(await client.current!.call("save", {})); setMessage(msg("shell.saved")); }) : undefined,
       }}/>
       <main id="local-content" className={sh.content} tabIndex={-1}>
-        {unlocked && <PageHeader eyebrow={t("shell.eyebrow")} title={t(SECTION_LABEL[shown])} description={t(SECTION_DESC[shown])} actions={<Button icon="lock" disabled={busy} onClick={lock}>{t("shell.lock")}</Button>}/>}
+        {unlocked && shown === "Home" && <PageHeader eyebrow={<span translate="no">{workspace}</span>} title={homeInfo?.name ? t("home.welcome", { name: homeInfo.name }) : t("home.welcomeBack")}
+          description={homeInfo && <span data-testid="role-banner">{t("home.yourRole", { roleLabel: homeInfo.role })}{t("common.listSeparator")}{homeInfo.owner ? t("home.pricingOwnerTheyApprove", { pricingOwner: homeInfo.owner }) : t("home.noPricingOwnerIs")}</span>}
+          actions={<div className={hs.headerActions}><CreateNew items={[
+            ...(caps.includes("quote") && visible.includes("Quotes") && status?.licence?.tier !== "starter" ? [{ href: "#quotes-new", label: t("home.create.quote"), icon: "quote" as const }] : []),
+            ...(caps.includes("data") && visible.includes("Data Hub") ? [{ href: "#data-hub", label: t("home.create.import"), icon: "upload" as const }] : []),
+            ...(caps.includes("pricing") && visible.includes("Pricing") ? [{ href: "#pricing-rules", label: t("home.create.rule"), icon: "tag" as const }] : []),
+          ]}/><Button icon="lock" disabled={busy} onClick={lock}>{t("shell.lock")}</Button></div>}/>}
+        {unlocked && shown !== "Home" && <PageHeader eyebrow={t("shell.eyebrow")} title={t(SECTION_LABEL[shown])} description={t(SECTION_DESC[shown])} actions={<Button icon="lock" disabled={busy} onClick={lock}>{t("shell.lock")}</Button>}/>}
         {!supported && <Notice data-testid="browser-support-notice" tone="warn">{t("shell.browserNotice")}</Notice>}
         <p role="status" aria-live="polite" className={sh.message}>{say(message)}</p>
         {error && <Notice tone="bad" role="alert">{t("common.warningMark", { text: say(error) })}</Notice>}
@@ -155,7 +167,7 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
             </dl>
             {licenceLine}
           </div>
-          {shown === "Home" && client.current && <HomeView client={client.current} userId={scope.userId} version={`${status.lines}|${status.generation}|${access?.role}`} busy={busy} operation={operation} refresh={async () => setStatus(await client.current!.call("status", {}))}/>}
+          {shown === "Home" && client.current && <HomeView client={client.current} userId={scope.userId} version={`${status.lines}|${status.generation}|${access?.role}`} busy={busy} operation={operation} refresh={async () => setStatus(await client.current!.call("status", {}))} onHome={onHome}/>}
           {shown === "Home" && client.current && caps.includes("cost") && status.licence?.tier !== "starter" && <AgentsInbox client={client.current} version={`${status.lines}|${status.generation}`} canPrice={caps.includes("pricing")} busy={busy} operation={operation}/>}
           {shown === "Home" && client.current && caps.includes('collaborate') && status.licence?.tier!=='starter' && <RelayPanel client={client.current} userId={scope.userId} tenantId={scope.tenantId} relayEnabled={relayEnabled} onChange={async()=>setStatus(await client.current!.call('status',{}))}/>}
           {shown === "Data Hub" && client.current && <>

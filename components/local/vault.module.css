@@ -69,3 +69,6 @@
 
 /* 8D: the exact benchmark payload shown before sharing. */
 .code { font-family: var(--font-mono); font-size: 12px; white-space: pre-wrap; word-break: break-word; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; max-height: 320px; overflow: auto; }
+/* Palette sections with nothing typed (15 Nov 2026): Recent and Suggested headings. */
+.paletteList li.paletteHeading{display:flex;justify-content:space-between;align-items:center;cursor:default;min-height:0;padding:12px 12px 4px;font-size:var(--fs-xs);font-weight:650;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted)}
+.paletteClear{font:inherit;font-size:var(--fs-xs);text-transform:none;letter-spacing:0;color:var(--link);background:none;border:0;padding:2px 4px;cursor:pointer;text-decoration:underline}

@@ -849,6 +849,12 @@ try {
   // was removed from Home on 14 Nov 2026 (blueprint section 22, item 30); its worker command is unchanged.
   await page.getByTestId("role-banner").getByText("Owner / CFO").waitFor();
   assert.equal(await page.getByTestId("setup-checklist").count(), 0, "The removed 7-day checklist is still on Home");
+  // 15 Nov 2026 (blueprint section 22, item 32): greeting, Create new and the two work tabs.
+  await page.getByRole("heading", { level: 1, name: /^Welcome back/ }).waitFor();
+  await page.getByRole("tab", { name: /Your drafts/ }).waitFor(); await page.getByRole("tab", { name: /Action required/ }).click();
+  assert.equal(await page.getByRole("tab", { name: /Action required/ }).getAttribute("aria-selected"), "true", "The Action required tab did not open");
+  await page.getByTestId("home-create").locator("summary").click(); await page.getByTestId("home-create").getByRole("link", { name: "New pricing rule" }).waitFor();
+  await page.getByTestId("home-create").locator("summary").click();
   await page.getByRole("link", { name: "Data Hub", exact: true }).click();
   await page.getByTestId("cleanup").waitFor({ timeout: 60000 }); await page.getByTestId("cost-basis").waitFor({ timeout: 60000 });
   await page.getByRole("table", { name: "Margin by cost basis" }).waitFor();
@@ -857,6 +863,7 @@ try {
   for (const hidden of ["Margin", "Data Hub", "Settings"]) assert.equal(await page.getByRole("link", { name: hidden, exact: true }).count(), 0, `${hidden} is visible in the Sales Rep preview`);
   await page.getByRole("link", { name: "Home", exact: true }).click(); await page.getByText("Cost and margin are not shown to this role.").waitFor();
   assert.equal(await page.getByTestId("roi-total").count(), 0, "The Sales Rep preview shows the ROI total"); assert.equal(await page.getByTestId("home-margin").count(), 0, "The Sales Rep preview shows margin");
+  for (const action of ["New pricing rule", "Import a file"]) assert.equal(await page.locator("[data-testid=home-create] a", { hasText: action }).count(), 0, `The Sales Rep preview offers ${action}`); // counts hidden menu links too
   await page.getByRole("button", { name: "Return to my own view" }).click(); await page.getByTestId("preview-banner").waitFor({ state: "detached" });
   await page.getByRole("link", { name: "Margin", exact: true }).waitFor(); await page.getByTestId("roi-total").waitFor();
   results.checks.roleViewsUi = { banner: true, checklistRemoved: true, cleanupPanel: true, costBasisPanel: true, repPreviewHidesCost: true };
@@ -1068,6 +1075,9 @@ try {
   await page.getByTestId('theme').first().selectOption('system');assert.equal(await page.evaluate(()=>document.documentElement.dataset.theme??null),null);
   // Command palette: Ctrl+K opens it, typing filters screens and finds a SKU from the vault.
   await page.keyboard.press('Control+k');await page.getByTestId('command-palette').waitFor();
+  // With nothing typed it lists only recent picks (up to 5) and 4 suggested actions (blueprint section 22, item 32).
+  await page.getByTestId('palette-suggested').waitFor();
+  {const shown=await page.getByTestId('command-palette').getByRole('option').count();assert.ok(shown>=4&&shown<=9,`The empty palette lists ${shown} options`);}
   await page.getByRole('combobox',{name:'Search screens, commands, SKUs and customers'}).fill('pricing');
   await page.getByRole('option',{name:/Pricing/}).first().waitFor();
   await page.getByTestId('command-palette').getByRole('combobox').fill(priceSku);await page.getByRole('option',{name:new RegExp(priceSku)}).waitFor({timeout:15000});
