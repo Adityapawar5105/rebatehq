@@ -40,6 +40,8 @@ export type Person = { userId: string; name: string; role: RoleId; roleLabel: st
 export type RoleList = { people: Person[]; you: Access; pricingOwner: string | null; canManage: boolean };
 export type HomeData = {
   access: Access; checklist: Checklist; pricingOwner: string | null; guardrails: string;
+  /** The caller's own display name from Team and roles (or the Pricing Owner name if that is them), for the Home greeting. */
+  displayName: string | null;
   roi?: RoiSummary; margin?: { netPocket: string; margin: string; rate: string; uncostedLines: string; lines: string };
   openFixLater?: string; openRecon?: string; previews?: string; rules?: string; cleanup?: { duplicates: string; units: string; categories: string };
 };

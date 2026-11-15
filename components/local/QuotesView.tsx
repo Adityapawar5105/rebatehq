@@ -79,6 +79,12 @@ export function QuotesView({ client, userId, caps, tier, busy, operation }: { cl
   const canApprove = caps.includes("quoteApprove"), seesCost = caps.includes("cost"), canShare = caps.includes("collaborate");
   const tabs: Tab[] = ["check", "new", ...(canApprove ? ["inbox" as const] : []), "history", "winloss"];
   const [tab, setTab] = useState<Tab>("check"), [note, setNote] = useState("");
+  // From Home: "#quotes-new" (Create new > New quote) opens the Quote tab; "#quotes-open-<id>" (a work-list row) opens that quote.
+  useEffect(() => {
+    const read = () => { const m = /^#quotes-open-(.+)$/.exec(location.hash); if (m) open(decodeURIComponent(m[1])); else if (location.hash === "#quotes-new") setTab("new"); };
+    read(); window.addEventListener("hashchange", read); return () => window.removeEventListener("hashchange", read);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [check, setCheck] = useState({ productId: "", customerId: "", quantity: "1" }), [point, setPoint] = useState<PricePoint | null>(null);
   const [customer, setCustomer] = useState(""), [quote, setQuote] = useState<QuoteView | null>(null), [lines, setLines] = useState<{ productId: string; quantity: string; price: string }[]>([]);
   const [add, setAdd] = useState({ productId: "", quantity: "1" }), [reason, setReason] = useState(""), [decisionNote, setDecisionNote] = useState("");

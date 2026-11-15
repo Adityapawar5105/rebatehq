@@ -4,6 +4,10 @@
 import type { Catalog } from "../core";
 
 export const frCA: Partial<Catalog> = {
+  "home.create.quote": "Nouvelle soumission",
+  "home.work.quote": "Soumission {number}",
+  "home.badge.rejected": "Refusée",
+  "home.work.emptyDrafts": "Aucun brouillon. Les soumissions que vous commencez sans les envoyer apparaissent ici.",
   "winloss.draft": "Enregistrez le résultat une fois la soumission envoyée : soumettez-la d'abord.",
   "winloss.tab": "Gagnées/perdues",
   "winloss.notRecorded": "Aucun résultat pour l'instant. Indiquez si le client a accepté cette soumission, et pourquoi.",

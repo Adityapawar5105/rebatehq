@@ -1,0 +1,33 @@
+/* Home work tabs (15 Nov 2026): "Your drafts" and "Action required" with a day-grouped list. Theme tokens only. */
+.work{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-1);margin:0 0 var(--space-5);overflow:hidden}
+.tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));border-bottom:1px solid var(--border)}
+.tab{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:var(--space-4) var(--space-5);font:inherit;text-align:left;color:var(--text);background:var(--surface);border:0;border-bottom:3px solid transparent;cursor:pointer;min-width:0}
+.tab + .tab{border-left:1px solid var(--border)}
+.tab:hover{background:var(--surface-2)}
+.tab[aria-selected=true]{background:var(--surface-2);border-bottom-color:var(--accent)}
+.tab:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+.tabLabel{font-weight:700;font-size:var(--fs-md);color:var(--heading)}
+.tabCount{font-size:var(--fs-sm);color:var(--text-muted)}
+.panel{padding:var(--space-2) 0 var(--space-3)}
+.panel:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+.day{margin:var(--space-3) var(--space-5) var(--space-1);font-size:var(--fs-sm);font-weight:650;color:var(--text-muted)}
+.list{list-style:none;margin:0;padding:0}
+.list li + li{border-top:1px solid var(--border-subtle)}
+.item{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:var(--space-4);padding:var(--space-3) var(--space-5);color:var(--text);text-decoration:none}
+.item:hover{background:var(--surface-2)}
+.item:hover strong{color:var(--link)}
+.item:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+.itemIcon{display:inline-flex;color:var(--text-muted)}
+.itemText{display:flex;flex-direction:column;min-width:0}
+.itemText strong{font-weight:650;color:var(--heading);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.itemText span{font-size:var(--fs-sm);color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.empty{margin:var(--space-4) var(--space-5);color:var(--text-muted)}
+/* "Create new" menu in the Home page header. */
+.create{position:relative}
+.create > summary{list-style:none}
+.create > summary::-webkit-details-marker{display:none}
+.menu{position:absolute;right:0;top:calc(100% + var(--space-1));z-index:20;min-width:220px;margin:0;padding:var(--space-1);list-style:none;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow-2)}
+.menu a{display:flex;align-items:center;gap:var(--space-2);padding:var(--space-2) var(--space-3);border-radius:var(--radius-sm);color:var(--text);text-decoration:none}
+.menu a:hover,.menu a:focus-visible{background:var(--surface-2);outline:none}
+.headerActions{display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap}
+@media (max-width:560px){.tab{padding:var(--space-3)}.item{gap:var(--space-3);padding:var(--space-3)}.day{margin-inline:var(--space-3)}.empty{margin-inline:var(--space-3)}}
