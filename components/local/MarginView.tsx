@@ -203,7 +203,7 @@ function MathView({ client, target, onClose }: { client: VaultClient; target: No
   const title = leak ? say(leak.title) : (target as { title: string }).title, meta = leak ? rows?.grid : panel?.grid, count = Number(meta?.matched ?? (leak ? rows?.count ?? 0 : panel?.rowCount ?? 0));
   return <section className={`${ui.card} ${ui.focusCard}`} role="dialog" aria-modal="false" aria-labelledby="math-heading">
     <div className={ui.cardHead}><div><h2 id="math-heading">{t("margin.showTheMath", { title })}</h2></div><div className={ui.cardActions}><Button size="sm" icon="close" onClick={onClose}>{t("common.close")}</Button></div></div>
-    {error && <Notice tone="bad" role="alert">{t("common.warningMark", { text: say(error) })}</Notice>}
+    {error && <Notice tone="bad" role="alert">{say(error)}</Notice>}
     {leak && <><p><strong>{say(leak.label)}{t("common.definitionSeparator")}</strong>{t("margin.leakOn", { cents: $(leak.cents), count: Number(leak.lines) })}</p><p className={styles.small}><strong>{t("margin.formula")}</strong> {say(leak.formula)}</p><p className={styles.small}>{say(leak.detail)}</p>
       {rows && <p className={styles.small}>{t("margin.evidenceSum", { sum: $(rows.sum), count: Number(rows.count) })}{" "}{rows.engineAgrees ? t("margin.eachLeakShownBelow") : t("margin.theMarginEngineDisagrees")}</p>}</>}
     {panel && <><p className={ui.mathValue}><strong data-testid="math-value">{panel.metric === "rate" ? bpPercent(panel.value) : panel.metric === "lines" ? t("margin.lineCount", { count: Number(panel.value) }) : $(panel.value)}</strong></p>

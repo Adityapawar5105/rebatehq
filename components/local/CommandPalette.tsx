@@ -10,15 +10,16 @@
 // or the role changes.
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { VaultClient } from "@/lib/vault/client";
-import type { SearchHit } from "@/lib/vault/protocol";
+import type { SearchHit, Tier } from "@/lib/vault/protocol";
 import type { Cap } from "@/lib/roles/access";
 import { LOCALES, LOCALE_NAMES, setLocale, t, type Locale } from "@/lib/i18n";
 import { THEMES, applyTheme, type Theme } from "@/lib/ui/theme";
 import type { Section } from "./VaultApp";
 import { SECTION_LABEL } from "./VaultApp";
+import { matches, visibleSubTabs, type SubTab } from "./subtabs";
 import styles from "./vault.module.css";
 
-type Group = "screen" | "command" | "product" | "customer";
+type Group = "screen" | "tab" | "command" | "product" | "customer";
 type Item = { id: string; group: Group; label: string; detail?: string; run: () => void };
 type Row = Item & { heading?: "recent" | "suggested" };
 const THEME_KEY = { system: "prefs.theme.system", light: "prefs.theme.light", dark: "prefs.theme.dark", contrast: "prefs.theme.contrast" } as const;
@@ -28,11 +29,18 @@ export const OPEN_PALETTE_EVENT = "rebatehq-open-palette";
 export const SUGGESTED = ["screen:Quotes", "screen:Data Hub", "screen:Margin", "screen:Pricing", "screen:Reports", "cmd:glossary", "screen:Settings"] as const;
 export const SUGGESTED_COUNT = 4, RECENT_COUNT = 5;
 const isHit = (id: string) => id.startsWith("product:") || id.startsWith("customer:");
+/** Opens a sub-tab by its hash (re-firing it when already there, since a tab button may have moved off it) or scrolls to a section heading. */
+function openSubTab(s: SubTab, go: (s: Section) => void) {
+  if (s.hash) { if (location.hash === "#" + s.hash) window.dispatchEvent(new HashChangeEvent("hashchange")); else location.hash = s.hash; return; }
+  go(s.section);
+  const anchor = s.anchor ?? "", find = (tries: number) => { const el = document.getElementById(anchor); if (el) el.scrollIntoView({ block: "start" }); else if (tries) setTimeout(() => find(tries - 1), 100); };
+  setTimeout(() => find(30), 50);
+}
 function readRecent(key: string): string[] {
   try { const v = JSON.parse(localStorage.getItem(key) ?? "[]"); return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && !isHit(x)).slice(0, RECENT_COUNT) : []; } catch { return []; }
 }
 
-export function CommandPalette({ client, caps, sections, go, commands, storageKey }: { client: VaultClient | null; caps: Cap[]; sections: readonly Section[]; go: (s: Section) => void; commands: { lock?: () => void; save?: () => void }; storageKey: string }) {
+export function CommandPalette({ client, caps, tier, sections, go, commands, storageKey }: { client: VaultClient | null; caps: Cap[]; tier: Tier | undefined; sections: readonly Section[]; go: (s: Section) => void; commands: { lock?: () => void; save?: () => void }; storageKey: string }) {
   const [open, setOpen] = useState(false), [query, setQuery] = useState(""), [hits, setHits] = useState<SearchHit[]>([]), [active, setActive] = useState(0), [picked, setPicked] = useState<SearchHit | null>(null);
   const [recent, setRecent] = useState<string[]>([]);
   const recentHits = useRef(new Map<string, SearchHit>());
@@ -69,6 +77,8 @@ export function CommandPalette({ client, caps, sections, go, commands, storageKe
   const clearRecent = () => { recentHits.current.clear(); setRecent([]); try { localStorage.removeItem(storageKey); } catch { /* ignore */ } input.current?.focus(); };
   const items = useMemo<Row[]>(() => {
     const list: Item[] = sections.map(s => ({ id: "screen:" + s, group: "screen", label: t(SECTION_LABEL[s]), run: () => { go(s); close(); } }));
+    // Sub-tabs and on-page sections this role can open (e.g. "Purchase receipts" in Rebates & Contracts).
+    for (const s of visibleSubTabs(sections, { caps, tier })) list.push({ id: `tab:${s.section}:${s.id}`, group: "tab", label: t(s.label), detail: t(SECTION_LABEL[s.section]), run: () => { close(); openSubTab(s, go); } });
     const home = sections.includes("Settings") ? "Settings" : null;
     if (home) list.push({ id: "cmd:glossary", group: "command", label: t("palette.glossary"), run: () => { go(home); close(); setTimeout(() => { const g = document.getElementById("glossary") as HTMLDetailsElement | null; if (g) { g.open = true; g.scrollIntoView(); g.querySelector("summary")?.focus(); } }, 50); } });
     if (commands.save) list.push({ id: "cmd:save", group: "command", label: t("shell.retrySave"), run: () => { commands.save!(); close(); } });
@@ -81,15 +91,15 @@ export function CommandPalette({ client, caps, sections, go, commands, storageKe
     } });
     const track = (i: Item, hit?: SearchHit): Item => ({ ...i, run: () => { remember(i.id, hit); i.run(); } });
     const q = query.trim().toLocaleLowerCase();
-    if (q) return [...list.filter(i => i.label.toLocaleLowerCase().includes(q)).map(i => track(i)), ...hits.map(h => track(lookup(h), h))];
+    if (q) return [...list.filter(i => matches(i.group === "tab" ? `${i.label} ${i.detail}` : i.label, q)).map(i => track(i)), ...hits.map(h => track(lookup(h), h))];
     // Nothing typed: what you opened recently, then the first four key actions you have.
     const byId = new Map(list.map(i => [i.id, i]));
     const recentRows = recent.flatMap(id => { const hit = recentHits.current.get(id), item = hit ? lookup(hit) : byId.get(id); return item ? [track(item, hit)] : []; });
     const suggested = SUGGESTED.flatMap(id => { const item = byId.get(id); return item && !recent.includes(id) ? [track(item)] : []; }).slice(0, SUGGESTED_COUNT);
     return [...recentRows.map((r, i): Row => i === 0 ? { ...r, heading: "recent" } : r), ...suggested.map((r, i): Row => i === 0 ? { ...r, heading: "suggested" } : r)];
-  }, [sections, commands.lock, commands.save, query, hits, caps, recent]);
+  }, [sections, commands.lock, commands.save, query, hits, caps, tier, recent]);
   useEffect(() => { setActive(a => Math.min(a, Math.max(0, items.length - 1))); }, [items.length]);
-  const GROUP = { screen: t("palette.group.screens"), command: t("palette.group.commands"), product: t("palette.group.products"), customer: t("palette.group.customers") };
+  const GROUP = { screen: t("palette.group.screens"), tab: t("palette.group.tabs"), command: t("palette.group.commands"), product: t("palette.group.products"), customer: t("palette.group.customers") };
   const empty = !query.trim();
   return <dialog ref={dialog} className={styles.palette} aria-labelledby="palette-title" onClose={() => setOpen(false)} onCancel={() => setOpen(false)} data-testid="command-palette">
     <h2 id="palette-title" className={styles.srOnly}>{t("palette.title")}</h2>
@@ -108,7 +118,7 @@ export function CommandPalette({ client, caps, sections, go, commands, storageKe
           {item.heading === "recent" && <button type="button" className={styles.paletteClear} onClick={clearRecent}>{t("palette.clearRecent")}</button>}
         </li>,
         <li key={item.id} id={`palette-${i}`} role="option" aria-selected={i === active} className={i === active ? styles.paletteActive : undefined} onMouseEnter={() => setActive(i)} onClick={() => item.run()}>
-          <span className={styles.small}>{GROUP[item.group]}</span> <strong translate={item.group === "product" || item.group === "customer" ? "no" : undefined}>{item.label}</strong>{item.detail && <span className={styles.muted} translate="no"> · {item.detail}</span>}
+          <span className={styles.small}>{GROUP[item.group]}</span> <strong translate={item.group === "product" || item.group === "customer" ? "no" : undefined}>{item.label}</strong>{item.detail && <span className={styles.muted} translate={item.group === "product" || item.group === "customer" ? "no" : undefined}> · {item.detail}</span>}
         </li>,
       ])}
       {!items.length && <li role="option" aria-selected="false" aria-disabled="true">{t("palette.noMatches")}</li>}

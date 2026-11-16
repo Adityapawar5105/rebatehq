@@ -1081,10 +1081,18 @@ try {
   await page.getByRole('combobox',{name:'Search screens, commands, SKUs and customers'}).fill('pricing');
   await page.getByRole('option',{name:/Pricing/}).first().waitFor();
   await page.getByTestId('command-palette').getByRole('combobox').fill(priceSku);await page.getByRole('option',{name:new RegExp(priceSku)}).waitFor({timeout:15000});
+  // Sub-tabs are searchable by every word typed, and Enter opens the tab (blueprint section 22, item 33).
+  await page.getByTestId('command-palette').getByRole('combobox').fill('purchase receipts');await page.getByRole('option',{name:/Purchase receipts/}).click();
+  await page.waitForFunction(()=>location.hash==='#rebates-purchases');await page.getByTestId('supplier-tab-purchases').waitFor();
+  {const sizes=await page.evaluate(()=>[...document.querySelectorAll('input[type=checkbox],input[type=radio]')].filter(e=>e.offsetParent).map(e=>getComputedStyle(e).width+'x'+getComputedStyle(e).height));assert.ok(sizes.every(s=>s==='20pxx20px'),`Checkbox sizes ${[...new Set(sizes)].join(', ')}`);}
+  await page.keyboard.press('Control+k');await page.getByTestId('command-palette').waitFor();
   await page.keyboard.press('Escape');await page.getByTestId('command-palette').waitFor({state:'hidden'});
   results.checks.i18nUi={pseudoLocaleEveryScreen:true,french:true,spanish:true,canadianFrench:true,frenchLeakReportPdf:true,themes:['light','dark','contrast','system'],commandPalette:true};
 
   await page.getByRole("button", { name: "Lock vault", exact: true }).click(); await ready();
+  // Locked: only the unlock card, with no navigation or search (blueprint section 22, item 33).
+  assert.equal(await page.locator('#app-sidebar').count(),0,'The sidebar shows while the vault is locked');
+  assert.equal(await page.locator('[aria-keyshortcuts]').count(),0,'The search button shows while the vault is locked');
   if (full) {
     assert.ok(!auth, "Synthetic benchmark must not reset an authenticated vault");
     results.measurements.studio1M = await worker("studioBenchmark", { rows: 1000000 });

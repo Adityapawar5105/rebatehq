@@ -73,6 +73,8 @@
 
 /* Tables */
 .tableWrap{overflow-x:auto;max-width:100%;border:1px solid var(--border);border-radius:var(--radius-md)}
+/* A table is never flush against the control that follows it (16 Nov 2026). */
+.tableWrap + *{margin-top:var(--space-3)}
 .table{width:100%;border-collapse:collapse;font-size:var(--fs-sm);overflow-wrap:normal}
 .table th,.table td{white-space:nowrap}
 .table caption{caption-side:top;text-align:left;padding:var(--space-3) var(--space-4);font-weight:650;color:var(--heading)}
@@ -171,7 +173,8 @@
 @media(max-width:780px){.jump{position:static}}
 
 /* Grid standard (7V-3a): header sort and filter, selection and the totals status bar */
-.gridBox{display:flex;flex-direction:column;gap:var(--space-2);min-width:0;margin:0 0 var(--space-3)}
+.gridBox{display:flex;flex-direction:column;gap:var(--space-3);min-width:0;margin:var(--space-4) 0}
+.gridBox:first-child{margin-top:0}
 .gridBar{display:flex;flex-wrap:wrap;gap:var(--space-2);align-items:center;font-size:var(--fs-xs);color:var(--text-muted)}
 .thInner{display:inline-flex;align-items:center;gap:var(--space-1)}
 .sortBtn{display:inline-flex;align-items:center;gap:var(--space-1);padding:0;border:0;background:none;font:inherit;color:inherit;cursor:pointer;min-height:28px}
@@ -181,7 +184,7 @@
 .iconBtn[data-active=yes]{background:var(--accent-surface);color:var(--link);border-color:var(--border-strong)}
 .sortBtn:focus-visible,.iconBtn:focus-visible{outline:3px solid var(--focus);outline-offset:1px}
 .table th[aria-sort]{color:var(--heading)}
-.selCol{width:1%;padding-right:0}
+.selCol{width:1%;padding-right:var(--space-2);vertical-align:middle}
 .table tbody tr[data-selected=yes]{background:var(--accent-surface)}
 .gridEmpty{text-align:center;color:var(--text-muted)}
 .gridStatus{display:flex;flex-wrap:wrap;gap:var(--space-2) var(--space-4);font-size:var(--fs-xs);color:var(--text);min-height:1em}

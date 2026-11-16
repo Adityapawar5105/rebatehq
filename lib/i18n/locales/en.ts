@@ -2268,6 +2268,7 @@ const palette = {
   "palette.language": "Language: {language}",
   "palette.theme": "Theme: {theme}",
   "palette.group.screens": "Screen",
+  "palette.group.tabs": "Page",
   "palette.group.commands": "Command",
   "palette.group.products": "SKU",
   "palette.group.customers": "Customer",

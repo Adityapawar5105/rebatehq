@@ -2507,6 +2507,7 @@ export const fr: Catalog = {
   "palette.language": "Langue : {language}",
   "palette.theme": "Thème : {theme}",
   "palette.group.screens": "Écran",
+  "palette.group.tabs": "Page",
   "palette.group.commands": "Commande",
   "palette.group.products": "SKU",
   "palette.group.customers": "Client",
