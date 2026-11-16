@@ -467,7 +467,8 @@ async function offlineUi(){
  const relay=await tcpRelay(base);relayOrigin=new URL(relay.url).origin;const cut=r=>r.abort('internetdisconnected');
  try{
  // Session cookies are per host, not per port, so a sign-in on the app server also signs in through the relay.
- dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(relay.url+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic offline owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
+ // Storage is per origin, so pin one active device id for both addresses; otherwise the relay origin registers a second, pending device.
+ dataPlaneActive=false;if(auth)await signInLocal(context,page,base,{deviceId:crypto.randomUUID()});await page.goto(relay.url+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic offline owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
  const sku=marker+'-OFF',customer=marker+'-OFFC';
  await page.locator('nav a[href="#data-hub"]').click();await importFiles([
   {name:'offline-items.csv',mimeType:'text/csv',buffer:Buffer.from('product_id,description,category,uom,current_cost,list_price\n'+sku+',Synthetic offline item,Offline,EA,4.00,9.00\n')},
