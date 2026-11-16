@@ -53,3 +53,7 @@ table{font-size:var(--fs-sm)}th{font-size:var(--fs-xs);text-transform:none;lette
 .data-table,.table-wrap{border-radius:var(--radius-md)}
 .account-panel{border-radius:var(--radius-lg);box-shadow:var(--shadow-2)}
 @media(max-width:780px){.topbar{padding:var(--space-2) var(--space-4)}.app-content{padding:var(--space-4)}.app-card{padding:var(--space-5)}.nav{padding:var(--space-2) var(--space-4)}}
+
+/* Checkboxes and radios everywhere (16 Nov 2026, blueprint section 22, item 33): one clear square/round size in the theme accent, never stretched by text-input rules. */
+input[type=checkbox],input[type=radio]{box-sizing:border-box;width:20px;min-width:20px;height:20px;min-height:20px;margin:0;padding:0;accent-color:var(--accent);cursor:pointer;vertical-align:middle;flex:none}
+input[type=checkbox]:focus-visible,input[type=radio]:focus-visible{outline:3px solid var(--focus);outline-offset:2px}

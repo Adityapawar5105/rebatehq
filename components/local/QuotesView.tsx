@@ -79,9 +79,9 @@ export function QuotesView({ client, userId, caps, tier, busy, operation }: { cl
   const canApprove = caps.includes("quoteApprove"), seesCost = caps.includes("cost"), canShare = caps.includes("collaborate");
   const tabs: Tab[] = ["check", "new", ...(canApprove ? ["inbox" as const] : []), "history", "winloss"];
   const [tab, setTab] = useState<Tab>("check"), [note, setNote] = useState("");
-  // From Home: "#quotes-new" (Create new > New quote) opens the Quote tab; "#quotes-open-<id>" (a work-list row) opens that quote.
+  // "#quotes-<tab>" opens a tab (Home > Create new, the command palette); "#quotes-open-<id>" (a Home work-list row) opens that quote.
   useEffect(() => {
-    const read = () => { const m = /^#quotes-open-(.+)$/.exec(location.hash); if (m) open(decodeURIComponent(m[1])); else if (location.hash === "#quotes-new") setTab("new"); };
+    const read = () => { const m = /^#quotes-open-(.+)$/.exec(location.hash), tabHash = /^#quotes-(check|new|inbox|history|winloss)$/.exec(location.hash); if (m) open(decodeURIComponent(m[1])); else if (tabHash && tabs.includes(tabHash[1] as Tab)) setTab(tabHash[1] as Tab); };
     read(); window.addEventListener("hashchange", read); return () => window.removeEventListener("hashchange", read);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

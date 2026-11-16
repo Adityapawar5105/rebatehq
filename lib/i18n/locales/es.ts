@@ -2507,6 +2507,7 @@ export const es: Catalog = {
   "palette.language": "Idioma: {language}",
   "palette.theme": "Tema: {theme}",
   "palette.group.screens": "Pantalla",
+  "palette.group.tabs": "Página",
   "palette.group.commands": "Comando",
   "palette.group.products": "SKU",
   "palette.group.customers": "Cliente",

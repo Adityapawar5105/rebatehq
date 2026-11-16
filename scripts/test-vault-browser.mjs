@@ -467,7 +467,8 @@ async function offlineUi(){
  const relay=await tcpRelay(base);relayOrigin=new URL(relay.url).origin;const cut=r=>r.abort('internetdisconnected');
  try{
  // Session cookies are per host, not per port, so a sign-in on the app server also signs in through the relay.
- dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(relay.url+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic offline owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
+ // Storage is per origin, so pin one active device id for both addresses; otherwise the relay origin registers a second, pending device.
+ dataPlaneActive=false;if(auth)await signInLocal(context,page,base,{deviceId:crypto.randomUUID()});await page.goto(relay.url+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic offline owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
  const sku=marker+'-OFF',customer=marker+'-OFFC';
  await page.locator('nav a[href="#data-hub"]').click();await importFiles([
   {name:'offline-items.csv',mimeType:'text/csv',buffer:Buffer.from('product_id,description,category,uom,current_cost,list_price\n'+sku+',Synthetic offline item,Offline,EA,4.00,9.00\n')},
@@ -1081,10 +1082,18 @@ try {
   await page.getByRole('combobox',{name:'Search screens, commands, SKUs and customers'}).fill('pricing');
   await page.getByRole('option',{name:/Pricing/}).first().waitFor();
   await page.getByTestId('command-palette').getByRole('combobox').fill(priceSku);await page.getByRole('option',{name:new RegExp(priceSku)}).waitFor({timeout:15000});
+  // Sub-tabs are searchable by every word typed, and Enter opens the tab (blueprint section 22, item 33).
+  await page.getByTestId('command-palette').getByRole('combobox').fill('purchase receipts');await page.getByRole('option',{name:/Purchase receipts/}).click();
+  await page.waitForFunction(()=>location.hash==='#rebates-purchases');await page.getByTestId('supplier-tab-purchases').waitFor();
+  {const sizes=await page.evaluate(()=>[...document.querySelectorAll('input[type=checkbox],input[type=radio]')].filter(e=>e.offsetParent).map(e=>getComputedStyle(e).width+'x'+getComputedStyle(e).height));assert.ok(sizes.every(s=>s==='20pxx20px'),`Checkbox sizes ${[...new Set(sizes)].join(', ')}`);}
+  await page.keyboard.press('Control+k');await page.getByTestId('command-palette').waitFor();
   await page.keyboard.press('Escape');await page.getByTestId('command-palette').waitFor({state:'hidden'});
   results.checks.i18nUi={pseudoLocaleEveryScreen:true,french:true,spanish:true,canadianFrench:true,frenchLeakReportPdf:true,themes:['light','dark','contrast','system'],commandPalette:true};
 
   await page.getByRole("button", { name: "Lock vault", exact: true }).click(); await ready();
+  // Locked: only the unlock card, with no navigation or search (blueprint section 22, item 33).
+  assert.equal(await page.locator('#app-sidebar').count(),0,'The sidebar shows while the vault is locked');
+  assert.equal(await page.locator('[aria-keyshortcuts]').count(),0,'The search button shows while the vault is locked');
   if (full) {
     assert.ok(!auth, "Synthetic benchmark must not reset an authenticated vault");
     results.measurements.studio1M = await worker("studioBenchmark", { rows: 1000000 });

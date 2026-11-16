@@ -31,7 +31,7 @@ export function BenchmarksView({ client, version, busy, operation }: { client: V
   const act = (work: () => Promise<void>) => void operation(async () => { setError(""); setNote(""); try { await work(); } catch (e) { setError(errorText(e)); } });
   const refreshPreview = async () => setPreview(await client.call("benchPreview", { quarter }));
   return <>
-    <Card title={t("bench.heading")} description={t("bench.intro")} data-testid="benchmarks">
+    <Card headingId="bench-heading" title={t("bench.heading")} description={t("bench.intro")} data-testid="benchmarks">
       <Notice tone="info">{t("bench.whatLeaves")}</Notice>
       {error && <Notice tone="warn" role="alert">{error}</Notice>}
       {note && <p role="status" data-testid="bench-note">{note}</p>}

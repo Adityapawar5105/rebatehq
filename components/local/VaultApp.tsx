@@ -81,7 +81,7 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
     const touch = () => { if (Date.now() - lastActivity > 5000) { lastActivity = Date.now(); void c.call("touch", {}).catch(() => undefined); } };
     const leaving = () => { void c.call("lock", {}).catch(() => undefined); };
     window.addEventListener("pointerdown", touch); window.addEventListener("keydown", touch); window.addEventListener("pagehide", leaving);
-    const hash = () => { const raw = location.hash.slice(1); const value=raw.startsWith('pricing-')?'pricing':raw.startsWith('quotes-')?'quotes':raw.startsWith('margin-')?'margin':raw.startsWith('rebates-')?'rebates':raw.startsWith('vendors-')?'vendors':raw.startsWith('reports-')?'reports':raw; const match = sections.find(s => sectionHash(s) === value); if (match) setSection(match); };
+    const hash = () => { const raw = location.hash.slice(1); const value=raw.startsWith('pricing-')?'pricing':raw.startsWith('quotes-')?'quotes':raw.startsWith('margin-')?'margin':raw.startsWith('rebates-')?'rebates':raw.startsWith('vendors-')?'vendors':raw.startsWith('reports-')?'reports':raw; const match = sections.find(s => sectionHash(s) === value); if (match) setSection(match); setError(""); };
     hash(); window.addEventListener("hashchange", hash);
     return () => { active = false; window.removeEventListener("pointerdown", touch); window.removeEventListener("keydown", touch); window.removeEventListener("pagehide", leaving); window.removeEventListener("hashchange", hash); c.close(); client.current = null; };
   }, [scope.userId, scope.tenantId]);
@@ -92,14 +92,19 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
   }
   const unlocked = status?.state === "unlocked", access = status?.access, caps = access?.caps ?? [], visible = access?.sections ?? [...sections], shown: Section = visible.includes(section) ? section : "Home";
   const navItems = sections.filter(item => !unlocked || visible.includes(item));
+  // A failed action's red notice belongs to the page it happened on: changing page clears it.
+  useEffect(() => { setError(""); }, [shown]);
+  const locked = !unlocked;
+  const signOut = !lab && <form className={sh.signout} method="post" action="/api/auth/logout" onSubmit={e => { const form = e.currentTarget; e.preventDefault(); void clearOfflineCopy().finally(() => form.submit()); }}><Button type="submit" variant="ghost" size="sm" icon="logout">{t("shell.signOut")}</Button></form>;
   const lock = () => void operation(async () => { setStatus(await client.current!.call("lock", {})); setPassphrase(""); setMessage(msg("shell.locked")); });
   const licenceLine = status?.licence && <p role="status" data-testid="licence-status" className={sh.licence} data-tone={status.licence.writable ? "ok" : "bad"}>
     <Icon name={status.licence.writable ? "shield" : "alert"} size={15}/>
     <span>{status.licence.writable?(t("shell.licensed", { tier: tierName(status.licence.tier) })+(status.licence.offline?t("shell.offlineGrace"):'')):t("shell.readOnly", { reason: say(status.licence.reason) })}{t("common.listSeparator")}<a href="/account/licence">{t("shell.licenceLink")}</a></span>
   </p>;
-  return <GridTotalsProvider value={gridTotals}><div className={`${styles.shell} ${sh.frame}`} data-nav={collapsed ? "collapsed" : "open"} data-drawer={drawer ? "open" : "closed"}>
+  return <GridTotalsProvider value={gridTotals}><div className={`${styles.shell} ${sh.frame}`} data-nav={collapsed ? "collapsed" : "open"} data-drawer={drawer ? "open" : "closed"} data-locked={locked ? "yes" : undefined}>
     <a className={sh.skip} href="#local-content">{t("shell.skip")}</a>
-    <aside className={sh.sidebar} id="app-sidebar" aria-label={t("shell.sidebar")}>
+    {/* Until the vault is unlocked only the unlock card shows: no navigation, search or business screens (16 Nov 2026). */}
+    {!locked && <aside className={sh.sidebar} id="app-sidebar" aria-label={t("shell.sidebar")}>
       <a href="/home" className={sh.brand}><span className={sh.mark} aria-hidden="true">{t("shell.brandMark")}</span><span className={sh.label}>{t("app.name")}</span></a>
       <nav aria-label={t("shell.mainNav")} className={sh.nav}>
         {navItems.map(item => <a key={item} href={`#${sectionHash(item)}`} className={sh.navLink} aria-current={shown === item ? "page" : undefined} title={collapsed ? t(SECTION_LABEL[item]) : undefined} onClick={() => { setSection(item); setDrawer(false); }}><Icon name={SECTION_ICON[item]}/><span className={sh.label}>{t(SECTION_LABEL[item])}</span></a>)}
@@ -109,22 +114,22 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
         <div className={sh.workspace}><strong translate="no">{workspace}</strong><span translate="no">{email}</span></div>
         <button type="button" className={sh.collapse} aria-pressed={collapsed} onClick={toggleNav}><Icon name="sidebar"/><span className={sh.label}>{t(collapsed ? "shell.expandNav" : "shell.collapseNav")}</span></button>
       </div>
-    </aside>
-    {drawer && <button type="button" className={sh.scrim} aria-label={t("shell.closeMenu")} onClick={() => setDrawer(false)}/>}
+    </aside>}
+    {!locked && drawer && <button type="button" className={sh.scrim} aria-label={t("shell.closeMenu")} onClick={() => setDrawer(false)}/>}
     <div className={sh.main}>
-      <header className={sh.topbar}>
+      {!locked && <header className={sh.topbar}>
         <button type="button" className={sh.menuButton} aria-label={t("shell.menu")} aria-expanded={drawer} aria-controls="app-sidebar" onClick={() => setDrawer(true)}><Icon name="menu"/></button>
         <button type="button" className={sh.search} aria-label={t("shell.paletteButton")} aria-keyshortcuts="Control+K Meta+K" onClick={() => window.dispatchEvent(new CustomEvent(OPEN_PALETTE_EVENT))}><Icon name="search" size={16}/><span className={sh.searchText}>{t("shell.searchLabel")}</span><kbd className={sh.kbd}>{t("shell.paletteShortcut")}</kbd></button>
         <div className={sh.tools}>
           <Preferences pseudo={lab} className={sh.prefs}/>
-          {!lab && <form className={sh.signout} method="post" action="/api/auth/logout" onSubmit={e => { const form = e.currentTarget; e.preventDefault(); void clearOfflineCopy().finally(() => form.submit()); }}><Button type="submit" variant="ghost" size="sm" icon="logout">{t("shell.signOut")}</Button></form>}
+          {signOut}
         </div>
-      </header>
+      </header>}
       {lab && <p className={sh.labNotice} role="note"><Icon name="flask" size={15}/><span>{t("shell.labNotice")}</span></p>}
-      <CommandPalette client={unlocked ? client.current : null} caps={caps} sections={navItems} storageKey={`rebatehq.palette.recent:${scope.tenantId}:${scope.userId}`} go={item => { setSection(item); location.hash = sectionHash(item); }} commands={{
+      {unlocked && <CommandPalette client={client.current} caps={caps} tier={status?.licence?.tier} sections={navItems} storageKey={`rebatehq.palette.recent:${scope.tenantId}:${scope.userId}`} go={item => { setSection(item); location.hash = sectionHash(item); }} commands={{
         lock: unlocked ? lock : undefined,
         save: unlocked && status?.dirty ? () => void operation(async () => { setStatus(await client.current!.call("save", {})); setMessage(msg("shell.saved")); }) : undefined,
-      }}/>
+      }}/>}
       <main id="local-content" className={sh.content} tabIndex={-1}>
         {unlocked && shown === "Home" && <PageHeader eyebrow={<span translate="no">{workspace}</span>} title={homeInfo?.name ? t("home.welcome", { name: homeInfo.name }) : t("home.welcomeBack")}
           description={homeInfo && <span data-testid="role-banner">{t("home.yourRole", { roleLabel: homeInfo.role })}{t("common.listSeparator")}{homeInfo.owner ? t("home.pricingOwnerTheyApprove", { pricingOwner: homeInfo.owner }) : t("home.noPricingOwnerIs")}</span>}
@@ -136,12 +141,13 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
         {unlocked && shown !== "Home" && <PageHeader eyebrow={t("shell.eyebrow")} title={t(SECTION_LABEL[shown])} description={t(SECTION_DESC[shown])} actions={<Button icon="lock" disabled={busy} onClick={lock}>{t("shell.lock")}</Button>}/>}
         {!supported && <Notice data-testid="browser-support-notice" tone="warn">{t("shell.browserNotice")}</Notice>}
         <p role="status" aria-live="polite" className={sh.message}>{say(message)}</p>
-        {error && <Notice tone="bad" role="alert">{t("common.warningMark", { text: say(error) })}</Notice>}
+        {error && <Notice tone="bad" role="alert">{say(error)}</Notice>}
         {status?.preparing && <Notice tone="info" data-testid="preparing">{t("shell.preparing")}</Notice>}
         {status?.recovered && <Notice tone="warn">{t("shell.recovered")}</Notice>}
         {progress && <div className={sh.progress}><label htmlFor="vault-progress">{say(progress.stage)}</label><progress id="vault-progress" value={Number(progress.done)} max={Math.max(1, Number(progress.total))}/>{!progress.stage.startsWith("Saving") && !progress.stage.startsWith("Saved") && <Button size="sm" onClick={() => void client.current!.call("cancel", {})}>{t(progress.stage.startsWith("Replaying") ? "sim.cancel" : progress.stage.startsWith("Checking") ? "cadence.cancel" : "shell.cancelImport")}</Button>}</div>}
         {!status ? <section className={ui.card} aria-busy="true">{t("shell.startingWorker")}</section> : !unlocked ? <div className={sh.auth}>
           <section className={`${ui.card} ${sh.authCard}`} aria-labelledby="auth-heading">
+            <p className={sh.authBrand}><span className={sh.mark} aria-hidden="true">{t("shell.brandMark")}</span><span>{t("app.name")}</span></p>
             <span className={sh.authIcon}><Icon name="lock" size={24}/></span>
             <h2 id="auth-heading">{t(status.exists ? "shell.unlockHeading" : "shell.createHeading")}</h2>
             <p className={sh.authNote}>{t("shell.passphraseNote")}</p>
@@ -154,7 +160,9 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
             {licenceLine}
             <p className={sh.authFoot}>{t("shell.autoLockNote")}</p>
           </section>
-          {client.current && <div className={sh.authSide}><BackupView client={client.current} busy={busy} operation={operation} unlocked={false} onStatus={setStatus}/></div>}
+          <div className={sh.authAccount}><span translate="no">{email}</span>{signOut}</div>
+          {/* Restoring only works into an empty vault, so the restore card is offered only before a vault exists. */}
+          {client.current && !status.exists && <div className={sh.authSide}><BackupView client={client.current} busy={busy} operation={operation} unlocked={false} onStatus={setStatus}/></div>}
         </div> : <>
           {access?.viewAs && <Notice tone="warn" role="status" data-testid="preview-banner" actions={<Button size="sm" disabled={busy} onClick={() => void operation(async () => { await client.current!.call("rolePreview", { role: null }); setStatus(await client.current!.call("status", {})); })}>{t("shell.returnView")}</Button>}>{t("shell.previewBanner", { role: say(access.roleLabel) })}</Notice>}
           {status.dirty && <Notice tone="bad" actions={<Button size="sm" onClick={() => void operation(async () => { setStatus(await client.current!.call("save", {})); setMessage(msg("shell.saved")); })}>{t("shell.retrySave")}</Button>}>{t("shell.unsaved")}</Notice>}

@@ -71,7 +71,8 @@ export async function signInLocal(context, page, base, options = {}) {
    await seedPrivacyLicence(admin,tenant,data.user.id,email,options);
    await admin.query('COMMIT');}catch(e){await admin.query('ROLLBACK');throw e;}finally{await admin.end();}
   if(options.deviceId)await context.addInitScript(({tenant,user,device})=>localStorage.setItem('rebatehq-device-v1:'+tenant+':'+user,device),{tenant,user:data.user.id,device:options.deviceId});
-  await page.goto(new URL("/home", base).href); await page.getByRole("navigation", { name: "Main navigation" }).waitFor();
+  // A locked vault shows only the unlock card, with no navigation (blueprint section 22, item 33), so wait for that card.
+  await page.goto(new URL("/home", base).href); await page.getByRole("button", { name: /Create encrypted vault|Unlock vault/ }).waitFor();
   return {tenantId:tenant,userId:data.user.id,deviceId:options.deviceId,email};
 }
 
