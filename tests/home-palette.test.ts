@@ -11,7 +11,9 @@ test("an empty palette shows at most five recent picks and four suggested action
   assert.ok(suggested.length > 4, "fallbacks for roles that lack a screen");
   assert.match(src, /\.slice\(0, SUGGESTED_COUNT\)/);
   // Typing still searches the whole list plus the worker's role-checked SKU/customer hits.
-  assert.match(src, /if \(q\) return \[\.\.\.list\.filter\(/);
+  // Grouped by kind under headings since 20 Nov 2026.
+  assert.match(src, /const found = \[\.\.\.list\.filter\([^\n]*\.\.\.hits\.map\(/);
+  assert.match(src, /return GROUP_ORDER\.flatMap\(g => found\.filter\(i => i\.group === g\)/);
 });
 
 test("recent SKUs and customers never reach browser storage and are forgotten on lock or role change", () => {

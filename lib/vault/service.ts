@@ -100,7 +100,8 @@ export class VaultService {
     this.tier=tier;return this.status();
   }
   readonly licence = new VaultLicence(process.env.NEXT_PUBLIC_LICENCE_VERIFY_KEY || "");
-  licenceGuard(action:Action) { this.licence.guard(action); }
+  // Starting again on this device deletes only local files: it never needs a licence (audit B-3).
+  licenceGuard(action:Action) { if (action === "vaultReset") return; this.licence.guard(action); }
   async licenceSet(envelope:import("../licence-policy").LicenceEnvelope|null,device:string,offline:boolean){try{await this.licence.set(envelope,this.identity,device,offline);}catch{/* Invalid assertions clear authority but never prevent read-only unlock/recovery. */}this.tier=this.licence.effective(this.tier);return this.status();}
   private identity!: Scope;
   storage!: VaultStorage;
@@ -219,6 +220,38 @@ export class VaultService {
       this.touch(); return this.status();
     } catch (error) { await this.dispose(); if (error instanceof VaultError && error.code === "SAVE") throw new VaultError("SAVE", msg("vault.theSchemaUpgradeCould")); throw error instanceof VaultError ? error : new VaultError("UNLOCK_FAILED", msg("vault.wrongPassphraseDamagedVault")); }
   }
+  /**
+   * Audit B-3: "Start again on this device" for a forgotten passphrase. Deletes this vault's files on this device only,
+   * while it is locked and not open in another tab (the vault lease). An encrypted backup and its passphrase bring the
+   * data back; the restore card shows once no vault exists.
+   */
+  async vaultReset() {
+    if (this.engine) throw new VaultError("STATE", msg("vault.reset.lockFirst"));
+    await this.lease();
+    try { await this.storage.clear(); this.recovered = false; this.lastSaved = null; this.generation = "0"; }
+    finally { this.releaseLease?.(); this.releaseLease = null; }
+    return this.status();
+  }
+  /**
+   * Audit B-3: change the passphrase. The current one is checked against the saved snapshot, the vault is saved again
+   * under a key from the new one, and every older snapshot on this device is removed, so the old passphrase opens nothing
+   * here. Backups already downloaded keep the passphrase they were made with.
+   */
+  async passphraseChange(current: string, next: string) {
+    this.requireEngine();
+    if (typeof current !== "string" || typeof next !== "string" || next === current) throw new VaultError("PASSPHRASE", msg("vault.passphrase.same"));
+    const head = this.storage.activeHead;
+    if (!head) throw new VaultError("STATE", msg("vault.unlockYourVaultFirst"));
+    try { const check = await decrypt(await this.storage.file(head.current), current, this.storage.scope); check.bytes.fill(0); }
+    catch { throw new VaultError("PASSPHRASE", msg("vault.passphrase.currentWrong")); }
+    current = "";
+    const key = await deriveKey(next); next = "";
+    const old = this.key; this.key = key;
+    try { await this.write("vault.passphrase_changed", {}, async () => undefined); }
+    catch (error) { this.key = old; throw error; }
+    try { await this.storage.dropOlder(); } catch { throw new VaultError("SAVE", msg("vault.passphrase.cleanupFailed")); }
+    return this.status();
+  }
   private requireEngine() { if (!this.engine) throw new VaultError("LOCKED", msg("vault.unlockYourVaultFirst")); return this.engine; }
   async save() {
     const engine = this.requireEngine();
@@ -272,15 +305,18 @@ export class VaultService {
     const roles=source?[(await this.requireEngine().conn.query(`SELECT coalesce(k.kind,s.role) AS role FROM source_files s LEFT JOIN source_kinds k ON k.source_id=s.id WHERE s.id=${sqlText(source)}`)).toArray()[0]?.role]:(await this.studioState()).files.map(f=>f.role);
     if(roles.some(role=>role==='rebate_agreement'||role==='purchases')){this.rebateTier();await this.guard('rebateManage');}
   }
-  async studioPlan(signal: AbortSignal, progress: Progress) { await this.rebateImportGuard();await this.studio.plan(this.requireEngine(), this.tier, signal, progress); return this.studioState(); }
+  /** The vault data version the reviewed plan was made against (audit 1.3): Import refuses a plan made before another change. */
+  private planVersion: number | null = null;
+  async studioPlan(signal: AbortSignal, progress: Progress) { await this.rebateImportGuard();await this.studio.plan(this.requireEngine(), this.tier, signal, progress); this.planVersion = this.dataVersion; return this.studioState(); }
   async studioCommit(acknowledge: boolean, progress: Progress) {
     await this.rebateImportGuard();
+    if (this.planVersion !== this.dataVersion) throw new VaultError("STUDIO", msg("studio.planStale"));
     const engine = await this.writable(progress);
     progress(msg("vault.loadingRowsIntoThe"), "0", "1");
     const result = await this.studio.commit(engine, acknowledge);
     this.dirty = true; progress(msg("vault.updatingMarginTotals2"), "0", "1"); await this.derived(engine);
-    progress(msg("vault.savingEncryptedSnapshot"), "0", "1"); await this.save();
-    progress(msg("vault.saved"), "1", "1"); this.touch();
+    progress(msg("vault.savingEncryptedSnapshot"), "0", "1", "save"); await this.save();
+    progress(msg("vault.saved"), "1", "1", "save"); this.touch();
     return { status: await this.status(), studio: await this.studioState(), result };
   }
   async studioDownload(id: string, signal: AbortSignal) { this.requireEngine(); return this.studio.download(id, signal); }
@@ -438,7 +474,7 @@ export class VaultService {
   async reportState(){this.opsTier();return {...await cadence.state(this.requireEngine()),ready:this.currentPack()};}
   async reportCheck(kind:cadence.PackKind,month:string|undefined,signal:AbortSignal,progress:Progress){
     this.opsTier();const e=await this.writable(progress);this.packLast=null;
-    try{const {stamp,...data}=await cadence.check(e,kind,month,signal,progress);if(signal.aborted)throw cadence.cancelled();progress(msg('vault.savingEncryptedSnapshot'),'0','1');await this.write('report.checked',{id:data.id,kind},engine=>engine.conn.query(stamp).then(()=>undefined));this.packLast={engine:e,version:this.dataVersion,data};return data;}
+    try{const {stamp,...data}=await cadence.check(e,kind,month,signal,progress);if(signal.aborted)throw cadence.cancelled();progress(msg('vault.savingEncryptedSnapshot'),'0','1','save');await this.write('report.checked',{id:data.id,kind},engine=>engine.conn.query(stamp).then(()=>undefined));this.packLast={engine:e,version:this.dataVersion,data};return data;}
     catch(error){if(signal.aborted)throw cadence.cancelled();if(error instanceof VaultError)throw error;throw new VaultError('REPORT',msg('cadence.failed'));}finally{this.leakCache=null;}
   }
   async reportExport(id:string,locale?:string){this.opsTier();const p=this.currentPack();if(!p||p.id!==id)throw new VaultError('REPORT',msg('cadence.stale'));if(!isLocale(locale))throw new VaultError('REPORT',msg('cadence.invalid'));const bytes=reportPdf(p,locale);await this.write('report.cadence_pdf',{id:p.id,kind:p.kind,locale},async()=>undefined);this.packLast={engine:this.requireEngine(),version:this.dataVersion,data:p};return {name:'rebatehq-'+p.kind+'-'+p.window.from+'.pdf',blob:new Blob([bytes as Uint8Array<ArrayBuffer>],{type:'application/pdf'})};}

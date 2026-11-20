@@ -32,6 +32,10 @@ import { OfflineCard, clearOfflineCopy, useOfflineWorker } from './OfflineMode';
 import { BenchmarksView } from './BenchmarksView';
 import { CommandPalette, OPEN_PALETTE_EVENT } from "./CommandPalette";
 import { GlossaryCard } from "./Glossary";
+import { PassphraseCard, StartAgain } from "./Recovery";
+import { waitingDevices } from "@/lib/licence-devices";
+import { scrollToHeading } from "./scroll";
+import { Badge } from "@/components/ui/ui";
 import { tierName } from "./labels";
 import styles from "./vault.module.css";
 import sh from "./shell.module.css";
@@ -54,7 +58,7 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
   useEffect(() => { setWorkspaceCurrency(status?.state === "unlocked" ? status.currency : "USD"); }, [status?.state, status?.currency]);
   const [error, setError] = useState(""), [message, setMessage] = useState(msg("shell.opening")), [busy, setBusy] = useState(false);
   const [passphrase, setPassphrase] = useState(""), [tier, setTier] = useState<Tier>("starter"), [ownerName, setOwnerName] = useState("");
-  const [storage, setStorage] = useState<StorageStatus | null>(null), [progress, setProgress] = useState<{ stage: string; done: string; total: string } | null>(null);
+  const [storage, setStorage] = useState<StorageStatus | null>(null), [progress, setProgress] = useState<{ stage: string; done: string; total: string; kind?: "save" | "sim" | "check" } | null>(null);
   const [supported, setSupported] = useState(true);
   // Home header: the caller's own name, role label and Pricing Owner, from the role-checked `home` read.
   const [homeInfo, setHomeInfo] = useState<{ name: string | null; role: string; owner: string | null } | null>(null);
@@ -63,6 +67,8 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
   const [collapsed, setCollapsed] = useState(false), [drawer, setDrawer] = useState(false);
   // Audit B-8 and X-4: the idle-lock warning, and a worker that stopped.
   const [locking, setLocking] = useState(false), [dead, setDead] = useState(false);
+  // Audit B-5: tell the workspace Owner when a device is waiting for approval (an in-app badge; decision D10).
+  const [waiting, setWaiting] = useState(0);
   useEffect(() => { try { setCollapsed(localStorage.getItem(NAV_KEY) === "collapsed"); } catch {} }, []);
   const toggleNav = () => setCollapsed(c => { try { localStorage.setItem(NAV_KEY, c ? "open" : "collapsed"); } catch {} return !c; });
   useEffect(() => { if (!drawer) return; const close = (e: KeyboardEvent) => { if (e.key === "Escape") setDrawer(false); }; window.addEventListener("keydown", close); return () => window.removeEventListener("keydown", close); }, [drawer]);
@@ -99,6 +105,12 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
   }
   const unlocked = status?.state === "unlocked", access = status?.access, caps = access?.caps ?? [], visible = access?.sections ?? [...sections], shown: Section = visible.includes(section) ? section : "Home";
   const navItems = sections.filter(item => !unlocked || visible.includes(item));
+  useEffect(() => {
+    if (!unlocked || lab) { setWaiting(0); return; }
+    let on = true;
+    void waitingDevices().then(n => { if (on) setWaiting(n); }).catch(() => undefined);
+    return () => { on = false; };
+  }, [unlocked, lab]);
   // A failed action's red notice belongs to the page it happened on: changing page clears it.
   useEffect(() => { setError(""); }, [shown]);
   const locked = !unlocked;
@@ -152,7 +164,7 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
         {status?.preparing && <Notice tone="info" data-testid="preparing">{t("shell.preparing")}</Notice>}
         {locking && unlocked && <Notice tone="warn" role="alert" data-testid="locking-soon" actions={<Button size="sm" variant="primary" onClick={() => { setLocking(false); void client.current?.call("touch", {}).catch(() => undefined); }}>{t("shell.stayUnlocked")}</Button>}>{t("shell.lockingSoon")}</Notice>}
         {status?.recovered && <Notice tone="warn">{t("shell.recovered")}</Notice>}
-        {progress && <div className={sh.progress}><label htmlFor="vault-progress">{say(progress.stage)}</label><progress id="vault-progress" value={Number(progress.done)} max={Math.max(1, Number(progress.total))}/>{!progress.stage.startsWith("Saving") && !progress.stage.startsWith("Saved") && <Button size="sm" onClick={() => void client.current!.call("cancel", {})}>{t(progress.stage.startsWith("Replaying") ? "sim.cancel" : progress.stage.startsWith("Checking") ? "cadence.cancel" : "shell.cancelImport")}</Button>}</div>}
+        {progress && <div className={sh.progress}><label htmlFor="vault-progress">{say(progress.stage)}</label><progress id="vault-progress" value={Number(progress.done)} max={Math.max(1, Number(progress.total))}/>{progress.kind !== "save" && <Button size="sm" onClick={() => void client.current!.call("cancel", {})}>{t(progress.kind === "sim" ? "sim.cancel" : progress.kind === "check" ? "cadence.cancel" : "shell.cancelImport")}</Button>}</div>}
         {dead ? <section className={ui.card} role="alert" data-testid="worker-failed"><h2>{t("shell.workerFailed.title")}</h2><p>{t("shell.workerFailed.body")}</p><Button variant="primary" onClick={() => location.reload()}>{t("shell.workerFailed.reload")}</Button></section>
           : !status ? <section className={ui.card} aria-busy="true">{t("shell.startingWorker")}</section> : !unlocked ? <div className={sh.auth}>
           <section className={`${ui.card} ${sh.authCard}`} aria-labelledby="auth-heading">
@@ -167,6 +179,7 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
               <Button type="submit" variant="primary" size="lg" block icon={status.exists ? "key" : "shield"} disabled={busy || (!status.exists && !ownerName.trim())}>{busy ? t("shell.openingButton") : t(status.exists ? "shell.unlockButton" : "shell.createButton")}</Button>
             </form>
             {licenceLine}
+            {status.exists && client.current && <StartAgain client={client.current} workspace={workspace} busy={busy} operation={operation} onStatus={setStatus} setMessage={setMessage}/>}
             <p className={sh.authFoot}>{t("shell.autoLockNote")}</p>
           </section>
           <div className={sh.authAccount}><span translate="no">{email}</span>{signOut}</div>
@@ -183,6 +196,7 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
               <div><dt>{t("shell.stat.generation")}</dt><dd>{fmt.int(status.generation)}</dd></div>
             </dl>
             {licenceLine}
+            {waiting > 0 && <a href="/account/licence" data-testid="devices-waiting"><Badge tone="warn" icon="key">{t("shell.devicesWaiting", { count: waiting })}</Badge></a>}
           </div>
           {/* First-run activation (20 Nov 2026): while the Playground's sample files are loaded, every section says so. */}
           {(status.sample === "only" || status.sample === "mixed") && <Notice tone="info" data-testid="sample-banner" actions={caps.includes("data") ? <>
@@ -218,16 +232,17 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
           {shown === "Vendors" && client.current && <VendorsView client={client.current} tier={status.licence?.tier} version={`${status.lines}|${status.generation}`} canImport={caps.includes("data")} canSimulate={caps.includes("pricing")} canPrice={caps.includes("pricing")} busy={busy} operation={operation}/>}
           {shown === "Rebates & Contracts" && client.current && <RebatesView client={client.current} caps={caps} tier={status.licence?.tier} busy={busy} version={status.generation} operation={operation} refresh={async()=>setStatus(await client.current!.call("status",{}))}/>}
           {shown === "Reports" && client.current && <ReportsView client={client.current} caps={caps} tier={status.licence?.tier} busy={busy} version={`${status.lines}|${status.generation}`} operation={operation} refresh={async()=>setStatus(await client.current!.call("status",{}))}/>}
-            {shown === "Reports" && caps.includes("cost") && client.current && <Card headingId="report-card-heading" title={t("shell.report.heading")} description={t("shell.report.body")}><LeakReportButton client={client.current} busy={busy || status.lines === "0"} operation={operation} setMessage={setMessage} onStatus={setStatus}/></Card>}
+            {shown === "Reports" && caps.includes("cost") && client.current && <Card headingId="report-card-heading" title={t("shell.report.heading")} description={t("shell.report.body")}><LeakReportButton client={client.current} busy={busy || status.lines === "0"} operation={operation} setMessage={setMessage} onStatus={setStatus}/><ButtonLink variant="ghost" icon="search" href="#margin" data-testid="leak-choose-findings" onClick={() => setTimeout(() => scrollToHeading("leaks-heading"), 50)}>{t("shell.report.choose")}</ButtonLink></Card>}
           {shown === "Reports" && caps.includes("cost") && status.licence?.tier !== "starter" && client.current && <BenchmarksView client={client.current} version={`${status.lines}|${status.generation}`} busy={busy} operation={operation}/>}
           {shown === "Reports" && caps.includes("audit") && <Card headingId="audit-heading" title={t("shell.audit.heading")} description={t("shell.audit.body", { entries: Number(status.auditEntries), version: status.schemaVersion })}><Button variant="primary" icon="shield" disabled={busy} onClick={() => void operation(async () => { const result = await client.current!.call("verify", {}); if (!result.valid) throw new Error(msg("shell.audit.failed")); setMessage(msg("shell.audit.verified", { entries: Number(result.entries) })); })}>{t("shell.audit.button")}</Button> <AuditPackButton client={client.current!} busy={busy} operation={operation} setMessage={setMessage}/><p className={styles.muted}>{t("shell.audit.note")}</p><p className={styles.muted}>{t("auditpack.help")}</p></Card>}
           {shown === "Settings" && <JumpNav label={t("shell.onThisPage")} jumpLabel={name => t("shell.jumpTo", { name })} items={[
             { id: "prefs-heading", label: t("shell.prefs.heading"), icon: "palette" }, ...(caps.includes("backup") ? [{ id: "backup-heading", label: t("backup.encryptedBackupAndRestore"), icon: "download" as const }] : []),
-            { id: "roles-heading", label: t("roles.teamAndRoles"), icon: "users" }, { id: "storage-heading", label: t("shell.storage.heading"), icon: "database" }, { id: "offline-heading", label: t("offline.heading"), icon: "download" },
+            { id: "passphrase-heading", label: t("passphrase.heading"), icon: "key" }, { id: "roles-heading", label: t("roles.teamAndRoles"), icon: "users" }, { id: "storage-heading", label: t("shell.storage.heading"), icon: "database" }, { id: "offline-heading", label: t("offline.heading"), icon: "download" },
           ]}/>}
           {shown === "Settings" && <Card headingId="prefs-heading" title={t("shell.prefs.heading")} description={t("shell.prefs.body")}><Preferences pseudo={lab} className={styles.row}/><p>{t("fx.moneyNote", {code:status.currency})}</p></Card>}
           {shown === "Settings" && client.current && <CurrencySettings client={client.current} status={status} busy={busy} operation={operation} onStatus={setStatus}/>}
           {shown === "Settings" && client.current && caps.includes("backup") && <BackupView client={client.current} busy={busy} operation={operation} unlocked onStatus={setStatus}/>}
+          {shown === "Settings" && client.current && <PassphraseCard client={client.current} busy={busy} operation={operation} onStatus={setStatus} setMessage={setMessage}/>}
           {shown === "Settings" && client.current && <RolesView client={client.current} busy={busy} operation={operation} refresh={async () => setStatus(await client.current!.call("status", {}))}/>}
           {shown === "Settings" && <section className={styles.card} aria-labelledby="storage-heading"><h2 id="storage-heading">{t("shell.storage.heading")}</h2>{status.licence?.writable&&status.tier!==status.licence.tier&&caps.includes('roles')&&<button disabled={busy} onClick={()=>void operation(async()=>{setStatus(await client.current!.call('capacityUpgrade',{}));setMessage(msg("shell.storage.upgraded"));})}>{t("shell.storage.upgrade")}</button>}<p>{t("shell.storage.summary", { saved: status.lastSaved ? fmt.dateTime(status.lastSaved) : t("common.none") })}</p><p>{t("shell.storage.persistence", { persistence: storage ? t(storage.persistent ? "shell.storage.granted" : "shell.storage.notGranted") : t("common.unknown"), usage: storage?.usage ? fmt.int(storage.usage) : t("common.unknown"), quota: storage?.quota ? fmt.int(storage.quota) : t("common.unknown"), bytes: storage?.namedOpfsBytes ? fmt.int(storage.namedOpfsBytes) : t("common.unknown") })}</p><button className={styles.primary} onClick={() => void operation(async () => { await navigator.storage.persist(); setStorage(await client.current!.call("storage", {})); setMessage(msg("shell.storage.refreshed")); })}>{t("shell.storage.request")}</button><p className={styles.muted}>{t("shell.storage.note")}</p>{!lab && <p><a href="/account/users">{t("shell.storage.team")}</a>{t("common.listSeparator")}<a href="/account/workspace">{t("shell.storage.workspace")}</a></p>}</section>}
           {shown === "Settings" && <GlossaryCard/>}

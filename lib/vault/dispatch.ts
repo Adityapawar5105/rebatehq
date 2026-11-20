@@ -6,7 +6,7 @@ import { storageStatus } from "./storage";
 import { VaultError, type Request } from "./protocol";
 import type { VaultService } from "./service";
 import { msg } from "../i18n/core";
-export type Hooks = { signal: () => AbortSignal; progress: (stage: string, done: string, total: string) => void; unlocked?: () => void };
+export type Hooks = { signal: () => AbortSignal; progress: (stage: string, done: string, total: string, kind?: import("../studio/studio").ProgressKind) => void; unlocked?: () => void };
 export async function dispatch(service: VaultService, request: Request, hooks: Hooks): Promise<unknown> {
   if (!(request.action in ACTION_CAP)) throw new VaultError("PROTOCOL", msg("vault.dispatch.unsupportedLocalCommand2"));
   await service.guard(ACTION_CAP[request.action]);
@@ -171,6 +171,8 @@ export async function dispatch(service: VaultService, request: Request, hooks: H
     case "quoteLines": return service.quoteLines(request.data.id, request.data.lines);
     case "quoteSubmit": return service.quoteSubmit(request.data.id, request.data.reason);
     case "quoteWithdraw": return service.quoteWithdraw(request.data.id);
+    case "vaultReset": return service.vaultReset();
+    case "passphraseChange": return service.passphraseChange(request.data.current, request.data.next);
     case "quoteDecide": return service.quoteDecide(request.data.id, request.data.decision, request.data.note);
     case "quoteGet": return service.quoteGet(request.data.id);
     case "quoteOutcome": return service.quoteOutcome(request.data.id, request.data.input);

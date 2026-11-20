@@ -19,7 +19,7 @@ export const SUBTABS: readonly SubTab[] = [
   { id: "studio", section: "Data Hub", label: "studio.importStudio", anchor: "studio-heading" },
   { id: "fix", section: "Data Hub", label: "studio.fixLater", anchor: "fix-heading" },
   { id: "recon", section: "Data Hub", label: "studio.reconciliation", anchor: "recon-heading" },
-  { id: "health", section: "Data Hub", label: "studio.dataHealth", anchor: "health-heading" },
+  { id: "data-health", section: "Data Hub", label: "studio.dataHealth", anchor: "health-heading" },
   { id: "playground", section: "Data Hub", label: "studio.playground", anchor: "playground-heading" },
   { id: "sources", section: "Data Hub", label: "studio.importedFiles", anchor: "sources-heading" },
   { id: "cleanup", section: "Data Hub", label: "cleanup.itemMasterCleanup", anchor: "cleanup-heading" },
@@ -28,7 +28,7 @@ export const SUBTABS: readonly SubTab[] = [
   { id: "items", section: "Data Hub", label: "notes.items", anchor: "items-heading", show: has("data") },
   // Margin
   { id: "waterfall", section: "Margin", label: "margin.waterfall", hash: "margin-waterfall" },
-  { id: "health", section: "Margin", label: "monitor.healthTab", hash: "margin-health" },
+  { id: "margin-health", section: "Margin", label: "monitor.healthTab", hash: "margin-health" },
   { id: "bridge", section: "Margin", label: "ops.bridge", hash: "margin-bridge", show: paid },
   { id: "competitors", section: "Margin", label: "pc2.competitors", hash: "margin-competitors", show: paid },
   { id: "service", section: "Margin", label: "pc2.service", hash: "margin-service", show: paid },
@@ -52,13 +52,13 @@ export const SUBTABS: readonly SubTab[] = [
   { id: "purchases", section: "Rebates & Contracts", label: "supplier.purchases", hash: "rebates-purchases", show: all(has("cost"), notStarter) },
   { id: "supplier", section: "Rebates & Contracts", label: "supplier.progress", hash: "rebates-supplier", show: all(has("cost"), notStarter) },
   // Vendors (Professional and Scale)
-  { id: "review", section: "Vendors", label: "vendor.review", hash: "vendors-review", show: notStarter },
+  { id: "vendor-review", section: "Vendors", label: "vendor.review", hash: "vendors-review", show: notStarter },
   { id: "ppv", section: "Vendors", label: "vendor.ppv", hash: "vendors-ppv", show: notStarter },
   { id: "sim", section: "Vendors", label: "sim.tab", hash: "vendors-sim", show: all(notStarter, has("pricing")) },
   { id: "index", section: "Vendors", label: "index.tab", hash: "vendors-index", show: notStarter },
   { id: "dead", section: "Vendors", label: "dead.tab", hash: "vendors-dead", show: notStarter },
   // Reports
-  { id: "review", section: "Reports", label: "cadence.reviewTab", hash: "reports-review", show: has("cost") },
+  { id: "review-pack", section: "Reports", label: "cadence.reviewTab", hash: "reports-review", show: has("cost") },
   { id: "roi", section: "Reports", label: "cadence.roiTab", hash: "reports-roi", show: has("cost") },
   { id: "roi-findings", section: "Reports", label: "cadence.findings", hash: "reports-roi-findings", show: has("cost") },
   { id: "roi-runs", section: "Reports", label: "cadence.runs", hash: "reports-roi-runs", show: has("cost") },

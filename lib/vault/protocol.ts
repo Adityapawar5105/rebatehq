@@ -183,6 +183,7 @@ export type Commands = {
   search: { text: string };
   priceCheck: { productId: string; customerId: string | null; quantity: string };
   quoteCreate: { customerId: string }; quoteLines: { id: string; lines: LineInput[] }; quoteSubmit: { id: string; reason: string | null }; quoteWithdraw: { id: string };
+  vaultReset: Record<string, never>; passphraseChange: { current: string; next: string };
   quoteDecide: { id: string; decision: "approve" | "reject"; note: string | null }; quoteGet: { id: string }; quoteList: { pendingOnly?: boolean };
   quoteGuidance: { id: string }; quoteCrossSell: { id: string }; relayLocal: Record<string, never>;
   quoteOutcome: { id: string; input: import("../quotes/winloss").OutcomeInput }; winLoss: import("../quotes/winloss").ReportInput; auditPack: { locale: import("../i18n/core").Locale };
@@ -265,7 +266,7 @@ export type Results = {
   capacityUpgrade: VaultStatus;
   licenceSet: VaultStatus;
   search: SearchHit[];
-  priceCheck: PricePoint; quoteCreate: QuoteView; quoteLines: QuoteView; quoteSubmit: QuoteView; quoteWithdraw: QuoteView; quoteDecide: QuoteView; quoteGet: QuoteView; quoteList: QuoteSummary[]; quoteShare: QuoteView; quoteRelaySync: QuoteView;
+  priceCheck: PricePoint; quoteCreate: QuoteView; quoteLines: QuoteView; quoteSubmit: QuoteView; quoteWithdraw: QuoteView; vaultReset: VaultStatus; passphraseChange: VaultStatus; quoteDecide: QuoteView; quoteGet: QuoteView; quoteList: QuoteSummary[]; quoteShare: QuoteView; quoteRelaySync: QuoteView;
   home: HomeData; checklist: Checklist; checklistMark: Checklist; roleList: RoleList; roleSet: RoleList; roleRemove: RoleList; rolePreview: RoleList;
   cleanupScan: Scan; cleanupHistory: FixView[]; cleanupApply: CleanupApplied; cleanupUndo: CleanupUndone; cleanupMergeAll: CleanupMergedAll; cleanupUndoMany: CleanupUndone;
   costBasis: CostBasisView; costBasisSet: CostBasisView;
@@ -303,7 +304,7 @@ export type Action = keyof Commands;
 export type Request = { [K in Action]: { id: string; action: K; data: Commands[K] } }[Action];
 export type Response = { [K in Action]: { id: string; action: K; result: Results[K] } }[Action]
   | { id: string; error: { code: string; message: string } }
-  | { event: "progress"; stage: string; done: string; total: string }
+  | { event: "progress"; stage: string; done: string; total: string; /** Audit B-12: "save" offers no Cancel; "sim" and "check" label their Cancel. */ kind?: import("../studio/studio").ProgressKind }
   | { event: "locked"; reason: string }
   /** Sent LOCK_WARNING_MS before the idle lock (audit B-8): the page offers "Stay unlocked". */
   | { event: "locking" }

@@ -24,7 +24,7 @@ const walk = (dir: string): string[] => readdirSync(dir).flatMap(n => { const p 
  */
 const UI_FILES = [...walk("components"), ...walk("app")].map(f => f.split(path.sep).join("/"))
   .filter(f => f.endsWith(".tsx") && !f.startsWith("app/legacy/") && !f.startsWith("app/dashboard/") && !f.startsWith("app/lab/spike/") && !f.startsWith("app/api/"))
-  .filter(f => !["components/GlobalSearch.tsx", "components/DeleteTenantForm.tsx"].includes(f));
+  .filter(f => !["components/GlobalSearch.tsx"].includes(f));
 /** Text that is not translated on purpose: product and format names, sample form defaults, CSS values. */
 const ALLOWED = new Map<string, string>([
   ["UTF-8", "encoding name"], ["UTF-16 LE", "encoding name"], ["UTF-16 BE", "encoding name"], ["csv", "file format name"], ["xlsx", "file format name"],

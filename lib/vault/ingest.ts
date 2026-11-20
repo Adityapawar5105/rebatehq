@@ -9,7 +9,8 @@ import { CSV_FIELDS, sqlText } from "../spike/exact";
 import { nativeInsertSql } from "../spike/imports";
 import { appendAudit } from "./audit";
 import { msg, tierRef } from "../i18n/core";
-export type Progress = (stage: string, done: string, total: string) => void;
+import type { ProgressKind } from "../studio/studio";
+export type Progress = (stage: string, done: string, total: string, kind?: ProgressKind) => void;
 export function estimateImport(file: Pick<File, "name" | "size">, tier: Tier): ImportEstimate {
   if (!/\.csv$/i.test(file.name) || file.name.length > 200 || file.size < 1 || file.size > MAX_CSV_BYTES) throw new VaultError("FILE", msg("ingest.chooseANonEmpty"));
   return { bytes: String(file.size), estimatedMemoryBytes: String(file.size * 6), maxLines: String(CAPS[tier].lines), maxProducts: String(CAPS[tier].products), warning: msg("ingest.estimatedAdditionalMemoryIs") };

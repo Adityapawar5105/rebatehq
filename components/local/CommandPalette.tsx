@@ -22,7 +22,9 @@ import styles from "./vault.module.css";
 
 type Group = "screen" | "tab" | "command" | "product" | "customer";
 type Item = { id: string; group: Group; label: string; detail?: string; run: () => void };
-type Row = Item & { heading?: "recent" | "suggested" };
+type Row = Item & { heading?: "recent" | "suggested" | Group };
+// Typed results are grouped in this order, each under its own heading (20 Nov 2026).
+const GROUP_ORDER: readonly Group[] = ["screen", "tab", "command", "product", "customer"];
 const THEME_KEY = { system: "prefs.theme.system", light: "prefs.theme.light", dark: "prefs.theme.dark", contrast: "prefs.theme.contrast" } as const;
 export const MARGIN_FILTER_EVENT = "rebatehq-margin-filter";
 export const OPEN_PALETTE_EVENT = "rebatehq-open-palette";
@@ -94,7 +96,10 @@ export function CommandPalette({ client, caps, tier, sections, go, commands, sto
     } });
     const track = (i: Item, hit?: SearchHit): Item => ({ ...i, run: () => { remember(i.id, hit); i.run(); } });
     const q = query.trim().toLocaleLowerCase();
-    if (q) return [...list.filter(i => matches(i.group === "tab" ? `${i.label} ${i.detail}` : i.label, q)).map(i => track(i)), ...hits.map(h => track(lookup(h), h))];
+    if (q) {
+      const found = [...list.filter(i => matches(i.group === "tab" ? `${i.label} ${i.detail}` : i.label, q)).map(i => track(i)), ...hits.map(h => track(lookup(h), h))];
+      return GROUP_ORDER.flatMap(g => found.filter(i => i.group === g).map((i, n): Row => n === 0 ? { ...i, heading: g } : i));
+    }
     // Nothing typed: what you opened recently, then the first four key actions you have.
     const byId = new Map(list.map(i => [i.id, i]));
     const recentRows = recent.flatMap(id => { const hit = recentHits.current.get(id), item = hit ? lookup(hit) : byId.get(id); return item ? [track(item, hit)] : []; });
@@ -102,6 +107,9 @@ export function CommandPalette({ client, caps, tier, sections, go, commands, sto
     return [...recentRows.map((r, i): Row => i === 0 ? { ...r, heading: "recent" } : r), ...suggested.map((r, i): Row => i === 0 ? { ...r, heading: "suggested" } : r)];
   }, [sections, commands.lock, commands.save, query, hits, caps, tier, recent]);
   useEffect(() => { setActive(a => Math.min(a, Math.max(0, items.length - 1))); }, [items.length]);
+  // Keep the highlighted row visible while moving with the arrow keys (20 Nov 2026).
+  useEffect(() => { if (open) document.getElementById(`palette-${active}`)?.scrollIntoView({ block: "nearest" }); }, [active, open]);
+  const GROUP_HEADING: Record<Group, string> = { screen: t("palette.heading.screens"), tab: t("palette.heading.tabs"), command: t("palette.heading.commands"), product: t("palette.heading.products"), customer: t("palette.heading.customers") };
   const GROUP = { screen: t("palette.group.screens"), tab: t("palette.group.tabs"), command: t("palette.group.commands"), product: t("palette.group.products"), customer: t("palette.group.customers") };
   const empty = !query.trim();
   return <dialog ref={dialog} className={styles.palette} aria-labelledby="palette-title" onClose={() => setOpen(false)} onCancel={() => setOpen(false)} data-testid="command-palette">
@@ -117,7 +125,7 @@ export function CommandPalette({ client, caps, tier, sections, go, commands, sto
     <ul id="palette-list" role="listbox" aria-label={t("palette.results")} className={styles.paletteList}>
       {items.map((item, i) => [
         item.heading && <li key={"h:" + item.heading} role="presentation" className={styles.paletteHeading} data-testid={`palette-${item.heading}`}>
-          {t(item.heading === "recent" ? "palette.recent" : "palette.suggested")}
+          {item.heading === "recent" ? t("palette.recent") : item.heading === "suggested" ? t("palette.suggested") : GROUP_HEADING[item.heading]}
           {item.heading === "recent" && <button type="button" className={styles.paletteClear} onClick={clearRecent}>{t("palette.clearRecent")}</button>}
         </li>,
         <li key={item.id} id={`palette-${i}`} role="option" aria-selected={i === active} className={i === active ? styles.paletteActive : undefined} onMouseEnter={() => setActive(i)} onClick={() => item.run()}>

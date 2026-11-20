@@ -26,7 +26,8 @@ export type SimKind = typeof SIM_KINDS[number];
 export type SimScope = typeof SIM_SCOPES[number];
 export type SimChange = { kind: SimKind; scope: SimScope; value: string; pct: string };
 export type SimInput = { from: string; to: string; changes: SimChange[] };
-export type Progress = (stage: string, done: string, total: string) => void;
+import type { ProgressKind } from "../studio/studio";
+export type Progress = (stage: string, done: string, total: string, kind?: ProgressKind) => void;
 /** Most specific first: a product change beats a customer change, which beats a category change, which beats "all". */
 const PRECEDENCE: SimScope[] = ["product", "customer", "category", "all"];
 const COLUMN: Record<Exclude<SimScope, "all">, string> = { product: "l.product_id", customer: "l.customer_id", category: "coalesce(p.category, '')" };
@@ -98,7 +99,7 @@ export async function simulate(e: Engine, input: unknown, signal: AbortSignal, p
   try {
     for (let i = 0; i < s.months.length; i++) {
       if (signal.aborted) throw new VaultError("CANCELLED", msg("sim.cancelled"));
-      progress(msg("sim.progress", { month: s.months[i] }), String(i), String(s.months.length));
+      progress(msg("sim.progress", { month: s.months[i] }), String(i), String(s.months.length), "sim");
       const m = `DATE ${Q(s.months[i] + "-01")}`;
       await e.conn.query(`INSERT INTO ${SIM_TABLE}
 WITH x AS (SELECT l.product_id, l.customer_id, l.list_cents, l.discount_cents, l.rebate_cents, l.freight_cents, l.cost_cents, ${pb} AS pb, ${cb} AS cb
@@ -112,7 +113,7 @@ SELECT product_id, customer_id, ${m}, count(*), count(*) FILTER (WHERE pb <> 0 O
 FROM y GROUP BY product_id, customer_id`);
     }
     if (signal.aborted) throw new VaultError("CANCELLED", msg("sim.cancelled"));
-    progress(msg("sim.progress", { month: s.to }), String(s.months.length), String(s.months.length));
+    progress(msg("sim.progress", { month: s.to }), String(s.months.length), String(s.months.length), "sim");
     done = true;
   } finally { if (!done) await e.conn.query(`DROP TABLE IF EXISTS ${SIM_TABLE}`).catch(() => undefined); }
   return { from: s.from, to: s.to, months: String(s.months.length), changes: s.changes.map(c => ({ kind: c.kind, scope: c.scope, value: c.value, bp: String(c.bp) })), ...(await simTotals(e)), ms: String(Date.now() - t0) };

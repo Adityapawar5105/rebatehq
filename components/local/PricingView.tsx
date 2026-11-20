@@ -1,6 +1,6 @@
 "use client";
 import {PriceGrid,LandedCheck,WhatIfSlider,ScopeText} from './PricingTools';
-import {SectionTabs} from "@/components/ui/ui";
+import {Badge,Notice,SectionTabs} from "@/components/ui/ui";
 import {PricingOperations,type OpsTab} from "./PricingOps";
 
 import { useEffect,useState } from 'react';
@@ -47,11 +47,11 @@ function PricingRulesView({client,userId,caps,busy,operation,refresh,initialPrev
   {id:'after',name:t("pricing.after"),type:'money',value:r=>r.after},
   {id:'cost',name:t("pricing.cost"),type:'money',value:r=>r.cost},
   {id:'after_margin',name:t("pricing.unitMarginBeforeAfter"),type:'money',value:r=>r.afterMargin,cell:r=><>{money(r.beforeMargin)} / {money(r.afterMargin)}</>},
-  {id:'guard',name:t("pricing.guardrail"),value:r=>r.guard,label:v=>GUARD_TEXT()[v as keyof ReturnType<typeof GUARD_TEXT>]??v,cell:r=><span style={{color:r.guard==='red'?'var(--bad-text)':r.guard==='yellow'?'var(--warn-text)':r.guard==='green'?'var(--ok-text)':undefined}}>{GUARD_TEXT()[r.guard as keyof ReturnType<typeof GUARD_TEXT>]}</span>},
+  {id:'guard',name:t("pricing.guardrail"),value:r=>r.guard,label:v=>GUARD_TEXT()[v as keyof ReturnType<typeof GUARD_TEXT>]??v,cell:r=>{const tone=r.guard==='red'?'bad':r.guard==='yellow'?'warn':r.guard==='green'?'ok':null,text=GUARD_TEXT()[r.guard as keyof ReturnType<typeof GUARD_TEXT>];return tone?<Badge tone={tone}>{text}</Badge>:<span>{text}</span>;}},
  ]}/>
  <button disabled={busy||p.offset===0} onClick={()=>run(async()=>setP(await client.call('rulePreview',{id:p.id,offset:p.offset-50,grid:pq})))}>{t("pricing.previous50")}</button><button disabled={busy||p.offset+50>=Number(p.grid?.matched??p.count)} onClick={()=>run(async()=>setP(await client.call('rulePreview',{id:p.id,offset:p.offset+50,grid:pq})))}>{t("pricing.next50")}</button>
  {p.status==='preview'&&<button className={styles.primary} disabled={busy||state?.owner?.id!==userId||p.red!=='0'} onClick={()=>run(async()=>{const r=await client.call('ruleApprove',{id:p.id});setP(r.preview);setNote(msg(r.backup.error?"pricing.approvedAndSavedBackup":"pricing.approvedVersionedAndSaved"));})}>{t("pricing.approveAsPricingOwner")}</button>}
- {p.status!=='preview'&&<><h3>{t("pricing.exportStudio")}</h3><label>{t("pricing.erpExportLayout")}<select value={profile} onChange={e=>setProfile(e.target.value as ErpProfile)}>{PROFILE_IDS.map(id=><option key={id} value={id}>{say(PROFILES[id].label)}</option>)}</select></label><p>{t("pricing.everyLayoutIsUnverified")}</p><label>{t("pricing.exportFormat")}<select value={format} onChange={e=>setFormat(e.target.value as 'csv'|'xlsx')}><option>csv</option><option>xlsx</option></select></label><button className={styles.primary} disabled={busy} onClick={()=>run(async()=>{const r=await client.call('priceExport',{id:p.id,profile,format});download(r.name,r.blob);download(r.logName,r.log);setNote(r.warning);setP(await client.call('rulePreview',{id:p.id}));})}>{t("pricing.exportPricesAndChange")}</button></>}
+ {p.status!=='preview'&&<><h3>{t("pricing.exportStudio")}</h3><label>{t("pricing.erpExportLayout")}<select value={profile} onChange={e=>setProfile(e.target.value as ErpProfile)}>{PROFILE_IDS.map(id=><option key={id} value={id}>{say(PROFILES[id].label)}</option>)}</select></label><Notice tone="warn">{t("pricing.everyLayoutIsUnverified")}</Notice><label>{t("pricing.exportFormat")}<select value={format} onChange={e=>setFormat(e.target.value as 'csv'|'xlsx')}><option>csv</option><option>xlsx</option></select></label><button className={styles.primary} disabled={busy} onClick={()=>run(async()=>{const r=await client.call('priceExport',{id:p.id,profile,format});download(r.name,r.blob);download(r.logName,r.log);setNote(r.warning);setP(await client.call('rulePreview',{id:p.id}));})}>{t("pricing.exportPricesAndChange")}</button></>}
  </section>}
  {caps.includes('pricing')&&<section className={styles.card}><h2>{t("pricing.runHistory")}</h2>{!state?.runs.length?<p>{t("pricing.noSimulationsYet")}</p>:state.runs.map(r=><p key={r.id}>{fmt.date(r.run_date.slice(0,10))}{" "}{t("pricing.pairs", { count: Number(r.affected), status: runStatus(r.status) })}{" "}<button disabled={busy} onClick={()=>run(async()=>setP(await client.call('rulePreview',{id:r.id})))}>{t("pricing.reviewRun")}</button></p>)}</section>}</>;
 }

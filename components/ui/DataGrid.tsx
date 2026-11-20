@@ -96,7 +96,9 @@ export function DataGrid<R>({ label, columns, rows, rowKey, remote, footer, sele
   const visibleKeys = useMemo(() => visible.map(rowKey), [visible, rowKey]);
   useEffect(() => { setPicked(p => { const keep = new Set([...p].filter(k => visibleKeys.includes(k))); return keep.size === p.size ? p : keep; }); }, [visibleKeys]);
   const queryKey = JSON.stringify({ sort: query.sort ?? null, filters: query.filters ?? [] });
-  useEffect(() => { setAll(false); setPicked(new Set()); }, [queryKey]);
+  // Only a filter change clears the selection; sorting keeps it (UI handoff 1.3), so ticked Leak Report findings survive a sort.
+  const filterKey = JSON.stringify(query.filters ?? []);
+  useEffect(() => { setAll(false); setPicked(new Set()); }, [filterKey]);
   const count = all ? Number(matched) : picked.size;
   const toggle = (i: number, shift: boolean) => {
     setAll(false);
@@ -145,14 +147,18 @@ export function DataGrid<R>({ label, columns, rows, rowKey, remote, footer, sele
   }, [selKey, queryKey, visible, numeric, totalsFn]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [openCol, setOpenCol] = useState<string | null>(null);
+  const [moreOpen, setMoreOpen] = useState(false);
   const cols = (selectable ? 1 : 0) + columns.length;
   const statusId = useId();
   return <div className={s.gridBox} data-testid={testId}>
-    {(filtered || count > 0) && <div className={s.gridBar}>
+    {/* Always rendered at a fixed height, so the first tick never pushes the table down (UI handoff 1.1). */}
+    <div className={s.gridBar}>
+      {/* The row count is always shown; the "N of M" form (grid-count) only while a filter is on (20 Nov 2026). */}
+      {!filtered && <span data-testid="grid-rows">{t("grid.rowsTotal", { count: Number(total) })}</span>}
       {filtered && <span data-testid="grid-count">{t("grid.rowsShown", { shown: fmt.int(matched), total: fmt.int(total) })}</span>}
       {filtered && <button type="button" className={s.chip} onClick={() => setQuery({ ...query, filters: [] })}>{t("grid.clearFilters")}</button>}
       {count > 0 && <button type="button" className={s.chip} onClick={() => { setAll(false); setPicked(new Set()); }}>{t("grid.clearSelection")}</button>}
-    </div>}
+    </div>
     <div className={cx(s.tableWrap, tall && s.tall, className)} role="region" aria-label={label} tabIndex={0}>
       <table className={s.table} aria-label={label} aria-describedby={count ? statusId : undefined}>
         {caption && <caption>{caption}</caption>}
@@ -166,7 +172,8 @@ export function DataGrid<R>({ label, columns, rows, rowKey, remote, footer, sele
             {selectable && <td className={s.selCol}><input type="checkbox" aria-label={t("grid.selectRow", { row: i + 1 })} checked={on} onChange={() => undefined} onClick={e => toggle(i, e.shiftKey)} data-testid="grid-select"/></td>}
             {columns.map(c => <td key={c.id} className={cx(c.num && s.num, c.className)}>{c.cell ? c.cell(r) : c.value ? cellText(c.type ?? "text", c.value(r)) : null}</td>)}
           </tr>; })}
-          {!visible.length && <tr><td colSpan={cols} className={s.gridEmpty}>{t("grid.noMatches")}</td></tr>}
+          {/* An empty table and a table filtered to nothing say different things; the filtered one offers to clear. */}
+          {!visible.length && <tr><td colSpan={cols} className={s.gridEmpty} data-testid={filtered ? "grid-no-matches" : "grid-empty"}>{filtered ? <>{t("grid.noMatches")}{" "}<button type="button" className={s.chip} onClick={() => setQuery({ ...query, filters: [] })}>{t("grid.clearFilters")}</button></> : t("grid.noRows")}</td></tr>}
         </tbody>
         {footer && <tfoot>{footer}</tfoot>}
       </table>
@@ -175,10 +182,17 @@ export function DataGrid<R>({ label, columns, rows, rowKey, remote, footer, sele
       {count > 0 && <>
         <strong>{t("grid.selected", { count })}</strong>
         {totalsError && <span>{t("grid.totalsFailed")}</span>}
+        {/* Compact (UI handoff 1.2): the sum of each numeric column on one line; average, min, max and count under "More totals". */}
         {totals && numeric.map(c => { const v = totals[c.id]; if (!v) return null; const f = (x: string | null) => x === null ? t("common.unknown") : showValue(c.type, x);
           return <span key={c.id} className={s.gridTotal} data-testid={`grid-total-${c.id}`} data-sum={v.sum} data-count={v.count}>
-            {t("grid.totalsFor", { name: c.name, sum: f(v.sum), avg: f(v.avg), min: f(v.min), max: f(v.max), count: fmt.int(v.count) })}
+            {t("grid.totalsShort", { name: c.name, sum: f(v.sum) })}
           </span>; })}
+        {/* The table is rendered only while open: no hidden rows inside the grid (they confused row counts). */}
+        {totals && <details className={s.gridMore} data-testid="grid-more-totals" onToggle={e => setMoreOpen((e.currentTarget as HTMLDetailsElement).open)}><summary>{t("grid.moreTotals")}</summary>
+          {moreOpen && <table className={s.gridMoreTable} aria-label={t("grid.totalsTable")}><thead><tr><th scope="col">{t("grid.col.column")}</th><th scope="col">{t("grid.col.sum")}</th><th scope="col">{t("grid.col.avg")}</th><th scope="col">{t("grid.col.min")}</th><th scope="col">{t("grid.col.max")}</th><th scope="col">{t("grid.col.count")}</th></tr></thead>
+          <tbody>{numeric.map(c => { const v = totals[c.id]; if (!v) return null; const f = (x: string | null) => x === null ? t("common.unknown") : showValue(c.type, x);
+            return <tr key={c.id}><th scope="row">{c.name}</th><td>{f(v.sum)}</td><td>{f(v.avg)}</td><td>{f(v.min)}</td><td>{f(v.max)}</td><td>{fmt.int(v.count)}</td></tr>; })}</tbody></table>}
+        </details>}
       </>}
     </div>
   </div>;

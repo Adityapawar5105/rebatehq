@@ -153,7 +153,7 @@ export function ImportStudio({ client, status, caps = [], busy, operation, onSta
         {Number(r.issueCount) > r.issues.length && <p className={styles.small}>{t("studio.showingTheFirstAll", { count: r.issues.length })}</p>}
       </details>)}
       {(report.rejected !== "0" || report.rebateTerms) && report.loaded !== "0" && <label className={styles.row}><input type="checkbox" data-testid="studio-ack" style={{ width: "auto" }} checked={ack} onChange={event => setAck(event.target.checked)}/>{" "}<span>{report.rejected!=="0"&&<span>{t("studio.ackRejected", { loaded: fmt.int(report.loaded), rejected: fmt.int(report.rejected) })} </span>}{report.rebateTerms&&<span>{t("rebate.confirm")}</span>}</span></label>}
-      {report.loaded === "0" && <p role="alert" className={styles.error}>{t("studio.noValidRowsTo")}</p>}
+      {report.loaded === "0" && <Notice tone="bad" role="alert">{t("studio.noValidRowsTo")}</Notice>}
       <button className={styles.primary} disabled={busy || !canCommit || status.dirty} onClick={() => void operation(async () => {
         const out = await client.call("studioCommit", { acknowledge: ack }); onStatus(out.status); setStudio(out.studio); setAck(false); setOpen(null); await refreshSources(); bump();
         setAfter({ loaded: out.result.loaded, rejected: out.result.rejected }); window.scrollTo({ top: 0 });
@@ -333,7 +333,7 @@ function Reconciliation({ client, busy, operation, onStatus, setMessage, version
   return <section className={styles.card} aria-labelledby="recon-heading">
     <h2 id="recon-heading">{t("studio.reconciliation")}</h2>
     {recon.reconciled ? <p role="status" data-testid="recon-ok">{t("studio.reconciled", { invoices: fmt.int(recon.invoices), months: fmt.int(recon.customerMonths) })}{recon.accepted !== "0" ? " " + t("studio.acceptedDifferenceSAre", { count: Number(recon.accepted) }) : ""}</p>
-      : <><p className={styles.warning}>{t("studio.differenceSBetweenThe", { count: recon.open.length })}</p>
+      : <><Notice tone="warn">{t("studio.differenceSBetweenThe", { count: recon.open.length })}</Notice>
         <DataGrid label={t("studio.reconciliationDifferences")} testId="recon-open" rows={recon.open} rowKey={i => i.id} columns={[
           { id: "level", name: t("studio.level"), value: i => t(RECON_LEVEL[i.level]) },
           { id: "difference", name: t("studio.difference"), value: i => say(i.message), cell: i => <span className={styles.wrap}>{say(i.message)}</span> },

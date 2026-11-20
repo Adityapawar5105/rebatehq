@@ -21,6 +21,11 @@ test("every tab hash opens a tab its view knows, under the view's own label", ()
   }
 });
 
+test("sub-tab ids are unique across sections (20 Nov 2026)", () => {
+  const ids = SUBTABS.map(s => s.id);
+  assert.deepEqual(ids.filter((id, i) => ids.indexOf(id) !== i), []);
+});
+
 test("every section anchor is a real heading id", () => {
   for (const s of SUBTABS.filter(x => x.anchor)) {
     assert.ok(s.label in en, `${s.anchor}: unknown label ${s.label}`);
