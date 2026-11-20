@@ -39,7 +39,6 @@ export const frCA: Partial<Catalog> = {
   "api.invite.inviteEmailDeliveryIs": "L'envoi des invitations par courriel n'est pas encore configuré.",
   "api.invite.thisEmailIsAlready": "Ce courriel appartient déjà à un membre de l'espace de travail.",
   "api.invite.anActiveInvitationAlready": "Une invitation active existe déjà pour ce courriel.",
-  "studio.dropTheFilesYou": "Déposez les fichiers dont vous disposez : historique des ventes, fichier articles, liste des clients, grilles de coûts fournisseurs, listes de prix ou contrats de ristourne. Ils sont convertis en CSV propre dans ce navigateur et chargés dans votre coffre-fort chiffré. Rien n'est téléversé.",
   "studio.filesAdded": { one: "{count} fichier ajouté pour examen. Rien n'est téléversé.", other: "{count} fichiers ajoutés pour examen. Rien n'est téléversé." },
   "shell.report.body": "Un PDF de votre cascade et des principales fuites avec leurs lignes justificatives, généré sur cet appareil. Rien n'est téléversé; chaque export est consigné dans le journal d'audit.",
   "report.rebatehqMarginLeakReport2": "RebateHQ - Rapport des fuites de marge - généré sur cet appareil; rien n'a été téléversé",

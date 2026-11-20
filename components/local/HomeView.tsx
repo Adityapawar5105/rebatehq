@@ -8,20 +8,22 @@ import { Badge, Button, ButtonLink, Card, Field, Grid, Notice, Skeleton, StatTil
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { Term } from "./Glossary";
 import {HomeMonitor} from './HomeMonitor';
+import { scrollToHeading } from "./scroll";
+import type { SampleState } from "@/lib/studio/playground";
 import styles from "./vault.module.css";
 import hs from "./home.module.css";
 import ui from "@/components/ui/ui.module.css";
 const money = (cents: string) => fmt.currency(cents);
 
 /** One row in the Home work list: a link to the screen where the work is done. Never cost or margin. */
-type WorkItem = { id: string; icon: IconName; title: string; subtitle: string; badge: string; tone: Tone; href: string; at: string | null };
+type WorkItem = { id: string; icon: IconName; title: string; subtitle: string; badge: string; tone: Tone; href: string; at: string | null; /** Heading to scroll to once the section opens. */ anchor?: string };
 type Run = { id: string; rule: string; affected: string; at: string };
 const isToday = (at: string | null) => !!at && new Date(at).toDateString() === new Date().toDateString();
 const newest = (a: WorkItem, b: WorkItem) => (b.at ?? "").localeCompare(a.at ?? "");
 
 /** "Your drafts" and "Action required", built only from reads the role already has: quotes, price previews and the Home counts. */
 function workLists(home: HomeData, quotes: QuoteSummary[], runs: Run[], userId: string, approver: boolean) {
-  const has = (c: string) => home.access.caps.some(x => x === c), drafts: WorkItem[] = [], action: WorkItem[] = [];
+  const has = (c: string) => home.access.caps.some(x => x === c), opens = (s: string) => home.access.sections.includes(s), drafts: WorkItem[] = [], action: WorkItem[] = [];
   const quote = (q: QuoteSummary, badge: string, tone: Tone): WorkItem => ({ id: "quote:" + q.id, icon: "quote", title: t("home.work.quote", { number: q.number }), subtitle: q.customerName || q.customerId, badge, tone, href: "#quotes-open-" + encodeURIComponent(q.id), at: q.updatedAt });
   for (const q of quotes) {
     const mine = q.createdBy === userId;
@@ -30,11 +32,14 @@ function workLists(home: HomeData, quotes: QuoteSummary[], runs: Run[], userId: 
     else if (mine && q.status === "pending") action.push(quote(q, t("home.badge.awaiting"), "info")); // the author's own exception, until someone decides or they withdraw it
     else if (!mine && q.status === "pending" && has("quoteApprove")) action.push(quote(q, t("home.badge.toApprove"), "warn"));
   }
-  for (const r of runs) action.push({ id: "run:" + r.id, icon: "tag", title: r.rule ? t("home.work.preview", { rule: r.rule }) : t("home.work.previewUnnamed"), subtitle: t("home.work.previewRows", { count: Number(r.affected) }), // Only the named Pricing Owner approves price changes; everyone else sees that the preview is waiting on them.
+  // A row is listed only when this role can open the screen it links to (20 Nov 2026), so a click never lands back on Home.
+  if (opens("Pricing")) for (const r of runs) action.push({ id: "run:" + r.id, icon: "tag", title: r.rule ? t("home.work.preview", { rule: r.rule }) : t("home.work.previewUnnamed"), subtitle: t("home.work.previewRows", { count: Number(r.affected) }), // Only the named Pricing Owner approves price changes; everyone else sees that the preview is waiting on them.
     badge: t(approver ? "home.badge.toApprove" : "home.badge.awaiting"), tone: approver ? "warn" : "info", href: "#pricing-rules", at: r.at || null });
-  if (home.openFixLater && home.openFixLater !== "0") action.push({ id: "fix", icon: "inbox", title: t("home.rejectedRowsInFix"), subtitle: t("home.work.rows", { count: Number(home.openFixLater) }), badge: t("home.badge.toFix"), tone: "warn", href: "#data-hub", at: null });
-  if (home.openRecon && home.openRecon !== "0") action.push({ id: "recon", icon: "report", title: t("home.openReconciliationDifferences"), subtitle: t("home.work.open", { count: Number(home.openRecon) }), badge: t("home.badge.review"), tone: "info", href: "#data-hub", at: null });
-  if (home.margin && home.margin.uncostedLines !== "0") action.push({ id: "uncosted", icon: "alert", title: t("home.linesWithoutCost"), subtitle: t("home.work.rows", { count: Number(home.margin.uncostedLines) }), badge: t("home.badge.toFix"), tone: "warn", href: "#data-hub", at: null });
+  if (opens("Data Hub")) {
+    if (home.openFixLater && home.openFixLater !== "0") action.push({ id: "fix", icon: "inbox", title: t("home.rejectedRowsInFix"), subtitle: t("home.work.rows", { count: Number(home.openFixLater) }), badge: t("home.badge.toFix"), tone: "warn", href: "#data-hub", anchor: "fix-heading", at: null });
+    if (home.openRecon && home.openRecon !== "0") action.push({ id: "recon", icon: "report", title: t("home.openReconciliationDifferences"), subtitle: t("home.work.open", { count: Number(home.openRecon) }), badge: t("home.badge.review"), tone: "info", href: "#data-hub", anchor: "recon-heading", at: null });
+    if (home.margin && home.margin.uncostedLines !== "0") action.push({ id: "uncosted", icon: "alert", title: t("home.linesWithoutCost"), subtitle: t("home.work.rows", { count: Number(home.margin.uncostedLines) }), badge: t("home.badge.toFix"), tone: "warn", href: "#data-hub", anchor: "basis-heading", at: null });
+  }
   return { drafts: drafts.sort(newest), action: action.sort(newest) };
 }
 
@@ -45,7 +50,7 @@ function WorkTabs({ drafts, action }: { drafts: WorkItem[]; action: WorkItem[] }
   const tabs = [{ id: "drafts" as const, label: t("home.tab.drafts"), items: drafts }, { id: "action" as const, label: t("home.tab.action"), items: action }];
   const keys = (e: KeyboardEvent<HTMLButtonElement>, i: number) => { if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return; e.preventDefault(); const next = (i + 1) % tabs.length; setTab(tabs[next].id); refs.current[next]?.focus(); };
   const items = tabs.find(x => x.id === tab)!.items, today = items.filter(i => isToday(i.at)), earlier = items.filter(i => !isToday(i.at));
-  const list = (rows: WorkItem[]) => <ul className={hs.list}>{rows.map(i => <li key={i.id}><a href={i.href} className={hs.item} data-testid="home-work-item">
+  const list = (rows: WorkItem[]) => <ul className={hs.list}>{rows.map(i => <li key={i.id}><a href={i.href} className={hs.item} data-testid="home-work-item" onClick={() => { if (i.anchor) scrollToHeading(i.anchor); }}>
     <span className={hs.itemIcon} aria-hidden="true"><Icon name={i.icon}/></span>
     <span className={hs.itemText}><strong translate="no">{i.title}</strong><span translate="no">{i.subtitle}</span></span>
     <Badge tone={i.tone}>{i.badge}</Badge>
@@ -63,6 +68,19 @@ function WorkTabs({ drafts, action }: { drafts: WorkItem[]; action: WorkItem[] }
       {!!earlier.length && <><h3 className={hs.day}>{t(today.length ? "home.work.earlier" : "home.work.recent")}</h3>{list(earlier)}</>}
     </div>
   </section>;
+}
+
+/** First run (20 Nov 2026): while the vault holds no file, two ways to start. The Playground loads here and the cash-leak
+ * card below fills in, so a new owner reaches a leak figure in one click. */
+function StartCard({ busy, onPlayground }: { busy: boolean; onPlayground: () => void }) {
+  return <Card headingId="home-start-heading" title={t("home.start.heading")} data-testid="home-start">
+    <Grid min={260}>
+      <div className={hs.startOption}><h3>{t("home.start.sampleTitle")}</h3><p>{t("home.start.sampleBody")}</p>
+        <Button variant="primary" icon="sparkle" disabled={busy} onClick={onPlayground}>{t("home.start.sampleButton")}</Button></div>
+      <div className={hs.startOption}><h3>{t("home.start.ownTitle")}</h3><p>{t("home.start.ownBody")}</p>
+        <ButtonLink href="#data-hub" icon="upload">{t("home.start.ownButton")}</ButtonLink></div>
+    </Grid>
+  </Card>;
 }
 
 /** "Create new" in the Home header: links to where each kind of work starts, only those the role can do. */
@@ -83,7 +101,7 @@ export function CreateNew({ items }: { items: { href: string; label: string; ico
 /** Home: a greeting (in the page header), the work that is yours or waits on you, the numbers your role may see, and the ROI tracker.
  * The 7-day setup checklist was removed from Home on 14 Nov 2026, and the greeting + work tabs layout replaced the role card
  * on 15 Nov 2026, both at the user's request (blueprint section 22). */
-export function HomeView({ client, userId, version, busy, operation, refresh, onHome }: { client: VaultClient; userId: string; version: string; busy: boolean; operation: (f: () => Promise<void>) => Promise<void>; refresh: () => Promise<void>; onHome?: (home: HomeData) => void }) {
+export function HomeView({ client, userId, version, busy, operation, refresh, onHome, sample }: { client: VaultClient; userId: string; version: string; busy: boolean; operation: (f: () => Promise<void>) => Promise<void>; refresh: () => Promise<void>; onHome?: (home: HomeData) => void; sample?: SampleState }) {
   const [home, setHome] = useState<HomeData | null>(null), [owner, setOwner] = useState(""), [note, setNote] = useState("");
   const [work, setWork] = useState<{ drafts: WorkItem[]; action: WorkItem[] } | null>(null);
   const load = async () => setHome(await client.call("home", {}));
@@ -105,7 +123,7 @@ export function HomeView({ client, userId, version, busy, operation, refresh, on
     return () => { on = false; };
   }, [client, home, userId]);
   if (!home) return <Card aria-busy="true"><p role="status" className={styles.muted}>{say(note) || t("home.loadingYourHome")}</p><Skeleton lines={4}/></Card>;
-  const { access } = home, has = (c: string) => access.caps.some(x => x === c);
+  const { access } = home, has = (c: string) => access.caps.some(x => x === c), dataHub = access.sections.includes("Data Hub");
   return <>
     {access.viewAs && <Notice tone="warn">{t("home.previewingTheViewYou", { roleLabel: access.roleLabel })}</Notice>}
     {!access.assigned && <Notice tone="warn">{t("home.youHaveNoRole")}</Notice>}
@@ -114,23 +132,24 @@ export function HomeView({ client, userId, version, busy, operation, refresh, on
       <Field label={t("home.pricingOwnerName")}><input value={owner} maxLength={160} onChange={e => setOwner(e.target.value)}/></Field>
       <Button variant="primary" disabled={busy || !owner.trim()} onClick={() => void operation(async () => { await client.call("pricingOwner", { name: owner, userId, backupDays: 7 }); setOwner(""); await load(); await refresh(); })}>{t("home.nameMeAsPricing")}</Button>
     </Notice>}
+    {sample === "empty" && has("data") && dataHub && <StartCard busy={busy} onPlayground={() => void operation(async () => { await client.call("playgroundLoad", {}); await refresh(); })}/>}
     {work ? <WorkTabs key={version} drafts={work.drafts} action={work.action}/> : <Card aria-busy="true"><Skeleton lines={3}/></Card>}
+    {has('cost')&&<HomeMonitor client={client} version={version} sample={sample}/>}
     <Card headingId="role-view-heading" title={t("home.whatMattersForYour")} data-testid="role-view">
       <Grid min={190}>
         {home.margin && <>
           <StatTile wide icon="coins" label={<Term id="netPocket">{t("home.netPocket")}</Term>} value={money(home.margin.netPocket)}/>
           <StatTile wide icon="trend" tone="ok" label={<Term id="pocketMargin">{t("home.pocketMargin")}</Term>} value={money(home.margin.margin)} hint={fmt.percent(home.margin.rate)} valueProps={{ "data-testid": "home-margin" }}/>
-          <StatTile icon="alert" tone={home.margin.uncostedLines === "0" ? undefined : "warn"} label={t("home.linesWithoutCost")} value={fmt.int(home.margin.uncostedLines)}/>
+          {!dataHub && <StatTile icon="alert" tone={home.margin.uncostedLines === "0" ? undefined : "warn"} label={t("home.linesWithoutCost")} value={fmt.int(home.margin.uncostedLines)}/>}
         </>}
-        {home.openFixLater !== undefined && <StatTile icon="inbox" tone={home.openFixLater === "0" ? undefined : "warn"} label={t("home.rejectedRowsInFix")} value={fmt.int(home.openFixLater)}/>}
+        {home.openFixLater !== undefined && !dataHub && <StatTile icon="inbox" tone={home.openFixLater === "0" ? undefined : "warn"} label={t("home.rejectedRowsInFix")} value={fmt.int(home.openFixLater)}/>}
         {home.previews !== undefined && <StatTile icon="tag" label={t("home.pricePreviewsAwaitingApproval")} value={fmt.int(home.previews)}/>}
         {home.rules !== undefined && <StatTile icon="sparkle" label={t("home.pricingRules")} value={fmt.int(home.rules)}/>}
-        {home.openRecon !== undefined && <StatTile icon="report" label={t("home.openReconciliationDifferences")} value={fmt.int(home.openRecon)}/>}
+        {home.openRecon !== undefined && !dataHub && <StatTile icon="report" label={t("home.openReconciliationDifferences")} value={fmt.int(home.openRecon)}/>}
         <StatTile icon="shield" label={<Term id="guardrail">{t("home.priceGuardrailsFloorsAnd")}</Term>} value={fmt.int(home.guardrails)}/>
       </Grid>
       {!has("cost") && <p className={styles.muted}>{t("home.costAndMarginAre")}</p>}
     </Card>
-    {has('cost')&&<HomeMonitor client={client} version={version}/>}
     {home.roi && <Card headingId="roi-heading" title={<Term id="roi">{t("home.roiTracker")}</Term>} description={t("home.aRunningTotalOf")} actions={<ButtonLink href="#margin" icon="chart">{t("home.openMargin")}</ButtonLink>}>
       <StatTile icon="coins" tone="ok" label={t("home.leakDollarsFoundSo")} value={money(home.roi.identifiedCents)} valueProps={{ "data-testid": "roi-total" }}
         hint={t(home.roi.since ? "home.acrossFindingsSince" : "home.acrossFindings", { count: Number(home.roi.findings), since: fmt.date(home.roi.since?.slice(0, 10)) })}/>

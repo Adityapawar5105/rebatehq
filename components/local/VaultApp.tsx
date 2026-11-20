@@ -8,7 +8,7 @@ import type { Scope, StorageStatus, Tier, VaultStatus } from "@/lib/vault/protoc
 import { fmt, msg, say, t, useLocale, setWorkspaceCurrency, type MessageKey } from "@/lib/i18n";
 import { Preferences } from "@/components/Preferences";
 import { Icon, type IconName } from "@/components/ui/Icon";
-import { Button, Card, Field, JumpNav, Notice, PageHeader } from "@/components/ui/ui";
+import { Button, ButtonLink, Card, Field, JumpNav, Notice, PageHeader } from "@/components/ui/ui";
 import { GridTotalsProvider } from "@/components/ui/DataGrid";
 import type { GridType } from "@/lib/grid/core";
 import ui from "@/components/ui/ui.module.css";
@@ -175,18 +175,24 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
             </dl>
             {licenceLine}
           </div>
-          {shown === "Home" && client.current && <HomeView client={client.current} userId={scope.userId} version={`${status.lines}|${status.generation}|${access?.role}`} busy={busy} operation={operation} refresh={async () => setStatus(await client.current!.call("status", {}))} onHome={onHome}/>}
+          {/* First-run activation (20 Nov 2026): while the Playground's sample files are loaded, every section says so. */}
+          {(status.sample === "only" || status.sample === "mixed") && <Notice tone="info" data-testid="sample-banner" actions={caps.includes("data") ? <>
+            {status.sample === "only" && visible.includes("Data Hub") && <ButtonLink size="sm" variant="primary" icon="upload" href="#data-hub">{t("shell.sample.import")}</ButtonLink>}
+            <Button size="sm" variant="ghost" disabled={busy} onClick={() => void operation(async () => { const out = await client.current!.call("playgroundRemove", {}); setStatus(out.status); setMessage(msg("studio.removedPlaygroundFilesAnd", { count: Number(out.removed) })); })}>{t("shell.sample.remove")}</Button>
+          </> : undefined}>{t(status.sample === "only" ? "shell.sample.only" : "shell.sample.mixed")}</Notice>}
+          {shown === "Home" && client.current && <HomeView sample={status.sample} client={client.current} userId={scope.userId} version={`${status.lines}|${status.generation}|${access?.role}`} busy={busy} operation={operation} refresh={async () => setStatus(await client.current!.call("status", {}))} onHome={onHome}/>}
           {shown === "Home" && client.current && caps.includes("cost") && status.licence?.tier !== "starter" && <AgentsInbox client={client.current} version={`${status.lines}|${status.generation}`} canPrice={caps.includes("pricing")} busy={busy} operation={operation}/>}
           {shown === "Home" && client.current && caps.includes('collaborate') && status.licence?.tier!=='starter' && <RelayPanel client={client.current} userId={scope.userId} tenantId={scope.tenantId} relayEnabled={relayEnabled} onChange={async()=>setStatus(await client.current!.call('status',{}))}/>}
           {shown === "Data Hub" && client.current && <>
             <JumpNav label={t("shell.onThisPage")} jumpLabel={name => t("shell.jumpTo", { name })} items={[
               { id: "studio-heading", label: t("studio.importStudio"), icon: "upload" }, { id: "fix-heading", label: t("studio.fixLater"), icon: "inbox" },
               { id: "recon-heading", label: t("studio.reconciliation"), icon: "report" }, { id: "health-heading", label: t("studio.dataHealth"), icon: "checkCircle" },
+              ...(status.sample !== "none" ? [{ id: "playground-heading", label: t("studio.playground"), icon: "sparkle" as const }] : []),
               { id: "sources-heading", label: t("studio.importedFiles"), icon: "database" }, { id: "cleanup-heading", label: t("cleanup.itemMasterCleanup"), icon: "sparkle" },
               ...(caps.includes("cost") ? [{ id: "basis-heading", label: t("basis.costBasis"), icon: "coins" as const }] : []),
               ...(caps.includes("data") ? [{ id: "customers-heading", label: t("notes.customers"), icon: "users" as const }, { id: "items-heading", label: t("notes.items"), icon: "tag" as const }] : []),
             ]}/>
-            <ImportStudio client={client.current} status={status} busy={busy} operation={operation} onStatus={setStatus} setMessage={setMessage}/>
+            <ImportStudio client={client.current} status={status} caps={caps} busy={busy} operation={operation} onStatus={setStatus} setMessage={setMessage}/>
             <CleanupView client={client.current} version={`${status.lines}|${status.generation}`} busy={busy} operation={operation} onStatus={setStatus} setMessage={setMessage}/>
             {caps.includes("cost") && <CostBasisView client={client.current} version={`${status.lines}|${status.generation}`} busy={busy} operation={operation} canChoose={caps.includes("data")}/>}
             {caps.includes("data") && <RecordsView client={client.current} version={`${status.lines}|${status.generation}`}/>}
