@@ -2,6 +2,14 @@
 // planted margin leaks. Pure generator (seeded PRNG, integer cents); the manifest's
 // dollar values are exact sums over the generated rows, for the 4D leak finder.
 export const PLAYGROUND_PREFIX = "Playground - ";
+/**
+ * Which files the vault holds (20 Nov 2026, first-run activation): "empty" (no imported file), "only" (only the
+ * Playground's sample files), "mixed" (sample files next to real ones) or "none" (real files only). The screens use
+ * it for the Home start card, the sample-data banner and the "Sample data" badge. It carries no business data.
+ */
+export type SampleState = "empty" | "none" | "only" | "mixed";
+export const sampleState = (sample: number, real: number): SampleState => sample && real ? "mixed" : sample ? "only" : real ? "none" : "empty";
+export const SAMPLE_COUNTS_SQL = `SELECT count(*) FILTER (WHERE starts_with(name, '${PLAYGROUND_PREFIX}'))::VARCHAR AS sample, count(*) FILTER (WHERE NOT starts_with(name, '${PLAYGROUND_PREFIX}'))::VARCHAR AS real FROM source_files`;
 export type PlantedLeak = { id: string; type: "below_floor" | "discount_outlier" | "unrecovered_freight" | "negative_margin" | "below_lower_tier"; description: string; lines: number; cents: string; dollars: string };
 export type PlaygroundManifest = { seed: number; skus: number; customers: number; tiers: number; lines: number; months: string; leaks: PlantedLeak[] };
 const SEED = 20261104, SKUS = 5000, CUSTOMERS = 400, TIERS = 50, LINES = 120_000;

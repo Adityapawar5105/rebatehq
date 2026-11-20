@@ -31,3 +31,7 @@
 .menu a:hover,.menu a:focus-visible{background:var(--surface-2);outline:none}
 .headerActions{display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap}
 @media (max-width:560px){.tab{padding:var(--space-3)}.item{gap:var(--space-3);padding:var(--space-3)}.day{margin-inline:var(--space-3)}.empty{margin-inline:var(--space-3)}}
+/* First-run start card (20 Nov 2026): two equal options that stack on a phone (Grid). */
+.startOption{display:flex;flex-direction:column;align-items:flex-start;gap:var(--space-2);padding:var(--space-4);border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface-2)}
+.startOption h3{margin:0;font-size:var(--fs-md);color:var(--heading)}
+.startOption p{margin:0 0 var(--space-2);color:var(--text-muted)}

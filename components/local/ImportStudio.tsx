@@ -16,7 +16,10 @@ import { fmt, msg, say, t, type MessageKey } from "@/lib/i18n";
 import { Icon } from "@/components/ui/Icon";
 import styles from "./vault.module.css";
 import { DataGrid } from "@/components/ui/DataGrid";
-type Props = { client: VaultClient; status: VaultStatus; busy: boolean; operation: (work: () => Promise<void>) => Promise<void>; onStatus: (status: VaultStatus) => void; setMessage: (message: string) => void };
+import { ButtonLink, Notice, Button as UiButton } from "@/components/ui/ui";
+import type { Cap } from "@/lib/roles/access";
+import { scrollToHeading } from "./scroll";
+type Props = { client: VaultClient; status: VaultStatus; caps?: Cap[]; busy: boolean; operation: (work: () => Promise<void>) => Promise<void>; onStatus: (status: VaultStatus) => void; setMessage: (message: string) => void };
 const ACCEPT = ".csv,.tsv,.txt,.prn,.xlsx,.xlsm,.xls,.xlsb,.ods,.json,.xml,.parquet,.pdf";
 const DELIMITER_LABELS: Record<string, MessageKey> = { ",": "studio.comma", ";": "studio.semicolon", "\t": "studio.tab", "|": "studio.pipe" };
 const directory = { webkitdirectory: "", directory: "" } as Record<string, string>;
@@ -42,7 +45,7 @@ const RECON_LEVEL: Record<ReconSummary["open"][number]["level"], MessageKey> = {
 const PLANTED: Record<string, MessageKey> = { L1: "studio.planted.L1", L2: "studio.planted.L2", L3: "studio.planted.L3", L4: "studio.planted.L4", L5: "studio.planted.L5" };
 const statusText = (f: FileView) => f.loadable ? t("studio.readyToLoad") : f.role && !f.missing.length ? t("studio.convertOnly") : t("studio.needsAttention");
 
-export function ImportStudio({ client, status, busy, operation, onStatus, setMessage }: Props) {
+export function ImportStudio({ client, status, caps = [], busy, operation, onStatus, setMessage }: Props) {
   const [studio, setStudio] = useState<StudioState | null>(null), [sources, setSources] = useState<SourceView[]>([]);
   const [open, setOpen] = useState<string | null>(null), [ack, setAck] = useState(false), [over, setOver] = useState(false);
   const [recipeName, setRecipeName] = useState(""), [removing, setRemoving] = useState<string | null>(null), [losing, setLosing] = useState<{ products: string; customers: string } | null>(null);
@@ -52,11 +55,16 @@ export function ImportStudio({ client, status, busy, operation, onStatus, setMes
     return () => { active = false; };
   }, [client]);
   const refreshSources = async () => setSources(await client.call("sources", {}));
+  // The sample banner can remove the Playground from any screen: re-read the file list when the vault changes.
+  useEffect(() => { void client.call("sources", {}).then(setSources).catch(() => undefined); }, [client, status.generation, status.lines]);
+  // After an import, lead the user to the number (20 Nov 2026).
+  const [after, setAfter] = useState<{ loaded: string; rejected: string } | null>(null);
   const [version, setVersion] = useState(0), bump = () => setVersion(v => v + 1);
   const shared = { client, busy, operation, onStatus, setMessage, version, bump };
   async function add(files: File[], replaces: string | null = null) {
     const supported = files.filter(f => kindOf(f.name)), skipped = files.length - supported.length;
     if (!supported.length) { await operation(async () => { throw new Error(msg("studio.noneOfTheseFiles")); }); return; }
+    setAfter(null);
     await operation(async () => {
       const next = await client.call("studioAdd", { files: supported, replaces });
       setStudio(next); setAck(false); setOpen(next.files.at(-1)?.id ?? null);
@@ -73,6 +81,12 @@ export function ImportStudio({ client, status, busy, operation, onStatus, setMes
   const files = studio?.files ?? [], report = studio?.report ?? null, current = files.find(f => f.id === open) ?? null;
   const canCommit = !!report && report.loaded !== "0" && report.capOk && ((report.rejected === "0" && !report.rebateTerms) || ack);
   return <>
+    {after && <Notice tone="ok" data-testid="after-import" actions={caps.includes("cost") ? <>
+      <ButtonLink size="sm" variant="primary" icon="coins" href="#home">{t("studio.after.seeLeak")}</ButtonLink>
+      <ButtonLink size="sm" variant="ghost" icon="chart" href="#margin">{t("home.openMargin")}</ButtonLink>
+    </> : <UiButton size="sm" onClick={() => scrollToHeading("fix-heading")}>{t("studio.after.reviewFix")}</UiButton>}>
+      {t(after.rejected === "0" ? "studio.after.imported" : "studio.after.importedFix", { loaded: fmt.int(after.loaded), rejected: fmt.int(after.rejected) })}
+    </Notice>}
     <section className={styles.card} aria-labelledby="studio-heading">
       <h2 id="studio-heading">{t("studio.importStudio")}</h2>
       <p>{t("studio.dropTheFilesYou")}</p>
@@ -87,6 +101,8 @@ export function ImportStudio({ client, status, busy, operation, onStatus, setMes
         <p className={styles.muted}>{t("studio.csvTsvTxtXlsx")}</p>
         <p className={styles.muted}>{t("layout.formats")}</p>
       </div>
+      {status.sample === "empty" && !files.length && <p className={styles.small} data-testid="studio-try-playground">{t("studio.noFileHandy")}{" "}
+        <button className={styles.linkish} disabled={busy} onClick={() => void operation(async () => { const out = await client.call("playgroundLoad", {}); onStatus(out.status); await refreshSources(); bump(); setMessage(msg("studio.playgroundLoadedInvoiceLines", { lines: out.manifest.lines, count: out.manifest.leaks.length })); })}>{t("home.start.sampleButton")}</button></p>}
       <FolderReimport client={client} busy={busy} operation={operation} setMessage={setMessage} onAdded={next => { setStudio(next); setAck(false); setOpen(next.files.at(-1)?.id ?? null); }}/>
     </section>
     {files.length > 0 && <section className={styles.card} aria-labelledby="batch-heading">
@@ -140,6 +156,7 @@ export function ImportStudio({ client, status, busy, operation, onStatus, setMes
       {report.loaded === "0" && <p role="alert" className={styles.error}>{t("studio.noValidRowsTo")}</p>}
       <button className={styles.primary} disabled={busy || !canCommit || status.dirty} onClick={() => void operation(async () => {
         const out = await client.call("studioCommit", { acknowledge: ack }); onStatus(out.status); setStudio(out.studio); setAck(false); setOpen(null); await refreshSources(); bump();
+        setAfter({ loaded: out.result.loaded, rejected: out.result.rejected }); window.scrollTo({ top: 0 });
         setMessage(msg("studio.imported", { rows: fmt.int(out.result.loaded), count: Number(out.result.files) }) + (out.result.cleanup ? "" : " " + msg("studio.cleanupHarmless")));
       })}>{t("studio.confirmAndImportLocally")}</button>
     </section>}
@@ -182,8 +199,12 @@ function MappingEditor({ file, busy, patch }: { file: FileView; busy: boolean; p
   useEffect(() => { setConfirmed(file.confirmed); }, [file.confirmed, file.id]);
   const erp = file.erpOptions.find(o => o.id === file.erp);
   const columns = file.headers.map((h, i) => ({ i, label: `${file.columnLabels[i] && !file.fixedLayout ? file.columnLabels[i] + " · " : ""}${h}` }));
+  // Say at a glance what is left before Review can succeed (20 Nov 2026).
+  const required = file.fields.filter(m => m.required), unmatched = required.filter(m => m.source.kind === "none");
   return <div>
     <h3>{t("studio.columnMapping")}</h3>
+    {required.length > 0 && <p className={styles.small} data-testid="studio-mapping-summary" data-unmatched={unmatched.length}>{unmatched.length ? t("studio.mapping.summary", { matched: required.length - unmatched.length, total: required.length }) : t("studio.mapping.allMatched")}
+      {unmatched.length > 0 && <>{" "}{t("studio.mapping.unmatched")}{" "}{unmatched.map(m => <span key={m.field} className={`${styles.pill} ${styles.bad}`} translate="no">{m.field}</span>)}</>}</p>}
     <div className={styles.grid}>
       <label>{t("studio.erpProfile")}<select value={file.erp} disabled={busy} onChange={e => void patch({ erp: e.target.value as ErpProfile })}>{file.erpOptions.map(o => <option key={o.id} value={o.id}>{say(o.label)}</option>)}</select></label>
     </div>

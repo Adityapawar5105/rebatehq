@@ -8,6 +8,7 @@
 // Recent screens and commands are layout preferences and stay in this browser; recent SKUs and
 // customers are vault data, so they live in memory only and are forgotten when the vault locks
 // or the role changes.
+import { scrollToHeading } from "./scroll";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { VaultClient } from "@/lib/vault/client";
 import type { SearchHit, Tier } from "@/lib/vault/protocol";
@@ -33,8 +34,8 @@ const isHit = (id: string) => id.startsWith("product:") || id.startsWith("custom
 function openSubTab(s: SubTab, go: (s: Section) => void) {
   if (s.hash) { if (location.hash === "#" + s.hash) window.dispatchEvent(new HashChangeEvent("hashchange")); else location.hash = s.hash; return; }
   go(s.section);
-  const anchor = s.anchor ?? "", find = (tries: number) => { const el = document.getElementById(anchor); if (el) el.scrollIntoView({ block: "start" }); else if (tries) setTimeout(() => find(tries - 1), 100); };
-  setTimeout(() => find(30), 50);
+  const anchor = s.anchor ?? "";
+  setTimeout(() => scrollToHeading(anchor), 50);
 }
 function readRecent(key: string): string[] {
   try { const v = JSON.parse(localStorage.getItem(key) ?? "[]"); return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && !isHit(x)).slice(0, RECENT_COUNT) : []; } catch { return []; }

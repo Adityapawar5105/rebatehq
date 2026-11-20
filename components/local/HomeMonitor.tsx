@@ -11,6 +11,7 @@ import {basisPointsDecimal} from '@/lib/margin/decimal';
 import {fmt,say,t} from '@/lib/i18n';
 import {Badge,Button,ButtonLink,Card,DataTable,Dialog,EmptyState,Field,Grid,Notice,Skeleton,StatTile,uiStyles as ui} from '@/components/ui/ui';
 import {DataGrid} from '@/components/ui/DataGrid';
+import type {SampleState} from '@/lib/studio/playground';
 type View=Results['homeMonitor'];
 type MathTarget='leak'|CustomerAlert|null;
 const money=(v:string)=>fmt.currency(v);
@@ -24,18 +25,20 @@ function useMonitor(client:VaultClient,version:string,thresholdBp:string,tick:nu
  return {view,error,busy,setError};
 }
 /** Home: the 90-day cash leak and how many customers need attention, with links to the detail. */
-export function HomeMonitor({client,version}:{client:VaultClient;version:string}){
+export function HomeMonitor({client,version,sample}:{client:VaultClient;version:string;sample?:SampleState}){
  const {view,error,busy}=useMonitor(client,version,'500',0),[math,setMath]=useState<MathTarget>(null);
- const flagged=view?view.health.count:'0';
+ const flagged=view?view.health.count:'0',sampled=sample==='only'||sample==='mixed';
+ // Checks run only while the app is open: each Home figure says when it was last checked (20 Nov 2026).
+ const checked=(id:string)=>view&&<p className={ui.cardDesc} data-testid={id}>{t('monitor.homeChecked',{date:fmt.dateTime(view.checkedAt)})}</p>;
  return <>
  <Grid min={300} className={ui.cardRow}>
- <Card title={t('monitor.cashLeak')} description={t('monitor.windowHelp')} data-testid="cash-leak" aria-busy={busy}>
+ <Card title={t('monitor.cashLeak')} description={t('monitor.windowHelp')} data-testid="cash-leak" aria-busy={busy} actions={sampled?<Badge tone="info" data-testid="cash-leak-sample">{t('monitor.sampleBadge')}</Badge>:undefined}>
   {error&&<Notice tone="warn" role="alert">{error}</Notice>}
-  {!view?!error&&<Skeleton/>:<><StatTile wide icon="coins" tone="warn" label={t('monitor.cashLeak')} value={money(view.leaks.dedupedCents)} valueProps={{'data-testid':'cash-leak-value'}} hint={t('monitor.window',{from:fmt.date(view.health.window.from),to:fmt.date(view.health.window.to)})}/>
+  {!view?!error&&<Skeleton/>:<><StatTile wide icon="coins" tone="warn" label={t('monitor.window',{from:fmt.date(view.health.window.from),to:fmt.date(view.health.window.to)})} value={money(view.leaks.dedupedCents)} valueProps={{'data-testid':'cash-leak-value'}}/>{checked('cash-leak-checked')}
   <div className={ui.actionRow}><Button disabled={busy} onClick={()=>setMath('leak')}>{t('monitor.showMath')}</Button><ButtonLink variant="ghost" href="#margin" icon="chart">{t('home.openMargin')}</ButtonLink></div></>}
  </Card>
  <Card title={t('monitor.health')} description={t('monitor.homeHealthHelp')} data-testid="home-health" aria-busy={busy}>
-  {!view?!error&&<Skeleton/>:view&&<><StatTile wide icon="users" tone={flagged==='0'?'ok':'warn'} label={t('monitor.summaryAlerted')} value={fmt.int(flagged)} valueProps={{'data-testid':'home-health-count'}} hint={flagged==='0'?t('monitor.noAlerts'):t('monitor.homeHealthHint')}/>
+  {!view?!error&&<Skeleton/>:view&&<><StatTile wide icon="users" tone={flagged==='0'?'ok':'warn'} label={t('monitor.summaryAlerted')} value={fmt.int(flagged)} valueProps={{'data-testid':'home-health-count'}} hint={flagged==='0'?t('monitor.noAlerts'):t('monitor.homeHealthHint')}/>{checked('home-health-checked')}
   <div className={ui.actionRow}><ButtonLink variant="primary" href="#margin-health" icon="users">{t('monitor.openHealth')}</ButtonLink></div></>}
  </Card>
  </Grid>

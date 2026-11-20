@@ -410,6 +410,36 @@ async function deadStockUi(){
 // for one unit at the $120.00 list price, item cost $70.00, is submitted and recorded as lost to a competitor: lost value
 // $120.00 and lost margin $50.00 for the owner; the Sales Rep preview sees the value and no margin. The audit pack's
 // verification.json says the chain is valid; the negotiation sheet names the cheaper vendor.
+// First-run activation (20 Nov 2026): in a fresh vault, Home offers a start card; one click on "Try the Playground"
+// fills the 90-day cash leak on Home. The sample banner shows on every section until the sample is removed, both Home
+// figures say they are checked only when the app is open, the mapping says how many required columns matched, and
+// after an import a notice leads to the cash leak.
+async function activationUi(){
+ const savedContext=context,savedPage=page,active=dataPlaneActive;
+ context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-activation-')),browserOptions);await configureContext();page=await openPage();
+ try{
+ dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic activation owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
+ await page.getByTestId('home-start').waitFor();assert.equal(await page.getByTestId('sample-banner').count(),0,'A new vault shows the sample banner');
+ await page.getByTestId('home-start').getByRole('button',{name:'Try the Playground',exact:true}).click();
+ const leak=page.getByTestId('cash-leak-value');
+ await until(async()=>(await leak.count())>0&&/[1-9]/.test(await leak.innerText()),'One click on Try the Playground did not give a non-zero 90-day cash leak on Home',180000);
+ await page.getByTestId('sample-banner').waitFor();await page.getByTestId('cash-leak-sample').waitFor();
+ await page.getByTestId('cash-leak-checked').filter({hasText:'Checked when you open the app'}).waitFor();await page.getByTestId('home-health-checked').filter({hasText:'Checked when you open the app'}).waitFor();
+ assert.equal(await page.getByTestId('home-start').count(),0,'The start card stays after the Playground loads');
+ await page.locator('nav a[href="#margin"]').click();await page.getByTestId('sample-banner').waitFor();
+ await page.getByTestId('sample-banner').getByRole('button',{name:'Remove sample data',exact:true}).click();
+ await page.locator('[data-testid="line-count"][data-value="0"]').waitFor({timeout:120000});await page.getByTestId('sample-banner').waitFor({state:'detached'});
+ await page.locator('nav a[href="#data-hub"]').click();await page.getByTestId('studio-try-playground').waitFor();
+ await page.getByTestId('studio-files').setInputFiles([{name:'activation-sales.csv',mimeType:'text/csv',buffer:csv(5)}]);
+ await page.getByTestId('studio-mapping-summary').filter({hasText:'All required columns matched'}).waitFor();
+ await page.getByRole('button',{name:'Review import'}).click();await page.getByRole('heading',{name:'Batch report'}).waitFor({timeout:120000});
+ await page.getByRole('button',{name:'Confirm and import locally'}).click();await page.locator('[data-testid="line-count"][data-value="5"]').waitFor({timeout:120000});
+ await page.getByTestId('after-import').filter({hasText:'5 rows imported.'}).waitFor();
+ await page.getByTestId('after-import').getByRole('link',{name:'See your 90-day cash leak',exact:true}).click();await page.getByTestId('cash-leak-value').waitFor();
+ assert.equal(await page.getByTestId('home-start').count()+await page.getByTestId('sample-banner').count(),0,'Real data still shows the start card or the sample banner');
+ results.checks.activationUi={startCard:true,playgroundOneClickLeak:true,sampleBannerEverySection:true,sampleBadge:true,appOpenCaveat:true,removeSample:true,mappingSummary:true,afterImportNotice:true};
+ }catch(error){console.error('Activation UI diagnostics:',JSON.stringify(await diagnose()));throw error;}finally{await context.close();context=savedContext;page=savedPage;dataPlaneActive=active;}
+}
 async function winLossUi(){
  const savedContext=context,savedPage=page,active=dataPlaneActive;
  context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-winloss-')),browserOptions);await configureContext();page=await openPage();
@@ -1131,7 +1161,7 @@ try {
   }
   await monitorUi();
   await rebatesUi();
-  await suppliersUi(); await vendorsUi(); await simUi(); await reportsUi(); await convertersUi(); await guidanceUi(); await agentsUi(); await deadStockUi(); await winLossUi(); await benchUi(); if (channel !== 'firefox') await offlineUi();
+  await suppliersUi(); await vendorsUi(); await simUi(); await reportsUi(); await convertersUi(); await guidanceUi(); await agentsUi(); await deadStockUi(); await activationUi(); await winLossUi(); await benchUi(); if (channel !== 'firefox') await offlineUi();
   await recoveryUi();
   if(auth){
     const device=await page.evaluate(()=>{const key=Object.keys(localStorage).find(k=>k.startsWith('rebatehq-device-v1:'));return localStorage.getItem(key);});assert.ok(device);
