@@ -87,6 +87,8 @@ export function CommandPalette({ client, caps, tier, sections, go, commands, sto
     for (const th of THEMES) list.push({ id: "theme:" + th, group: "command", label: t("palette.theme", { theme: t(THEME_KEY[th as Theme]) }), run: () => { applyTheme(th); close(); } });
     const lookup = (h: SearchHit): Item => ({ id: `${h.kind}:${h.id}`, group: h.kind, label: h.id, detail: [h.label, h.detail, h.note ? t("notes.paletteNote", { text: h.note }) : ""].filter(Boolean).join(" · "), run: () => {
       if (caps.includes("cost") && sections.includes("Margin")) { go("Margin"); close(); window.dispatchEvent(new CustomEvent(MARGIN_FILTER_EVENT, { detail: { dim: h.kind, value: h.id } })); }
+      // A Sales Rep (quotes, no cost) goes to Price Check with the SKU or customer filled in.
+      else if (caps.includes("quote") && tier !== "starter" && sections.includes("Quotes")) { close(); const hash = `quotes-check-${h.kind}-${encodeURIComponent(h.id)}`; if (location.hash === "#" + hash) window.dispatchEvent(new HashChangeEvent("hashchange")); else location.hash = hash; }
       else setPicked(h);
     } });
     const track = (i: Item, hit?: SearchHit): Item => ({ ...i, run: () => { remember(i.id, hit); i.run(); } });
