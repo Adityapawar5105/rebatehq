@@ -1680,6 +1680,7 @@ export const es: Catalog = {
   "studio.issuesIn": "Problemas en {name} ({count})",
   "studio.showingTheFirstAll": "Se muestran los primeros {count}. Todos se guardan con la importación.",
   "studio.noValidRowsTo": "No hay filas válidas para cargar. Corrija los problemas indicados y vuelva a revisar.",
+  "studio.planStale": "La bóveda cambió después de revisar este lote. Vuelva a revisar la importación antes de importar.",
   "studio.confirmAndImportLocally": "Confirmar e importar localmente",
   "studio.importedFiles": "Archivos importados",
   "studio.noFilesImportedYet": "Todavía no se importaron archivos.",

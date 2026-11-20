@@ -612,6 +612,7 @@ const studio = {
   "studio.issuesIn": "Issues in {name} ({count})",
   "studio.showingTheFirstAll": "Showing the first {count}. All are saved with the import.",
   "studio.noValidRowsTo": "No valid rows to load. Fix the issues listed and review again.",
+  "studio.planStale": "The vault changed after this batch was reviewed. Review the import again before importing.",
   "studio.confirmAndImportLocally": "Confirm and import locally",
   "studio.importedFiles": "Imported files",
   "studio.noFilesImportedYet": "No files imported yet.",

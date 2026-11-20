@@ -305,9 +305,12 @@ export class VaultService {
     const roles=source?[(await this.requireEngine().conn.query(`SELECT coalesce(k.kind,s.role) AS role FROM source_files s LEFT JOIN source_kinds k ON k.source_id=s.id WHERE s.id=${sqlText(source)}`)).toArray()[0]?.role]:(await this.studioState()).files.map(f=>f.role);
     if(roles.some(role=>role==='rebate_agreement'||role==='purchases')){this.rebateTier();await this.guard('rebateManage');}
   }
-  async studioPlan(signal: AbortSignal, progress: Progress) { await this.rebateImportGuard();await this.studio.plan(this.requireEngine(), this.tier, signal, progress); return this.studioState(); }
+  /** The vault data version the reviewed plan was made against (audit 1.3): Import refuses a plan made before another change. */
+  private planVersion: number | null = null;
+  async studioPlan(signal: AbortSignal, progress: Progress) { await this.rebateImportGuard();await this.studio.plan(this.requireEngine(), this.tier, signal, progress); this.planVersion = this.dataVersion; return this.studioState(); }
   async studioCommit(acknowledge: boolean, progress: Progress) {
     await this.rebateImportGuard();
+    if (this.planVersion !== this.dataVersion) throw new VaultError("STUDIO", msg("studio.planStale"));
     const engine = await this.writable(progress);
     progress(msg("vault.loadingRowsIntoThe"), "0", "1");
     const result = await this.studio.commit(engine, acknowledge);

@@ -1680,6 +1680,7 @@ export const fr: Catalog = {
   "studio.issuesIn": "Problèmes dans {name} ({count})",
   "studio.showingTheFirstAll": "Affichage des {count} premiers. Tous sont enregistrés avec l'importation.",
   "studio.noValidRowsTo": "Aucune ligne valide à charger. Corrigez les problèmes indiqués et examinez à nouveau.",
+  "studio.planStale": "Le coffre a changé après la vérification de ce lot. Vérifiez de nouveau l'import avant d'importer.",
   "studio.confirmAndImportLocally": "Confirmer et importer localement",
   "studio.importedFiles": "Fichiers importés",
   "studio.noFilesImportedYet": "Aucun fichier importé pour l'instant.",

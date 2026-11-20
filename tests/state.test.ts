@@ -14,3 +14,11 @@ test("B-12: the Cancel button follows the progress kind, never the English text 
   assert.ok(saves.length >= 3, "the save steps were found");
   for (const call of saves) assert.match(call, /["']save["']\)$/, call);
 });
+
+test("audit 1.3: an import plan reviewed before another change to the vault is refused", () => {
+  const src = readFileSync("lib/vault/service.ts", "utf8");
+  assert.match(src, /await this\.studio\.plan\(this\.requireEngine\(\), this\.tier, signal, progress\); this\.planVersion = this\.dataVersion;/);
+  const commit = src.slice(src.indexOf("async studioCommit("), src.indexOf("async studioCommit(") + 400);
+  assert.match(commit, /if \(this\.planVersion !== this\.dataVersion\) throw new VaultError\("STUDIO", msg\("studio\.planStale"\)\);/);
+  assert.ok(commit.indexOf("planStale") < commit.indexOf("await this.writable("), "checked before anything is written");
+});
