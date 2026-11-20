@@ -8,6 +8,7 @@ import { basisPointsDecimal } from "../margin/decimal";
 import { Pdf, type Color } from "../margin/pdf";
 import { VaultError } from "../vault/protocol";
 import { currency, date, decimal, integer, percent, translate, msg, type Locale, type MessageKey, type Params } from "../i18n/core";
+import { businessToday } from "../vault/today";
 
 const rows = async (e: Engine, sql: string) => (await e.conn.query(sql)).toArray().map(r => ({ ...r }) as Record<string, unknown>);
 const S = (v: unknown) => v === null || v === undefined ? "" : String(v);
@@ -32,7 +33,7 @@ function writer(locale: Locale) {
 }
 
 /** Vendor negotiation sheet for one vendor (its newest cost per item, the previous cost, purchases in the last 365 days). */
-export async function negotiationSheet(e: Engine, vendor: unknown, locale: Locale, code: string, today = new Date().toISOString().slice(0, 10)) {
+export async function negotiationSheet(e: Engine, vendor: unknown, locale: Locale, code: string, today = businessToday()) {
   if (typeof vendor !== "string" || !vendor || vendor.length > 200) throw new VaultError("TEMPLATE", msg("templates.invalid"));
   const v = Q(vendor), since = `DATE ${Q(today)} - INTERVAL 365 DAY`;
   const items = await rows(e, `WITH c AS (SELECT vendor, product_id, cost, effective_date, lag(cost) OVER (PARTITION BY vendor, product_id ORDER BY effective_date, id) AS prev,
@@ -66,7 +67,7 @@ ORDER BY coalesce(b.spend, 0) DESC, m.product_id`);
 }
 
 /** Rebate agreement drawn from a customer rebate program: parties, term, tiers, scope, settlement and signatures. */
-export async function rebateAgreement(e: Engine, id: unknown, locale: Locale, code: string, today = new Date().toISOString().slice(0, 10)) {
+export async function rebateAgreement(e: Engine, id: unknown, locale: Locale, code: string, today = businessToday()) {
   if (typeof id !== "string" || !id || id.length > 200) throw new VaultError("TEMPLATE", msg("templates.invalid"));
   const p = (await rows(e, `SELECT r.*, r.period_start::VARCHAR AS from_d, r.period_end::VARCHAR AS to_d, coalesce(c.name,'') AS customer_name FROM rebate_programs r LEFT JOIN customers c USING (customer_id) WHERE r.id = ${Q(id)}`))[0];
   if (!p) throw new VaultError("TEMPLATE", msg("templates.noProgram"));

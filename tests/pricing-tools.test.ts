@@ -1,3 +1,4 @@
+import {businessToday} from '../lib/vault/today';
 import {basisPointsDecimal} from '../lib/margin/decimal';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -100,6 +101,6 @@ test('7C-2 grid caps are enforced after downgrade; category/future scopes and fo
  }finally{c.close();}});
 
 test('7C-2 same-day and future grid edits preserve stable row IDs and resolver tie breaks',async()=>{const {c,e}=await fixture();try{
- const date=new Date().toISOString().slice(0,10);c.query(`INSERT INTO price_matrix(id,product_id,tier,price,valid_from) VALUES('a','B','T',2100,'${date}'),('b','B','T',2200,'${date}')`);
+ const date=businessToday();c.query(`INSERT INTO price_matrix(id,product_id,tier,price,valid_from) VALUES('a','B','T',2100,'${date}'),('b','B','T',2200,'${date}')`);
  const id=await grid.gridDraft(e,[{key:'m:a',price:'23.00'}],'0','owner','professional');assert.equal((await grid.gridData(e,id,'professional'))[0].appliedKey,'m:a');await approve(e,id);assert.equal(rows(c,"SELECT price::VARCHAR p FROM price_matrix WHERE id='a'")[0].p,'2300');const point=await market.competitors(e,'B','D');assert.equal(point.own!.bookCents,'2300');
  }finally{c.close();}});

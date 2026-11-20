@@ -6,9 +6,10 @@ import {invoiceKey} from './service-cost';
 import {POCKET,rateBpSql} from './sql';
 import {VaultError} from '../vault/protocol';
 import {msg} from '../i18n/core';
+import {businessToday} from '../vault/today';
 
 /** UTC calendar days: today is included, tomorrow excluded. No invoice-date anchoring. */
-export function monitoringWindow(today=new Date().toISOString().slice(0,10)){
+export function monitoringWindow(today=businessToday()){
  validDate(today);const day=(offset:number)=>new Date(Date.parse(today+'T00:00:00Z')+offset*86400000).toISOString().slice(0,10);
  return {priorFrom:day(-179),from:day(-89),to:day(1)};
 }

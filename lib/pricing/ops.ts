@@ -2,6 +2,7 @@ import type {Engine} from '../vault/engine';
 import {VaultError} from '../vault/protocol';
 import {gridPage,gridQuery} from '../grid/sql';
 import type {GridSpec} from '../grid/core';
+import {businessToday} from '../vault/today';
 /** Grid columns (7V-3a) for the exceptions and expiry grids: output names and types only. */
 export const EXCEPTION_GRID:GridSpec={source_file:'text',product_id:'text',customer_id:'text',quantity:'decimal',unit_price:'money',floor:'money',contract:'money',gap:'money'};
 export const EXPIRY_GRID:GridSpec={product_id:'text',customer_id:'text',tier:'text',quantity_break:'decimal',valid_from:'date',valid_to:'date'};
@@ -13,7 +14,7 @@ import {msg,translate,isLocale,decimal,type Locale} from '../i18n/core';
 export type Segment='tier'|'category'|'customer';
 export type PlanInput={segment:Segment;value:string;increase:string};
 export const OPS_LIMIT=250000;
-const today=()=>new Date().toISOString().slice(0,10);
+const today=()=>businessToday();
 const rows=async(e:Engine,sql:string)=>(await e.conn.query(sql)).toArray().map(r=>({...r})) as Record<string,any>[];
 async function scopeCap(e:Engine){if(BigInt(String((await rows(e,'SELECT count(*)::VARCHAR n FROM md_ops_base'))[0].n))>BigInt(OPS_LIMIT))throw new VaultError('PRICING',msg('ops.tooLarge'));}
 const bad=():never=>{throw new VaultError('PRICING',msg('ops.invalidSelection'));};

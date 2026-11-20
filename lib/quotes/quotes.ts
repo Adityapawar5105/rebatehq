@@ -1,4 +1,5 @@
 import {matrixLookup} from '../pricing/book';
+import { businessToday } from "../vault/today";
 // Quote Desk and Price Check (chunk 7B). Runs in the vault worker against the local DuckDB.
 // Prices are whole cents per unit; quantities are decimals; totals are exact integer cents.
 // Decision 16: the views below carry cost and margin ONLY when the caller passes withCost
@@ -68,7 +69,7 @@ export type LineInput = { productId: string; quantity: string; unitCents?: strin
 const bad = (key: Parameters<typeof msg>[0], params?: Parameters<typeof msg>[1]): never => { throw new VaultError("QUOTE", msg(key, params)); };
 async function rows(e: Engine, sql: string) { return (await e.conn.query(sql)).toArray().map(r => ({ ...r })) as Record<string, unknown>[]; }
 const str = (v: unknown) => v === null || v === undefined ? null : String(v);
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => businessToday();
 const ID = /^[^\x00-\x1f]{1,64}$/;
 const QTY = /^(0|[1-9]\d{0,12})(\.\d{1,4})?$/, CENTS = /^(0|[1-9]\d{0,12})$/;
 export const MAX_LINES = 200;

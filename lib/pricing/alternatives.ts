@@ -4,12 +4,13 @@ import {rows} from './rules';
 import {resolvedBook} from './book';
 import {sqlText as Q,validDate} from '../spike/exact';
 import {rhaSql} from '../margin/sql';
+import {businessToday} from '../vault/today';
 export type Alternative={product:string;description:string;unit:string;price:string;freight:string;rebate:string;cost:string;pocket:string;margin:string;lines:string};
 /** A one-unit estimate, not a quote: current resolved selling price less the
  * customer's historical per-unit freight, off-invoice rebate and known cost.
  * No extra discount: the resolved selling price already includes book discounts.
  * Incomplete cost, zero quantity or missing prices are excluded, never guessed. */
-export async function alternatives(e:Engine,product:string,customer:string,today=new Date().toISOString().slice(0,10)):Promise<Alternative[]>{
+export async function alternatives(e:Engine,product:string,customer:string,today=businessToday()):Promise<Alternative[]>{
  validDate(today);
  const inputs=`SELECT p.product_id lookup_id,p.product_id,p.category,c.customer_id,c.tier,1::DECIMAL(18,4) quantity,DATE ${Q(today)} as_of,p.description,p.uom,p.list_price
  FROM products p JOIN customers c ON c.customer_id=${Q(customer)}

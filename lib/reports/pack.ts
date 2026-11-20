@@ -11,9 +11,10 @@ import {workspaceCurrency} from '../vault/currency';
 import {summary as roi} from './roi';
 import {VaultError} from '../vault/protocol';
 import {msg} from '../i18n/core';
+import {businessToday} from '../vault/today';
 export type PackKind='monthly'|'weekly';
 export const cancelled=()=>new VaultError('CANCELLED',msg('cadence.cancelled'));
-export function windowFor(kind:PackKind,month?:string,today=new Date().toISOString().slice(0,10)){
+export function windowFor(kind:PackKind,month?:string,today=businessToday()){
  if(!['monthly','weekly'].includes(kind)||!/^\d{4}-\d\d-\d\d$/.test(today))throw new VaultError('REPORT',msg('cadence.invalid'));
  if(kind==='weekly'){const d=Date.parse(today+'T00:00:00Z');return {from:new Date(d-6*86400000).toISOString().slice(0,10),to:new Date(d+86400000).toISOString().slice(0,10),month:today.slice(0,7)};}
  month??=today.slice(0,7);if(!/^(19|20)\d\d-(0[1-9]|1[0-2])$/.test(month))throw new VaultError('REPORT',msg('cadence.invalid'));
@@ -21,7 +22,7 @@ export function windowFor(kind:PackKind,month?:string,today=new Date().toISOStri
 }
 export async function state(e:Engine){return {currency:await workspaceCurrency(e),checks:await rows(e,'SELECT kind,checked_at,period_start::VARCHAR period_start,period_end::VARCHAR period_end FROM report_checks ORDER BY kind'),months:(await rows(e,"SELECT DISTINCT strftime(sale_date,'%Y-%m') AS month FROM sales_lines ORDER BY month DESC LIMIT 60")).map(r=>r.month)};}
 /** No persistent writes here: completion/cancel is decided by the service before stamping a check. */
-export async function check(e:Engine,kind:PackKind,month:string|undefined,signal:AbortSignal,progress:Progress,today=new Date().toISOString().slice(0,10)){
+export async function check(e:Engine,kind:PackKind,month:string|undefined,signal:AbortSignal,progress:Progress,today=businessToday()){
  const window=windowFor(kind,month,today),id=crypto.randomUUID();let done=0;
  const step=(part:Parameters<typeof msg>[0])=>{if(signal.aborted)throw cancelled();progress(msg('cadence.progress',{part:msg(part)}),String(done++),'7');};
  step('cadence.leaks');const size=(await rows(e,'SELECT count(*)::VARCHAR n FROM sales_lines'))[0].n;if(BigInt(size)>BigInt(2000000))throw new VaultError('REPORT',msg('cadence.tooLarge'));
