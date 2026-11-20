@@ -900,8 +900,17 @@ try {
   const findingCount = await page.getByTestId("leak-findings").getByTestId("grid-select").count(); // 0 when there are no findings (no grid)
   // This data set may have no findings; the worker-level check in tests/browser/vault-worker.ts always covers a selection.
   let oneText = "";
+  // Phase 7 (20 Nov 2026): the Leaks card says how its headline is built and what was checked.
+  if (findingCount > 0) { await page.getByTestId("leak-built").filter({ hasText: "Found by rules" }).waitFor(); await page.getByTestId("leak-coverage").filter({ hasText: "sales lines checked" }).waitFor(); }
   if (findingCount > 0) {
+    // The first tick must not move the table (UI handoff 1.1), and the report scope updates live (2.10).
+    const tableBefore = await page.getByTestId("leak-findings").locator("table").boundingBox();
+    await page.getByTestId("leak-report-scope").filter({ hasText: "Report covers all " + findingCount + " findings" }).waitFor();
     await page.getByTestId("leak-findings").getByTestId("grid-select").first().click();
+    await page.getByTestId("leak-report-scope").filter({ hasText: "Report covers 1 of " + findingCount + " findings" }).waitFor();
+    const tableAfter = await page.getByTestId("leak-findings").locator("table").boundingBox();
+    assert.equal(Math.round(tableAfter.y), Math.round(tableBefore.y), "Ticking the first finding moved the table");
+    if (findingCount > 1) { await page.getByTestId("leak-findings").getByTestId("grid-sort-leak").click(); await page.getByTestId("leak-findings").getByTestId("grid-status").filter({ hasText: "1 row selected" }).waitFor(); } // sorting keeps the tick (1.3)
     await page.getByRole("button", { name: "Download report for 1 selected finding (PDF)", exact: true }).waitFor();
     const [onePdf] = await Promise.all([page.waitForEvent("download"), page.getByTestId("leak-report-download").click()]);
     oneText = (await readFile(await onePdf.path())).toString("latin1");
@@ -910,6 +919,7 @@ try {
   }
   await page.getByRole("link", { name: "Home", exact: true }).click(); await page.getByTestId("roi-total").waitFor();
   results.checks.marginUi = { creditLoaded: true, mathPanel: true, leakReportBytes: pdfBytes.length, selectedReportBytes: oneText.length, roiTracker: true };
+  results.checks.gridTrustUi = { findings: findingCount, steadyTable: findingCount > 0, liveScope: findingCount > 0, sortKeepsSelection: findingCount > 1 };
   // 5A UI: role banner, cleanup and cost basis panels, and a role preview that hides cost. The 7-day checklist
   // was removed from Home on 14 Nov 2026 (blueprint section 22, item 30); its worker command is unchanged.
   await page.getByTestId("role-banner").getByText("Owner / CFO").waitFor();

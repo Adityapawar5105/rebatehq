@@ -45,13 +45,17 @@ function waterfallBars(w: Waterfall) {
 }
 
 function WaterfallView({ client, busy, operation, setMessage, onStatus, status }: Shared) {
-  const [filters, setFilters] = useState<Filters>(NONE), [w, setW] = useState<Waterfall | null>(null), [dim, setDim] = useState<Dim>("customer"), [sort, setSort] = useState<"pocket" | "margin" | "rate">("pocket");
+  const [filters, setFilters] = useState<Filters>(NONE), [w, setW] = useState<Waterfall | null>(null), [dim, setDim] = useState<Dim>("customer"), sort = "pocket" as const;
+  // Load failures show a notice with Retry instead of a skeleton that never ends (UI handoff 2.13).
+  const [failed, setFailed] = useState<{ waterfall?: boolean; drill?: boolean; leaks?: boolean }>({}), [retry, setRetry] = useState(0);
+  const fail = (k: "waterfall" | "drill" | "leaks") => setFailed(f => ({ ...f, [k]: true })), clear = (k: "waterfall" | "drill" | "leaks") => setFailed(f => f[k] ? { ...f, [k]: false } : f);
+  const retryBox = (k: "waterfall" | "drill" | "leaks") => failed[k] ? <Notice tone="warn" role="alert" data-testid={`margin-failed-${k}`} actions={<Button size="sm" onClick={() => { clear(k); setRetry(n => n + 1); }}>{t("margin.retry")}</Button>}>{t("margin.loadFailed")}</Notice> : null;
   const [gq, setGq] = useState<GridQuery>({}), [d, setD] = useState<Drill | null>(null), [whale, setWhale] = useState<Whale | null>(null), [leaks, setLeaks] = useState<LeaksView | null>(null), [target, setTarget] = useState<MathTarget>(null);
   const version = `${status.lines}|${status.generation}`;
-  useEffect(() => { let on = true; void client.call("marginWaterfall", { filters }).then(x => { if (on) setW(x); }).catch(() => undefined); void client.call("marginWhale", { filters }).then(x => { if (on) setWhale(x); }).catch(() => undefined); return () => { on = false; }; }, [client, filters, version]);
+  useEffect(() => { let on = true; void client.call("marginWaterfall", { filters }).then(x => { if (on) { setW(x); clear("waterfall"); } }).catch(() => { if (on) fail("waterfall"); }); void client.call("marginWhale", { filters }).then(x => { if (on) setWhale(x); }).catch(() => { if (on) fail("waterfall"); }); return () => { on = false; }; }, [client, filters, version, retry]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setGq({}); }, [dim]);
-  useEffect(() => { let on = true; void client.call("marginDrill", { dim, filters, sort, grid: gq }).then(x => { if (on) setD(x); }).catch(() => undefined); return () => { on = false; }; }, [client, dim, filters, sort, version, gq]);
-  useEffect(() => { let on = true; if (status.lines !== "0") void client.call("leaks", {}).then(x => { if (on) setLeaks(x); }).catch(() => undefined); return () => { on = false; }; }, [client, version, status.lines]);
+  useEffect(() => { let on = true; void client.call("marginDrill", { dim, filters, sort, grid: gq }).then(x => { if (on) { setD(x); clear("drill"); } }).catch(() => { if (on) fail("drill"); }); return () => { on = false; }; }, [client, dim, filters, sort, version, gq, retry]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { let on = true; if (status.lines !== "0") void client.call("leaks", {}).then(x => { if (on) { setLeaks(x); clear("leaks"); } }).catch(() => { if (on) fail("leaks"); }); return () => { on = false; }; }, [client, version, status.lines, retry]); // eslint-disable-line react-hooks/exhaustive-deps
   const addFilter = (dimName: Dim, value: string) => setFilters(f => ({ ...f, by: [...f.by.filter(x => x.dim !== dimName), { dim: dimName, value }] }));
   // The command palette opens Margin filtered to a SKU or customer it found.
   useEffect(() => {
@@ -71,7 +75,8 @@ function WaterfallView({ client, busy, operation, setMessage, onStatus, status }
     </Grid>}
     <Card headingId="waterfall-heading" title={<Term id="waterfall">{t("margin.waterfall")}</Term>} description={t("margin.waterfallIntro")}>
       {filters.by.length > 0 && <div className={ui.row} role="group" aria-label={t("margin.activeFilters")}>{filters.by.map(x => <button key={x.dim} className={ui.chip} aria-label={t("margin.removeFilter", { dim: dimName(x.dim), value: x.value })} onClick={() => setFilters(f => ({ ...f, by: f.by.filter(y => y.dim !== x.dim) }))}>{t("margin.filterChip", { dim: dimName(x.dim), value: x.value })} <span aria-hidden="true">✕</span></button>)}<Button size="sm" variant="ghost" onClick={() => setFilters(NONE)}>{t("margin.clearFilters")}</Button></div>}
-      {!w ? <div aria-busy="true"><p className={styles.muted}>{t("margin.calculating")}</p><Skeleton lines={5}/></div> : <>
+      {retryBox("waterfall")}
+      {!w ? !failed.waterfall && <div aria-busy="true"><p className={styles.muted}>{t("margin.calculating")}</p><Skeleton lines={5}/></div> : <>
         {w.rebateReconciliation&&<RebateReconciliation value={w.rebateReconciliation}/>}
         <div className={ui.tableWrap}><table className={`${ui.table} ${ui.waterfall}`} aria-label={t("margin.waterfall")}>
           <thead><tr><th scope="col">{t("margin.step")}</th><th scope="col" className={ui.wfCol}>{t("margin.shareOfList")}</th><th scope="col" className={numCell}>{t("margin.amount")}</th></tr></thead>
@@ -86,15 +91,16 @@ function WaterfallView({ client, busy, operation, setMessage, onStatus, status }
       </>}
     </Card>
     <Card headingId="drill-heading" title={t("margin.drillDown")}>
+      {/* Sorting is done by the column headers only (UI handoff 2.12); the worker's default order is net pocket. */}
       <Grid min={180}>
         <Field label={t("margin.by")}><select value={dim} onChange={e => setDim(e.target.value as Dim)}>{(Object.keys(DIM_LABEL) as Dim[]).map(k => <option key={k} value={k}>{dimName(k)}</option>)}</select></Field>
-        <Field label={t("margin.sort")}><select value={sort} onChange={e => setSort(e.target.value as typeof sort)}><option value="pocket">{t("margin.sortPocket")}</option><option value="margin">{t("margin.sortMargin")}</option><option value="rate">{t("margin.sortRate")}</option></select></Field>
       </Grid>
-      {d && <><p className={styles.small}>{t(Number(d.total) > d.rows.length ? "margin.drillCountShowing" : "margin.drillCount", { count: Number(d.total), dim: dimName(d.dim).toLocaleLowerCase(getLocale()), shown: d.rows.length, ms: d.ms })}</p>
+      {retryBox("drill")}
+      {d && <><p className={styles.small}>{t(Number(d.total) > d.rows.length ? "margin.drillCountShowing" : "margin.drillCount", { count: Number(d.total), dim: dimName(d.dim).toLocaleLowerCase(getLocale()), shown: d.rows.length })}</p>
         <DrillGrid d={d} gq={gq} setGq={setGq} client={client} dim={dim} filters={filters} sort={sort} open={open} addFilter={addFilter}/></>}
     </Card>
     <WhaleCard whale={whale} open={open}/>
-    <LeaksCard client={client} leaks={leaks} busy={busy} operation={operation} setMessage={setMessage} onStatus={onStatus} onEvidence={leak => setTarget({ leak })}/>
+    <LeaksCard failed={retryBox("leaks")} client={client} leaks={leaks} busy={busy} operation={operation} setMessage={setMessage} onStatus={onStatus} onEvidence={leak => setTarget({ leak })}/>
   </>;
 }
 function DrillGrid({ d, gq, setGq, client, dim, filters, sort, open, addFilter }: { d: Drill; gq: GridQuery; setGq: (q: GridQuery) => void; client: VaultClient; dim: Dim; filters: Filters; sort: "pocket" | "margin" | "rate"; open: (metric: Metric, title: string, f?: Filters) => void; addFilter: (dim: Dim, value: string) => void }) {
@@ -143,11 +149,18 @@ function WhaleCard({ whale, open }: { whale: Whale | null; open: (m: Metric, t: 
     ]}/>
   </Card>;
 }
-function LeaksCard({ client, leaks, busy, operation, setMessage, onStatus, onEvidence }: { client: VaultClient; leaks: LeaksView | null; busy: boolean; operation: Shared["operation"]; setMessage: Shared["setMessage"]; onStatus: Shared["onStatus"]; onEvidence: (f: Finding) => void }) {
+function LeaksCard({ failed, client, leaks, busy, operation, setMessage, onStatus, onEvidence }: { failed?: React.ReactNode; client: VaultClient; leaks: LeaksView | null; busy: boolean; operation: Shared["operation"]; setMessage: Shared["setMessage"]; onStatus: Shared["onStatus"]; onEvidence: (f: Finding) => void }) {
   const [picked, setPicked] = useState<Finding[]>([]);
+  // What the report will cover, live as findings are ticked (UI handoff 2.10): exact integer cents, no floats.
+  const all = leaks?.result.findings.length ?? 0, pickedCents = picked.reduce((sum, f) => sum + BigInt(f.cents), BigInt(0)).toString();
   return <Card headingId="leaks-heading" title={<Term id="leak">{t("margin.leaks")}</Term>} actions={leaks && <LeakReportButton client={client} busy={busy} operation={operation} setMessage={setMessage} onStatus={onStatus} ids={picked.length ? picked.map(f => f.id) : undefined}/>}>
-    {!leaks ? <div aria-busy="true"><p className={styles.muted}>{t("margin.lookingForLeaks")}</p><Skeleton/></div> : <>
+    {failed}
+    {!leaks ? !failed && <div aria-busy="true"><p className={styles.muted}>{t("margin.lookingForLeaks")}</p><Skeleton/></div> : <>
       <p>{t("margin.leakDollarsFound")}{" "}<strong data-testid="leak-total">{$(leaks.result.dedupedCents)}</strong>{" "}{t(leaks.sample ? "margin.acrossFindingsSample" : "margin.acrossFindings", { count: leaks.result.findings.length })}{leaks.result.overlapLines !== "0" ? " " + t("margin.overlap", { count: Number(leaks.result.overlapLines), overlapCents: $(leaks.result.overlapCents) }) : ""}</p>
+      {/* How the headline is built, and what was checked (UI handoff batch 5, owner items 1 and 2). */}
+      <p className={styles.small} data-testid="leak-built">{t("margin.built", { total: $(leaks.result.totalCents), overlap: $(leaks.result.overlapCents), net: $(leaks.result.dedupedCents) })}</p>
+      <p className={styles.small} data-testid="leak-coverage">{t("margin.coverage", { checked: fmt.int(leaks.result.checked.saleLines), uncosted: fmt.int(leaks.result.checked.uncostedLines) })}</p>
+      {all > 0 && <p className={styles.small} data-testid="leak-report-scope" style={{ minHeight: "1.6em" }}>{picked.length ? t("margin.scopeSome", { n: picked.length, m: all, amount: $(pickedCents) }) : t("margin.scopeAll", { m: all })}</p>}
       {leaks.result.findings.length > 1 && <p className={styles.small}>{t("margin.reportSelectionHint")}</p>}
       {leaks.result.findings.length ? <DataGrid label={t("margin.leakFindings")} testId="leak-findings" rows={leaks.result.findings} rowKey={f => f.id} onSelectionChange={setPicked} columns={[
         { id: "type", name: t("margin.col.type"), value: f => say(f.label), cell: f => <Badge tone="warn">{say(f.label)}</Badge> },
@@ -155,7 +168,7 @@ function LeaksCard({ client, leaks, busy, operation, setMessage, onStatus, onEvi
         { id: "lines", name: t("margin.col.lines"), type: "int", num: true, value: f => f.lines },
         { id: "leak", name: t("margin.col.leak"), type: "money", num: true, value: f => f.cents, cell: f => <button className={ui.numLink} aria-label={t("margin.mathForLeak", { title: say(f.title) })} onClick={() => onEvidence(f)}>{$(f.cents)}</button> },
       ]}/> : <EmptyState icon="checkCircle" title={t("margin.noLeaks")}/>}
-      <p className={styles.small}>{t("margin.notChecked", { uncosted: fmt.int(leaks.result.checked.uncostedLines), untiered: fmt.int(leaks.result.checked.untieredLines), credits: fmt.int(leaks.result.checked.creditLines), ms: leaks.result.ms })}</p>
+      <p className={styles.small}>{t("margin.notChecked", { uncosted: fmt.int(leaks.result.checked.uncostedLines), untiered: fmt.int(leaks.result.checked.untieredLines), credits: fmt.int(leaks.result.checked.creditLines) })}</p>
     </>}
   </Card>;
 }
