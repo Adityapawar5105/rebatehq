@@ -165,3 +165,13 @@ The Safari desktop spike ran only as a WebKit pre-check, which was inconclusive 
 Home lists only rows the role can open, and they land on the exact heading. Both Home figures carry the "checked when you open the app" line. Import Studio shows how many required columns matched, and after an import leads to the cash leak.
 
 **It passed CI** in [CI #175](https://github.com/Adityapawar5105/rebatehq/actions/runs/44793874491) on `c1a2744`: 379 unit tests (78 JS + 301 TS), the 139-check pgTAP plan twice, **69 authenticated Chromium vault checks** and **66 Firefox lab checks** (both including `activationUi`), and 12 relay checks. Vault v21 / 61 tables and 14 locked migrations are unchanged; no blueprint change. See ACTIVATION_VERIFICATION.md.
+
+**Licence and vault resilience (20 November 2026; built by Claude Code).**
+- A server error, rate limit or timeout on the licence route keeps the saved licence inside its offline allowance; only a refusal or a bad signature clears it.
+- Read-only commands no longer write while the licence is read-only.
+- An engine failure on unlock has its own message, and a dead worker shows a Reload card.
+- Auto-lock counts scrolling, warns a minute ahead and never cancels a running request.
+- The used invite cookie is deleted.
+- The sign-in rate-limit header (audit B-9) is unchanged pending a safe check.
+
+**It passed CI** in [CI #178](https://github.com/Adityapawar5105/rebatehq/actions/runs/44801085014) on `ec651af`: 387 unit tests (78 JS + 309 TS), the 139-check pgTAP plan twice, **70 authenticated Chromium vault checks** and **67 Firefox lab checks** (both including `licenceOutageUi`), and 12 relay checks. No schema, migration or blueprint change. See RESILIENCE_VERIFICATION.md.
