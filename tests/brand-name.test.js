@@ -6,7 +6,7 @@ const root = path.join(__dirname, '..');
 
 // The product is RebateHQ. The old name may stay only where it is history or a deliberate legacy bridge.
 const OLD_NAME = /margin-?desk/i;
-const SKIP_DIRS = new Set(['node_modules', '.next', '.git', 'test-results', 'public', 'vault-evidence']);
+const SKIP_DIRS = new Set(['node_modules', '.next', '.git', 'test-results', 'public', 'vault-evidence', '.claude']);
 const TEXT = /\.(md|ts|tsx|js|mjs|json|html|css|yml|yaml|toml|sql|txt|example)$/i;
 
 // Whole files that legitimately mention the old name.

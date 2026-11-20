@@ -13,3 +13,4 @@ public/spike/
 test-results/
 playwright-report/
 .spike-profile*/
+.claude/
