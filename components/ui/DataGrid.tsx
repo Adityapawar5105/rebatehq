@@ -147,6 +147,7 @@ export function DataGrid<R>({ label, columns, rows, rowKey, remote, footer, sele
   }, [selKey, queryKey, visible, numeric, totalsFn]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [openCol, setOpenCol] = useState<string | null>(null);
+  const [moreOpen, setMoreOpen] = useState(false);
   const cols = (selectable ? 1 : 0) + columns.length;
   const statusId = useId();
   return <div className={s.gridBox} data-testid={testId}>
@@ -186,10 +187,11 @@ export function DataGrid<R>({ label, columns, rows, rowKey, remote, footer, sele
           return <span key={c.id} className={s.gridTotal} data-testid={`grid-total-${c.id}`} data-sum={v.sum} data-count={v.count}>
             {t("grid.totalsShort", { name: c.name, sum: f(v.sum) })}
           </span>; })}
-        {totals && <details className={s.gridMore} data-testid="grid-more-totals"><summary>{t("grid.moreTotals")}</summary>
-          <table className={s.gridMoreTable} aria-label={t("grid.totalsTable")}><thead><tr><th scope="col">{t("grid.col.column")}</th><th scope="col">{t("grid.col.sum")}</th><th scope="col">{t("grid.col.avg")}</th><th scope="col">{t("grid.col.min")}</th><th scope="col">{t("grid.col.max")}</th><th scope="col">{t("grid.col.count")}</th></tr></thead>
+        {/* The table is rendered only while open: no hidden rows inside the grid (they confused row counts). */}
+        {totals && <details className={s.gridMore} data-testid="grid-more-totals" onToggle={e => setMoreOpen((e.currentTarget as HTMLDetailsElement).open)}><summary>{t("grid.moreTotals")}</summary>
+          {moreOpen && <table className={s.gridMoreTable} aria-label={t("grid.totalsTable")}><thead><tr><th scope="col">{t("grid.col.column")}</th><th scope="col">{t("grid.col.sum")}</th><th scope="col">{t("grid.col.avg")}</th><th scope="col">{t("grid.col.min")}</th><th scope="col">{t("grid.col.max")}</th><th scope="col">{t("grid.col.count")}</th></tr></thead>
           <tbody>{numeric.map(c => { const v = totals[c.id]; if (!v) return null; const f = (x: string | null) => x === null ? t("common.unknown") : showValue(c.type, x);
-            return <tr key={c.id}><th scope="row">{c.name}</th><td>{f(v.sum)}</td><td>{f(v.avg)}</td><td>{f(v.min)}</td><td>{f(v.max)}</td><td>{fmt.int(v.count)}</td></tr>; })}</tbody></table>
+            return <tr key={c.id}><th scope="row">{c.name}</th><td>{f(v.sum)}</td><td>{f(v.avg)}</td><td>{f(v.min)}</td><td>{f(v.max)}</td><td>{fmt.int(v.count)}</td></tr>; })}</tbody></table>}
         </details>}
       </>}
     </div>
