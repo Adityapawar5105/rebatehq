@@ -156,3 +156,12 @@ The Safari desktop spike ran only as a WebKit pre-check, which was inconclusive 
 - Price Check, New quote and Add line use the type-ahead; Home lists the author's pending quote; a rep's palette pick opens Price Check filled in.
 
 **It passed CI** in [CI #172](https://github.com/Adityapawar5105/rebatehq/actions/runs/44783777109) on `39ef75c`: 377 unit tests (78 JS + 299 TS), the 139-check pgTAP plan twice, **68 authenticated Chromium vault checks** and **65 Firefox lab checks** (both including `quoteFlowUi`), and 12 relay checks. Vault v21 / 61 tables and 14 locked migrations are unchanged; no blueprint change. See QUOTE_FLOW_VERIFICATION.md. Work after this follows the user's explicit instruction for each step.
+
+**First-run activation (20 November 2026; built by Claude Code).** `VaultStatus.sample` (`empty`, `only`, `mixed`, `none`, counted from file names) drives:
+- a Home start card on an empty vault, where "Try the Playground" fills the 90-day cash leak in one click;
+- a sample-data banner on every section;
+- a "Sample data" badge on the cash-leak card.
+
+Home lists only rows the role can open, and they land on the exact heading. Both Home figures carry the "checked when you open the app" line. Import Studio shows how many required columns matched, and after an import leads to the cash leak.
+
+**It passed CI** in [CI #175](https://github.com/Adityapawar5105/rebatehq/actions/runs/44793874491) on `c1a2744`: 379 unit tests (78 JS + 301 TS), the 139-check pgTAP plan twice, **69 authenticated Chromium vault checks** and **66 Firefox lab checks** (both including `activationUi`), and 12 relay checks. Vault v21 / 61 tables and 14 locked migrations are unchanged; no blueprint change. See ACTIVATION_VERIFICATION.md.
