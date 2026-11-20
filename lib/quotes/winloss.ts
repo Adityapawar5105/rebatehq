@@ -12,6 +12,7 @@ import type { GridMeta, GridSpec } from "../grid/core";
 import { VaultError } from "../vault/protocol";
 import { msg } from "../i18n/core";
 import { OUTCOMES, REASONS, type Outcome, type Reason, type ReportBy } from "./outcomes";
+import { addDays, businessToday } from "../vault/today";
 export { OUTCOMES, REASONS, type Outcome, type Reason, type ReportBy };
 
 const rows = async (e: Engine, sql: string) => (await e.conn.query(sql)).toArray().map(r => ({ ...r }) as Record<string, unknown>);
@@ -45,7 +46,7 @@ export const WINLOSS_GRID_REP: GridSpec = COMMON;
 
 /** Outcomes recorded between `from` and `to` (inclusive, UTC dates), grouped. `mineOnly` limits to the caller's quotes. */
 export async function report(e: Engine, input: ReportInput, who: { userId: string; mineOnly: boolean; withCost: boolean }) {
-  const now = new Date(), to = input.to ?? now.toISOString().slice(0, 10), from = input.from ?? new Date(now.getTime() - 364 * 86400000).toISOString().slice(0, 10), by = input.by ?? "reason";
+  const to = input.to ?? businessToday(), from = input.from ?? addDays(input.to ?? businessToday(), -364), by = input.by ?? "reason";
   try { validDate(from); validDate(to); } catch { bad(); }
   if (from > to || !["reason", "customer", "rep"].includes(by)) bad();
   const line = (amount: string) => `CAST(${rhaSql(`CAST(${amount} AS HUGEINT)*CAST(l.quantity*10000 AS HUGEINT)`, "10000")} AS BIGINT)`;

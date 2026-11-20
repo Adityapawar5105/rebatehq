@@ -9,13 +9,14 @@ import {gridPage,gridQuery} from '../grid/sql';
 import type {GridSpec} from '../grid/core';
 import {VaultError} from '../vault/protocol';
 import {msg} from '../i18n/core';
+import {addDays,businessToday} from '../vault/today';
 export const SCORE_GRID:GridSpec={month:'date',lines:'int',floorKnown:'int',floorMet:'int',targetKnown:'int',targetMet:'int',floorRate:'percent',targetRate:'percent',protectedPoints:'int',possiblePoints:'int'};
 export type ScoreInput={view?:'team'|'mine';from?:string;to?:string;offset?:number;grid?:unknown};
 const bad=():never=>{throw new VaultError('SCORECARD',msg('cadence.scoreInvalid'));};
 export async function optedIn(e:Engine,user:string){return (await rows(e,`SELECT opted_in FROM scorecard_consent WHERE user_id=${Q(user)}`))[0]?.opted_in===true;}
 export function consentSql(user:string,optIn:unknown){if(typeof optIn!=='boolean')bad();return `INSERT INTO scorecard_consent(user_id,opted_in,updated_at) VALUES(${Q(user)},${optIn},${Q(new Date().toISOString())}) ON CONFLICT(user_id) DO UPDATE SET opted_in=excluded.opted_in,updated_at=excluded.updated_at;`;}
 export async function scorecard(e:Engine,user:string,input:ScoreInput={}){
- const now=new Date(),to=input.to??now.toISOString().slice(0,10),from=input.from??new Date(now.getTime()-89*86400000).toISOString().slice(0,10),view=input.view??'team',optIn=await optedIn(e,user);
+ const to=input.to??businessToday(),from=input.from??addDays(input.to??businessToday(),-89),view=input.view??'team',optIn=await optedIn(e,user);
  try{validDate(from);validDate(to);if(from>to||Date.parse(to)-Date.parse(from)>1096*86400000||!['team','mine'].includes(view))bad();}catch{return bad();}if(view==='mine'&&!optIn)throw new VaultError('SCORECARD',msg('cadence.optInFirst'));
  const date=`try_cast(substr(q.created_at,1,10) AS DATE)`,scope=`q.status<>'draft' AND ${date} BETWEEN DATE ${Q(from)} AND DATE ${Q(to)} ${view==='mine'?`AND q.created_by=${Q(user)}`:''}`;
  const body=`SELECT strftime(${date},'%Y-%m-01') AS month,count(*)::VARCHAR lines,count(l.floor_cents)::VARCHAR "floorKnown",count(*) FILTER(WHERE l.unit_price_cents>=l.floor_cents)::VARCHAR "floorMet",count(l.target_cents)::VARCHAR "targetKnown",count(*) FILTER(WHERE l.unit_price_cents>=l.target_cents)::VARCHAR "targetMet",

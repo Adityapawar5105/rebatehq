@@ -12,6 +12,7 @@ import { errorText, fmt, t, type MessageKey } from "@/lib/i18n";
 import { Button, Card, EmptyState, Field, Grid, Notice, Skeleton, StatTile } from "@/components/ui/ui";
 import { DataGrid } from "@/components/ui/DataGrid";
 import styles from "./vault.module.css";
+import { addDays, businessToday } from "@/lib/vault/today";
 
 type Op = (f: () => Promise<void>) => Promise<void>;
 export const OUTCOME_LABEL: Record<Outcome, MessageKey> = { won: "winloss.won", lost: "winloss.lost", no_decision: "winloss.noDecision" };
@@ -38,8 +39,8 @@ export function OutcomePanel({ client, quote, busy, operation, onSaved }: { clie
 }
 
 export function WinLossReport({ client, busy, operation }: { client: VaultClient; busy: boolean; operation: Op }) {
-  const today = new Date().toISOString().slice(0, 10);
-  const [by, setBy] = useState<ReportBy>("reason"), [from, setFrom] = useState(new Date(Date.now() - 364 * 86400000).toISOString().slice(0, 10)), [to, setTo] = useState(today);
+  const today = businessToday();
+  const [by, setBy] = useState<ReportBy>("reason"), [from, setFrom] = useState(addDays(today, -364)), [to, setTo] = useState(today);
   const [view, setView] = useState<Results["winLoss"] | null>(null), [gq, setGq] = useState<GridQuery>({}), [error, setError] = useState("");
   const load = async (q = gq, offset = 0) => { setError(""); try { setView(await client.call("winLoss", { by, from, to, offset, grid: q })); } catch (e) { setError(errorText(e)); } };
   useEffect(() => { setGq({}); void load({}); }, [client, by]); // eslint-disable-line react-hooks/exhaustive-deps

@@ -16,6 +16,7 @@ import { gridPage, gridQuery } from "../grid/sql";
 import type { GridMeta, GridSpec } from "../grid/core";
 import { CURRENCIES } from "../vault/currency";
 import { msg } from "../i18n/core";
+import { businessToday } from "../vault/today";
 
 const rows = async (e: Engine, sql: string) => (await e.conn.query(sql)).toArray().map(r => ({ ...r }) as Record<string, unknown>);
 const S = (v: unknown) => v === null || v === undefined ? null : String(v);
@@ -62,7 +63,7 @@ export async function triggerSql(e: Engine, input: TriggerInput, userId: string,
 export const deleteSql = (id: unknown) => { if (typeof id !== "string" || !id || id.length > 64) bad(); return `DELETE FROM cost_index_triggers WHERE id = ${Q(id as string)};`; };
 
 /** Every trigger with its evaluation as of `today`. */
-export async function triggers(e: Engine, today = new Date().toISOString().slice(0, 10)): Promise<TriggerView[]> {
+export async function triggers(e: Engine, today = businessToday()): Promise<TriggerView[]> {
   validDate(today);
   const list = await rows(e, `SELECT t.*, b.period_date::VARCHAR AS base_period, b.index_value::VARCHAR AS base_value, n.period_date::VARCHAR AS latest_period, n.index_value::VARCHAR AS latest_value,
  CAST(b.index_value * 10000 AS HUGEINT)::VARCHAR AS b4, CAST(n.index_value * 10000 AS HUGEINT)::VARCHAR AS n4,

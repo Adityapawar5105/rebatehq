@@ -9,12 +9,13 @@ import {lineFromCents} from '../margin/engine';
 import {msg} from '../i18n/core';
 import {rows,type Preview,type PriceRow} from './rules';
 import {resolvedBook} from './book';
+import {businessToday} from '../vault/today';
 export const BASIC_GRID_LIMIT=50,FULL_GRID_LIMIT=500;
 export type GridRow={key:string;product:string|null;category:string;rawCategory:string|null;rawTier:string|null;customer:string|null;tier:string;quantityBreak:string;from:string|null;to:string|null;price:string;cost:string|null};
 export type GridEdit={key:string;price:string};
 type Change=GridRow & {after:string;quantity:string;impact:string;guard:string;appliedKey:string};
 export const fail=(key:'pc2.invalid'|'pc2.conflict'|'pc2.pasteError'|'pc2.empty'|'pc2.scopeExport'='pc2.invalid'):never=>{throw new VaultError('PRICING',msg(key));};
-const day=()=>new Date().toISOString().slice(0,10);
+const day=()=>businessToday();
 const nullable=(v:string|null)=>v===null?'NULL':Q(v);
 export function moneyCell(value:string){if(typeof value!=='string')return fail('pc2.pasteError');try{return String(minorUnits(value));}catch{return fail('pc2.pasteError');}}
 /** Excel paste is one column of decimal prices, anchored to the visible row. No keys or formulas are executable. */

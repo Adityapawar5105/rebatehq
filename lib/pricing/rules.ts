@@ -11,6 +11,7 @@ import { PROFILES, type ErpProfile } from "../studio/mapper";
 import { csvSafeCell } from "../csv";
 import * as XLSX from "xlsx";
 import { msg } from "../i18n/core";
+import { businessToday } from "../vault/today";
 
 export type RuleInput = { id?: string; name: string; category: string; vendor: string; threshold: string; increase: string };
 export type GuardInput = { tier: string; category: string; start: string; target: string; floor: string };
@@ -19,7 +20,7 @@ export type Preview = { id: string; count: string; impact: string; red: string; 
 /** Grid columns (7V-3a) of every change preview, SQL or in memory. */
 export const PREVIEW_GRID: GridSpec = { product: "text", tier: "text", before: "money", after: "money", cost: "money", quantity: "decimal", impact: "money", guard: "text", before_margin: "money", after_margin: "money" };
 export const MAX_PREVIEW_PAIRS = 250_000;
-const today = () => "DATE "+Q(new Date().toISOString().slice(0,10));
+const today = () => "DATE "+Q(businessToday());
 const bad = (text: string): never => { throw new VaultError("PRICING", text); };
 export function rate(text: string) { if (!/^\d{1,3}(\.\d{1,2})?$/.test(text)) return bad(msg("rules.useAPercentageFrom")); const bp = rescale(dec(text), 2).v; if (bp > BigInt(10000)) return bad(msg("rules.aPercentageCannotExceed")); return bp; }
 export function label(value: string) { if (typeof value !== "string" || !value.trim() || value.length > 160 || /[\x00-\x1f]/.test(value)) return bad(msg("rules.useANameOf")); return value.trim(); }
@@ -79,7 +80,7 @@ export async function approveSql(e: Engine, id: string, actor: string, matrixOve
   const r = (await rows(e,`SELECT r.*,m.pricing_revision AS revision,(SELECT max(version) FROM rule_revisions WHERE rule_id=r.rule_id) AS latest FROM rule_runs r CROSS JOIN vault_meta m WHERE r.id=${Q(id)}`))[0];
   if (!r || r.status!=='preview') return bad(msg("rules.onlyAnUnapprovedPreview"));
   if (String(r.revision)!==String(r.base_revision) || Number(r.latest)!==Number(r.rule_version)) return bad(msg("rules.conflictDataGuardrailsOr"));
-  if (String(r.run_date).slice(0,10)!==new Date().toISOString().slice(0,10)) return bad(msg("rules.thePreviewDateChanged"));
+  if (String(r.run_date).slice(0,10)!==businessToday()) return bad(msg("rules.thePreviewDateChanged"));
   const p = previewOverride ?? await preview(e,id); if (p.count==='0') return bad(msg("rules.noPricesChangedAdjust")); if (p.red!=='0') return bad(msg("rules.redAProposedPrice"));
   return `INSERT INTO price_versions VALUES(${Q(crypto.randomUUID())},${Q(id)},${Q(actor)},${Q(JSON.stringify({rows:p.count,impact:p.impact,rule:r.rule_id,version:Number(r.rule_version)}))},${Q(new Date().toISOString())});
 ${matrixOverride ?? `UPDATE price_matrix SET valid_to=${today()} WHERE customer_id IS NULL AND qty_break=0 AND valid_from<${today()} AND (valid_to IS NULL OR valid_to>${today()}) AND (product_id,coalesce(tier,'')) IN (SELECT product_id,tier FROM rule_changes WHERE run_id=${Q(id)});

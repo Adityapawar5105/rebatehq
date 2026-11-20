@@ -68,6 +68,7 @@ import {relayHttp} from '../relay/http';
 import {RelayError} from '../relay/protocol';
 import {minorUnits} from '../spike/exact';
 import { msg } from "../i18n/core";
+import { businessToday } from "./today";
 export class VaultService {
   /** v2.6 gap 2: whether this device already has a relay identity, read from the vault only (no network request). */
   async relayLocal(){
@@ -546,12 +547,12 @@ export class VaultService {
   async benchWithdrawn() { await this.benchOwner(); await this.write('bench.withdrawn', {}, e => e.conn.query(bench.withdrawnSql(new Date().toISOString())).then(() => undefined)); return this.benchState(); }
   // 8B-2: the dead-stock clearance optimiser (Professional/Scale). Reads need cost; settings and drafts need pricing, and a
   // draft goes through the normal changeset, Pricing Owner approval and export.
-  async deadState() { this.opsTier(); const e = this.requireEngine(), s = await deadstock.settings(e), today = new Date().toISOString().slice(0, 10); return { settings: s, summary: await deadstock.summary(e, s, today), page: await deadstock.page(e, s, today) }; }
-  async deadRows(offset = 0, grid?: unknown) { this.opsTier(); const e = this.requireEngine(); return deadstock.page(e, await deadstock.settings(e), new Date().toISOString().slice(0, 10), offset, grid); }
+  async deadState() { this.opsTier(); const e = this.requireEngine(), s = await deadstock.settings(e), today = businessToday(); return { settings: s, summary: await deadstock.summary(e, s, today), page: await deadstock.page(e, s, today) }; }
+  async deadRows(offset = 0, grid?: unknown) { this.opsTier(); const e = this.requireEngine(); return deadstock.page(e, await deadstock.settings(e), businessToday(), offset, grid); }
   async deadSettingsSave(input: unknown) { this.opsTier(); const sql = deadstock.settingsSql(input, new Date().toISOString()); await this.write('dead.settings_saved', {}, e => e.conn.query(sql).then(() => undefined)); return this.deadState(); }
   async deadDraft(ids: unknown) {
     this.opsTier(); await this.requireOwnerNamed(); const e = this.requireEngine();
-    const picks = await deadstock.picks(e, await deadstock.settings(e), new Date().toISOString().slice(0, 10), ids);
+    const picks = await deadstock.picks(e, await deadstock.settings(e), businessToday(), ids);
     if (!picks.length) throw new VaultError('DEADSTOCK', msg('dead.noneToDraft'));
     let run = ''; const details = { actor: this.identity.userId, run_id: '', items: String(picks.length) };
     await this.write('dead.draft_created', details, async w => { run = await ops.clearanceDraft(w, picks, this.identity.userId); details.run_id = run; });

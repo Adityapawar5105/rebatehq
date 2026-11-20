@@ -11,9 +11,10 @@ import {DataGrid} from '@/components/ui/DataGrid';
 import type {GridQuery} from '@/lib/grid/core';
 import {SupplierClaimsView} from './SupplierClaimsView';
 import {AgreementButton} from './Templates';
+import {yearEnd,yearStart} from '@/lib/vault/today';
 const modeKey={retroactive:'rebate.retroactive',incremental:'rebate.incremental'} as const;
 const treatmentKey={additional:'rebate.additional',replace:'rebate.replace'} as const;
-const fresh=():ProgramInput=>({reference:'',customer:'',mode:'retroactive',treatment:'additional',from:new Date().getUTCFullYear()+'-01-01',to:new Date().getUTCFullYear()+'-12-31',eligible:'',excluded:'',enabled:true,tiers:[{from:'0',to:'',rate:'2'}]});
+const fresh=():ProgramInput=>({reference:'',customer:'',mode:'retroactive',treatment:'additional',from:yearStart(),to:yearEnd(),eligible:'',excluded:'',enabled:true,tiers:[{from:'0',to:'',rate:'2'}]});
 export function RebateReconciliation({value}:{value:NonNullable<Results['marginWaterfall']['rebateReconciliation']>}){
  if(value.programs==='0')return null;
  return <Notice tone={value.valid?'info':'warn'} role={value.valid?undefined:'alert'}><p>{t('rebate.waterfallReconciliation',{booked:fmt.currency(value.booked),adjustment:fmt.currency(value.adjustment),recognized:fmt.currency(value.recognized)})}</p><p>{t('rebate.reconciliationHelp')}</p>{!value.valid&&<p>{t('rebate.reconciliationFailed')}</p>}</Notice>;

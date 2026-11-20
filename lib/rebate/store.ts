@@ -10,6 +10,7 @@ import {accrueCents,rateInteger,type Agreement} from './engine';
 import {hasRebates,salesInput} from './input';
 import {gridPage,gridQuery,memoryPage} from '../grid/sql';
 import type {ClientColumn,GridMeta,GridSpec} from '../grid/core';
+import {businessToday} from '../vault/today';
 /** Rebate progress grid: earned and progress only, never cost or margin (decision 16; reps can see it). */
 export const PROGRESS_GRID:GridSpec={reference:'text',customer:'text',from:'date',spend:'money',earned:'money',remaining:'money'};
 export const EVIDENCE_GRID:GridSpec={source:'text',product:'text',date:'date',base:'money',booked:'money',accrued:'money',recognized:'money'};
@@ -55,7 +56,7 @@ export async function rebuildAccruals(e:Engine){
 }
 export type Progress={id:string;reference:string;customer:string;from:string;to:string;mode:string;enabled:boolean;spend:string;earned:string;remaining:string|null;nextRate:string|null;checkedAt:string|null;reminder:boolean};
 export async function progress(e:Engine,offset=0,grid?:unknown){
- const list=await programs(e),out:Progress[]=[];const today=new Date().toISOString().slice(0,10),soon=new Date(Date.parse(today+'T00:00:00Z')+30*86400000).toISOString().slice(0,10);
+ const list=await programs(e),out:Progress[]=[];const today=businessToday(),soon=new Date(Date.parse(today+'T00:00:00Z')+30*86400000).toISOString().slice(0,10);
  for(const p of list){const r=(await rows(e,`SELECT coalesce(sum(base_cents),0)::VARCHAR spend FROM rebate_accruals WHERE program_id=${Q(p.id)}`))[0];const value=accrueCents(BigInt(r.spend),p.mode,p.tiers);
   out.push({id:p.id,reference:p.reference,customer:p.customer,from:p.from,to:p.to,mode:p.mode,enabled:p.enabled,...value,checkedAt:p.checkedAt,reminder:p.enabled&&value.remaining!==null&&BigInt(value.remaining)>BigInt(0)&&p.to>=today&&p.to<=soon});}
  offset=Number.isInteger(offset)?Math.max(0,offset):0;

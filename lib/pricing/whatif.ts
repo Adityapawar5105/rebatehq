@@ -2,10 +2,11 @@ import type {Engine} from '../vault/engine';
 import {rows,rate,simulate} from './rules';
 import {rhaSql} from '../margin/sql';
 import {rha} from '../margin/decimal';
+import {businessToday} from '../vault/today';
 const cached=new WeakMap<Engine,{key:string;weighted:string;count:string}>();
 export async function whatIf(e:Engine,id:string,increase:string,exact:boolean,version:number){
  const bp=rate(increase),r=(await rows(e,`SELECT pricing_revision::VARCHAR n FROM vault_meta WHERE id=1`))[0];
- const key=JSON.stringify([id,version,r.n,new Date().toISOString().slice(0,10)]);let c=cached.get(e);
+ const key=JSON.stringify([id,version,r.n,businessToday()]);let c=cached.get(e);
  if(!c||c.key!==key){
   // simulate only constructs the bounded temporary base; its returned write SQL is never executed here.
   await simulate(e,id);await e.conn.query('DROP TABLE IF EXISTS temp.md_whatif;CREATE TEMP TABLE md_whatif AS SELECT * FROM md_price_copy');

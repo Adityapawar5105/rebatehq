@@ -10,6 +10,7 @@ import type {GridQuery} from '@/lib/grid/core';
 import {fmt,getLocale,t,type MessageKey} from '@/lib/i18n';
 import {Button,ButtonLink,Card,EmptyState,Field,Grid,Notice,SectionTabs,Skeleton,StatTile} from '@/components/ui/ui';
 import {DataGrid} from '@/components/ui/DataGrid';
+import {businessToday,yearStart} from '@/lib/vault/today';
 type Props={client:VaultClient;caps:Cap[];tier?:Tier;busy:boolean;version:string;operation:(f:()=>Promise<void>)=>Promise<void>;refresh:()=>Promise<void>};
 /** "#reports-roi-<kind>" (the command palette) opens that ROI tab. */
 const roiKindFromHash=():RoiKind=>{const k=typeof location==='undefined'?'':location.hash.replace('#reports-roi-','');return k==='runs'||k==='recoveries'?k:'findings';};
@@ -33,7 +34,7 @@ function PackView({client,tier,busy,version,operation,refresh}:Props){
  <Button data-testid="cadence-prepare" variant={file?.id===ready.id?'secondary':'primary'} disabled={busy} onClick={()=>void operation(async()=>{setFile(undefined);const f=await client.call('reportExport',{id:ready.id,locale:getLocale()});setFile({id:ready.id,url:URL.createObjectURL(f.blob),name:f.name});await refresh();})}>{t('cadence.prepare')}</Button>{file?.id===ready.id&&<ButtonLink data-testid="cadence-download" variant="primary" href={file.url} onClick={e=>{if(busy)e.preventDefault();else e.currentTarget.download=file.name;}} aria-disabled={busy}>{t('cadence.download')}</ButtonLink>}</>:stamp&&<p>{t('cadence.stale')}</p>}
  </>}</Card>;
 }
-const freshRecovery=():RecoveryInput=>({ledger:'',run:'',amount:'',reference:'',from:new Date().getUTCFullYear()+'-01-01',to:new Date().toISOString().slice(0,10),confirmed:false});
+const freshRecovery=():RecoveryInput=>({ledger:'',run:'',amount:'',reference:'',from:yearStart(),to:businessToday(),confirmed:false});
 const ROI_COLUMNS:Record<RoiKind,{id:string;label:MessageKey;type?:'money'|'int'|'date'}[]>={findings:[{id:'id',label:'cadence.selectedFinding'},{id:'leak_id',label:'cadence.findings'},{id:'identified_cents',label:'cadence.found',type:'money'},{id:'recovered_cents',label:'cadence.recovered',type:'money'},{id:'updated_at',label:'cadence.recordedAt',type:'date'}],runs:[{id:'id',label:'cadence.selectedRun'},{id:'status',label:'cadence.status'},{id:'run_date',label:'cadence.recordedAt',type:'date'},{id:'affected_rows',label:'cadence.lines',type:'int'}],recoveries:[{id:'id',label:'cadence.recoveries'},{id:'evidence_ref',label:'cadence.evidence'},{id:'ledger_id',label:'cadence.selectedFinding'},{id:'run_id',label:'cadence.selectedRun'},{id:'amount_cents',label:'cadence.amount',type:'money'},{id:'period_start',label:'cadence.from',type:'date'},{id:'period_end',label:'cadence.to',type:'date'},{id:'recorded_at',label:'cadence.recordedAt',type:'date'},{id:'voided_at',label:'cadence.voidedAt',type:'date'}]};
 function RoiView({client,caps,busy,version,operation,refresh}:Props){
  const [summary,setSummary]=useState<Results['roiV2']>(),[kind,setKind]=useState<RoiKind>(()=>roiKindFromHash()),[page,setPage]=useState<Results['roiRows']>(),[query,setQuery]=useState<GridQuery>({}),[form,setForm]=useState<RecoveryInput>(freshRecovery),[failed,setFailed]=useState(false);const request=useRef(0),manage=caps.includes('reconcile');

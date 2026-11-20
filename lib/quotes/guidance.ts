@@ -7,6 +7,7 @@ import type { Engine } from "../vault/engine";
 import { sqlText as Q } from "../spike/exact";
 import { rhaSql } from "../margin/sql";
 import { rha } from "../margin/decimal";
+import { businessToday } from "../vault/today";
 
 /** Look-back windows (days before the latest invoice date in the vault, or before today for supplier costs). */
 export const HISTORY_DAYS = 365, COST_RISE_DAYS = 90;
@@ -76,7 +77,7 @@ SELECT count(*) > 0 AS up FROM v WHERE n = 1 AND prev IS NOT NULL AND cost > pre
 }
 
 /** Guidance for every line of a quote, from the line's stored book price and guardrail snapshot. */
-export async function quoteGuidance(e: Engine, quoteId: string, today = new Date().toISOString().slice(0, 10)): Promise<{ quoteId: string; lines: LineGuidance[] }> {
+export async function quoteGuidance(e: Engine, quoteId: string, today = businessToday()): Promise<{ quoteId: string; lines: LineGuidance[] }> {
   const q = (await rows(e, `SELECT q.customer_id, coalesce(c.tier, '') AS tier FROM quotes q LEFT JOIN customers c ON c.customer_id = q.customer_id WHERE q.id = ${Q(quoteId)}`))[0];
   if (!q) return { quoteId, lines: [] };
   const lines = await rows(e, `SELECT line_no, product_id, unit_price_cents::VARCHAR AS unit, book_price_cents::VARCHAR AS book, start_cents::VARCHAR AS s, target_cents::VARCHAR AS t, floor_cents::VARCHAR AS f
