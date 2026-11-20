@@ -175,3 +175,19 @@ Home lists only rows the role can open, and they land on the exact heading. Both
 - The sign-in rate-limit header (audit B-9) is unchanged pending a safe check.
 
 **It passed CI** in [CI #178](https://github.com/Adityapawar5105/rebatehq/actions/runs/44801085014) on `ec651af`: 387 unit tests (78 JS + 309 TS), the 139-check pgTAP plan twice, **70 authenticated Chromium vault checks** and **67 Firefox lab checks** (both including `licenceOutageUi`), and 12 relay checks. No schema, migration or blueprint change. See RESILIENCE_VERIFICATION.md.
+
+**Roadmap phases 4, 5, 7, 8a and 9a (20–21 November 2026; built by Claude Code).**
+- **Dates in local time (PR #9).** Decision D4 is the device time zone; price runs use the local business date.
+- **Recovery and onboarding.**
+  - "Forgot your passphrase?" starts again on this device.
+  - "Change passphrase" removes older snapshots.
+  - The device list is readable, and the Owner gets a "devices waiting" badge.
+  - "Disable workspace" moved to Account › Workspace.
+- **Grid and Leak Report trust.** Steady table, compact totals, selection kept on sort, live report scope.
+- **Consistency fixes.**
+- **Progress kinds.** The Cancel button no longer reads English text.
+- **Import plan re-check.** Import refuses a plan reviewed before another change to the vault.
+
+Phases 5 to 9a merged as PR #10. Both privacy gates allow one more request: `GET /api/licence/devices`, with no query and no body.
+
+**They passed CI:** [CI #180](https://github.com/Adityapawar5105/rebatehq/actions/runs/44813741319) on `6c45c9b` (390 unit tests, 70 Chromium and 67 Firefox checks), and [CI #185](https://github.com/Adityapawar5105/rebatehq/actions/runs/44825994318) on `bdf14b8` (397 unit tests, 72 Chromium and 69 Firefox checks including `passphraseUi` and `gridTrustUi`, 12 relay checks, the 139-check pgTAP plan twice). No schema, migration or blueprint change. See ROADMAP_PHASES_VERIFICATION.md.
