@@ -47,7 +47,7 @@ import type { Role, Settings, SettingsPatch } from "../studio/formats";
 import type { ErpProfile, FieldSource } from "../studio/mapper";
 import { dismissSql, fixGroups, fixRows, fixSetSql, recheck } from "../studio/fixlater";
 import { health } from "../studio/health";
-import { PLAYGROUND_PREFIX, generatePlayground } from "../studio/playground";
+import { PLAYGROUND_PREFIX, SAMPLE_COUNTS_SQL, generatePlayground, sampleState } from "../studio/playground";
 import { AUTO_LOCK_MS, LEASE_WAIT_MS, VaultError, type LeaksView, type Scope, type Tier, type VaultStatus } from "./protocol";
 import { REBUILD_SQL, effectiveRebuildSql, findDifferences, reconSummary, recordSql } from "../margin/aggregate";
 import { drill, math, waterfall, whale, type Dim, type Filters, type Metric } from "../margin/views";
@@ -912,7 +912,8 @@ export class VaultService {
     const data = (await this.engine.conn.query(`SELECT (SELECT count(*) FROM sales_lines)::VARCHAR AS lines,(SELECT count(*) FROM products)::VARCHAR AS products,(SELECT count(*) FROM customers)::VARCHAR AS customers,audit_count::VARCHAR AS entries,schema_version::VARCHAR AS version FROM vault_meta WHERE id=1`)).toArray()[0];
     // A role without cost access never has cost or margin selected: the query itself leaves them out.
     const access = await this.access(), cost = access.caps.includes("cost");
+    const files = (await this.engine.conn.query(SAMPLE_COUNTS_SQL)).toArray()[0], sample = sampleState(Number(files.sample), Number(files.real));
     const totals = (await this.engine.conn.query(`SELECT coalesce(sum(list_cents),0)::VARCHAR AS list,coalesce(sum(discount_cents),0)::VARCHAR AS discounts,coalesce(sum(freight_cents),0)::VARCHAR AS freight,coalesce(sum(rebate_cents),0)::VARCHAR AS rebates,coalesce(sum(list_cents-discount_cents-freight_cents-rebate_cents),0)::VARCHAR AS pocket${cost ? `,coalesce(sum(cost_cents),0)::VARCHAR AS cost,coalesce(sum(list_cents-discount_cents-freight_cents-rebate_cents-cost_cents),0)::VARCHAR AS margin` : ""} FROM ${await salesInput(this.engine)}`)).toArray()[0];
-    return { ...base, currency: await workspaceCurrency(this.requireEngine()), lines: String(data.lines), products: String(data.products), customers: String(data.customers), auditEntries: String(data.entries), schemaVersion: String(data.version), totals: { cost: null, margin: null, ...totals } as VaultStatus["totals"], access };
+    return { ...base, currency: await workspaceCurrency(this.requireEngine()), lines: String(data.lines), products: String(data.products), customers: String(data.customers), auditEntries: String(data.entries), schemaVersion: String(data.version), sample, totals: { cost: null, margin: null, ...totals } as VaultStatus["totals"], access };
   }
 }

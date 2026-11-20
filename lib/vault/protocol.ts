@@ -32,6 +32,8 @@ export type VaultStatus = {
   writable: boolean; preparing: boolean;
   lines: string; products: string; customers: string; auditEntries: string;
   currency: string; schemaVersion: string; generation: string; tier: Tier; lastSaved: string | null;
+  /** Unlocked only: whether the vault holds no files, only the Playground's sample files, both, or real files only. */
+  sample?: import("../studio/playground").SampleState;
   /** cost and margin are null for roles that may not see cost: the worker never selects them. */
   totals?: { list: string; discounts: string; freight: string; rebates: string; pocket: string; cost: string | null; margin: string | null };
   access?: Access;
