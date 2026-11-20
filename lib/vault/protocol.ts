@@ -304,7 +304,7 @@ export type Action = keyof Commands;
 export type Request = { [K in Action]: { id: string; action: K; data: Commands[K] } }[Action];
 export type Response = { [K in Action]: { id: string; action: K; result: Results[K] } }[Action]
   | { id: string; error: { code: string; message: string } }
-  | { event: "progress"; stage: string; done: string; total: string }
+  | { event: "progress"; stage: string; done: string; total: string; /** Audit B-12: "save" offers no Cancel; "sim" and "check" label their Cancel. */ kind?: import("../studio/studio").ProgressKind }
   | { event: "locked"; reason: string }
   /** Sent LOCK_WARNING_MS before the idle lock (audit B-8): the page offers "Stay unlocked". */
   | { event: "locking" }

@@ -24,7 +24,7 @@ export async function state(e:Engine){return {currency:await workspaceCurrency(e
 /** No persistent writes here: completion/cancel is decided by the service before stamping a check. */
 export async function check(e:Engine,kind:PackKind,month:string|undefined,signal:AbortSignal,progress:Progress,today=businessToday()){
  const window=windowFor(kind,month,today),id=crypto.randomUUID();let done=0;
- const step=(part:Parameters<typeof msg>[0])=>{if(signal.aborted)throw cancelled();progress(msg('cadence.progress',{part:msg(part)}),String(done++),'7');};
+ const step=(part:Parameters<typeof msg>[0])=>{if(signal.aborted)throw cancelled();progress(msg('cadence.progress',{part:msg(part)}),String(done++),'7','check');};
  step('cadence.leaks');const size=(await rows(e,'SELECT count(*)::VARCHAR n FROM sales_lines'))[0].n;if(BigInt(size)>BigInt(2000000))throw new VaultError('REPORT',msg('cadence.tooLarge'));
  const leaks=await findLeaks(e,true,window);
  step('cadence.bridge');const change=kind==='monthly'?await bridge(e,{month:window.month}):null;

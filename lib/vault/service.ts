@@ -312,8 +312,8 @@ export class VaultService {
     progress(msg("vault.loadingRowsIntoThe"), "0", "1");
     const result = await this.studio.commit(engine, acknowledge);
     this.dirty = true; progress(msg("vault.updatingMarginTotals2"), "0", "1"); await this.derived(engine);
-    progress(msg("vault.savingEncryptedSnapshot"), "0", "1"); await this.save();
-    progress(msg("vault.saved"), "1", "1"); this.touch();
+    progress(msg("vault.savingEncryptedSnapshot"), "0", "1", "save"); await this.save();
+    progress(msg("vault.saved"), "1", "1", "save"); this.touch();
     return { status: await this.status(), studio: await this.studioState(), result };
   }
   async studioDownload(id: string, signal: AbortSignal) { this.requireEngine(); return this.studio.download(id, signal); }
@@ -471,7 +471,7 @@ export class VaultService {
   async reportState(){this.opsTier();return {...await cadence.state(this.requireEngine()),ready:this.currentPack()};}
   async reportCheck(kind:cadence.PackKind,month:string|undefined,signal:AbortSignal,progress:Progress){
     this.opsTier();const e=await this.writable(progress);this.packLast=null;
-    try{const {stamp,...data}=await cadence.check(e,kind,month,signal,progress);if(signal.aborted)throw cadence.cancelled();progress(msg('vault.savingEncryptedSnapshot'),'0','1');await this.write('report.checked',{id:data.id,kind},engine=>engine.conn.query(stamp).then(()=>undefined));this.packLast={engine:e,version:this.dataVersion,data};return data;}
+    try{const {stamp,...data}=await cadence.check(e,kind,month,signal,progress);if(signal.aborted)throw cadence.cancelled();progress(msg('vault.savingEncryptedSnapshot'),'0','1','save');await this.write('report.checked',{id:data.id,kind},engine=>engine.conn.query(stamp).then(()=>undefined));this.packLast={engine:e,version:this.dataVersion,data};return data;}
     catch(error){if(signal.aborted)throw cadence.cancelled();if(error instanceof VaultError)throw error;throw new VaultError('REPORT',msg('cadence.failed'));}finally{this.leakCache=null;}
   }
   async reportExport(id:string,locale?:string){this.opsTier();const p=this.currentPack();if(!p||p.id!==id)throw new VaultError('REPORT',msg('cadence.stale'));if(!isLocale(locale))throw new VaultError('REPORT',msg('cadence.invalid'));const bytes=reportPdf(p,locale);await this.write('report.cadence_pdf',{id:p.id,kind:p.kind,locale},async()=>undefined);this.packLast={engine:this.requireEngine(),version:this.dataVersion,data:p};return {name:'rebatehq-'+p.kind+'-'+p.window.from+'.pdf',blob:new Blob([bytes as Uint8Array<ArrayBuffer>],{type:'application/pdf'})};}

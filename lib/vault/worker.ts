@@ -15,7 +15,7 @@ const service = new VaultService(() => {
   if (inFlight > 0) { lockAfterWork = true; return; }
   queue = queue.then(async () => { const saved = await service.autoLock(); post({ event: "locked", reason: saved ? msg("vault.worker.lockedAfter10Minutes") : msg("vault.worker.autoLockedTheLast") }); });
 }, undefined, undefined, undefined, () => post({ event: "locking" }));
-const progress = (stage: string, done: string, total: string) => post({ event: "progress", stage, done, total });
+const progress = (stage: string, done: string, total: string, kind?: import("../studio/studio").ProgressKind) => post({ event: "progress", stage, done, total, ...(kind ? { kind } : {}) });
 function cancellable() { return abort.signal; }
 async function handle(request: Request) {
   abort = new AbortController(); // each request gets its own cancellation scope

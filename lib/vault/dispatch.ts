@@ -6,7 +6,7 @@ import { storageStatus } from "./storage";
 import { VaultError, type Request } from "./protocol";
 import type { VaultService } from "./service";
 import { msg } from "../i18n/core";
-export type Hooks = { signal: () => AbortSignal; progress: (stage: string, done: string, total: string) => void; unlocked?: () => void };
+export type Hooks = { signal: () => AbortSignal; progress: (stage: string, done: string, total: string, kind?: import("../studio/studio").ProgressKind) => void; unlocked?: () => void };
 export async function dispatch(service: VaultService, request: Request, hooks: Hooks): Promise<unknown> {
   if (!(request.action in ACTION_CAP)) throw new VaultError("PROTOCOL", msg("vault.dispatch.unsupportedLocalCommand2"));
   await service.guard(ACTION_CAP[request.action]);

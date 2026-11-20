@@ -58,7 +58,7 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
   useEffect(() => { setWorkspaceCurrency(status?.state === "unlocked" ? status.currency : "USD"); }, [status?.state, status?.currency]);
   const [error, setError] = useState(""), [message, setMessage] = useState(msg("shell.opening")), [busy, setBusy] = useState(false);
   const [passphrase, setPassphrase] = useState(""), [tier, setTier] = useState<Tier>("starter"), [ownerName, setOwnerName] = useState("");
-  const [storage, setStorage] = useState<StorageStatus | null>(null), [progress, setProgress] = useState<{ stage: string; done: string; total: string } | null>(null);
+  const [storage, setStorage] = useState<StorageStatus | null>(null), [progress, setProgress] = useState<{ stage: string; done: string; total: string; kind?: "save" | "sim" | "check" } | null>(null);
   const [supported, setSupported] = useState(true);
   // Home header: the caller's own name, role label and Pricing Owner, from the role-checked `home` read.
   const [homeInfo, setHomeInfo] = useState<{ name: string | null; role: string; owner: string | null } | null>(null);
@@ -164,7 +164,7 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
         {status?.preparing && <Notice tone="info" data-testid="preparing">{t("shell.preparing")}</Notice>}
         {locking && unlocked && <Notice tone="warn" role="alert" data-testid="locking-soon" actions={<Button size="sm" variant="primary" onClick={() => { setLocking(false); void client.current?.call("touch", {}).catch(() => undefined); }}>{t("shell.stayUnlocked")}</Button>}>{t("shell.lockingSoon")}</Notice>}
         {status?.recovered && <Notice tone="warn">{t("shell.recovered")}</Notice>}
-        {progress && <div className={sh.progress}><label htmlFor="vault-progress">{say(progress.stage)}</label><progress id="vault-progress" value={Number(progress.done)} max={Math.max(1, Number(progress.total))}/>{!progress.stage.startsWith("Saving") && !progress.stage.startsWith("Saved") && <Button size="sm" onClick={() => void client.current!.call("cancel", {})}>{t(progress.stage.startsWith("Replaying") ? "sim.cancel" : progress.stage.startsWith("Checking") ? "cadence.cancel" : "shell.cancelImport")}</Button>}</div>}
+        {progress && <div className={sh.progress}><label htmlFor="vault-progress">{say(progress.stage)}</label><progress id="vault-progress" value={Number(progress.done)} max={Math.max(1, Number(progress.total))}/>{progress.kind !== "save" && <Button size="sm" onClick={() => void client.current!.call("cancel", {})}>{t(progress.kind === "sim" ? "sim.cancel" : progress.kind === "check" ? "cadence.cancel" : "shell.cancelImport")}</Button>}</div>}
         {dead ? <section className={ui.card} role="alert" data-testid="worker-failed"><h2>{t("shell.workerFailed.title")}</h2><p>{t("shell.workerFailed.body")}</p><Button variant="primary" onClick={() => location.reload()}>{t("shell.workerFailed.reload")}</Button></section>
           : !status ? <section className={ui.card} aria-busy="true">{t("shell.startingWorker")}</section> : !unlocked ? <div className={sh.auth}>
           <section className={`${ui.card} ${sh.authCard}`} aria-labelledby="auth-heading">

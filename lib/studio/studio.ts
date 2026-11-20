@@ -47,7 +47,10 @@ export type FileReport = { id: string; name: string; role: Role; rowsRead: strin
 export type BatchReport = { rebateTerms?:boolean; files: FileReport[]; warnings: string[]; loaded: string; rejected: string; capOk: boolean; capMessage: string | null; replaces: string | null };
 export type StudioState = { files: FileView[]; report: BatchReport | null; recipes: { id: string; name: string; role: Role | null }[] };
 export type SourceView = { id: string; name: string; role: string; importedAt: string; rowsLoaded: string; rowsRejected: string; issues: string; sourceCurrency: string; workspaceCurrency: string; fxRate: string; headerFx: string };
-export type Progress = (stage: string, done: string, total: string) => void;
+/** What a progress step is (audit B-12): "save" writes the encrypted snapshot and offers no Cancel; "sim" and "check"
+ * name their own Cancel button (a simulation or a report check). Anything else is an import or a long job. */
+export type ProgressKind = "save" | "sim" | "check";
+export type Progress = (stage: string, done: string, total: string, kind?: ProgressKind) => void;
 type Entry = {
   id: string; file: File; kind: Kind; settings: Settings; role: Role | null; roleManual: boolean; sheets: string[]; zipNotices: string[];
   bytes: Uint8Array | null; grid: Grid | null; sample: string[][]; sampleBytes: number; sampleRecords: number; notices: string[]; replaces: string | null; appliedRecipe: string | null;
