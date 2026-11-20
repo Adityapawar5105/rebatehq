@@ -437,6 +437,14 @@ async function activationUi(){
  await page.getByTestId('after-import').filter({hasText:'5 rows imported.'}).waitFor();
  await page.getByTestId('after-import').getByRole('link',{name:'See your 90-day cash leak',exact:true}).click();await page.getByTestId('cash-leak-value').waitFor();
  assert.equal(await page.getByTestId('home-start').count()+await page.getByTestId('sample-banner').count(),0,'Real data still shows the start card or the sample banner');
+ // Audit B-2 (20 Nov 2026): a server error on the licence route keeps the saved licence inside the offline allowance,
+ // so the vault stays writable instead of turning read-only.
+ const failing=async route=>route.fulfill({status:503,contentType:'text/plain',body:'busy'});
+ await page.route('**/api/licence?device=*',failing);
+ try{await page.reload();await ready();await unlock();const licence=page.getByTestId('licence-status');await licence.filter({hasText:'offline grace'}).waitFor({timeout:30000});
+  assert.equal(await licence.getAttribute('data-tone'),'ok','A 503 from the licence route made the vault read-only');}
+ finally{await page.unroute('**/api/licence?device=*',failing);}
+ results.checks.licenceOutageUi={serverErrorKeepsLicence:true,offlineGraceShown:true};
  results.checks.activationUi={startCard:true,playgroundOneClickLeak:true,sampleBannerEverySection:true,sampleBadge:true,appOpenCaveat:true,removeSample:true,mappingSummary:true,afterImportNotice:true};
  }catch(error){console.error('Activation UI diagnostics:',JSON.stringify(await diagnose()));throw error;}finally{await context.close();context=savedContext;page=savedPage;dataPlaneActive=active;}
 }
