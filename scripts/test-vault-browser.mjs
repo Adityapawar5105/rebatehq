@@ -68,7 +68,8 @@ context.on("request", r => {
   }).catch(() => { failures.push("Could not inspect complete request headers"); }));
   const url = new URL(r.url());
   // 8D: only while the benchmark check has opened the Owner-click phase may /api/bench be called (the check asserts each body).
-  if (dataPlaneActive && !(benchOpen && url.origin === new URL(base).origin && url.pathname === "/api/bench") && (![new URL(base).origin, relayOrigin].includes(url.origin) || !["GET", "HEAD"].includes(r.method()) || (url.pathname.startsWith("/api/") && !(url.pathname==="/api/licence"&&r.method()==="GET"&&[...url.searchParams.keys()].every(k=>k==="device")&&!r.postData())))) failures.push("Vault flow made an unexpected external or API request");
+  // 20 Nov 2026 (audit B-5): the Owner's "devices waiting" badge reads GET /api/licence/devices, control-plane metadata with no query or body.
+  if (dataPlaneActive && !(benchOpen && url.origin === new URL(base).origin && url.pathname === "/api/bench") && (![new URL(base).origin, relayOrigin].includes(url.origin) || !["GET", "HEAD"].includes(r.method()) || (url.pathname.startsWith("/api/") && !(url.pathname==="/api/licence"&&r.method()==="GET"&&[...url.searchParams.keys()].every(k=>k==="device")&&!r.postData()) && !(url.pathname==="/api/licence/devices"&&r.method()==="GET"&&![...url.searchParams.keys()].length&&!r.postData())))) failures.push("Vault flow made an unexpected external or API request");
   requests.push(new URL(r.url()).pathname);
 });
 context.on("console", m => {

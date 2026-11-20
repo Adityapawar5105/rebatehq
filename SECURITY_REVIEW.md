@@ -166,3 +166,5 @@ First-party review of the recovery features added for audit B-3 and B-5 (roadmap
 |---|---|---|---|
 | R16 | Low, accepted | A passphrase change cannot reach backups already exported or written to a backup folder; they keep the old passphrase. This is stated on screen. Rotating a compromised passphrase also needs those backups replaced | Aditya Pawar / with R02 |
 | R17 | Low, open | If removing the older snapshots after a passphrase change fails part-way, an older snapshot under the old passphrase can remain until the change is repeated. The error says so. Consider an automatic retry on the next unlock | Aditya Pawar / next recovery change |
+
+**Privacy gate allow-list (20 November 2026).** While the vault is open, the page may now also call `GET /api/licence/devices` (no query, no body), for the Owner's "devices waiting" badge. It is control-plane metadata: device ids, statuses, dates and, for the Owner only, member emails. Every request's URL, headers and body are still scanned for the private markers. This is the only addition to `GET /api/licence?device=…`.
