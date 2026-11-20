@@ -24,6 +24,31 @@ export type PricePoint = {
   credit: CreditSignal;
 };
 export type QuoteStatus = "draft" | "submitted" | "pending" | "approved" | "rejected";
+/** What the caller may do next with a quote (Phase 1, 20 Nov 2026). The screen shows buttons from this list only. */
+export type QuoteAction = "edit" | "submit" | "withdraw" | "decide";
+/**
+ * Every allowed status move, in one place (the supplier-claims pattern, lib/rebate/supplier.ts).
+ * Editing a draft or rejected quote saves it as a draft; submit goes to "submitted", or "pending" when a line is
+ * below its floor; a pending quote is approved, rejected, or withdrawn by its author back to a draft.
+ */
+export const TRANSITIONS: Readonly<Record<QuoteStatus, readonly QuoteStatus[]>> = {
+  draft: ["draft", "submitted", "pending"],
+  rejected: ["draft", "submitted", "pending"],
+  pending: ["approved", "rejected", "draft"],
+  submitted: [],
+  approved: [],
+};
+export const canMove = (from: string, to: QuoteStatus) => (TRANSITIONS as Record<string, readonly QuoteStatus[]>)[from]?.includes(to) ?? false;
+/** The single guard for a status move; the message says why the move is refused. */
+export function assertMove(from: string, to: QuoteStatus, key: "quote.notEditable" | "quote.notPending") { if (!canMove(from, to)) bad(key); }
+/** The moves this caller can make: authors edit, submit and withdraw their own quotes; approvers decide other people's. */
+export function allowedNext(status: QuoteStatus, mine: boolean, canApprove: boolean): QuoteAction[] {
+  const out: QuoteAction[] = [];
+  if (mine && canMove(status, "draft") && status !== "pending") out.push("edit", "submit");
+  if (mine && status === "pending") out.push("withdraw");
+  if (!mine && canApprove && canMove(status, "approved")) out.push("decide");
+  return out;
+}
 export type QuoteLineView = { lineNo: number; productId: string; description: string; quantity: string; unitCents: string; bookCents: string | null; source: PriceSource; startCents: string | null; targetCents: string | null; floorCents: string | null; guard: Guard; totalCents: string; costCents?: string | null; marginCents?: string | null; marginRate?: string | null };
 export type QuoteView = {
   id: string; number: string; customerId: string; customerName: string; tier: string; status: QuoteStatus; createdBy: string; createdAt: string; updatedAt: string;
@@ -31,6 +56,8 @@ export type QuoteView = {
   lines: QuoteLineView[]; totalCents: string; worst: Guard; credit: CreditSignal; warnings: string[];
   /** Price position: sum of quoted prices against the sum of targets, in basis points (no cost involved). */
   positionBp: string | null; needsApproval: boolean; mine: boolean;
+  /** The moves this caller can make next (never cost). */
+  allowedNext: QuoteAction[];
   /** 8C-1 win/loss outcome, when recorded. */
   outcome: OutcomeView | null;
   costCents?: string | null; marginCents?: string | null; marginRate?: string | null; uncostedLines?: number;
@@ -98,7 +125,8 @@ async function quoteRow(e: Engine, id: string) {
 /** Replace a draft's lines: each line is priced and checked against its guardrail now, and keeps that snapshot. */
 export async function linesSql(e: Engine, id: string, lines: LineInput[], userId: string, at: string) {
   const q = await quoteRow(e, id);
-  if (!["draft", "rejected"].includes(String(q.status))) bad("quote.notEditable");
+  assertMove(String(q.status), "draft", "quote.notEditable");
+  if (String(q.status) === "pending") bad("quote.notEditable"); // a pending quote is withdrawn first (quoteWithdraw)
   if (String(q.created_by) !== userId) bad("quote.notYours");
   if (!Array.isArray(lines) || lines.length > MAX_LINES) bad("quote.tooManyLines", { max: MAX_LINES });
   const values: string[] = [];
@@ -119,7 +147,7 @@ UPDATE quotes SET status='draft', updated_at=${Q(at)}, decided_by=NULL, decided_
 /** Submit: a line below its floor needs an exception reason and the Pricing Owner's approval; below target is a soft warning. */
 export async function submitSql(e: Engine, id: string, reason: string | null, userId: string, at: string) {
   const q = await quoteRow(e, id);
-  if (!["draft", "rejected"].includes(String(q.status))) bad("quote.notEditable");
+  assertMove(String(q.status), "submitted", "quote.notEditable");
   if (String(q.created_by) !== userId) bad("quote.notYours");
   const lines = await rows(e, `SELECT guard_status FROM quote_lines WHERE quote_id=${Q(id)}`);
   if (!lines.length) bad("quote.noLines");
@@ -134,12 +162,22 @@ export async function submitSql(e: Engine, id: string, reason: string | null, us
 /** Approve or reject a pending exception. Nobody approves their own quote. */
 export async function decideSql(e: Engine, id: string, decision: "approve" | "reject", note: string | null, userId: string, at: string, via: string | null = null) {
   const q = await quoteRow(e, id);
-  if (String(q.status) !== "pending") bad("quote.notPending");
+  assertMove(String(q.status), "approved", "quote.notPending");
   if (via === null && String(q.created_by) === userId) bad("quote.noSelfApproval");
   if (decision !== "approve" && decision !== "reject") bad("quote.decisionInvalid");
   const text = (note ?? "").trim();
   if (text.length > 500 || /[\x00-\x08\x0b-\x1f]/.test(text)) bad("quote.reasonInvalid");
   return `UPDATE quotes SET status=${Q(decision === "approve" ? "approved" : "rejected")}, decided_by=${Q(via ?? userId)}, decided_at=${Q(at)}, decision_note=${text ? Q(text) : "NULL"}, updated_at=${Q(at)}${via === null ? ", relay_object=NULL" : ""} WHERE id=${Q(id)};`;
+}
+
+/** Withdraw: the author takes a pending quote back to a draft to change it. Any approval link is dropped, so a
+ * decision made on the old lines can never apply to the changed quote. */
+export async function withdrawSql(e: Engine, id: string, userId: string, at: string) {
+  const q = await quoteRow(e, id);
+  if (String(q.status) !== "pending") bad("quote.notPending");
+  assertMove(String(q.status), "draft", "quote.notPending");
+  if (String(q.created_by) !== userId) bad("quote.notYours");
+  return `UPDATE quotes SET status='draft', exception_reason=NULL, decided_by=NULL, decided_at=NULL, decision_note=NULL, relay_object=NULL, updated_at=${Q(at)} WHERE id=${Q(id)};`;
 }
 
 export async function linkSql(e: Engine, id: string, relayObject: string, at: string) {
@@ -148,7 +186,7 @@ export async function linkSql(e: Engine, id: string, relayObject: string, at: st
 }
 
 /** One quote, with cost and margin only for a caller allowed to see cost. */
-export async function view(e: Engine, id: string, userId: string, withCost: boolean): Promise<QuoteView> {
+export async function view(e: Engine, id: string, userId: string, withCost: boolean, canApprove = false): Promise<QuoteView> {
   const q = await quoteRow(e, id);
   const c = (await rows(e, `SELECT name, tier FROM customers WHERE customer_id=${Q(String(q.customer_id))}`))[0];
   const total = (qty: string, unit: string) => rhaSql(`CAST(${unit} AS HUGEINT)*CAST(${qty}*10000 AS HUGEINT)`, "10000");
@@ -180,6 +218,7 @@ FROM quote_lines l LEFT JOIN products p USING(product_id) WHERE l.quote_id=${Q(i
     lines, totalCents: sum.toString(), worst, credit: credit_, warnings,
     positionBp: targetSum > BigInt(0) ? (targeted * BigInt(10000) / targetSum).toString() : null,
     needsApproval: lines.some(l => l.guard === "red"), mine: String(q.created_by) === userId, outcome: await outcomeOf(e, id),
+    allowedNext: allowedNext(String(q.status) as QuoteStatus, String(q.created_by) === userId, canApprove),
   };
   if (withCost) { const m = costedPrice - cost; Object.assign(out, { costCents: uncosted === lines.length && lines.length ? null : cost.toString(), marginCents: costedPrice === BigInt(0) && uncosted ? null : m.toString(), marginRate: bp(rateBp(m, costedPrice)), uncostedLines: uncosted }); }
   return out;

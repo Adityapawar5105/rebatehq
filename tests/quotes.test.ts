@@ -140,6 +140,47 @@ test("7B quote lifecycle: soft warnings, a red line needs a reason, nobody appro
   } finally { c.close(); }
 });
 
+test("Phase 1: one table of quote moves, and the caller's allowed next moves", async () => {
+  const { TRANSITIONS, canMove, allowedNext } = await import("../lib/quotes/quotes");
+  // Walk the whole table: every status is listed, and nothing leaves a decided quote.
+  assert.deepEqual(Object.keys(TRANSITIONS).sort(), ["approved", "draft", "pending", "rejected", "submitted"]);
+  for (const [from, to] of Object.entries(TRANSITIONS)) for (const x of to) assert.ok(canMove(from, x), from + " to " + x);
+  assert.deepEqual([TRANSITIONS.submitted, TRANSITIONS.approved], [[], []]);
+  assert.ok(canMove("pending", "draft") && !canMove("submitted", "draft") && !canMove("approved", "pending") && !canMove("nonsense", "draft"));
+  assert.deepEqual(allowedNext("draft", true, false), ["edit", "submit"]);
+  assert.deepEqual(allowedNext("rejected", true, true), ["edit", "submit"]);
+  assert.deepEqual(allowedNext("pending", true, true), ["withdraw"], "an approver never decides their own quote");
+  assert.deepEqual(allowedNext("pending", false, true), ["decide"]);
+  assert.deepEqual(allowedNext("pending", false, false), []);
+  assert.deepEqual([allowedNext("submitted", true, true), allowedNext("approved", true, true)], [[], []]);
+});
+
+test("Phase 1: the author withdraws a stuck below-floor quote, edits it and resubmits", async () => {
+  const { c } = await vault();
+  try {
+    const rep = serviceFor(c, "rep"), po = serviceFor(c, "po"), rep2 = serviceFor(c, "rep2");
+    const id = (await call(rep, "quoteCreate", { customerId: "C1" }) as { id: string }).id;
+    await call(rep, "quoteLines", { id, lines: [{ productId: "P1", quantity: "10", unitCents: "7000" }] });
+    let view = await call(rep, "quoteSubmit", { id, reason: "Match a competitor bid" }) as Record<string, never>;
+    assert.equal(view.status, "pending"); assert.deepEqual(view.allowedNext, ["withdraw"]);
+    assert.deepEqual((await call(po, "quoteGet", { id }) as Record<string, never>).allowedNext, ["decide"]);
+    await assert.rejects(call(rep2, "quoteWithdraw", { id }), code("QUOTE")); // only the author
+    await assert.rejects(call(po, "quoteWithdraw", { id }), code("QUOTE"));
+    c.query(`UPDATE quotes SET relay_object='relay-1' WHERE id='${id}'`); // as if it had been shared
+    view = await call(rep, "quoteWithdraw", { id }) as Record<string, never>;
+    assert.deepEqual([view.status, view.exceptionReason, view.relayObject, view.decidedBy], ["draft", null, null, null]);
+    assert.deepEqual(view.allowedNext, ["edit", "submit"]);
+    await assert.rejects(call(rep, "quoteWithdraw", { id }), code("QUOTE")); // a draft is not pending
+    await assert.rejects(call(po, "quoteDecide", { id, decision: "approve", note: null }), code("QUOTE")); // nothing left to approve
+    view = await call(rep, "quoteLines", { id, lines: [{ productId: "P1", quantity: "10", unitCents: "10500" }] }) as Record<string, never>;
+    assert.equal((await call(rep, "quoteSubmit", { id, reason: null }) as Record<string, never>).status, "submitted");
+    await assert.rejects(call(rep, "quoteWithdraw", { id }), code("QUOTE")); // a submitted quote is not withdrawn
+    const audit = q(c, "SELECT action FROM audit_log WHERE action='quote.withdrawn'");
+    assert.equal(audit.length, 1);
+    await assert.rejects(call(serviceFor(c, "rep", "starter"), "quoteWithdraw", { id }), code("LICENCE"));
+  } finally { c.close(); }
+});
+
 test("7B Quote Desk and Price Check need Professional", async () => {
   const { c } = await vault();
   try {
@@ -154,7 +195,7 @@ test("7B Quote Desk and Price Check need Professional", async () => {
 // Decision 16 (blueprint section 22, item 21). Every command a Sales Rep can reach is listed here and
 // either scanned (its real payload is checked for cost and margin keys and for the cost value) or
 // reviewed (it cannot carry cost). Adding a rep-reachable command fails this test until it is classified.
-const SCANNED = ["quoteOutcome","winLoss","quoteGuidance","quoteCrossSell","scorecard","scorecardOptIn","rebateProgress","status", "home", "checklist", "search", "roleList", "pricingState", "priceCheck", "quoteCreate", "quoteLines", "quoteSubmit", "quoteGet", "quoteList"] as const;
+const SCANNED = ["quoteOutcome","winLoss","quoteGuidance","quoteCrossSell","scorecard","scorecardOptIn","rebateProgress","status", "home", "checklist", "search", "roleList", "pricingState", "priceCheck", "quoteCreate", "quoteLines", "quoteSubmit", "quoteWithdraw", "quoteGet", "quoteList"] as const;
 const REVIEWED: Record<string, string> = {
   relayLocal: "v2.6 gap 2: a yes/no for this device's local relay identity, read from the vault; no cost, no network",
   gridTotals: "7V-3a: totals of numbers the caller already holds; returns only sums, counts, minimum and maximum of them",
@@ -189,6 +230,11 @@ test("decision 16: no Sales Rep payload contains cost or margin", async (context
     payloads.winLoss = await call(s, "winLoss", { by: "rep" });
     assert.equal((payloads.winLoss as { total: { lost: string } }).total.lost, "1", "the win/loss scan must cover a real outcome");
     payloads.quoteList = await call(s, "quoteList", {});
+    // Phase 1: withdrawing a below-floor quote returns the rep's own view (scanned).
+    const second = await call(s, "quoteCreate", { customerId: "C1" }) as { id: string };
+    await call(s, "quoteLines", { id: second.id, lines: [{ productId: "P1", quantity: "10", unitCents: "7000" }] });
+    await call(s, "quoteSubmit", { id: second.id, reason: "Competitor" });
+    payloads.quoteWithdraw = await call(s, "quoteWithdraw", { id: second.id });
     const rebate = await import('../lib/rebate/store');
     c.query("INSERT INTO source_files VALUES('rebate-test','synthetic.csv','sales_history',0,'2026-01-01'); INSERT INTO sales_lines(source_id,line_id,product_id,customer_id,sale_date,quantity,list_cents,discount_cents,freight_cents,rebate_cents,cost_cents,source_row) VALUES('rebate-test',1,'P1','C1','2026-03-31',1,2950000,0,0,35000,4321,2)");
     const plan=await rebate.saveSql({conn:c} as unknown as Engine,{reference:'Customer program',customer:'C1',mode:'retroactive',treatment:'replace',from:'2026-01-01',to:'2026-12-31',eligible:'',excluded:'',enabled:true,tiers:[{from:'0',to:'',rate:'2'},{from:'40000',to:'',rate:'3'}].slice(0,1)},'owner1');

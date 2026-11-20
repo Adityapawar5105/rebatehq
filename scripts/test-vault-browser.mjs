@@ -1002,6 +1002,18 @@ try {
   assert.equal(await page.getByRole('button',{name:'Approve exception',exact:true}).count(),0,'A Sales Rep can approve an exception');
   await page.getByRole('button',{name:'Return to my own view'}).click();await page.getByTestId('preview-banner').waitFor({state:'detached'});
   results.checks.quotesUi={priceCheckOnEnter:true,thermometer:true,exceptionNeedsReason:true,ownerSeesMargin:true,repPreviewHidesMargin:true,phoneWidth:true};
+  // Phase 1 (20 Nov 2026): the author withdraws the stuck exception, types a new price and submits it without
+  // pressing "Update prices" first; the typed price is what gets submitted. With sharing off, the quote says so.
+  await page.getByRole('link',{name:'Quotes',exact:true}).click();await page.getByRole('button',{name:'History',exact:true}).click();
+  await page.getByRole('table',{name:'Quote history',exact:true}).locator('tbody').getByRole('button').first().click();
+  await page.locator('[data-testid="quote"][data-status="pending"]').waitFor();
+  assert.equal(await page.getByRole('button',{name:'Send to the encrypted team inbox',exact:true}).count()+await page.getByTestId('quote-sharing-off').count(),1,'A pending quote shows neither a working share button nor the sharing-off note');
+  await page.getByTestId('quote-withdraw').click();await page.locator('[data-testid="quote"][data-status="draft"]').waitFor();
+  await page.getByTestId('price-1').fill('500.00');await page.getByTestId('quote-unsaved').waitFor();
+  await page.getByTestId('quote-submit').click();await page.locator('[data-testid="quote"][data-status="submitted"]').waitFor();
+  await page.getByTestId('quote-total').filter({hasText:'$500.00'}).waitFor();
+  assert.equal(await page.getByTestId('price-1').count(),0,'A submitted quote is still editable');
+  results.checks.quoteFlowUi={withdrawPending:true,typedPriceSubmitted:true,shareOrNotice:true};
 
   // 7V: no section overflows horizontally at desktop or phone width, in light or dark; the phone menu opens
   // the navigation drawer and closes it again.

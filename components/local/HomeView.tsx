@@ -27,6 +27,7 @@ function workLists(home: HomeData, quotes: QuoteSummary[], runs: Run[], userId: 
     const mine = q.createdBy === userId;
     if (mine && q.status === "draft") drafts.push(quote(q, t("home.badge.draft"), "info"));
     else if (mine && q.status === "rejected") action.push(quote(q, t("home.badge.rejected"), "bad"));
+    else if (mine && q.status === "pending") action.push(quote(q, t("home.badge.awaiting"), "info")); // the author's own exception, until someone decides or they withdraw it
     else if (!mine && q.status === "pending" && has("quoteApprove")) action.push(quote(q, t("home.badge.toApprove"), "warn"));
   }
   for (const r of runs) action.push({ id: "run:" + r.id, icon: "tag", title: r.rule ? t("home.work.preview", { rule: r.rule }) : t("home.work.previewUnnamed"), subtitle: t("home.work.previewRows", { count: Number(r.affected) }), // Only the named Pricing Owner approves price changes; everyone else sees that the preview is waiting on them.

@@ -103,7 +103,7 @@ export const ACTION_CAP: Record<Action, Cap | null> = {
   marginWaterfall: "cost", marginDrill: "cost", marginWhale: "cost", marginMath: "cost", leaks: "cost", leakRows: "cost", leakReport: "cost", roi: "cost",
   reconcile: "reconcile", reconAccept: "reconcile", reconRebuild: "reconcile",
   // 7B. Cost and margin inside a quote view also need "cost" (checked in the service, not here).
-  priceCheck: "quote", quoteCreate: "quote", quoteLines: "quote", quoteSubmit: "quote", quoteGet: "quote", quoteList: "quote", quoteShare: "quote", quoteRelaySync: "quote", quoteDecide: "quoteApprove",
+  priceCheck: "quote", quoteCreate: "quote", quoteLines: "quote", quoteSubmit: "quote", quoteWithdraw: "quote", quoteGet: "quote", quoteList: "quote", quoteShare: "quote", quoteRelaySync: "quote", quoteDecide: "quoteApprove",
 };
 /** Sections of the app a role can open (the worker still checks every command). */
 export function sectionsFor(caps: Cap[]): string[] {

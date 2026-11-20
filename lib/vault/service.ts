@@ -446,7 +446,7 @@ export class VaultService {
   }
   // ---------------------------------------------------------------- Quote Desk and Price Check (7B)
   private quoteTier() { if (this.licence.tier === "starter") throw new VaultError("LICENCE", msg("quote.needsProfessional")); }
-  private async quoteView(id: string) { const a = await this.access(); return quotes.view(this.requireEngine(), id, this.identity.userId, a.caps.includes("cost")); }
+  private async quoteView(id: string) { const a = await this.access(); return quotes.view(this.requireEngine(), id, this.identity.userId, a.caps.includes("cost"), a.caps.includes("quoteApprove")); }
   private async ownQuote(id: string) { const v = await this.quoteView(id); const a = await this.access(); if (!v.mine && !a.caps.includes("quoteApprove") && !a.caps.includes("cost")) throw new VaultError("FORBIDDEN", msg("vault.cannotDoThisAsk", { roleLabel: a.roleLabel })); return v; }
   /** Price Check: book price, start/target/floor and the zone for one SKU and customer. Never cost (decision 16). */
   async priceCheck(productId: string, customerId: string | null, quantity: string) { this.quoteTier(); return quotes.pricePoint(this.requireEngine(), productId, customerId, quantity || "1"); }
@@ -468,6 +468,12 @@ export class VaultService {
   async quoteDecide(id: string, decision: "approve" | "reject", note: string | null) {
     this.quoteTier(); const sql = await quotes.decideSql(this.requireEngine(), id, decision, note, this.identity.userId, new Date().toISOString());
     await this.write("quote.decided", { quote_id: id, decision }, async w => { await w.conn.query(sql); });
+    return this.quoteView(id);
+  }
+  /** The author takes a pending quote back to a draft (Phase 1): the fix for an exception nobody can approve. */
+  async quoteWithdraw(id: string) {
+    this.quoteTier(); const sql = await quotes.withdrawSql(this.requireEngine(), id, this.identity.userId, new Date().toISOString());
+    await this.write("quote.withdrawn", { quote_id: id, actor: this.identity.userId }, async w => { await w.conn.query(sql); });
     return this.quoteView(id);
   }
   async quoteGet(id: string) { this.quoteTier(); return this.ownQuote(id); }

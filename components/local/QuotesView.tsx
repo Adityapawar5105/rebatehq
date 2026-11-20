@@ -12,6 +12,7 @@ import { fmt, msg, say, t, type MessageKey } from "@/lib/i18n";
 import styles from "./vault.module.css";
 import { DataGrid } from "@/components/ui/DataGrid";
 import { OutcomePanel, WinLossReport } from "./WinLoss";
+import { Lookup } from "./Lookup";
 
 type Op = (f: () => Promise<void>) => Promise<void>;
 type Tab = "check" | "new" | "inbox" | "history" | "winloss";
@@ -75,13 +76,20 @@ function reasonText(r: Reason) {
 }
 const BASIS: Record<Basis, MessageKey> = { history: "guidance.basis.history", similar: "guidance.basis.similar", target: "guidance.basis.target", book: "guidance.basis.book", none: "guidance.basis.none" };
 
-export function QuotesView({ client, userId, caps, tier, busy, operation }: { client: VaultClient; userId: string; caps: Cap[]; tier: string | undefined; busy: boolean; operation: Op }) {
-  const canApprove = caps.includes("quoteApprove"), seesCost = caps.includes("cost"), canShare = caps.includes("collaborate");
+export function QuotesView({ client, userId, caps, tier, busy, operation, relayEnabled = false }: { client: VaultClient; userId: string; caps: Cap[]; tier: string | undefined; busy: boolean; operation: Op; relayEnabled?: boolean }) {
+  // Sharing works only when the server has the relay on and this role may collaborate; otherwise no one else can see a quote.
+  const canApprove = caps.includes("quoteApprove"), seesCost = caps.includes("cost"), canShare = caps.includes("collaborate") && relayEnabled;
   const tabs: Tab[] = ["check", "new", ...(canApprove ? ["inbox" as const] : []), "history", "winloss"];
   const [tab, setTab] = useState<Tab>("check"), [note, setNote] = useState("");
-  // "#quotes-<tab>" opens a tab (Home > Create new, the command palette); "#quotes-open-<id>" (a Home work-list row) opens that quote.
+  // "#quotes-<tab>" opens a tab (Home > Create new, the command palette); "#quotes-open-<id>" (a Home work-list row) opens that quote;
+  // "#quotes-check-product-<id>" or "#quotes-check-customer-<id>" (a Sales Rep's palette pick) opens Price Check with the field filled.
   useEffect(() => {
-    const read = () => { const m = /^#quotes-open-(.+)$/.exec(location.hash), tabHash = /^#quotes-(check|new|inbox|history|winloss)$/.exec(location.hash); if (m) open(decodeURIComponent(m[1])); else if (tabHash && tabs.includes(tabHash[1] as Tab)) setTab(tabHash[1] as Tab); };
+    const read = () => {
+      const m = /^#quotes-open-(.+)$/.exec(location.hash), tabHash = /^#quotes-(check|new|inbox|history|winloss)$/.exec(location.hash), fill = /^#quotes-check-(product|customer)-(.+)$/.exec(location.hash);
+      if (m) open(decodeURIComponent(m[1]));
+      else if (fill) { const v = decodeURIComponent(fill[2]); setCheck(c => fill[1] === "product" ? { ...c, productId: v } : { ...c, customerId: v }); setTab("check"); }
+      else if (tabHash && tabs.includes(tabHash[1] as Tab)) setTab(tabHash[1] as Tab);
+    };
     read(); window.addEventListener("hashchange", read); return () => window.removeEventListener("hashchange", read);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -103,15 +111,25 @@ export function QuotesView({ client, userId, caps, tier, busy, operation }: { cl
   if (tier === "starter") return <section className={styles.card}><h2>{t("quotes.heading")}</h2><p>{t("quotes.needsProfessional")}</p></section>;
 
   const show = (v: QuoteView) => { setQuote(v); setLines(v.lines.map(l => ({ productId: l.productId, quantity: trimQty(l.quantity), price: centsToText(l.unitCents) }))); };
-  const editable = !!quote && quote.mine && (quote.status === "draft" || quote.status === "rejected");
-  const save = async (next: typeof lines) => {
+  // The worker says which moves this person can make next; the buttons follow that list only.
+  const next = quote?.allowedNext ?? [], editable = next.includes("edit");
+  // Typed quantities and prices that differ from the saved lines. Submit saves them first, so a typed price is never dropped.
+  const dirty = !!quote && editable && (lines.length !== quote.lines.length || lines.some((l, i) => l.quantity.trim() !== trimQty(quote.lines[i].quantity) || l.price.trim() !== centsToText(quote.lines[i].unitCents)));
+  const save = async (changed: typeof lines): Promise<QuoteView | null> => {
     const input: LineInput[] = [];
-    for (const l of next) {
+    for (const l of changed) {
       const unit = l.price.trim() === "" ? null : priceToCents(l.price);
-      if (l.price.trim() !== "" && unit === null) { setNote(msg("quotes.priceFormat")); return; }
+      if (l.price.trim() !== "" && unit === null) { setNote(msg("quotes.priceFormat")); return null; }
       input.push({ productId: l.productId, quantity: l.quantity, unitCents: unit });
     }
-    show(await client.call("quoteLines", { id: quote!.id, lines: input }));
+    const v = await client.call("quoteLines", { id: quote!.id, lines: input }); show(v); return v;
+  };
+  const submit = async () => {
+    let v: QuoteView | null = quote;
+    if (dirty) { v = await save(lines); if (!v) return; }
+    // A typed price can take a line below its floor: then the reason box appears and nothing is sent yet.
+    if (v!.needsApproval && !reason.trim()) { setNote(msg("quotes.reasonNowNeeded")); return; }
+    show(await client.call("quoteSubmit", { id: v!.id, reason: reason.trim() || null })); setNote(msg(v!.needsApproval ? "quotes.exceptionRequested" : "quotes.submitted"));
   };
   const open = (id: string) => void operation(async () => { show(await client.call("quoteGet", { id })); setTab("new"); });
 
@@ -121,8 +139,8 @@ export function QuotesView({ client, userId, caps, tier, busy, operation }: { cl
 
     {tab === "check" && <section className={styles.card} aria-labelledby="price-check-heading"><h2 id="price-check-heading">{t("quotes.check.heading")}</h2><p className={styles.muted}>{t("quotes.check.body")}</p>
       <form className={styles.quoteForm} onSubmit={e => { e.preventDefault(); void operation(async () => { setPoint(await client.call("priceCheck", { productId: check.productId.trim(), customerId: check.customerId.trim() || null, quantity: check.quantity.trim() || "1" })); }); }}>
-        <label>{t("quotes.sku")}<input value={check.productId} autoFocus autoComplete="off" onChange={e => setCheck({ ...check, productId: e.target.value })} maxLength={64} data-testid="check-sku"/></label>
-        <label>{t("quotes.customer")}<input value={check.customerId} autoComplete="off" onChange={e => setCheck({ ...check, customerId: e.target.value })} maxLength={64} data-testid="check-customer"/></label>
+        <Lookup client={client} kind="product" label={t("quotes.sku")} value={check.productId} onChange={v => setCheck(c => ({ ...c, productId: v }))} testId="check-sku"/>
+        <Lookup client={client} kind="customer" label={t("quotes.customer")} value={check.customerId} onChange={v => setCheck(c => ({ ...c, customerId: v }))} testId="check-customer"/>
         <label>{t("quotes.quantity")}<input value={check.quantity} inputMode="decimal" onChange={e => setCheck({ ...check, quantity: e.target.value })} maxLength={20}/></label>
         <button className={styles.primary} type="submit" disabled={busy || !check.productId.trim()}>{t("quotes.check.run")}</button>
       </form>
@@ -137,7 +155,7 @@ export function QuotesView({ client, userId, caps, tier, busy, operation }: { cl
 
     {tab === "new" && !quote && <section className={styles.card} aria-labelledby="new-quote-heading"><h2 id="new-quote-heading">{t("quotes.new.heading")}</h2>
       <form className={styles.quoteForm} onSubmit={e => { e.preventDefault(); void operation(async () => { show(await client.call("quoteCreate", { customerId: customer.trim() })); }); }}>
-        <label>{t("quotes.customer")}<input value={customer} autoComplete="off" onChange={e => setCustomer(e.target.value)} maxLength={64} data-testid="quote-customer"/></label>
+        <Lookup client={client} kind="customer" label={t("quotes.customer")} value={customer} onChange={setCustomer} testId="quote-customer"/>
         <button className={styles.primary} type="submit" disabled={busy || !customer.trim()}>{t("quotes.new.start")}</button>
       </form></section>}
 
@@ -168,12 +186,12 @@ export function QuotesView({ client, userId, caps, tier, busy, operation }: { cl
             {g.suggestedCents === null ? t("guidance.basis.none") : <><strong>{money(g.suggestedCents)}</strong><br/><span className={styles.muted}>{t(BASIS[g.basis])}</span></>}
             <details><summary>{t("guidance.why")}</summary><ul className={styles.small}>{g.reasons.map((r, n) => <li key={n}>{reasonText(r)}</li>)}</ul></details>
             {editable && g.suggestedCents !== null && g.suggestedCents !== String(l.unitCents) && <button type="button" disabled={busy} aria-label={t("guidance.useFor", { sku: l.productId })} data-testid={`guidance-use-${l.lineNo}`}
-              onClick={() => void operation(() => save(lines.map((x, j) => j === i ? { ...x, price: centsToText(g.suggestedCents!) } : x)))}>{t("guidance.use")}</button>}
+              onClick={() => void operation(async () => { await save(lines.map((x, j) => j === i ? { ...x, price: centsToText(g.suggestedCents!) } : x)); })}>{t("guidance.use")}</button>}
           </div>;
         } },
         { id: "total", name: t("quotes.lineTotal"), type: "money", value: l => String(l.totalCents) },
         ...(seesCost ? [{ id: "margin", name: t("quotes.lineMargin"), type: "percent" as const, value: (l: QuoteView["lines"][number]) => l.marginRate == null ? null : String(l.marginRate), cell: (l: QuoteView["lines"][number]) => l.marginRate == null ? t("quotes.none") : fmt.percent(l.marginRate) }] : []),
-        ...(editable ? [{ id: "actions", name: t("quotes.actions"), cell: (l: QuoteView["lines"][number]) => <button type="button" disabled={busy} onClick={() => void operation(() => save(lines.filter((_, j) => j !== quote.lines.indexOf(l))))}>{t("quotes.remove")}</button> }] : []),
+        ...(editable ? [{ id: "actions", name: t("quotes.actions"), cell: (l: QuoteView["lines"][number]) => <button type="button" disabled={busy} onClick={() => void operation(async () => { await save(lines.filter((_, j) => j !== quote.lines.indexOf(l))); })}>{t("quotes.remove")}</button> }] : []),
       ]}/>
       {quote.lines.length > 0 && <p className={styles.small}>{t("guidance.note")}</p>}
       {quote.lines.length > 0 && cross && <section aria-labelledby="cross-heading" data-testid="cross-sell">
@@ -186,26 +204,31 @@ export function QuotesView({ client, userId, caps, tier, busy, operation }: { cl
           { id: "confidence", name: t("cross.confidence"), type: "percent", num: true, value: x => x.confidence, cell: x => fmt.percent(x.confidence) },
           { id: "lift", name: t("cross.lift"), type: "decimal", num: true, value: x => x.lift, cell: x => fmt.decimal(x.lift) },
           ...(editable ? [{ id: "add", name: t("quotes.actions"), cell: (x: Results["quoteCrossSell"]["suggestions"][number]) => <button type="button" disabled={busy} aria-label={t("cross.addFor", { sku: x.productId })} data-testid={`cross-add-${x.productId}`}
-            onClick={() => void operation(() => save([...lines, { productId: x.productId, quantity: "1", price: "" }]))}>{t("cross.add")}</button> }] : []),
+            onClick={() => void operation(async () => { await save([...lines, { productId: x.productId, quantity: "1", price: "" }]); })}>{t("cross.add")}</button> }] : []),
         ]}/>}
       </section>}
       {editable && <>
-        <button type="button" disabled={busy || !lines.length} onClick={() => void operation(() => save(lines))}>{t("quotes.reprice")}</button>
+        {dirty && <p className={styles.muted} role="status" data-testid="quote-unsaved">{t("quotes.unsaved")}</p>}
+        <button type="button" disabled={busy || !lines.length} onClick={() => void operation(async () => { await save(lines); })}>{t("quotes.reprice")}</button>
         <form className={styles.quoteForm} onSubmit={e => { e.preventDefault(); if (!add.productId.trim()) return; void operation(async () => { await save([...lines, { productId: add.productId.trim(), quantity: add.quantity.trim() || "1", price: "" }]); setAdd({ productId: "", quantity: "1" }); }); }}>
-          <label>{t("quotes.addSku")}<input value={add.productId} autoComplete="off" onChange={e => setAdd({ ...add, productId: e.target.value })} maxLength={64} data-testid="add-sku"/></label>
+          <Lookup client={client} kind="product" label={t("quotes.addSku")} value={add.productId} onChange={v => setAdd(a => ({ ...a, productId: v }))} testId="add-sku"/>
           <label>{t("quotes.quantity")}<input value={add.quantity} inputMode="decimal" onChange={e => setAdd({ ...add, quantity: e.target.value })} maxLength={20}/></label>
           <button type="submit" disabled={busy || !add.productId.trim()}>{t("quotes.addLine")}</button>
         </form>
         {quote.needsApproval && <label>{t("quotes.reason")}<textarea className={styles.textarea} value={reason} maxLength={500} onChange={e => setReason(e.target.value)} data-testid="exception-reason"/></label>}
-        <button className={styles.primary} type="button" disabled={busy || !quote.lines.length || (quote.needsApproval && !reason.trim())} onClick={() => void operation(async () => { show(await client.call("quoteSubmit", { id: quote.id, reason: reason.trim() || null })); setNote(msg(quote.needsApproval ? "quotes.exceptionRequested" : "quotes.submitted")); })}>{t(quote.needsApproval ? "quotes.requestException" : "quotes.submit")}</button>
+        <button className={styles.primary} type="button" disabled={busy || !lines.length || (!dirty && quote.needsApproval && !reason.trim())} data-testid="quote-submit" onClick={() => void operation(submit)}>{t(quote.needsApproval ? "quotes.requestException" : "quotes.submit")}</button>
       </>}
       {quote.exceptionReason && <p><strong>{t("quotes.reasonLabel")}</strong> {quote.exceptionReason}</p>}
       {quote.decidedAt && <p>{t("quotes.decided", { status: t(STATUS[quote.status]), date: fmt.date(quote.decidedAt.slice(0, 10)) })}{quote.decisionNote && <span> {quote.decisionNote}</span>}</p>}
-      {quote.status === "pending" && quote.mine && canShare &&<div className={styles.row}>
+      {next.includes("withdraw") && <div className={styles.row}>
+        <button type="button" disabled={busy} data-testid="quote-withdraw" onClick={() => void operation(async () => { const reasonWas = quote.exceptionReason ?? ""; show(await client.call("quoteWithdraw", { id: quote.id })); setReason(reasonWas); setNote(msg("quotes.withdrawn")); })}>{t("quotes.withdraw")}</button>
+      </div>}
+      {next.includes("withdraw") && !canShare && <p className={styles.muted} role="note" data-testid="quote-sharing-off">{t("quotes.sharingOff")}</p>}
+      {next.includes("withdraw") && canShare && <div className={styles.row}>
         {!quote.relayObject && <button type="button" disabled={busy} onClick={() => void operation(async () => { show(await client.call("quoteShare", { id: quote.id, preset: "standard" })); setNote(msg("quotes.shared")); })}>{t("quotes.share")}</button>}
         {quote.relayObject && <button type="button" disabled={busy} onClick={() => void operation(async () => { show(await client.call("quoteRelaySync", { id: quote.id })); })}>{t("quotes.checkDecision")}</button>}
       </div>}
-      {quote.status === "pending" && canApprove && !quote.mine && <div>
+      {next.includes("decide") && <div>
         <label>{t("quotes.decisionNote")}<textarea className={styles.textarea} value={decisionNote} maxLength={500} onChange={e => setDecisionNote(e.target.value)}/></label>
         <div className={styles.row}>
           <button className={styles.primary} type="button" disabled={busy} onClick={() => void operation(async () => { show(await client.call("quoteDecide", { id: quote.id, decision: "approve", note: decisionNote.trim() || null })); setNote(msg("quotes.approvedNote")); })}>{t("quotes.approve")}</button>
