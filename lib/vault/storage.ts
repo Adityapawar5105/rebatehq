@@ -84,6 +84,25 @@ export class VaultStorage {
     const stream = await (await this.directory.getFileHandle(name, { create: true })).createWritable();
     try { await stream.write(JSON.stringify(value)); await stream.close(); } catch (e) { await stream.abort(); throw e; }
   }
+  /** "Start again on this device" (audit B-3): remove this vault's snapshots and pointers. The caller holds the vault lease. */
+  async clear() {
+    const names: string[] = [];
+    for await (const [name, entry] of this.directory.entries()) if (entry.kind === "file") names.push(name);
+    for (const name of names) await this.directory.removeEntry(name);
+    this.activeHead = null;
+  }
+  /** After a passphrase change (audit B-3): keep only the snapshot written with the new key, so the old passphrase opens nothing here. */
+  async dropOlder() {
+    const head = this.activeHead;
+    if (!head) throw new Error("head");
+    const only: Head = { ...head, previous: null };
+    await this.writeJson("head.json", only);
+    this.activeHead = only;
+    await this.directory.removeEntry("head.previous.json").catch(e => { if (!isNotFound(e)) throw e; });
+    const names: string[] = [];
+    for await (const [name, entry] of this.directory.entries()) if (entry.kind === "file" && validName(name) && name !== head.current) names.push(name);
+    for (const name of names) await this.directory.removeEntry(name);
+  }
   async file(name: string) { if (!validName(name)) throw new Error("snapshot name"); return (await this.directory.getFileHandle(name)).getFile(); }
 }
 export async function storageStatus(): Promise<StorageStatus> {

@@ -88,7 +88,7 @@ export const ACTION_CAP: Record<Action, Cap | null> = {
   serviceFlag:"pricing",
   marginBridge:"cost",priceOpsState:"pricing",priceExceptions:"cost",priceExpiry:"cost",pricePlan:"pricing",priceRollback:"pricing",priceLetter:"pricing",quoteOutcome:"quote",winLoss:"quote",auditPack:"audit",templateVendors:"cost",negotiationSheet:"cost",rebateAgreement:"rebateManage",
   relayView:"collaborate",relayRegister:"collaborate",relayJoin:"collaborate",relayRotate:"collaborate",relaySync:"collaborate",relayShare:"collaborate",relayRequest:"collaborate",relayDecide:"collaborate",relayComment:"collaborate",relayRetry:"collaborate",relayDiscard:"collaborate",
-  capacityUpgrade: "roles", licenceSet: null, init: null, create: null, unlock: null, lock: null, touch: null, cancel: null, save: null, storage: null,
+  capacityUpgrade: "roles", licenceSet: null, init: null, create: null, unlock: null, vaultReset: null, passphraseChange: null, lock: null, touch: null, cancel: null, save: null, storage: null,
   status: null, search: "view", home: "view", checklist: "view", checklistMark: "roles", roleList: "view",
   // Previewing a role can only remove capabilities (see accessFor), so anyone may use it, which also lets an Owner leave a preview.
   roleSet: "roles", roleRemove: "roles", rolePreview: "view",

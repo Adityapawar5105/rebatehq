@@ -448,6 +448,32 @@ async function activationUi(){
  results.checks.activationUi={startCard:true,playgroundOneClickLeak:true,sampleBannerEverySection:true,sampleBadge:true,appOpenCaveat:true,removeSample:true,mappingSummary:true,afterImportNotice:true};
  }catch(error){console.error('Activation UI diagnostics:',JSON.stringify(await diagnose()));throw error;}finally{await context.close();context=savedContext;page=savedPage;dataPlaneActive=active;}
 }
+// Recovery (audit B-3, 20 Nov 2026), in a fresh vault: change the passphrase, then the old one opens nothing and the new
+// one opens the vault; then "Forgot your passphrase?" deletes this device's vault after the workspace name is typed,
+// and the empty-vault screen (create or restore) is back.
+async function passphraseUi(){
+ const savedContext=context,savedPage=page,active=dataPlaneActive,next=secret+'-changed';
+ context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-passphrase-')),browserOptions);await configureContext();page=await openPage();
+ try{
+ dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic recovery owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
+ await page.getByRole('link',{name:'Settings',exact:true}).click();await page.getByTestId('passphrase-card').waitFor();
+ await page.getByTestId('passphrase-current').fill(secret);await page.getByTestId('passphrase-next').fill(next);await page.getByTestId('passphrase-again').fill(next);
+ await page.getByTestId('passphrase-submit').click();await page.getByRole('status').filter({hasText:'Passphrase changed'}).waitFor({timeout:60000});
+ assert.equal(await page.getByTestId('passphrase-current').inputValue(),'','A passphrase stayed in the form after the change');
+ await page.getByRole('button',{name:'Lock vault',exact:true}).first().click();await ready();
+ await page.getByLabel('Vault passphrase').fill(secret);await page.getByRole('button',{name:'Unlock vault',exact:true}).click();
+ await page.getByText('Wrong passphrase or damaged vault',{exact:false}).first().waitFor({timeout:60000});
+ assert.equal(await page.getByRole('button',{name:'Lock vault',exact:true}).count(),0,'The old passphrase still opens the vault');
+ await page.getByLabel('Vault passphrase').fill(next);await page.getByRole('button',{name:'Unlock vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).first().waitFor({timeout:60000});
+ await page.getByRole('button',{name:'Lock vault',exact:true}).first().click();await ready();
+ await page.getByTestId('start-again-open').click();await page.getByTestId('start-again').waitFor();
+ const label=await page.getByTestId('start-again').locator('label').first().innerText(),name=/^Type (.+) to confirm/.exec(label.trim())?.[1];assert.ok(name,'The start-again confirmation does not name the workspace');
+ assert.ok(await page.getByTestId('start-again-button').isDisabled(),'Start again is possible without typing the workspace name');
+ await page.getByTestId('start-again-confirm').fill(name);await page.getByTestId('start-again-button').click();
+ await page.getByRole('button',{name:'Create encrypted vault',exact:true}).waitFor({timeout:60000});await page.getByRole('button',{name:'Restore encrypted backup'}).first().waitFor();
+ results.checks.passphraseUi={changeNeedsCurrent:true,oldPassphraseRefused:true,newPassphraseOpens:true,startAgainNeedsName:true,restoreCardAfterReset:true};
+ }catch(error){console.error('Passphrase UI diagnostics:',JSON.stringify(await diagnose()));throw error;}finally{await context.close();context=savedContext;page=savedPage;dataPlaneActive=active;}
+}
 async function winLossUi(){
  const savedContext=context,savedPage=page,active=dataPlaneActive;
  context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-winloss-')),browserOptions);await configureContext();page=await openPage();
@@ -1169,7 +1195,7 @@ try {
   }
   await monitorUi();
   await rebatesUi();
-  await suppliersUi(); await vendorsUi(); await simUi(); await reportsUi(); await convertersUi(); await guidanceUi(); await agentsUi(); await deadStockUi(); await activationUi(); await winLossUi(); await benchUi(); if (channel !== 'firefox') await offlineUi();
+  await suppliersUi(); await vendorsUi(); await simUi(); await reportsUi(); await convertersUi(); await guidanceUi(); await agentsUi(); await deadStockUi(); await activationUi(); await passphraseUi(); await winLossUi(); await benchUi(); if (channel !== 'firefox') await offlineUi();
   await recoveryUi();
   if(auth){
     const device=await page.evaluate(()=>{const key=Object.keys(localStorage).find(k=>k.startsWith('rebatehq-device-v1:'));return localStorage.getItem(key);});assert.ok(device);

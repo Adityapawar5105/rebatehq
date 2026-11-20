@@ -139,3 +139,30 @@ migration changes the existing audit trigger function only to redact relay rows;
 its prior behavior remains for other tables. Default ACL and function-registry
 checks remain strict. No new high/critical finding was identified in this
 first-party review; this is not independent assurance. Blueprint unchanged.
+
+## Recovery and device onboarding addendum — 20 November 2026
+
+First-party review of the recovery features added for audit B-3 and B-5 (roadmap Phase 5). Not independent assurance.
+
+**Start again on this device (`vaultReset`).**
+- Runs only while the vault is locked. It takes the same Web Lock lease as unlock, so it cannot run while the vault is open in another tab.
+- It deletes the files in this workspace-and-user vault folder only. Other people's vaults and other workspaces on the device are separate folders.
+- The UI asks the person to type the workspace name. That is a guard against slips, not authentication: anyone at an unlocked browser profile could already delete site data from the browser settings.
+- It needs no licence: it only removes local files, and a lapsed licence must not block recovery.
+
+**Change passphrase (`passphraseChange`).**
+- The current passphrase is checked by decrypting the saved snapshot. A new 16-byte salt is drawn, and the vault is saved under the new key.
+- All older snapshots and `head.previous.json` are then removed, so the old passphrase opens nothing on this device.
+- The old passphrase still opens any backup made before the change, and the screen says so.
+- If removing the older copies fails, the person is told to finish the change. Until then an older copy under the old passphrase may remain.
+- The passphrase fields are cleared from the page as soon as they are sent.
+
+**Device list (`GET /api/licence/devices`).**
+- The workspace Owner now sees each device's member email, from `membership`, which the Owner can already read on the Users page.
+- Other members get no emails.
+- The response says whether the caller can approve devices, and the vault shows a badge to the Owner while one is waiting.
+
+| ID | Severity / state | Finding / action | Owner / review |
+|---|---|---|---|
+| R16 | Low, accepted | A passphrase change cannot reach backups already exported or written to a backup folder; they keep the old passphrase. This is stated on screen. Rotating a compromised passphrase also needs those backups replaced | Aditya Pawar / with R02 |
+| R17 | Low, open | If removing the older snapshots after a passphrase change fails part-way, an older snapshot under the old passphrase can remain until the change is repeated. The error says so. Consider an automatic retry on the next unlock | Aditya Pawar / next recovery change |

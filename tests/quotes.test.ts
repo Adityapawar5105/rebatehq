@@ -88,7 +88,10 @@ test("7B credit signal from AR aging: green, amber and red thresholds", () => {
   assert.ok(plainText(p({ d90plus: BigInt(12000) }).reasons[0]).includes("90 days"));
 });
 
-test("7B quote lifecycle: soft warnings, a red line needs a reason, nobody approves their own quote", async () => {
+test("7B quote lifecycle: soft warnings, a red line needs a reason, nobody approves their own quote", async (context) => {
+  // Fixed quote IDs: a random UUID can contain a price the audit scan below looks for (e.g. '80007'), which made this flaky.
+  let fixtureId = 0;
+  context.mock.method(globalThis.crypto, "randomUUID", () => `91000000-0000-4000-9000-${String(++fixtureId).padStart(12, "0")}` as ReturnType<Crypto["randomUUID"]>);
   const { c } = await vault();
   try {
     const rep = serviceFor(c, "rep"), po = serviceFor(c, "po"), sm = serviceFor(c, "sm");
@@ -199,7 +202,8 @@ const SCANNED = ["quoteOutcome","winLoss","quoteGuidance","quoteCrossSell","scor
 const REVIEWED: Record<string, string> = {
   relayLocal: "v2.6 gap 2: a yes/no for this device's local relay identity, read from the vault; no cost, no network",
   gridTotals: "7V-3a: totals of numbers the caller already holds; returns only sums, counts, minimum and maximum of them",
-  init: "vault bootstrap state", create: "creates an empty vault", unlock: "returns status (scanned)", lock: "returns status", touch: "idle timer", cancel: "cancels a job", save: "returns status",
+  init: "vault bootstrap state", create: "creates an empty vault",
+  vaultReset: "Phase 5: deletes this device's vault files while locked; returns status (scanned)", passphraseChange: "Phase 5: re-encrypts the caller's own vault; returns status (scanned)", unlock: "returns status (scanned)", lock: "returns status", touch: "idle timer", cancel: "cancels a job", save: "returns status",
   storage: "browser storage quota", licenceSet: "licence claims", rolePreview: "returns status (scanned) and can only remove capabilities", backupRestore: "replaces the vault, returns status",
   quoteShare: "shares the quote number and price total only (no cost) through the ciphertext relay", quoteRelaySync: "returns the quote view (scanned as quoteGet)",
   relayView: "7A relay: only what a member chose to share", relayRegister: "7A relay", relayJoin: "7A relay", relayRotate: "7A relay", relaySync: "7A relay", relayShare: "7A relay: the sharer types the amount",

@@ -100,7 +100,8 @@ export class VaultService {
     this.tier=tier;return this.status();
   }
   readonly licence = new VaultLicence(process.env.NEXT_PUBLIC_LICENCE_VERIFY_KEY || "");
-  licenceGuard(action:Action) { this.licence.guard(action); }
+  // Starting again on this device deletes only local files: it never needs a licence (audit B-3).
+  licenceGuard(action:Action) { if (action === "vaultReset") return; this.licence.guard(action); }
   async licenceSet(envelope:import("../licence-policy").LicenceEnvelope|null,device:string,offline:boolean){try{await this.licence.set(envelope,this.identity,device,offline);}catch{/* Invalid assertions clear authority but never prevent read-only unlock/recovery. */}this.tier=this.licence.effective(this.tier);return this.status();}
   private identity!: Scope;
   storage!: VaultStorage;
@@ -218,6 +219,38 @@ export class VaultService {
       if (this.autoWarm) startWarmup(this.engine);
       this.touch(); return this.status();
     } catch (error) { await this.dispose(); if (error instanceof VaultError && error.code === "SAVE") throw new VaultError("SAVE", msg("vault.theSchemaUpgradeCould")); throw error instanceof VaultError ? error : new VaultError("UNLOCK_FAILED", msg("vault.wrongPassphraseDamagedVault")); }
+  }
+  /**
+   * Audit B-3: "Start again on this device" for a forgotten passphrase. Deletes this vault's files on this device only,
+   * while it is locked and not open in another tab (the vault lease). An encrypted backup and its passphrase bring the
+   * data back; the restore card shows once no vault exists.
+   */
+  async vaultReset() {
+    if (this.engine) throw new VaultError("STATE", msg("vault.reset.lockFirst"));
+    await this.lease();
+    try { await this.storage.clear(); this.recovered = false; this.lastSaved = null; this.generation = "0"; }
+    finally { this.releaseLease?.(); this.releaseLease = null; }
+    return this.status();
+  }
+  /**
+   * Audit B-3: change the passphrase. The current one is checked against the saved snapshot, the vault is saved again
+   * under a key from the new one, and every older snapshot on this device is removed, so the old passphrase opens nothing
+   * here. Backups already downloaded keep the passphrase they were made with.
+   */
+  async passphraseChange(current: string, next: string) {
+    this.requireEngine();
+    if (typeof current !== "string" || typeof next !== "string" || next === current) throw new VaultError("PASSPHRASE", msg("vault.passphrase.same"));
+    const head = this.storage.activeHead;
+    if (!head) throw new VaultError("STATE", msg("vault.unlockYourVaultFirst"));
+    try { const check = await decrypt(await this.storage.file(head.current), current, this.storage.scope); check.bytes.fill(0); }
+    catch { throw new VaultError("PASSPHRASE", msg("vault.passphrase.currentWrong")); }
+    current = "";
+    const key = await deriveKey(next); next = "";
+    const old = this.key; this.key = key;
+    try { await this.write("vault.passphrase_changed", {}, async () => undefined); }
+    catch (error) { this.key = old; throw error; }
+    try { await this.storage.dropOlder(); } catch { throw new VaultError("SAVE", msg("vault.passphrase.cleanupFailed")); }
+    return this.status();
   }
   private requireEngine() { if (!this.engine) throw new VaultError("LOCKED", msg("vault.unlockYourVaultFirst")); return this.engine; }
   async save() {
