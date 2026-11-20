@@ -101,9 +101,10 @@ test('7D-1 eligibility, period edges, tie-cent allocation, negative net spend, p
  }finally{c.close();}
 });
 import {plan as cleanupPlan} from '../lib/cleanup/item-master';
-test('7D-1 app-open reminder uses the next threshold and UTC period end; SKU merges cannot change agreement eligibility',async()=>{
+import {businessToday} from '../lib/vault/today';
+test('7D-1 app-open reminder uses the next threshold and the local period end; SKU merges cannot change agreement eligibility',async()=>{
  const {c,e}=await fixture();try{
-  const today=new Date().toISOString().slice(0,10),input={reference:'REMINDER',customer:'C',mode:'retroactive' as const,treatment:'additional' as const,from:today,to:today,eligible:'A',excluded:'',enabled:true,tiers:[{from:'5000',to:'',rate:'4'}]};const p=await rebates.saveSql(e,input,'actor');c.query(p.sql);await rebates.rebuildAccruals(e);
+  const today=businessToday(),input={reference:'REMINDER',customer:'C',mode:'retroactive' as const,treatment:'additional' as const,from:today,to:today,eligible:'A',excluded:'',enabled:true,tiers:[{from:'5000',to:'',rate:'4'}]};const p=await rebates.saveSql(e,input,'actor');c.query(p.sql);await rebates.rebuildAccruals(e);
   let progress=(await rebates.progress(e)).rows[0];assert.equal(progress.remaining,'500000');assert.equal(progress.nextRate,'4.000');assert.equal(progress.reminder,true);
   c.query("UPDATE rebate_programs SET enabled=false");await rebates.rebuildAccruals(e);progress=(await rebates.progress(e)).rows[0];assert.equal(progress.reminder,false);
   c.query("INSERT INTO products(product_id) VALUES('a')");await assert.rejects(cleanupPlan(e,'merge_duplicates','A',null,'actor','2026-11-08'),/agreement inclusion/);

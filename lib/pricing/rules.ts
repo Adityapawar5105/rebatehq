@@ -11,7 +11,7 @@ import { PROFILES, type ErpProfile } from "../studio/mapper";
 import { csvSafeCell } from "../csv";
 import * as XLSX from "xlsx";
 import { msg } from "../i18n/core";
-import { businessToday } from "../vault/today";
+import { businessDate, businessToday } from "../vault/today";
 
 export type RuleInput = { id?: string; name: string; category: string; vendor: string; threshold: string; increase: string };
 export type GuardInput = { tier: string; category: string; start: string; target: string; floor: string };
@@ -80,7 +80,7 @@ export async function approveSql(e: Engine, id: string, actor: string, matrixOve
   const r = (await rows(e,`SELECT r.*,m.pricing_revision AS revision,(SELECT max(version) FROM rule_revisions WHERE rule_id=r.rule_id) AS latest FROM rule_runs r CROSS JOIN vault_meta m WHERE r.id=${Q(id)}`))[0];
   if (!r || r.status!=='preview') return bad(msg("rules.onlyAnUnapprovedPreview"));
   if (String(r.revision)!==String(r.base_revision) || Number(r.latest)!==Number(r.rule_version)) return bad(msg("rules.conflictDataGuardrailsOr"));
-  if (String(r.run_date).slice(0,10)!==businessToday()) return bad(msg("rules.thePreviewDateChanged"));
+  if (businessDate(String(r.run_date))!==businessToday()) return bad(msg("rules.thePreviewDateChanged"));
   const p = previewOverride ?? await preview(e,id); if (p.count==='0') return bad(msg("rules.noPricesChangedAdjust")); if (p.red!=='0') return bad(msg("rules.redAProposedPrice"));
   return `INSERT INTO price_versions VALUES(${Q(crypto.randomUUID())},${Q(id)},${Q(actor)},${Q(JSON.stringify({rows:p.count,impact:p.impact,rule:r.rule_id,version:Number(r.rule_version)}))},${Q(new Date().toISOString())});
 ${matrixOverride ?? `UPDATE price_matrix SET valid_to=${today()} WHERE customer_id IS NULL AND qty_break=0 AND valid_from<${today()} AND (valid_to IS NULL OR valid_to>${today()}) AND (product_id,coalesce(tier,'')) IN (SELECT product_id,tier FROM rule_changes WHERE run_id=${Q(id)});
@@ -104,7 +104,7 @@ export async function exportPrices(e: Engine, id: string, profile: ErpProfile, f
   const clean = (v: unknown) => csvSafeCell(String(v));
   const currency = await workspaceCurrency(e);
   const currencyCells = profile === "generic" ? [currency] : [];
-  const table = [[...EXPORT_LAYOUTS[profile],...extraHeaders,...(profile === "generic" ? ["currency"] : [])],...data.map(r=>[r.product_id,r.tier,centsText(BigInt(r.a)),run.run_date.slice(0,10),...scopeCells(r),...currencyCells].map(clean))];
+  const table = [[...EXPORT_LAYOUTS[profile],...extraHeaders,...(profile === "generic" ? ["currency"] : [])],...data.map(r=>[r.product_id,r.tier,centsText(BigInt(r.a)),businessDate(String(run.run_date)),...scopeCells(r),...currencyCells].map(clean))];
   const csv = (t:string[][])=>t.map(r=>r.map(v=>'"'+v.replaceAll('"','""')+'"').join(',')).join('\r\n');
   let blob: Blob;
   if(format==='xlsx'){const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(table),'Prices');blob=new Blob([XLSX.write(wb,{type:'array',bookType:'xlsx'})],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});}

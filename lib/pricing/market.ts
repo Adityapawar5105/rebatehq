@@ -1,3 +1,4 @@
+import {businessDate} from '../vault/today';
 import { workspaceCurrency } from '../vault/currency';
 import {alternatives} from './alternatives';
 import JSZip from 'jszip';
@@ -36,10 +37,10 @@ export const scopeKey=(r:ExportRow)=>JSON.stringify([r.kind,r.product,r.category
 export async function exportReceipt(e:Engine,id:string,profile:ErpProfile,tier:Tier):Promise<Receipt>{
  const currency=await workspaceCurrency(e);
  const run=(await rows(e,`SELECT run_date FROM rule_runs WHERE id=${Q(id)}`))[0];if(!run)fail();
- if(id.startsWith('grid-'))return {currency,headers:['product_id','tier','price','effective_from','customer_id','valid_to','category','qty_break','price_kind','currency'],rows:(await gridData(e,id,tier)).map(r=>({product:r.product??'',category:r.rawCategory??'',customer:r.customer??'',tier:r.tier,quantity:r.quantityBreak,from:r.from&&r.from>run.run_date.slice(0,10)?r.from:run.run_date.slice(0,10),to:r.to??'',kind:r.key.startsWith('l:')?'list':'matrix',price:r.after})).map(safeScope)};
+ if(id.startsWith('grid-'))return {currency,headers:['product_id','tier','price','effective_from','customer_id','valid_to','category','qty_break','price_kind','currency'],rows:(await gridData(e,id,tier)).map(r=>({product:r.product??'',category:r.rawCategory??'',customer:r.customer??'',tier:r.tier,quantity:r.quantityBreak,from:r.from&&r.from>businessDate(String(run.run_date))?r.from:businessDate(String(run.run_date)),to:r.to??'',kind:r.key.startsWith('l:')?'list':'matrix',price:r.after})).map(safeScope)};
  const scoped=id.startsWith('ops-');
  const data=await rows(e,`SELECT r.product_id,${scoped?"coalesce(d.matrix_tier,'')":'r.tier'} tier,r.after_cents::VARCHAR price,${scoped?'d.customer_id,d.valid_to::VARCHAR valid_to':'NULL customer_id,NULL valid_to'} FROM rule_changes r ${scoped?'JOIN price_changeset_rows d ON d.run_id=r.run_id AND d.product_id=r.product_id AND d.tier=r.tier':''} WHERE r.run_id=${Q(id)} ORDER BY r.product_id,r.tier`);
- return {currency,headers:[...EXPORT_LAYOUTS[profile],...(profile==='generic'&&scoped?['customer_id','valid_to']:[]),...(profile==='generic'?['currency']:[])],rows:data.map(r=>({product:r.product_id,category:'',customer:r.customer_id??'',tier:r.tier,quantity:'0.0000',from:run.run_date.slice(0,10),to:r.valid_to??'',kind:'matrix',price:r.price})).map(safeScope)};
+ return {currency,headers:[...EXPORT_LAYOUTS[profile],...(profile==='generic'&&scoped?['customer_id','valid_to']:[]),...(profile==='generic'?['currency']:[])],rows:data.map(r=>({product:r.product_id,category:'',customer:r.customer_id??'',tier:r.tier,quantity:'0.0000',from:businessDate(String(run.run_date)),to:r.valid_to??'',kind:'matrix',price:r.price})).map(safeScope)};
 }
 export function receiptTable(receipt:Receipt){return [receipt.headers,...receipt.rows.map(r=>[r.product,r.tier,centsText(BigInt(r.price)),r.from,...(receipt.headers.includes('customer_id')?[r.customer,r.to]:[]),...(receipt.headers.includes('category')?[r.category,r.quantity,r.kind]:[]),...(receipt.headers.includes('currency')?[receipt.currency??'USD']:[])])];}
 export function csvBlob(table:string[][]){return new Blob(['\ufeff'+table.map(r=>r.map(v=>'"'+csvSafeCell(v).replaceAll('"','""')+'"').join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'});}

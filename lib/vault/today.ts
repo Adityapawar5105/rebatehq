@@ -13,3 +13,5 @@ export function addDays(date: string, days: number): string {
 export function yearStart(now: Date = new Date()): string { return `${now.getFullYear()}-01-01`; }
 /** The last day of the device's local calendar year. */
 export function yearEnd(now: Date = new Date()): string { return `${now.getFullYear()}-12-31`; }
+/** The device's local calendar date of a stored UTC timestamp (a price run's run_date): its effective date in exports. */
+export function businessDate(at: string): string { return businessToday(new Date(at)); }

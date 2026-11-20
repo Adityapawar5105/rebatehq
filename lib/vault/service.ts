@@ -508,7 +508,7 @@ export class VaultService {
   }
   private async agentPass(reason: 'schedule' | 'open' | 'manual', signal?: AbortSignal, progress?: (n: number) => void) {
     const e = this.requireEngine(), s = await agents.settings(e), startedAt = new Date().toISOString();
-    const found = await agents.collect(e, s, () => this.leakResult(), startedAt.slice(0, 10), signal, progress);
+    const found = await agents.collect(e, s, () => this.leakResult(), businessToday(), signal, progress);
     const r = await agents.reconcileSql(e, found, reason, startedAt, new Date().toISOString());
     await this.agentWrite({ reason, findings: r.stats.findings, fresh: r.stats.fresh, resolved: r.stats.resolved }, x => x.conn.query(r.sql).then(() => undefined));
     return r.stats;

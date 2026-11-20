@@ -9,7 +9,7 @@ import {lineFromCents} from '../margin/engine';
 import {msg} from '../i18n/core';
 import {rows,type Preview,type PriceRow} from './rules';
 import {resolvedBook} from './book';
-import {businessToday} from '../vault/today';
+import {businessDate,businessToday} from '../vault/today';
 export const BASIC_GRID_LIMIT=50,FULL_GRID_LIMIT=500;
 export type GridRow={key:string;product:string|null;category:string;rawCategory:string|null;rawTier:string|null;customer:string|null;tier:string;quantityBreak:string;from:string|null;to:string|null;price:string;cost:string|null};
 export type GridEdit={key:string;price:string};
@@ -100,6 +100,6 @@ export async function gridRollback(e:Engine,version:string,actor:string,tier:Tie
  if(!String(v.snapshot_id).startsWith('grid-'))return null;
  const original=await gridData(e,v.snapshot_id,tier),current=await selected(e,original.map(r=>r.appliedKey));
  const scope=(r:GridRow)=>JSON.stringify([r.product,r.rawCategory,r.customer,r.rawTier,r.quantityBreak,r.from,r.to]);
- if(current.some((r,i)=>{const old=original[i],from=old.key.startsWith('l:')?null:old.from!>String(v.run_date).slice(0,10)?old.from:String(v.run_date).slice(0,10);return r.price!==old.after||scope(r)!==scope({...old,from});}))fail('pc2.conflict');
+ if(current.some((r,i)=>{const old=original[i],from=old.key.startsWith('l:')?null:old.from!>businessDate(String(v.run_date))?old.from:businessDate(String(v.run_date));return r.price!==old.after||scope(r)!==scope({...old,from});}))fail('pc2.conflict');
  return store(e,actor,await changes(e,current,original.map(r=>({key:r.appliedKey,price:String(BigInt(r.price)/BigInt(100))+'.'+String(BigInt(r.price)%BigInt(100)).padStart(2,'0')}))),original.some(r=>r.key.startsWith('m:')));
 }
