@@ -48,7 +48,7 @@ import type { ErpProfile, FieldSource } from "../studio/mapper";
 import { dismissSql, fixGroups, fixRows, fixSetSql, recheck } from "../studio/fixlater";
 import { health } from "../studio/health";
 import { PLAYGROUND_PREFIX, SAMPLE_COUNTS_SQL, generatePlayground, sampleState } from "../studio/playground";
-import { AUTO_LOCK_MS, LEASE_WAIT_MS, VaultError, type LeaksView, type Scope, type Tier, type VaultStatus } from "./protocol";
+import { AUTO_LOCK_MS, LOCK_WARNING_MS, LEASE_WAIT_MS, VaultError, type LeaksView, type Scope, type Tier, type VaultStatus } from "./protocol";
 import { REBUILD_SQL, effectiveRebuildSql, findDifferences, reconSummary, recordSql } from "../margin/aggregate";
 import { drill, math, waterfall, whale, type Dim, type Filters, type Metric } from "../margin/views";
 import { findLeaks, leakRows, scopeTotals, type LeakResult } from "../margin/leaks";
@@ -113,9 +113,10 @@ export class VaultService {
   private viewAs: RoleId | null = null;
   private releaseLease: (() => void) | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
+  private warnTimer: ReturnType<typeof setTimeout> | null = null;
   readonly studio = new Studio();
   // autoWarm: start the copy-on-write in the background right after unlock.
-  constructor(private onIdle: () => void, private idleMs = AUTO_LOCK_MS, private leaseWaitMs = LEASE_WAIT_MS, private autoWarm = true) {}
+  constructor(private onIdle: () => void, private idleMs = AUTO_LOCK_MS, private leaseWaitMs = LEASE_WAIT_MS, private autoWarm = true, private onWarn?: () => void) {}
   async init(scope: Scope) {
     if (this.storage) throw new VaultError("STATE", msg("vault.workspaceIsAlreadySelected"));
     if (!navigator.storage?.getDirectory || !navigator.locks) throw new VaultError("BROWSER", msg("vault.useACurrentChrome"));
@@ -134,8 +135,22 @@ export class VaultService {
   }
   touch() {
     if (this.timer) clearTimeout(this.timer);
-    if (this.engine) this.timer = setTimeout(this.onIdle, this.idleMs);
+    if (this.warnTimer) clearTimeout(this.warnTimer);
+    this.warnTimer = null;
+    if (this.engine) {
+      this.timer = setTimeout(this.onIdle, this.idleMs);
+      // A minute's warning before the idle lock, so nobody loses unsaved mapping by surprise (audit B-8).
+      if (this.onWarn && this.idleMs > LOCK_WARNING_MS) this.warnTimer = setTimeout(this.onWarn, this.idleMs - LOCK_WARNING_MS);
+    }
     return { ok: true };
+  }
+  /** The idle time ran out while a job was running: warn now and lock a minute later unless the person comes back. */
+  graceLock() {
+    if (!this.engine) return;
+    if (this.timer) clearTimeout(this.timer);
+    if (this.warnTimer) clearTimeout(this.warnTimer);
+    this.warnTimer = null; this.timer = setTimeout(this.onIdle, Math.min(LOCK_WARNING_MS, this.idleMs));
+    this.onWarn?.();
   }
   /** `ownerName` names the Pricing Owner at setup (the worker requires it; direct harness calls may omit it). */
   async create(passphrase: string, tier: Tier, ownerName?: string) {
@@ -189,7 +204,9 @@ export class VaultService {
       passphrase = "";
       if (!decoded) throw new VaultError("UNLOCK_FAILED", msg("vault.wrongPassphraseOrDamaged"));
       this.key = decoded.key; this.generation = decoded.sequence;
-      this.engine = await openMemory(decoded.bytes); // one engine; registered RAM buffer only
+      // The passphrase was right once decrypt succeeded: an engine that fails to start is not a "wrong passphrase" (audit B-11).
+      try { this.engine = await openMemory(decoded.bytes); } // one engine; registered RAM buffer only
+      catch { throw new VaultError("ENGINE", msg("vault.engineFailed")); }
       this.storage.activeHead = { format: 1, current: chosen.name, previous: null, sequence: decoded.sequence, savedAt: chosen.savedAt || "" };
       const rows = (await this.engine.conn.query("SELECT scope,tier FROM vault_meta WHERE id=1")).toArray();
       if (rows.length !== 1 || rows[0].scope !== this.storage.scope || !["starter", "professional", "scale"].includes(String(rows[0].tier))) throw new Error("metadata");
@@ -383,7 +400,8 @@ export class VaultService {
   async leaks(): Promise<LeaksView> {
     const result = await this.leakResult(), engine = this.requireEngine(), sample = await this.isSample(engine);
     const { sql, changed } = await ledgerSql(engine, result.findings, sample, new Date().toISOString());
-    if (changed) {
+    // A read-only command (audit B-6): the ROI ledger is updated only while the licence allows writes; the findings show either way.
+    if (changed && this.licence.writable) {
       const w = await this.writable();
       await w.conn.query("BEGIN");
       try { await w.conn.query(sql); await appendAudit(w, "leaks.recorded", { findings: String(result.findings.length), changed: String(changed), sample: String(sample) }); await w.conn.query("COMMIT"); }
@@ -651,7 +669,8 @@ export class VaultService {
   async reconcile() {
     const engine = this.requireEngine(), d = await findDifferences(engine), at = new Date().toISOString();
     const open = Number((await engine.conn.query("SELECT count(*) AS n FROM recon_issues WHERE status='open'")).toArray()[0].n);
-    if (d.found.length || open) {
+    // A read-only command (audit B-6): open differences are recorded only while the licence allows writes.
+    if ((d.found.length || open) && this.licence.writable) {
       const w = await this.writable();
       await w.conn.query("BEGIN");
       try { await w.conn.query(await recordSql(d.found, at)); await w.conn.query("COMMIT"); } catch (error) { await w.conn.query("ROLLBACK").catch(() => undefined); throw error; }
@@ -702,6 +721,7 @@ export class VaultService {
   private async seedRoles() {
     const e = this.requireEngine();
     if (Number((await e.conn.query("SELECT count(*) AS n FROM role_assignments")).toArray()[0].n) > 0) return;
+    if (!this.licence.writable) return; // seeding is a write; a read-only vault keeps the default owner access until it can save (audit B-6)
     const owner = (await pricing.pricingState(e)).owner, id = this.identity.userId;
     await this.write("roles.seeded", { actor: id }, async w => { await w.conn.query(roles.seedSql(id, owner && owner.id === id ? owner.name : "Vault owner", new Date().toISOString())); });
     this.accessCache = null;

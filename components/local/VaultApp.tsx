@@ -61,6 +61,8 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
   const onHome = useCallback((h: HomeData) => setHomeInfo({ name: h.displayName, role: h.access.roleLabel, owner: h.pricingOwner }), []);
   // Layout preferences only (never business data): a collapsed sidebar is remembered in this browser.
   const [collapsed, setCollapsed] = useState(false), [drawer, setDrawer] = useState(false);
+  // Audit B-8 and X-4: the idle-lock warning, and a worker that stopped.
+  const [locking, setLocking] = useState(false), [dead, setDead] = useState(false);
   useEffect(() => { try { setCollapsed(localStorage.getItem(NAV_KEY) === "collapsed"); } catch {} }, []);
   const toggleNav = () => setCollapsed(c => { try { localStorage.setItem(NAV_KEY, c ? "open" : "collapsed"); } catch {} return !c; });
   useEffect(() => { if (!drawer) return; const close = (e: KeyboardEvent) => { if (e.key === "Escape") setDrawer(false); }; window.addEventListener("keydown", close); return () => window.removeEventListener("keydown", close); }, [drawer]);
@@ -69,21 +71,26 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
     const c = new VaultClient(scope, event => {
       if (!active) return;
       if(event.event === "licence"){setStatus(event.status);}
+      else if (event.event === "locking") setLocking(true);
       else if (event.event === "progress") { setProgress(event); window.dispatchEvent(new CustomEvent("vault-progress", { detail: { stage: event.stage } })); }
       else if (event.event === "writable" || event.event === "agents") { void c.call("status", {}).then(s => { if (active) setStatus(s); }).catch(() => undefined); }
-      else { setPassphrase(""); setMessage(event.reason); void c.call("status", {}).then(s => { if (active) setStatus(s); }); }
-    });
+      else { setLocking(false); setPassphrase(""); setMessage(event.reason); void c.call("status", {}).then(s => { if (active) setStatus(s); }); }
+    }, () => { if (active) setDead(true); });
+    // A worker that never answers is treated as dead, instead of an endless "starting" card (audit X-4).
+    const startTimer = setTimeout(() => { if (active) setDead(d => d || !gotStatus); }, 45_000);
+    let gotStatus = false;
     client.current = c;
-    c.ready.then(s => { if (active) { setStatus(s); setMessage(msg(s.exists ? "shell.unlockPrompt" : "shell.createPrompt")); } }).catch(e => { if (active) setError(e instanceof Error ? e.message : msg("common.operationFailed")); });
+    c.ready.then(s => { gotStatus = true; clearTimeout(startTimer); if (active) { setStatus(s); setMessage(msg(s.exists ? "shell.unlockPrompt" : "shell.createPrompt")); } }).catch(e => { if (active) setError(e instanceof Error ? e.message : msg("common.operationFailed")); });
     void c.call("storage", {}).then(s => { if (active) setStorage(s); }).catch(() => undefined);
     setSupported(/Chrome|Edg\/|Firefox\//.test(navigator.userAgent));
     let lastActivity = 0;
-    const touch = () => { if (Date.now() - lastActivity > 5000) { lastActivity = Date.now(); void c.call("touch", {}).catch(() => undefined); } };
+    const touch = () => { setLocking(false); if (Date.now() - lastActivity > 5000) { lastActivity = Date.now(); void c.call("touch", {}).catch(() => undefined); } };
     const leaving = () => { void c.call("lock", {}).catch(() => undefined); };
-    window.addEventListener("pointerdown", touch); window.addEventListener("keydown", touch); window.addEventListener("pagehide", leaving);
+    // Reading counts as activity too: the mouse wheel and scrolling (audit B-8).
+    window.addEventListener("pointerdown", touch); window.addEventListener("keydown", touch); window.addEventListener("wheel", touch, { passive: true }); window.addEventListener("scroll", touch, { passive: true, capture: true }); window.addEventListener("pagehide", leaving);
     const hash = () => { const raw = location.hash.slice(1); const value=raw.startsWith('pricing-')?'pricing':raw.startsWith('quotes-')?'quotes':raw.startsWith('margin-')?'margin':raw.startsWith('rebates-')?'rebates':raw.startsWith('vendors-')?'vendors':raw.startsWith('reports-')?'reports':raw; const match = sections.find(s => sectionHash(s) === value); if (match) setSection(match); setError(""); };
     hash(); window.addEventListener("hashchange", hash);
-    return () => { active = false; window.removeEventListener("pointerdown", touch); window.removeEventListener("keydown", touch); window.removeEventListener("pagehide", leaving); window.removeEventListener("hashchange", hash); c.close(); client.current = null; };
+    return () => { active = false; clearTimeout(startTimer); window.removeEventListener("pointerdown", touch); window.removeEventListener("keydown", touch); window.removeEventListener("wheel", touch); window.removeEventListener("scroll", touch, { capture: true }); window.removeEventListener("pagehide", leaving); window.removeEventListener("hashchange", hash); c.close(); client.current = null; };
   }, [scope.userId, scope.tenantId]);
   async function operation(work: () => Promise<void>) {
     setBusy(true); setError(""); setProgress(null);
@@ -143,9 +150,11 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
         <p role="status" aria-live="polite" className={sh.message}>{say(message)}</p>
         {error && <Notice tone="bad" role="alert">{say(error)}</Notice>}
         {status?.preparing && <Notice tone="info" data-testid="preparing">{t("shell.preparing")}</Notice>}
+        {locking && unlocked && <Notice tone="warn" role="alert" data-testid="locking-soon" actions={<Button size="sm" variant="primary" onClick={() => { setLocking(false); void client.current?.call("touch", {}).catch(() => undefined); }}>{t("shell.stayUnlocked")}</Button>}>{t("shell.lockingSoon")}</Notice>}
         {status?.recovered && <Notice tone="warn">{t("shell.recovered")}</Notice>}
         {progress && <div className={sh.progress}><label htmlFor="vault-progress">{say(progress.stage)}</label><progress id="vault-progress" value={Number(progress.done)} max={Math.max(1, Number(progress.total))}/>{!progress.stage.startsWith("Saving") && !progress.stage.startsWith("Saved") && <Button size="sm" onClick={() => void client.current!.call("cancel", {})}>{t(progress.stage.startsWith("Replaying") ? "sim.cancel" : progress.stage.startsWith("Checking") ? "cadence.cancel" : "shell.cancelImport")}</Button>}</div>}
-        {!status ? <section className={ui.card} aria-busy="true">{t("shell.startingWorker")}</section> : !unlocked ? <div className={sh.auth}>
+        {dead ? <section className={ui.card} role="alert" data-testid="worker-failed"><h2>{t("shell.workerFailed.title")}</h2><p>{t("shell.workerFailed.body")}</p><Button variant="primary" onClick={() => location.reload()}>{t("shell.workerFailed.reload")}</Button></section>
+          : !status ? <section className={ui.card} aria-busy="true">{t("shell.startingWorker")}</section> : !unlocked ? <div className={sh.auth}>
           <section className={`${ui.card} ${sh.authCard}`} aria-labelledby="auth-heading">
             <p className={sh.authBrand}><span className={sh.mark} aria-hidden="true">{t("shell.brandMark")}</span><span>{t("app.name")}</span></p>
             <span className={sh.authIcon}><Icon name="lock" size={24}/></span>
