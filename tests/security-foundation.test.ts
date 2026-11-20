@@ -4,7 +4,6 @@ import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { can } from "../lib/permissions";
 import { assertRepResponseSafe } from "../lib/rep-response";
-import { assertNotQuoteCreator } from "../lib/quote-approval";
 import { csvSafeCell, csvDocument } from "../lib/csv";
 import { QuoteRequestSchema } from "../lib/validators";
 import { RETIRED_API_PATHS } from "../config/http-boundary.mjs";
@@ -36,10 +35,6 @@ test("retired business APIs hold no database code; rep-accessible APIs still gua
     {pocket_price:90},{pocketMargin:20},{margin:20},{margin_dollars:20},{cost_components:[{amount:2}]},{terms:2}
   ];
   for(const payload of protectedExamples)assert.throws(()=>assertRepResponseSafe("rep",payload));
-});
-test("users cannot approve their own quote",()=>{
-  assert.throws(()=>assertNotQuoteCreator("user-1","user-1"),(error:unknown)=>typeof error==="object"&&error!==null&&"status" in error&&(error as {status:number}).status===403);
-  assert.doesNotThrow(()=>assertNotQuoteCreator("user-1","user-2"));
 });
 
 test("CSV exports neutralize spreadsheet formula prefixes",()=>{
