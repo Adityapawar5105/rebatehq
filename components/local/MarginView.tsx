@@ -218,7 +218,7 @@ function MathView({ client, target, onClose }: { client: VaultClient; target: No
     <div className={ui.cardHead}><div><h2 id="math-heading">{t("margin.showTheMath", { title })}</h2></div><div className={ui.cardActions}><Button size="sm" icon="close" onClick={onClose}>{t("common.close")}</Button></div></div>
     {error && <Notice tone="bad" role="alert">{say(error)}</Notice>}
     {leak && <><p><strong>{say(leak.label)}{t("common.definitionSeparator")}</strong>{t("margin.leakOn", { cents: $(leak.cents), count: Number(leak.lines) })}</p><p className={styles.small}><strong>{t("margin.formula")}</strong> {say(leak.formula)}</p><p className={styles.small}>{say(leak.detail)}</p>
-      {rows && <p className={styles.small}>{t("margin.evidenceSum", { sum: $(rows.sum), count: Number(rows.count) })}{" "}{rows.engineAgrees ? t("margin.eachLeakShownBelow") : t("margin.theMarginEngineDisagrees")}</p>}</>}
+      {rows && <p className={styles.small}>{t("margin.evidenceSum", { sum: $(rows.sum), count: Number(rows.count) })}{rows.engineAgrees ? <>{" "}{t("margin.eachLeakShownBelow")}</> : null}</p>}{rows && !rows.engineAgrees && <Notice tone="warn">{t("margin.theMarginEngineDisagrees")}</Notice>}</>}
     {panel && <><p className={ui.mathValue}><strong data-testid="math-value">{panel.metric === "rate" ? bpPercent(panel.value) : panel.metric === "lines" ? t("margin.lineCount", { count: Number(panel.value) }) : $(panel.value)}</strong></p>
       <p className={styles.small}><strong>{t("margin.formula")}</strong> {say(panel.formula)}</p>
       <ul className={styles.small}>{panel.inputs.map(i => <li key={i.label}>{t("margin.input", { label: say(i.label), value: panel.metric === "lines" ? fmt.int(i.cents) : $(i.cents) })}</li>)}</ul>

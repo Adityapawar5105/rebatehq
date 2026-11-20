@@ -48,8 +48,9 @@ function WorkTabs({ drafts, action }: { drafts: WorkItem[]; action: WorkItem[] }
   const [tab, setTab] = useState<"drafts" | "action">(drafts.length || !action.length ? "drafts" : "action");
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
   const tabs = [{ id: "drafts" as const, label: t("home.tab.drafts"), items: drafts }, { id: "action" as const, label: t("home.tab.action"), items: action }];
-  const keys = (e: KeyboardEvent<HTMLButtonElement>, i: number) => { if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return; e.preventDefault(); const next = (i + 1) % tabs.length; setTab(tabs[next].id); refs.current[next]?.focus(); };
-  const items = tabs.find(x => x.id === tab)!.items, today = items.filter(i => isToday(i.at)), earlier = items.filter(i => !isToday(i.at));
+  const keys = (e: KeyboardEvent<HTMLButtonElement>, i: number) => { if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return; e.preventDefault(); const next = (i + (e.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length; setTab(tabs[next].id); refs.current[next]?.focus(); };
+  // Undated rows (Fix Later, reconciliation, uncosted) are standing work, not old work: they sit under "Open items".
+  const items = tabs.find(x => x.id === tab)!.items, today = items.filter(i => isToday(i.at)), earlier = items.filter(i => i.at && !isToday(i.at)), open = items.filter(i => !i.at);
   const list = (rows: WorkItem[]) => <ul className={hs.list}>{rows.map(i => <li key={i.id}><a href={i.href} className={hs.item} data-testid="home-work-item" onClick={() => { if (i.anchor) scrollToHeading(i.anchor); }}>
     <span className={hs.itemIcon} aria-hidden="true"><Icon name={i.icon}/></span>
     <span className={hs.itemText}><strong translate="no">{i.title}</strong><span translate="no">{i.subtitle}</span></span>
@@ -65,7 +66,8 @@ function WorkTabs({ drafts, action }: { drafts: WorkItem[]; action: WorkItem[] }
     <div role="tabpanel" id="home-work-panel" aria-labelledby={`home-tab-${tab}`} className={hs.panel} tabIndex={0}>
       {!items.length && <p className={hs.empty}>{t(tab === "drafts" ? "home.work.emptyDrafts" : "home.work.emptyAction")}</p>}
       {!!today.length && <><h3 className={hs.day}>{t("home.work.today")}</h3>{list(today)}</>}
-      {!!earlier.length && <><h3 className={hs.day}>{t(today.length ? "home.work.earlier" : "home.work.recent")}</h3>{list(earlier)}</>}
+      {!!earlier.length && <><h3 className={hs.day}>{t("home.work.earlier")}</h3>{list(earlier)}</>}
+      {!!open.length && <><h3 className={hs.day}>{t("home.work.recent")}</h3>{list(open)}</>}
     </div>
   </section>;
 }

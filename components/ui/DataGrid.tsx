@@ -152,6 +152,8 @@ export function DataGrid<R>({ label, columns, rows, rowKey, remote, footer, sele
   return <div className={s.gridBox} data-testid={testId}>
     {/* Always rendered at a fixed height, so the first tick never pushes the table down (UI handoff 1.1). */}
     <div className={s.gridBar}>
+      {/* The row count is always shown; the "N of M" form (grid-count) only while a filter is on (20 Nov 2026). */}
+      {!filtered && <span data-testid="grid-rows">{t("grid.rowsTotal", { count: Number(total) })}</span>}
       {filtered && <span data-testid="grid-count">{t("grid.rowsShown", { shown: fmt.int(matched), total: fmt.int(total) })}</span>}
       {filtered && <button type="button" className={s.chip} onClick={() => setQuery({ ...query, filters: [] })}>{t("grid.clearFilters")}</button>}
       {count > 0 && <button type="button" className={s.chip} onClick={() => { setAll(false); setPicked(new Set()); }}>{t("grid.clearSelection")}</button>}
@@ -169,7 +171,8 @@ export function DataGrid<R>({ label, columns, rows, rowKey, remote, footer, sele
             {selectable && <td className={s.selCol}><input type="checkbox" aria-label={t("grid.selectRow", { row: i + 1 })} checked={on} onChange={() => undefined} onClick={e => toggle(i, e.shiftKey)} data-testid="grid-select"/></td>}
             {columns.map(c => <td key={c.id} className={cx(c.num && s.num, c.className)}>{c.cell ? c.cell(r) : c.value ? cellText(c.type ?? "text", c.value(r)) : null}</td>)}
           </tr>; })}
-          {!visible.length && <tr><td colSpan={cols} className={s.gridEmpty}>{t("grid.noMatches")}</td></tr>}
+          {/* An empty table and a table filtered to nothing say different things; the filtered one offers to clear. */}
+          {!visible.length && <tr><td colSpan={cols} className={s.gridEmpty} data-testid={filtered ? "grid-no-matches" : "grid-empty"}>{filtered ? <>{t("grid.noMatches")}{" "}<button type="button" className={s.chip} onClick={() => setQuery({ ...query, filters: [] })}>{t("grid.clearFilters")}</button></> : t("grid.noRows")}</td></tr>}
         </tbody>
         {footer && <tfoot>{footer}</tfoot>}
       </table>
