@@ -57,6 +57,8 @@ test("8C-1 outcomes: recorded on sent quotes only, validated, replaced on change
     await record(c, e, "q1", { outcome: "won", reason: "relationship", competitor: "  ", note: "Signed" });
     assert.deepEqual(await wl.outcomeOf(e, "q1"), { outcome: "won", reason: "relationship", competitor: null, note: "Signed", recordedBy: "rep", recordedAt: AT });
     await assert.rejects(wl.outcomeSql(e, "q4", { outcome: "won", reason: "price" }, "rep", AT), (x: unknown) => x instanceof VaultError && x.code === "WINLOSS", "a draft has no outcome");
+    await assert.rejects(wl.outcomeSql(e, "q5", { outcome: "won", reason: "price" }, "rep", AT), (x: unknown) => x instanceof VaultError && x.code === "WINLOSS", "a pending exception is not won");
+    assert.ok((await wl.outcomeSql(e, "q5", { outcome: "lost", reason: "price" }, "rep", AT)).includes("'lost'"), "a pending quote can still be lost");
     for (const bad of [{ outcome: "maybe", reason: "price" }, { outcome: "won", reason: "luck" }, { outcome: "won", reason: "price", competitor: "x".repeat(101) }, { outcome: "won", reason: "price", note: "x".repeat(1001) }, { outcome: "won", reason: "price", note: "a\u0000b" }])
       await assert.rejects(wl.outcomeSql(e, "q1", bad, "rep", AT), VaultError);
     await assert.rejects(wl.outcomeSql(e, "nope", { outcome: "won", reason: "price" }, "rep", AT), VaultError);

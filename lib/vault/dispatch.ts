@@ -170,6 +170,7 @@ export async function dispatch(service: VaultService, request: Request, hooks: H
     case "quoteCreate": return service.quoteCreate(request.data.customerId);
     case "quoteLines": return service.quoteLines(request.data.id, request.data.lines);
     case "quoteSubmit": return service.quoteSubmit(request.data.id, request.data.reason);
+    case "quoteWithdraw": return service.quoteWithdraw(request.data.id);
     case "quoteDecide": return service.quoteDecide(request.data.id, request.data.decision, request.data.note);
     case "quoteGet": return service.quoteGet(request.data.id);
     case "quoteOutcome": return service.quoteOutcome(request.data.id, request.data.input);

@@ -27,6 +27,8 @@ export async function outcomeSql(e: Engine, id: string, input: unknown, userId: 
   const q = (await rows(e, `SELECT status FROM quotes WHERE id=${Q(id)}`))[0];
   if (!q) throw new VaultError("QUOTE", msg("quote.notFound"));
   if (q.status === "draft") throw new VaultError("WINLOSS", msg("winloss.draft"));
+  // Phase 1 (audit B-13): a quote is won only once it was sent, or its exception was approved.
+  if (v!.outcome === "won" && q.status !== "submitted" && q.status !== "approved") throw new VaultError("WINLOSS", msg("winloss.wonNeedsDecision"));
   const n = (x: string | null) => x === null ? "NULL" : Q(x);
   return `INSERT INTO quote_outcomes VALUES(${Q(id)},${Q(v!.outcome!)},${Q(v!.reason!)},${n(competitor)},${n(note)},${Q(userId)},${Q(at)})
  ON CONFLICT(quote_id) DO UPDATE SET outcome=excluded.outcome,reason=excluded.reason,competitor=excluded.competitor,note=excluded.note,recorded_by=excluded.recorded_by,recorded_at=excluded.recorded_at;`;
