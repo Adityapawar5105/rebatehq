@@ -1,8 +1,9 @@
 "use client";
 // Shared UI components (chunk 7V). Every visible string is passed in by the caller (already translated with
 // t() or say()); these components hold no text of their own. Styling comes from ui.module.css and theme tokens.
-import { useEffect, useId, useRef, type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode } from "react";
+import { useEffect, useId, useRef, type ButtonHTMLAttributes, type HTMLAttributes, type KeyboardEvent, type ReactNode } from "react";
 import { Icon, type IconName } from "./Icon";
+import { nextTabIndex } from "./tabKeys";
 import s from "./ui.module.css";
 
 export type Tone = "ok" | "warn" | "bad" | "info" | "accent";
@@ -93,6 +94,17 @@ export function Meter({ value, max, label, detail }: { value: number; max: numbe
 export function SectionTabs({ items, current, label, onSelect }: { items: { id: string; label: ReactNode; href: string; icon?: IconName;testId?:string }[]; current: string; label: string; onSelect?: (id: string) => void }) {
   return <nav className={s.tabs} aria-label={label}>{items.map(i => <a key={i.id} href={i.href} data-testid={i.testId} className={s.tab} aria-current={i.id === current ? "page" : undefined} onClick={() => onSelect?.(i.id)}>{i.icon && <Icon name={i.icon} size={16}/>}{i.label}</a>)}</nav>;
 }
+
+/** In-page tabs (roadmap 8.1): one tab list pattern with roving focus and Left/Right/Home/End keys. The caller renders
+ *  the active panel and gives it `tabPanelProps(idPrefix, active)`, so each tab is tied to its panel. */
+export function Tabs<T extends string>({ label, tabs, active, onChange, idPrefix, className }: { label: string; tabs: { id: T; label: ReactNode; count?: ReactNode; testId?: string }[]; active: T; onChange: (id: T) => void; idPrefix: string; className?: string }) {
+  const refs = useRef<(HTMLButtonElement | null)[]>([]);
+  const key = (e: KeyboardEvent<HTMLButtonElement>, i: number) => { const n = nextTabIndex(e.key, i, tabs.length); if (n === null) return; e.preventDefault(); onChange(tabs[n].id); refs.current[n]?.focus(); };
+  return <div role="tablist" aria-label={label} className={cx(s.tabs, className)}>{tabs.map((x, i) => <button key={x.id} ref={el => { refs.current[i] = el; }} type="button" role="tab" id={`${idPrefix}-tab-${x.id}`} aria-selected={x.id === active} aria-controls={`${idPrefix}-panel`} tabIndex={x.id === active ? 0 : -1} className={s.tab} data-testid={x.testId} onClick={() => onChange(x.id)} onKeyDown={e => key(e, i)}>
+    {x.label}{x.count !== undefined && <span className={s.tabCount}>{x.count}</span>}
+  </button>)}</div>;
+}
+export const tabPanelProps = (idPrefix: string, active: string) => ({ role: "tabpanel" as const, id: `${idPrefix}-panel`, "aria-labelledby": `${idPrefix}-tab-${active}` });
 
 /** "On this page" bar: scrolls to a card heading without changing the section in the URL. */
 export function JumpNav({ label, items, jumpLabel }: { label: string; items: { id: string; label: string; icon?: IconName }[]; jumpLabel: (name: string) => string }) {
