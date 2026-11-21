@@ -65,6 +65,11 @@ test('7C-3b cash-leak hero is the unchanged finder scoped to exact 90-day input,
   assert.equal((await s.homeMonitor()).leaks,v.leaks,'Home reran the finder after Margin');assert.equal(cache().tables,'true||','Home overwrote the full-history tables');
   assert.equal(await (s as any).leakResult(),full,'Margin lost its saved result after Home');
   (s as any).dataVersion++;assert.notEqual((await s.homeMonitor()).leaks,v.leaks,'A data change kept the old result');assert.equal(cache().results.size,1);
+  // A finder run that fails part-way leaves its tables half rebuilt: they must not be read as the full-history ones.
+  (s as any).dataVersion++;const full2=await (s as any).leakResult();await s.leakRows(full2.findings[0]?.id??'none');assert.equal(cache().tables,'true||');
+  const query=e.conn.query;let n=0;(e.conn as any).query=async(sql:string)=>{if(++n===8)throw new Error('engine stopped');return query(sql);};
+  await assert.rejects(s.homeMonitor());(e.conn as any).query=query;assert.equal(cache().tables,null,'A failed run left its tables named');
+  await s.leakRows(full2.findings[0]?.id??'none');assert.equal(cache().tables,'true||','Evidence rows did not rerun the full-history finder');
  }finally{c.close();}
 });
 test('7C-3b relay sync presentation covers synced, pending, stale head, conflicting outbox, rejected content and no successful sync',()=>{

@@ -443,7 +443,8 @@ export class VaultService {
     if (!this.leakCache || this.leakCache.engine !== engine || this.leakCache.version !== this.dataVersion) this.leakCache = { engine, version: this.dataVersion, results: new Map(), tables: null };
     const cache = this.leakCache;
     let result = cache.results.get(key);
-    if (!result || (tables && cache.tables !== key)) { result = await findLeaks(engine, costToServe, window); cache.results.set(key, result); cache.tables = key; }
+    // The temporary tables name no window while the finder runs, so a run that fails part-way is never read as complete.
+    if (!result || (tables && cache.tables !== key)) { cache.tables = null; result = await findLeaks(engine, costToServe, window); cache.results.set(key, result); cache.tables = key; }
     return result;
   }
   private leakResult() { return this.leakFor(); }
