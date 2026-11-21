@@ -39,7 +39,7 @@ export const ROLE_FIELDS: Record<Role, Field[]> = {
   // Blank discount/freight/rebate load as 0; a blank cost stays unknown (NULL), never 0.
   // line_type (6A) only filters rows during conversion: non-item lines (G/L accounts, charges, comments) are skipped.
   sales_history: [f("line_id", "line_id", true), f("invoice_id", "text", false, 64), f("product_id", "id", true), f("customer_id", "id", true), f("sale_date", "date", true), f("quantity", "quantity", true), f("list_amount", "amount", true), f("discount_amount", "amount"), f("freight_amount", "amount"), f("rebate_amount", "amount"), f("cost_amount", "amount"), f("line_type", "text", false, 40)],
-  item_master: [f("product_id", "id", true), f("description", "text", false, 500), f("category", "text", false, 200), f("uom", "code", false, 16), f("current_cost", "amount"), f("list_price", "amount")],
+  item_master: [f("product_id", "id", true), f("description", "text", false, 500), f("category", "text", false, 200), f("uom", "code", false, 16), f("current_cost", "amount"), f("list_price", "amount"), f("barcode", "code", false, 20)],
   customer_list: [f("customer_id", "id", true), f("name", "text", false, 300), f("tier", "text", false, 100), f("branch", "text", false, 100), f("region", "text", false, 100), f("payment_terms", "text", false, 100)],
   vendor_cost: [f("vendor", "text", true, 200), f("product_id", "id", true), f("cost", "amount", true), f("effective_date", "date", true)],
   price_list: [f("product_id", "id"), f("category", "text", false, 200), f("customer_id", "id"), f("tier", "text", false, 100), f("qty_break", "quantity0"), f("price", "amount", true), f("valid_from", "date", true), f("valid_to", "date")],

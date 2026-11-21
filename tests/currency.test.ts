@@ -61,7 +61,7 @@ test('7C-3a v12 upgrade preserves every stored amount, defaults existing batches
   const {c,e}=await fresh(12);try{
     c.query("INSERT INTO products(product_id,current_cost,list_price) VALUES('P',123,987);INSERT INTO source_files VALUES('s','old.csv','item_master',1,'2026-01-01');INSERT INTO import_batches(id,source_id,rows_loaded,rows_rejected,imported_at) VALUES('b','s',1,0,'2026-01-01')");
     const before=rows(c,'SELECT * FROM products');c.query(upgradeSql(12));
-    assert.deepEqual(rows(c,'SELECT * EXCLUDE (notes) FROM products'),before);assert.equal(rows(c,'SELECT notes FROM products')[0].notes,null);assert.equal(await workspaceCurrency(e),'USD');assert.deepEqual(await sourceFx(e,'s'),batchFx('USD','USD','1'));
+    assert.deepEqual(rows(c,'SELECT * EXCLUDE (notes, barcode) FROM products'),before);assert.equal(rows(c,'SELECT notes FROM products')[0].notes,null);assert.equal(await workspaceCurrency(e),'USD');assert.deepEqual(await sourceFx(e,'s'),batchFx('USD','USD','1'));
     assert.equal(await currencyChangeSql(e,'USD'),'');await assert.rejects(currencyChangeSql(e,'CAD'),/cannot change/);
   }finally{c.close();}
 });

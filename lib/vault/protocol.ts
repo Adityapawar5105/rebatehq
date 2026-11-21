@@ -191,7 +191,7 @@ export type Commands = {
   leakReport: { locale?: string; ids?: string[] };
   search: { text: string };
   priceCheck: { productId: string; customerId: string | null; quantity: string };
-  quoteCreate: { customerId: string }; quoteLines: { id: string; lines: LineInput[] }; quoteSubmit: { id: string; reason: string | null }; quoteWithdraw: { id: string };
+  quoteCreate: { customerId: string }; quoteLines: { id: string; lines: LineInput[] }; quoteSubmit: { id: string; reason: string | null }; quoteWithdraw: { id: string }; quoteCopy: { id: string }; quoteRevise: { id: string }; quoteValidity: { id: string; validUntil: string | null }; quotePdf: { id: string; locale: import("../i18n/core").Locale }; brandingGet: Record<string, never>; brandingSet: { input: unknown }; priceList: { customerId: string; format: "csv" | "xlsx" }; priceMailing: { runId: string };
   vaultReset: Record<string, never>; passphraseChange: { current: string; next: string };
   quoteDecide: { id: string; decision: "approve" | "reject"; note: string | null }; quoteGet: { id: string }; quoteList: { pendingOnly?: boolean };
   quoteGuidance: { id: string }; quoteCrossSell: { id: string }; relayLocal: Record<string, never>;
@@ -275,7 +275,7 @@ export type Results = {
   capacityUpgrade: VaultStatus;
   licenceSet: VaultStatus;
   search: SearchHit[];
-  priceCheck: PricePoint; quoteCreate: QuoteView; quoteLines: QuoteView; quoteSubmit: QuoteView; quoteWithdraw: QuoteView; vaultReset: VaultStatus; passphraseChange: VaultStatus; quoteDecide: QuoteView; quoteGet: QuoteView; quoteList: QuoteSummary[]; quoteShare: QuoteView; quoteRelaySync: QuoteView;
+  priceCheck: PricePoint; quoteCreate: QuoteView; quoteLines: QuoteView; quoteSubmit: QuoteView; quoteWithdraw: QuoteView; quoteCopy: QuoteView; quoteRevise: QuoteView; quoteValidity: QuoteView; quotePdf: { name: string; bytes: Uint8Array }; brandingGet: import("../quotes/documents").Branding | null; brandingSet: import("../quotes/documents").Branding | null; priceList: { name: string; blob: Blob; rows: number }; priceMailing: { name: string; blob: Blob; rows: number }; vaultReset: VaultStatus; passphraseChange: VaultStatus; quoteDecide: QuoteView; quoteGet: QuoteView; quoteList: QuoteSummary[]; quoteShare: QuoteView; quoteRelaySync: QuoteView;
   home: HomeData; checklist: Checklist; checklistMark: Checklist; roleList: RoleList; roleSet: RoleList; roleRemove: RoleList; rolePreview: RoleList;
   cleanupScan: Scan; cleanupHistory: FixView[]; cleanupApply: CleanupApplied; cleanupUndo: CleanupUndone; cleanupMergeAll: CleanupMergedAll; cleanupUndoMany: CleanupUndone;
   costBasis: CostBasisView; costBasisSet: CostBasisView;

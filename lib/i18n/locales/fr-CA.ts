@@ -53,4 +53,13 @@ export const frCA: Partial<Catalog> = {
   "quotes.discard.body": "Les quantités et les prix saisis sur cette soumission ne sont pas enregistrés.",
   "quotes.discard.yes": "Abandonner et commencer une nouvelle soumission",
   "relay.onboard.notShared": "Les prix, les coûts et les factures ne sont jamais envoyés. Seuls le numéro de la soumission, son total et vos commentaires le sont.",
+  "quote.reviseSentOnly": "Seule une soumission envoyée ou approuvée se révise. Modifiez directement un brouillon.",
+  "qdoc.pdfSentOnly": "Le PDF client se crée à partir d'une soumission envoyée ou approuvée.",
+  "qdoc.title": "Soumission {number}",
+  "qdoc.revisionOf": "Révise la soumission",
+  "qdoc.copied": "Copiée dans une nouvelle soumission en brouillon, aux prix du jour.",
+  "qdoc.copyButton": "Copier dans une nouvelle soumission",
+  "qdoc.brandingTitle": "Présentation des soumissions",
+  "qdoc.brandingHelp": "Imprimée sur le PDF client de la soumission. Conservée dans ce coffre chiffré.",
+  "qdoc.brandingSaved": "Présentation des soumissions enregistrée.",
 };

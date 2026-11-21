@@ -85,7 +85,7 @@ test("6A: cost from the item list when the sales file has none (DuckDB)", async 
   const engine = { conn: c } as unknown as Engine;
   await resetStage(engine);
   for (const role of ["item_master", "sales_history"] as const) await createStage(engine, role);
-  c.query(`INSERT INTO st_item_master VALUES (1,2,'P2','Washer',NULL,NULL,'12.34',NULL),(1,3,'P3','No cost',NULL,NULL,NULL,NULL)`);
+  c.query(`INSERT INTO st_item_master VALUES (1,2,'P2','Washer',NULL,NULL,'12.34',NULL,NULL),(1,3,'P3','No cost',NULL,NULL,NULL,NULL,NULL)`); // the last column is the 11.5 barcode
   c.query(`INSERT INTO st_sales_history VALUES (0,2,'1','I1','P2','C','2026-01-05','3','60.00','0','0','0',NULL,NULL),(0,3,'2','I1','P1','C','2026-01-05','1.5','9.00','0','0','0',NULL,NULL),(0,4,'3','I1','P3','C','2026-01-05','2','9.00','0','0','0',NULL,NULL),(0,5,'4','I2','P1','C','2026-01-05','0.0001','9.00','0','0','0',NULL,NULL)`);
   const items = staged(1, "item_master"), lines = staged(0, "sales_history", { itemCost: true });
   await validate(engine, "item_master", [lines, items], null);

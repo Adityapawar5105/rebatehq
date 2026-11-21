@@ -35,9 +35,9 @@ INSERT INTO sales_lines(source_id,line_id,product_id,customer_id,sale_date,quant
 }
 
 test("8D schema v21: three local tables, family codes checked", async () => {
-  assert.equal(SCHEMA_VERSION, 21);
+  assert.ok(SCHEMA_VERSION >= 21, "v21 added the benchmark tables");
   assert.deepEqual(tablesFor(21).filter(t => !tablesFor(20).includes(t)), ["bench_family_map", "bench_shares", "bench_figures"]);
-  assert.ok(upgradeSql(20).startsWith("CREATE TABLE bench_family_map")); assert.equal(upgradeSql(21), "");
+  assert.ok(upgradeSql(20).startsWith("CREATE TABLE bench_family_map")); assert.ok(upgradeSql(21).startsWith("ALTER TABLE quotes ADD COLUMN revision_of"), "v22 follows v21"); assert.equal(upgradeSql(22), "");
   const { c } = await vault();
   try { assert.throws(() => c.query("INSERT INTO bench_family_map VALUES('Wire','tools','x')")); } finally { c.close(); }
 });

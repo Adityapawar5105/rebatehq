@@ -191,3 +191,28 @@ Home lists only rows the role can open, and they land on the exact heading. Both
 Phases 5 to 9a merged as PR #10. Both privacy gates allow one more request: `GET /api/licence/devices`, with no query and no body.
 
 **They passed CI:** [CI #180](https://github.com/Adityapawar5105/rebatehq/actions/runs/44813741319) on `6c45c9b` (390 unit tests, 70 Chromium and 67 Firefox checks), and [CI #185](https://github.com/Adityapawar5105/rebatehq/actions/runs/44825994318) on `bdf14b8` (397 unit tests, 72 Chromium and 69 Firefox checks including `passphraseUi` and `gridTrustUi`, 12 relay checks, the 139-check pgTAP plan twice). No schema, migration or blueprint change. See ROADMAP_PHASES_VERIFICATION.md.
+
+**Roadmap phases 8 and 9 (rest) and 10.1 (21 November 2026; built by Claude Code).**
+- **Phase 8 (PR #13):**
+  - a shared `Tabs` component;
+  - Quote Desk, Pricing, Cleanup, the relay panel and Import Studio moved to the shared components;
+  - relay status in the card header;
+  - the set-up card under the Home tabs;
+  - a scanned PDF reported beside the drop zone;
+  - the rep Quote Desk answer, thermometer and credit chip;
+  - shorter es/fr labels and account pages in the vault frame;
+  - the Home health error, scorecard opt-in, storage tiles and sticky grid headers.
+- **Phase 9 (PR #14):**
+  - `VaultStatus.phase`;
+  - read or write marked beside each command's capability (`ACTIONS` in `lib/roles/access.ts`);
+  - `Engine.warm`;
+  - `useVaultQuery`;
+  - benchmark withdrawal reconciled on load.
+- **10.1 (PR #15):** `SHARING_DESIGN.md`, a design only.
+
+**They passed CI:** [CI #191](https://github.com/Adityapawar5105/rebatehq/actions/runs/44884770133) on `8baa2e8`, [CI #195](https://github.com/Adityapawar5105/rebatehq/actions/runs/44886940643) on `0fc0de8` and [CI #193](https://github.com/Adityapawar5105/rebatehq/actions/runs/44886079314) on `5c59a90`. No schema, migration or blueprint change. See PHASES_8_9_VERIFICATION.md.
+
+The pushes to main after those merges failed for causes outside the app code, fixed in PR #16:
+- Node 24.22.3 crashed at test exit;
+- runner Docker networking failed;
+- the gate hung after its deliberate tab crash.

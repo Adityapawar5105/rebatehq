@@ -63,6 +63,7 @@ import { isRole, type Cap, type RoleId } from "../roles/access";
 import type { Access, CleanupApplied, CleanupMergedAll, CleanupUndone, HomeData, RoleList, SearchHit } from "./protocol";
 import { isLocale, plainText } from "../i18n/core";
 import * as quotes from "../quotes/quotes";
+import * as documents from "../quotes/documents";
 import {RelaySession,emptyRelay,type RelayState} from '../relay/session';
 import {relayHttp} from '../relay/http';
 import {RelayError} from '../relay/protocol';
@@ -537,6 +538,51 @@ export class VaultService {
     return this.quoteView(id);
   }
   async quoteGet(id: string) { this.quoteTier(); return this.ownQuote(id); }
+  // ---- Roadmap Phase 11: copy and revise, validity date, customer PDF, branding, price list and mailing list -------
+  /** 11.1: a new draft of the caller's own from any quote they can open. */
+  async quoteCopy(id: string) {
+    this.quoteTier(); await this.ownQuote(id); const plan = await quotes.copySql(this.requireEngine(), id, this.identity.userId, new Date().toISOString());
+    await this.write("quote.copied", { quote_id: plan.id, from: id, actor: this.identity.userId }, async w => { await w.conn.query(plan.sql); });
+    return this.quoteView(plan.id);
+  }
+  /** 11.1: a sent quote changed as a new version; the approval is never carried over. */
+  async quoteRevise(id: string) {
+    this.quoteTier(); await this.ownQuote(id); const a = await this.access();
+    const plan = await quotes.reviseSql(this.requireEngine(), id, this.identity.userId, a.caps.includes("quoteApprove"), new Date().toISOString());
+    await this.write("quote.revised", { quote_id: plan.id, from: id, actor: this.identity.userId }, async w => { await w.conn.query(plan.sql); });
+    return this.quoteView(plan.id);
+  }
+  /** 11.2: the date the quoted prices hold until. */
+  async quoteValidity(id: string, validUntil: string | null) {
+    this.quoteTier(); const sql = await quotes.validitySql(this.requireEngine(), id, validUntil, this.identity.userId, new Date().toISOString());
+    await this.write("quote.validity", { quote_id: id }, async w => { await w.conn.query(sql); });
+    return this.quoteView(id);
+  }
+  /** 11.3: the customer quote PDF, always drawn from a view WITHOUT cost, whoever asks (decision 16). */
+  async quotePdf(id: string, locale: import("../i18n/core").Locale) {
+    this.quoteTier(); if (!isLocale(locale)) throw new VaultError("QUOTE", msg("qdoc.localeInvalid"));
+    await this.ownQuote(id); const e = this.requireEngine(), a = await this.access();
+    const v = await quotes.view(e, id, this.identity.userId, false, a.caps.includes("quoteApprove"));
+    return documents.quotePdf(v, await documents.branding(e), locale, await workspaceCurrency(e), businessToday());
+  }
+  async brandingGet() { this.quoteTier(); return documents.branding(this.requireEngine()); }
+  async brandingSet(input: unknown) {
+    this.quoteTier(); const sql = await documents.brandingSql(this.requireEngine(), input, this.identity.userId, new Date().toISOString());
+    await this.write("quote.branding_saved", { actor: this.identity.userId }, async w => { await w.conn.query(sql); });
+    return documents.branding(this.requireEngine());
+  }
+  /** 11.4: one customer's book prices at quantity 1, as a file (prices only). */
+  async priceList(customerId: string, format: "csv" | "xlsx") {
+    this.quoteTier(); const out = await documents.priceList(this.requireEngine(), customerId, format, businessToday());
+    await this.write("quote.price_list_exported", { customer_id: customerId, rows: String(out.rows), format }, async () => undefined);
+    return out;
+  }
+  /** 11.4: who a planned price increase reaches, for the letter's mail-out. */
+  async priceMailing(runId: string) {
+    this.opsTier(); const out = await documents.mailingList(this.requireEngine(), runId, businessToday());
+    await this.write("pricing.mailing_exported", { run_id: runId, rows: String(out.rows) }, async () => undefined);
+    return out;
+  }
   // ---- 8B-1: Margin Drain agents and cost index triggers (Professional and Scale; worker checks) ----------------
   /** The first scheduled check after an unlock is recorded as the "open" check. */
   private agentsOpened = false;
@@ -677,7 +723,7 @@ export class VaultService {
     const like = sqlText("%" + q.replace(/[!%_]/g, c => "!" + c) + "%");
     // Notes are searched and returned only for a role with `data` (7V-3b); a Sales Rep's search never reads them.
     const withNotes = (await this.access()).caps.includes("data"), note = (col: string) => withNotes ? `, CASE WHEN ${col} ILIKE ${like} ESCAPE '!' THEN left(${col}, 120) END AS note` : "", inNote = (col: string) => withNotes ? ` OR ${col} ILIKE ${like} ESCAPE '!'` : "";
-    const products = (await e.conn.query(`SELECT product_id AS id, description AS label, category AS detail${note("notes")} FROM products WHERE product_id ILIKE ${like} ESCAPE '!' OR description ILIKE ${like} ESCAPE '!'${inNote("notes")} ORDER BY product_id LIMIT 8`)).toArray();
+    const products = (await e.conn.query(`SELECT product_id AS id, description AS label, category AS detail${note("notes")} FROM products WHERE product_id ILIKE ${like} ESCAPE '!' OR description ILIKE ${like} ESCAPE '!' OR barcode = ${sqlText(q)}${inNote("notes")} ORDER BY (barcode = ${sqlText(q)}) DESC NULLS LAST, product_id LIMIT 8`)).toArray();
     const customers = (await e.conn.query(`SELECT customer_id AS id, name AS label, tier AS detail${note("notes")} FROM customers WHERE customer_id ILIKE ${like} ESCAPE '!' OR name ILIKE ${like} ESCAPE '!'${inNote("notes")} ORDER BY customer_id LIMIT 8`)).toArray();
     const hit = (kind: SearchHit["kind"]) => (r: Record<string, unknown>): SearchHit => ({ kind, id: String(r.id), label: String(r.label ?? ""), detail: String(r.detail ?? ""), ...(withNotes && r.note !== null && r.note !== undefined ? { note: String(r.note) } : {}) });
     return [...products.map(hit("product")), ...customers.map(hit("customer"))];

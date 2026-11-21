@@ -8,7 +8,7 @@ import type { Guard, LineInput, PricePoint, PriceSource, QuoteStatus, QuoteSumma
 import type { CreditSignal } from "@/lib/quotes/credit";
 import type { Basis, Reason } from "@/lib/quotes/guidance";
 import type { Results } from "@/lib/vault/protocol";
-import { fmt, msg, say, t, type MessageKey } from "@/lib/i18n";
+import { fmt, getLocale, msg, say, t, type MessageKey } from "@/lib/i18n";
 import styles from "./vault.module.css";
 import { DataGrid } from "@/components/ui/DataGrid";
 import { OutcomePanel, WinLossReport } from "./WinLoss";
@@ -28,6 +28,8 @@ const STATUS_TONE: Record<QuoteStatus, Tone> = { draft: "info", submitted: "acce
 const CREDIT: Record<CreditSignal["level"], MessageKey> = { green: "quotes.credit.green", amber: "quotes.credit.amber", red: "quotes.credit.red", unknown: "quotes.credit.unknown" };
 // Style hooks use tone names, not colour words (theme test: colours come only from tokens).
 const TONE: Record<string, string> = { green: "ok", yellow: "warn", amber: "warn", red: "bad" };
+/** Hands a file built in the worker to the browser as a download (nothing is uploaded). */
+const saveFile = (name: string, blob: Blob) => { const url = URL.createObjectURL(blob), a = document.createElement("a"); a.href = url; a.download = name; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 60_000); };
 const money = (v: string | null | undefined) => v === null || v === undefined ? t("quotes.none") : fmt.currency(v);
 
 /** A typed price ("12.34" or "12,34") to whole cents, or null when it is not a valid amount. */
@@ -121,6 +123,9 @@ export function QuotesView({ client, userId, caps, tier, busy, operation, relayE
   const [customer, setCustomer] = useState(""), [quote, setQuote] = useState<QuoteView | null>(null), [lines, setLines] = useState<{ productId: string; quantity: string; price: string }[]>([]);
   const [add, setAdd] = useState({ productId: "", quantity: "1" }), [reason, setReason] = useState(""), [decisionNote, setDecisionNote] = useState("");
   const [list, setList] = useState<QuoteSummary[]>([]), [confirmNew, setConfirmNew] = useState(false);
+  // 11.2: the validity date being typed; it follows the open quote.
+  const [validity, setValidity] = useState("");
+  useEffect(() => { setValidity(quote?.validUntil ?? ""); }, [quote?.id, quote?.validUntil]);
   // 8A: guidance and cross-sell for the open quote, refreshed whenever its lines change.
   const [guide, setGuide] = useState<Results["quoteGuidance"] | null>(null), [cross, setCross] = useState<Results["quoteCrossSell"] | null>(null);
   const quoteKey = quote ? `${quote.id}|${quote.updatedAt}|${quote.lines.map(l => l.productId + ":" + l.unitCents).join(",")}` : "";
@@ -170,6 +175,12 @@ export function QuotesView({ client, userId, caps, tier, busy, operation, relayE
         <Field label={t("quotes.quantity")}><input value={check.quantity} inputMode="decimal" onChange={e => setCheck({ ...check, quantity: e.target.value })} maxLength={20}/></Field>
         <Button variant="primary" type="submit" disabled={busy || !check.productId.trim()}>{t("quotes.check.run")}</Button>
       </form>
+      {/* 11.4: the chosen customer's book prices at quantity 1, as a file (prices only). */}
+      <div className={styles.row} data-testid="price-list-export">
+        <span className={styles.muted}>{t("qdoc.priceListHelp")}</span>
+        <Button size="sm" icon="download" disabled={busy || !check.customerId.trim()} data-testid="price-list-csv" onClick={() => void operation(async () => { const f = await client.call("priceList", { customerId: check.customerId.trim(), format: "csv" }); saveFile(f.name, f.blob); setNote(msg("qdoc.priceListSaved", { count: f.rows })); })}>{t("qdoc.priceListCsv")}</Button>
+        <Button size="sm" icon="download" disabled={busy || !check.customerId.trim()} data-testid="price-list-xlsx" onClick={() => void operation(async () => { const f = await client.call("priceList", { customerId: check.customerId.trim(), format: "xlsx" }); saveFile(f.name, f.blob); setNote(msg("qdoc.priceListSaved", { count: f.rows })); })}>{t("qdoc.priceListXlsx")}</Button>
+      </div>
       {point && <div data-testid="price-check-result" data-zone={point.guard}>
         <h3><span translate="no">{point.productId}</span> {point.description}</h3>
         <Answer guard={point.guard}/>
@@ -187,12 +198,25 @@ export function QuotesView({ client, userId, caps, tier, busy, operation, relayE
 
     {tab === "new" && quote && <Card headingId="quote-heading" data-testid="quote" data-status={quote.status}
       title={<><span translate="no">{quote.number}</span> <Badge tone={STATUS_TONE[quote.status]} data-testid="quote-status">{t(STATUS[quote.status])}</Badge> <Zone guard={quote.worst}/></>}
-      actions={<Button icon="plus" disabled={busy} data-testid="quote-new-another" onClick={() => { if (dirty) setConfirmNew(true); else reset(); }}>{t("quotes.new.another")}</Button>}>
+      actions={<>
+        {/* Phase 11: copy, revise a sent quote as a new version, and the customer PDF (prices only). */}
+        {next.includes("pdf") && <Button icon="download" disabled={busy} data-testid="quote-pdf" onClick={() => void operation(async () => { const f = await client.call("quotePdf", { id: quote.id, locale: getLocale() }); saveFile(f.name, new Blob([f.bytes as BlobPart], { type: "application/pdf" })); setNote(msg("qdoc.pdfSaved", { name: f.name })); })}>{t("qdoc.pdfButton")}</Button>}
+        {next.includes("revise") && <Button disabled={busy} data-testid="quote-revise" onClick={() => void operation(async () => { show(await client.call("quoteRevise", { id: quote.id })); setReason(""); setDecisionNote(""); setNote(msg("qdoc.revised")); })}>{t("qdoc.reviseButton")}</Button>}
+        {next.includes("copy") && <Button disabled={busy || dirty} data-testid="quote-copy" onClick={() => void operation(async () => { show(await client.call("quoteCopy", { id: quote.id })); setReason(""); setDecisionNote(""); setNote(msg("qdoc.copied")); })}>{t("qdoc.copyButton")}</Button>}
+        <Button icon="plus" disabled={busy} data-testid="quote-new-another" onClick={() => { if (dirty) setConfirmNew(true); else reset(); }}>{t("quotes.new.another")}</Button></>}>
       {confirmNew && <Notice tone="warn" role="alert" data-testid="quote-discard-confirm" title={t("quotes.discard.title")} actions={<>
         <Button variant="danger" size="sm" onClick={reset}>{t("quotes.discard.yes")}</Button>
         <Button size="sm" onClick={() => setConfirmNew(false)}>{t("quotes.discard.no")}</Button></>}>{t("quotes.discard.body")}</Notice>}
       <Answer guard={quote.worst}/>
       <div className={styles.row}><span>{t("quotes.customerTier", { name: quote.customerName || quote.customerId, tier: quote.tier || t("quotes.none") })}</span><Credit credit={quote.credit}/></div>
+      <div className={styles.row} data-testid="quote-validity">
+        {quote.validUntil ? <Badge tone={quote.expired ? "bad" : "info"} data-testid="quote-valid-until" data-expired={quote.expired ? "yes" : "no"}>{t(quote.expired ? "qdoc.expiredOn" : "qdoc.validUntilShort", { date: fmt.date(quote.validUntil) })}</Badge> : <span className={styles.muted}>{t("qdoc.noValidity")}</span>}
+        {quote.revisionOf && <span className={styles.muted} data-testid="quote-revision-of">{t("qdoc.revisionOfLine", { number: quote.revisionOf.number })}</span>}
+      </div>
+      {editable && <form className={styles.quoteForm} data-testid="quote-validity-form" onSubmit={e => { e.preventDefault(); void operation(async () => { show(await client.call("quoteValidity", { id: quote.id, validUntil: validity || null })); setNote(msg("qdoc.validitySaved")); }); }}>
+        <Field label={t("qdoc.validUntil")}><input type="date" value={validity} onChange={e => setValidity(e.target.value)} data-testid="quote-validity-input"/></Field>
+        <Button type="submit" disabled={busy || validity === (quote.validUntil ?? "")}>{t("qdoc.validitySave")}</Button>
+      </form>}
       {quote.warnings.length > 0 && <Notice tone="warn" role="note"><ul>{quote.warnings.map(w => <li key={w}>{say(w)}</li>)}</ul></Notice>}
       <dl className={styles.totals}>
         <div><dt>{t("quotes.total")}</dt><dd data-testid="quote-total">{fmt.currency(quote.totalCents)}</dd></div>
