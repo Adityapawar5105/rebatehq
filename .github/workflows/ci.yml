@@ -15,11 +15,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
         with:
           version: 10
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           # Pinned (21 Nov 2026): CI #194 on Node 24.22.3 crashed in V8 ("jit_page allocations" check) while a passing
           # WebAssembly test file exited. 24.22.1 is the version every local run uses. Raise it deliberately, not implicitly.
@@ -41,11 +41,11 @@ jobs:
     # CI #87 ran for six hours when the apt mirror stalled inside playwright install: every job has a limit.
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
         with:
           version: 10
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           # Pinned (21 Nov 2026): CI #194 on Node 24.22.3 crashed in V8 ("jit_page allocations" check) while a passing
           # WebAssembly test file exited. 24.22.1 is the version every local run uses. Raise it deliberately, not implicitly.
@@ -130,7 +130,7 @@ jobs:
           node scripts/test-relay-browser.mjs --auth --browser=chromium
       - name: Upload privacy gate failure diagnostics
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: chromium-privacy-gate-diagnostics
           # Screenshot and scrubbed result JSON only; the synthetic CSV fixtures stay on the runner.
@@ -147,11 +147,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
         with:
           version: 10
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           # Pinned (21 Nov 2026): CI #194 on Node 24.22.3 crashed in V8 ("jit_page allocations" check) while a passing
           # WebAssembly test file exited. 24.22.1 is the version every local run uses. Raise it deliberately, not implicitly.
@@ -233,7 +233,7 @@ jobs:
           pnpm test:vault --browser=firefox
       - name: Upload privacy gate failure diagnostics
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: firefox-lab-gate-diagnostics
           # Screenshot and scrubbed result JSON only; the synthetic CSV fixtures stay on the runner.
