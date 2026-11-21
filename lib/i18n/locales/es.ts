@@ -403,7 +403,7 @@ export const es: Catalog = {
   "cross.addFor": "Agregar {sku} a la cotización",
   "pdf.pagesSkipped": { one: "La página {pages} no tiene texto (probablemente escaneada) y se omitió; sus filas no están en esta importación.", other: "{count} páginas no tienen texto (probablemente escaneadas) y se omitieron: {pages}. Sus filas no están en esta importación." },
   "relay.onboard.title": "Active el uso compartido para su equipo",
-  "relay.onboard.body": "Las aprobaciones y los comentarios viajan entre los dispositivos de su equipo ya cerrados, así que los servidores de RebateHQ solo guardan texto cifrado que no pueden leer.",
+  "relay.onboard.body": "Las aprobaciones y los comentarios viajan entre los dispositivos de su equipo ya cerrados, así que los servidores de RebateHQ solo guardan un texto revuelto que no pueden leer.",
   "relay.onboard.start": "Configurar este dispositivo",
   "relay.onboard.later": "Ahora no",
   "relay.onboard.notShared": "Nunca se envían precios, costos ni facturas. Solo el número de cotización, su total y sus comentarios.",

@@ -244,8 +244,9 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
           {shown === "Settings" && client.current && <CurrencySettings client={client.current} status={status} busy={busy} operation={operation} onStatus={setStatus}/>}
           {shown === "Settings" && client.current && caps.includes("backup") && <BackupView client={client.current} busy={busy} operation={operation} unlocked onStatus={setStatus}/>}
           {shown === "Settings" && client.current && <PassphraseCard client={client.current} busy={busy} operation={operation} onStatus={setStatus} setMessage={setMessage}/>}
-          {shown === "Settings" && client.current && <RolesView client={client.current} busy={busy} operation={operation} refresh={async () => setStatus(await client.current!.call("status", {}))}/>}
-          {shown === "Settings" && client.current && caps.includes('collaborate') && status.licence?.tier !== 'starter' && <RelaySetupLine client={client.current} userId={scope.userId} tenantId={scope.tenantId} relayEnabled={relayEnabled}/>}
+          {shown === "Settings" && client.current && <RolesView client={client.current} busy={busy} operation={operation} refresh={async () => setStatus(await client.current!.call("status", {}))}>
+            {caps.includes('collaborate') && status.licence?.tier !== 'starter' && <RelaySetupLine client={client.current} userId={scope.userId} tenantId={scope.tenantId} relayEnabled={relayEnabled}/>}
+          </RolesView>}
           {/* 8.17: used and available space as tiles in MB or GB, not byte counts. */}
           {shown === "Settings" && <Card headingId="storage-heading" title={t("shell.storage.heading")} description={t("shell.storage.summary", { saved: status.lastSaved ? fmt.dateTime(status.lastSaved) : t("common.none") })}
             actions={status.licence?.writable&&status.tier!==status.licence.tier&&caps.includes('roles')?<Button disabled={busy} onClick={()=>void operation(async()=>{setStatus(await client.current!.call('capacityUpgrade',{}));setMessage(msg("shell.storage.upgraded"));})}>{t("shell.storage.upgrade")}</Button>:undefined}>
