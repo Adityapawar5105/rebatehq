@@ -97,7 +97,7 @@ export const ACTIONS: Record<Action, { cap: Cap | null; mode: Mode }> = {
   status:r(null), search:r("view"), home:r("view"), checklist:r("view"), checklistMark:w("roles"), roleList:r("view"),
   // Previewing a role can only remove capabilities (see accessFor), so anyone may use it, which also lets an Owner leave a preview.
   roleSet:w("roles"), roleRemove:w("roles"), rolePreview:r("view"),
-  pricingState:r("guards"), pricingOwner:w("roles"), guardSet:w("pricing"), ruleSave:w("pricing"), ruleSimulate:w("pricing"), rulePreview:r("pricing"), ruleApprove:w("approve"), priceExport:w("export"),
+  pricingState:r("guards"), pricingOwner:w("roles"), guardSet:w("pricing"), ruleSave:w("pricing"), ruleSimulate:w("pricing"), rulePreview:r("pricing"), ruleApprove:w("approve"), priceExport:w("export"), exportLayouts:r("export"), exportLayoutSave:w("export"), exportLayoutDelete:w("export"),
   backupStatus:r("backup"), backupConfigure:r("backup"), backupNow:r("backup"), backupExport:r("backup"), backupRestore:w(null),
   verify:r("audit"),
   studioAdd:w("data"), studioUpdate:w("data"), studioDrop:w("data"), studioClear:w("data"), studioState:r("data"), studioPlan:w("data"), studioCommit:w("data"), studioDownload:r("data"), studioZip:r("data"),

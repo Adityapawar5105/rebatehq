@@ -140,7 +140,8 @@ export type Commands = {
   ruleSimulate: { id:string };
   rulePreview: { id:string; offset?:number; grid?:GridQuery };
   ruleApprove: { id:string };
-  priceExport: { id:string; profile:ErpProfile; format:'csv'|'xlsx' };
+  priceExport: { id:string; profile:ErpProfile; format:'csv'|'xlsx'; layout?:string };
+  exportLayouts: Record<string, never>; exportLayoutSave: { input: unknown; id?: string }; exportLayoutDelete: { id: string };
   backupStatus: Record<string, never>;
   backupConfigure: { directory:FileSystemDirectoryHandle|null; hours:number };
   backupNow: Record<string, never>;
@@ -287,6 +288,7 @@ export type Results = {
   rulePreview: Awaited<ReturnType<VaultService['rulePreview']>>;
   ruleApprove: Awaited<ReturnType<VaultService['ruleApprove']>>;
   priceExport: Awaited<ReturnType<VaultService['priceExport']>>;
+  exportLayouts: Awaited<ReturnType<VaultService['exportLayouts']>>; exportLayoutSave: Awaited<ReturnType<VaultService['exportLayoutSave']>>; exportLayoutDelete: Awaited<ReturnType<VaultService['exportLayoutDelete']>>;
   backupStatus: Awaited<ReturnType<VaultService['backupStatus']>>;
   backupConfigure: Awaited<ReturnType<VaultService['backupConfigure']>>;
   backupNow: Awaited<ReturnType<VaultService['backupNow']>>;

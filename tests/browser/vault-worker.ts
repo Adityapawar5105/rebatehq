@@ -739,6 +739,11 @@ async function pricingFlow() {
   const noteProduct=String((await service.engine!.conn.query('SELECT product_id FROM products ORDER BY product_id LIMIT 1')).toArray()[0].product_id),noteText='Backup round-trip note '+crypto.randomUUID();
   await service.noteSet('product',noteProduct,noteText);
   for(const format of ['csv','xlsx'] as const){const file=await service.priceExport(sim.id,'netsuite',format);assert(file.blob.size>100&&(await file.log.text()).includes('Before'),'Export missing price rows or change log');if(format==='csv')assert(!(await file.blob.text()).includes(noteText)&&!(await file.log.text()).includes(noteText),'ERP export or change log contains a row note');}
+  // Roadmap 15.6: a custom layout reshapes the same approved prices; the receipt stays the generic one.
+  const custom=(await service.exportLayoutSave({name:'Acme ERP',columns:[{header:'ItemNo',field:'product_id'},{header:'Amount',field:'price'},{header:'ValidFrom',field:'effective_from'},{header:'Co',field:'constant',value:'01'}],delimiter:';',decimal:'comma',date:'DD.MM.YYYY',header:true}))[0];
+  const generic=await (await service.priceExport(sim.id,'generic','csv')).blob.text(),customFile=await service.priceExport(sim.id,'generic','csv',custom.id),customText=await customFile.blob.text();
+  const lines=customText.trim().split(/\r?\n/);assert(lines[0]==='ItemNo;Amount;ValidFrom;Co'&&lines.length===generic.trim().split(/\r?\n/).length&&/^[^;]+;\d+,\d{2};\d{2}\.\d{2}\.\d{4};01$/.test(lines[1])&&!customText.includes(noteText),'Custom layout export differs: '+lines.slice(0,2).join(' | '));
+  assert((await service.exportLayoutDelete(custom.id)).length===0,'Layout was not deleted');
   // Save the audit of exports in the final backup too.
   const cfg=await backupConfig(service.storage.scope);await storeBackupConfig(service.storage.scope,{...cfg,last:'2020-01-01T00:00:00Z'});await service.backupDue();assert((await service.backupStatus()).last!=='2020-01-01T00:00:00Z','Due scheduled backup did not run');
   await service.backupNow();const backup=await (await dir.getFileHandle('rebatehq-backup.enc')).getFile();

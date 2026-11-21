@@ -4,6 +4,7 @@ import * as compliance from '../reports/scorecard';
 import {reportPdf} from '../reports/pdf';
 import * as suppliers from '../rebate/supplier';
 import * as finance from "../rebate/finance";
+import * as layouts from "../pricing/layouts";
 import {claimExport} from '../rebate/claim-export';
 import * as rebates from '../rebate/store';
 import {salesInput} from '../rebate/input';
@@ -1012,11 +1013,25 @@ export class VaultService {
   }
   async rulePreview(id:string,offset=0,query?:unknown){if(id.startsWith("ops-"))this.opsTier();return id.startsWith("grid-")?grid.gridPreview(this.requireEngine(),id,this.licence.tier,offset,query):pricing.preview(this.requireEngine(),id,offset,query);}
   async ruleApprove(id:string){if(id.startsWith("ops-"))this.opsTier();await this.pricingWrite('pricing.approved',async e=>{const isGrid=id.startsWith('grid-');await e.conn.query(await pricing.approveSql(e,id,this.identity.userId,isGrid?await grid.gridApproval(e,id,this.licence.tier):await ops.approvalMatrixSql(e,id),isGrid?await grid.gridPreview(e,id,this.licence.tier):undefined));});await this.derived(this.requireEngine());await this.save();const config=await backupConfig(this.storage.scope);if(config.directory)await this.backupNow().catch(()=>undefined);return {preview:await this.rulePreview(id),backup:await this.backupStatus()};}
-  async priceExport(id:string,profile:ErpProfile,format:'csv'|'xlsx'){
+  // Roadmap 15.6: a workspace's own export layouts. Listing them needs export rights, as does changing them.
+  async exportLayouts(){return layouts.layouts(this.requireEngine());}
+  async exportLayoutSave(input:unknown,id?:unknown){const p=await layouts.saveSql(this.requireEngine(),input,id,this.identity.userId,new Date().toISOString());await this.write('pricing.layout_saved',{id:p.id,actor:this.identity.userId},e=>e.conn.query(p.sql).then(()=>undefined));return this.exportLayouts();}
+  async exportLayoutDelete(id:unknown){const sql=await layouts.deleteSql(this.requireEngine(),id);await this.write('pricing.layout_deleted',{id:String(id),actor:this.identity.userId},e=>e.conn.query(sql).then(()=>undefined));return this.exportLayouts();}
+  async priceExport(id:string,profile:ErpProfile,format:'csv'|'xlsx',layout?:string){
     if(id.startsWith('ops-'))this.opsTier();
+    if(layout!==undefined&&layout!==null)return this.priceExportCustom(id,layout,format);
     const e=this.requireEngine();const file=id.startsWith('grid-')?await market.gridExport(e,id,profile,format,this.licence.tier,await this.rulePreview(id)):await pricing.exportPrices(e,id,profile,format,await ops.exportCustomer(e,id));
     const receipt=await market.exportReceipt(e,id,profile,this.licence.tier),receiptSql=await market.receiptSql(id,profile,file.blob,receipt);
     await this.pricingWrite('pricing.exported',async e=>{await e.conn.query(`UPDATE rule_runs SET status='exported' WHERE id=${sqlText(id)};${receiptSql}`);});return file;
+  }
+  /** The approved rows of the run, reshaped by a custom layout. The receipt is the generic one: the same prices. */
+  private async priceExportCustom(id:string,layoutId:string,format:'csv'|'xlsx'){
+    if(!['csv','xlsx'].includes(format))throw new VaultError('PRICING',msg('layout.invalid'));
+    const e=this.requireEngine(),l=await layouts.layout(e,layoutId),status=(await this.rulePreview(id)).status;
+    if(!['approved','exported'].includes(status))throw new VaultError('PRICING',msg('rules.thePricingOwnerMust'));
+    const receipt=await market.exportReceipt(e,id,'generic',this.licence.tier),file=layouts.layoutFile(l,receipt,format),receiptSql=await market.receiptSql(id,'generic',file.blob,receipt);
+    await this.pricingWrite('pricing.exported',async e=>{await e.conn.query(`UPDATE rule_runs SET status='exported' WHERE id=${sqlText(id)};${receiptSql}`);});
+    return {...file,logName:'rebatehq-change-log.csv',log:market.csvBlob(market.receiptTable(receipt)),warning:msg('layout.unverified',{name:l.name})};
   }
   async backupStatus(){const c=await backupConfig(this.storage.scope);const settings=this.engine?(await this.pricingState()).owner:null;return {configured:!!c.directory,hours:c.hours,last:c.last,error:c.error,reminder:!c.last||Date.now()-Date.parse(c.last)>(settings?.backupDays??7)*86400000};}
   async backupConfigure(directory:FileSystemDirectoryHandle|null,hours:number){this.requireEngine();if(!Number.isInteger(hours)||hours<1||hours>168)throw new VaultError('BACKUP',msg("vault.chooseABackupInterval"));const old=await backupConfig(this.storage.scope);await storeBackupConfig(this.storage.scope,{...old,directory,hours});return this.backupStatus();}

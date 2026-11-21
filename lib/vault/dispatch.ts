@@ -121,7 +121,10 @@ export async function dispatch(service: VaultService, request: Request, hooks: H
     case "ruleSimulate": return service.ruleSimulate(request.data.id);
     case "rulePreview": return service.rulePreview(request.data.id, request.data.offset, request.data.grid);
     case "ruleApprove": return service.ruleApprove(request.data.id);
-    case "priceExport": return service.priceExport(request.data.id, request.data.profile, request.data.format);
+    case "priceExport": return service.priceExport(request.data.id, request.data.profile, request.data.format, request.data.layout);
+    case "exportLayouts": return service.exportLayouts();
+    case "exportLayoutSave": return service.exportLayoutSave(request.data.input, request.data.id);
+    case "exportLayoutDelete": return service.exportLayoutDelete(request.data.id);
     case "backupStatus": return service.backupStatus();
     case "backupConfigure": return service.backupConfigure(request.data.directory, request.data.hours);
     case "backupNow": return service.backupNow();
