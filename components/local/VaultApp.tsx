@@ -48,7 +48,7 @@ const SECTION_DESC: Record<Section, MessageKey> = { Home: "shell.desc.home", "Da
 const SECTION_ICON: Record<Section, IconName> = { Home: "home", "Data Hub": "database", Margin: "chart", Pricing: "tag", Quotes: "quote", "Rebates & Contracts": "coins", Vendors: "users", Reports: "report", Settings: "settings" };
 export const sectionHash = (s: Section) => s === "Rebates & Contracts" ? "rebates" : s.toLowerCase().replace(" ", "-");
 const NAV_KEY = "rebatehq.nav";
-export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled = false, relayEnabled = false }: { scope: Scope; email: string; workspace: string; lab?: boolean; legacyEnabled?: boolean; relayEnabled?: boolean }) {
+export function VaultApp({ scope, email, workspace, lab = false, relayEnabled = false }: { scope: Scope; email: string; workspace: string; lab?: boolean; relayEnabled?: boolean }) {
   useLocale(); // re-render every screen when the language changes
   const client = useRef<VaultClient | null>(null);
   // Every grid totals its selected rows through the worker (DuckDB), never in the page.
@@ -129,7 +129,6 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
       <a href="/home" className={sh.brand}><span className={sh.mark} aria-hidden="true">{t("shell.brandMark")}</span><span className={sh.label}>{t("app.name")}</span></a>
       <nav aria-label={t("shell.mainNav")} className={sh.nav}>
         {navItems.map(item => <a key={item} href={`#${sectionHash(item)}`} className={sh.navLink} aria-current={shown === item ? "page" : undefined} title={collapsed ? t(SECTION_LABEL[item]) : undefined} onClick={() => { setSection(item); setDrawer(false); }}><Icon name={SECTION_ICON[item]}/><span className={sh.label}>{t(SECTION_LABEL[item])}</span></a>)}
-        {legacyEnabled && <a className={sh.navLink} href="/legacy/dashboard"><Icon name="flask"/><span className={sh.label}>{t("shell.legacyLink")}</span></a>}
       </nav>
       <div className={sh.sideFoot}>
         <div className={sh.workspace}><strong translate="no">{workspace}</strong><span translate="no">{email}</span></div>

@@ -25,7 +25,6 @@ export const frCA: Partial<Catalog> = {
   "app.description": "Tarification sécurisée, garde-fous pour les soumissions et suivi des ristournes pour les distributeurs.",
   "relay.thisSharesASummary": "Ceci partage un résumé, pas votre coffre-fort ni votre historique de factures. Le destinataire doit vérifier la soumission ou le changement référencé avant d'approuver.",
   "relay.quoteReference": "Référence de soumission",
-  "frame.quoting": "Soumissions",
   "page.login.useAVerifiedEmail": "Utilisez une adresse courriel vérifiée. Seuls les utilisateurs invités peuvent rejoindre l'espace de travail d'une entreprise existante.",
   "page.setup.youAreNotA": "Vous n'êtes membre d'aucun espace de travail existant. Créez un espace de travail pour votre entreprise, ou connectez-vous avec l'adresse courriel qui a reçu votre invitation.",
   "page.invite.signInUsingThe": "Connectez-vous avec l'adresse courriel invitée par le propriétaire de l'espace de travail. Le lien est à usage unique et expire après sept jours.",
