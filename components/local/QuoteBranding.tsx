@@ -27,9 +27,9 @@ export function QuoteBranding({ client, busy, operation, canEdit }: { client: Va
     <p role="status">{say(note)}</p>
     {error && <Notice tone="bad" role="alert">{error}</Notice>}
     <form onSubmit={e => { e.preventDefault(); if (!canEdit) return; void operation(async () => { fill(await client.call("brandingSet", { input: { ...form, ...(logo === undefined ? {} : { logo }) } })); setNote(msg("qdoc.brandingSaved")); }); }}>
-      <Field label={t("qdoc.company")}><input value={form.company} maxLength={120} required disabled={!editable} onChange={e => setForm({ ...form, company: e.target.value })} data-testid="branding-company"/></Field>
-      <Field label={t("qdoc.address")}><textarea className={styles.textarea} value={form.address} maxLength={400} rows={3} disabled={!editable} onChange={e => setForm({ ...form, address: e.target.value })}/></Field>
-      <Field label={t("qdoc.terms")} hint={t("qdoc.termsHint")}><textarea className={styles.textarea} value={form.terms} maxLength={2000} rows={4} disabled={!editable} onChange={e => setForm({ ...form, terms: e.target.value })} data-testid="branding-terms"/></Field>
+      <Field label={t("qdoc.company")}><input translate="no" value={form.company} maxLength={120} required disabled={!editable} onChange={e => setForm({ ...form, company: e.target.value })} data-testid="branding-company"/></Field>
+      <Field label={t("qdoc.address")}><textarea translate="no" className={styles.textarea} value={form.address} maxLength={400} rows={3} disabled={!editable} onChange={e => setForm({ ...form, address: e.target.value })}/></Field>
+      <Field label={t("qdoc.terms")} hint={t("qdoc.termsHint")}><textarea translate="no" className={styles.textarea} value={form.terms} maxLength={2000} rows={4} disabled={!editable} onChange={e => setForm({ ...form, terms: e.target.value })} data-testid="branding-terms"/></Field>
       <Field label={t("qdoc.logo")} hint={t("qdoc.logoHint", { size: fmt.bytes(MAX) })}>
         <input type="file" accept="image/jpeg,.jpg,.jpeg" disabled={!editable || busy} data-testid="branding-logo" onChange={e => { const file = e.target.files?.[0]; e.target.value = ""; setError(""); if (!file) return;
           if (file.size > MAX) { setError(t("qdoc.logoTooLarge", { max: fmt.int(MAX / 1000) })); return; }
