@@ -12,7 +12,8 @@ export type Settings = { sheet: string | null; headerRow: number; headerDepth: 1
 /** A settings change from the preview: `boundaries: null` asks for the columns to be detected again (7F-2). */
 export type SettingsPatch = Omit<Partial<Settings>, "boundaries"> & { boundaries?: number[] | null };
 export type StudioIssue = { row: number; column: string; message: string };
-export class StudioError extends Error {}
+/** `code` reaches the page as the worker error code (8.6: "SCANNED_PDF" lets Import Studio show the scanned-PDF message by the drop zone). */
+export class StudioError extends Error { constructor(message?: string, public code = "STUDIO") { super(message); } }
 
 export const ROLES: Role[] = ["purchases","sales_history", "item_master", "customer_list", "vendor_cost", "price_list", "rebate_agreement", "order_header", "ar_aging", "cost_index", "inventory"];
 export const ROLE_LABELS: Record<Role, string> = {
