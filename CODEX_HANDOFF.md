@@ -1,5 +1,7 @@
 # RebateHQ — Codex handoff: prompts for every remaining chunk
 
+> **21 Nov 2026 (roadmap 13.6):** historical. Every chunk prompt here has been built and CI-verified except 9A (mobile, on hold). Version numbers below (vault schema, test counts, blueprint version) are as of writing: the vault is now v22 and the blueprint v2.6 (section 22 up to item 34). Do not start work from this file; read `AGENTS.md` first.
+
 Written 6 November 2026, after 7B (CI #89, #90, #91 green); updated 7 November 2026 after 7V (CI #95, #96 green). This file is the starting point for whoever builds
 the next chunk. It holds what a new session needs without the earlier chat history.
 

@@ -1,5 +1,7 @@
 # Architecture transition map (chunk 4.0)
 
+> **21 Nov 2026 (roadmap 13.6):** removed since this map was written: the static prototype `index.html` and `app.js` (13.1); the unreferenced `lib/session.ts`, `lib/margin-engine.ts`, `lib/quote-approval.ts` and `vercel.json` (13.2); the legacy business pages, the `LEGACY_BUSINESS_ENABLED` switch, `GlobalSearch` and `ConnectorSecretForm` (13.3); the engine spike lab `/lab/spike` (13.4). The retired API routes keep their fixed 410 answer (decision D12). Rows below that name these files are historical.
+
 *2 Nov 2026. Baseline: commit `c943956` (repo Phases 0–3 verified in CI #39 and Restore Drill #13). Governs nothing on its own: `BLUEPRINT.md` v2.2 section 4 sets the target. This file answers blueprint open question 3.*
 
 Repo Phases 0–3 were built before the blueprint. They put customer pricing data in multi-tenant Supabase/Postgres. Blueprint v2.2 keeps that data in the browser (DuckDB-Wasm in a Web Worker, encrypted OPFS). The server keeps only identity, licences/seats, public index data, app updates and a ciphertext-only relay.
