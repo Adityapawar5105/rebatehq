@@ -10,8 +10,6 @@ const sourceDirectories = ["app", "components", "lib", "src", "pages", "public"]
 const rootClientFiles = [
   "proxy.ts",
   "next.config.ts",
-  "index.html",
-  "app.js",
   "seed.js",
   "margin-engine.js",
   "margin-engine.d.ts",

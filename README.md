@@ -157,14 +157,9 @@ Run **Actions → MarginDesk Restore Drill → Run workflow** to exercise a logi
 - Rep responses omit costs, margin dollars, and cost components. Reps see only their own quotes, assigned customers, product prices, guardrail zone, and headroom.
 - Business writes are recorded by database triggers in an append-only audit log. Manual actions add specific action names alongside row mutation events.
 
-## Prototype data migration
+## Prototype data migration (retired)
 
-1. Open the static local prototype `index.html` in the browser where the data exists.
-2. Open its local settings/Connectors view and choose **Export this browser data as JSON**. Inspect the export before sending or importing it.
-3. In the hosted app, sign in as the destination tenant owner and open Account → Data migration & export.
-4. Select the JSON, run a dry run, review row counts and warnings, then confirm the same file within 30 minutes.
-
-The import is single-use per tenant, limited to 2 MB, and recomputes quote margins and monthly snapshots on the server. Demo role-switch values are not migrated; invite real users. `seed_data.json` contains synthetic fixture data only.
+The static browser prototype (`index.html` and `app.js`) was removed on 21 November 2026 (roadmap 13.1, decision D15: nobody still holds prototype data in a browser). A JSON export made from it earlier can still be checked with `pnpm import:prototype <file>` while the legacy server paths exist; new data goes into the local vault through Import Studio. `seed_data.json` contains synthetic fixture data only.
 
 ## Scripts and operations
 
