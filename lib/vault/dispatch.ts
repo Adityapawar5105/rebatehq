@@ -53,6 +53,12 @@ export async function dispatch(service: VaultService, request: Request, hooks: H
     case "folderGet":return service.folderGet();
     case "folderSet":return service.folderSet(request.data.directory);
     case "studioFolder":return service.studioFolder(request.data.files);
+    case "folderPickup":return service.folderPickup();
+    case "supplierClaimBalance":return service.supplierClaimBalance(request.data.id);
+    case "supplierPaymentRecord":return service.supplierPaymentRecord(request.data.input);
+    case "supplierPaymentVoid":return service.supplierPaymentVoid(request.data.id);
+    case "rebateFinanceExport":return service.rebateFinanceExport(request.data.format);
+    case "folderPickupSet":return service.folderPickupSet(request.data.every, request.data.auto);
     case "simRun":return service.simRun(request.data.scenario,hooks.signal(),progress);
     case "simRows":return service.simRows(request.data.dim,request.data.offset,request.data.grid);
     case "supplierClaims":return service.supplierClaims(request.data.offset,request.data.grid);
@@ -115,7 +121,13 @@ export async function dispatch(service: VaultService, request: Request, hooks: H
     case "ruleSimulate": return service.ruleSimulate(request.data.id);
     case "rulePreview": return service.rulePreview(request.data.id, request.data.offset, request.data.grid);
     case "ruleApprove": return service.ruleApprove(request.data.id);
-    case "priceExport": return service.priceExport(request.data.id, request.data.profile, request.data.format);
+    case "priceExport": return service.priceExport(request.data.id, request.data.profile, request.data.format, request.data.layout);
+    case "exportLayouts": return service.exportLayouts();
+    case "simSaved": return service.simSaved();
+    case "simSave": return service.simSave(request.data.name);
+    case "simSavedDelete": return service.simSavedDelete(request.data.id);
+    case "exportLayoutSave": return service.exportLayoutSave(request.data.input, request.data.id);
+    case "exportLayoutDelete": return service.exportLayoutDelete(request.data.id);
     case "backupStatus": return service.backupStatus();
     case "backupConfigure": return service.backupConfigure(request.data.directory, request.data.hours);
     case "backupNow": return service.backupNow();

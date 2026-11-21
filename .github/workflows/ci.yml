@@ -55,16 +55,23 @@ jobs:
       - name: Generate disposable signing keys (masked)
         run: node scripts/control-plane-keys.mjs --ci-env
       - name: Start local Supabase services
-        # CI #196 (21 Nov 2026): the runner's Docker failed to set up container networking. One clean stop and retry.
+        # CI #196 and PR #21's first run (21-22 Nov 2026): the runner's Docker failed to set up container networking
+        # ("driver failed programming external connectivity"), and a plain retry hit the same broken daemon. Each
+        # retry now stops cleanly, prunes leftover networks and restarts Docker before starting again (two retries).
         shell: bash
         run: |
           start() { pnpm exec supabase start -x studio,edge-runtime,storage-api,imgproxy,logflare,vector; }
-          if ! start; then
-            echo "::warning::Supabase did not start; stopping and retrying once."
+          for attempt in 1 2 3; do
+            if start; then exit 0; fi
+            [ "$attempt" = 3 ] && break
+            echo "::warning::Supabase did not start (attempt $attempt); restarting Docker and retrying."
             pnpm exec supabase stop --no-backup || true
-            sleep 15
-            start
-          fi
+            docker network prune -f || true
+            sudo systemctl restart docker
+            for i in $(seq 1 30); do docker info >/dev/null 2>&1 && break; sleep 2; done
+            sleep 5
+          done
+          exit 1
       - name: Apply every migration to the clean local database
         env:
           PGOPTIONS: -c client_min_messages=warning
@@ -161,16 +168,23 @@ jobs:
       - name: Generate disposable signing keys (masked)
         run: node scripts/control-plane-keys.mjs --ci-env
       - name: Start local Supabase services
-        # CI #196 (21 Nov 2026): the runner's Docker failed to set up container networking. One clean stop and retry.
+        # CI #196 and PR #21's first run (21-22 Nov 2026): the runner's Docker failed to set up container networking
+        # ("driver failed programming external connectivity"), and a plain retry hit the same broken daemon. Each
+        # retry now stops cleanly, prunes leftover networks and restarts Docker before starting again (two retries).
         shell: bash
         run: |
           start() { pnpm exec supabase start -x studio,edge-runtime,storage-api,imgproxy,logflare,vector; }
-          if ! start; then
-            echo "::warning::Supabase did not start; stopping and retrying once."
+          for attempt in 1 2 3; do
+            if start; then exit 0; fi
+            [ "$attempt" = 3 ] && break
+            echo "::warning::Supabase did not start (attempt $attempt); restarting Docker and retrying."
             pnpm exec supabase stop --no-backup || true
-            sleep 15
-            start
-          fi
+            docker network prune -f || true
+            sudo systemctl restart docker
+            for i in $(seq 1 30); do docker info >/dev/null 2>&1 && break; sleep 2; done
+            sleep 5
+          done
+          exit 1
       - name: Apply every migration to the clean local database
         env:
           PGOPTIONS: -c client_min_messages=warning

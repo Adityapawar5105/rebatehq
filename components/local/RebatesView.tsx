@@ -10,6 +10,7 @@ import {Button,ButtonLink,Card,DataTable,Dialog,EmptyState,Field,Grid,Notice,Ske
 import {DataGrid} from '@/components/ui/DataGrid';
 import type {GridQuery} from '@/lib/grid/core';
 import {SupplierClaimsView} from './SupplierClaimsView';
+import {FinanceExport} from './RebateFinance';
 import {AgreementButton} from './Templates';
 import {yearEnd,yearStart} from '@/lib/vault/today';
 const modeKey={retroactive:'rebate.retroactive',incremental:'rebate.incremental'} as const;
@@ -55,5 +56,5 @@ export function RebatesView(props:RebateProps){
  const [tab,setTab]=useState('customer');
  useEffect(()=>{const change=()=>{const v=location.hash.replace('#rebates-','');setTab(['claims','purchases','supplier'].includes(v)?v:'customer');};change();window.addEventListener('hashchange',change);return()=>window.removeEventListener('hashchange',change);},[]);
  const cost=props.caps.includes('cost'),active=cost?tab:'customer';
- return <><SectionTabs label={t('rebate.heading')} current={active} onSelect={setTab} items={[{id:'customer',label:t('rebate.heading'),href:'#rebates'},...(cost?[{id:'claims',label:t('supplier.claims'),href:'#rebates-claims',testId:'supplier-tab-claims'},{id:'purchases',label:t('supplier.purchases'),href:'#rebates-purchases',testId:'supplier-tab-purchases'},{id:'supplier',label:t('supplier.progress'),href:'#rebates-supplier',testId:'supplier-tab-progress'}]:[])]}/>{active==='customer'||props.tier==='starter'?<CustomerRebatesView {...props}/>:<SupplierClaimsView key={active} {...props} tab={active as 'claims'|'purchases'|'supplier'} manage={props.caps.includes('rebateManage')} data={props.caps.includes('data')}/>}</>;
+ return <><SectionTabs label={t('rebate.heading')} current={active} onSelect={setTab} items={[{id:'customer',label:t('rebate.heading'),href:'#rebates'},...(cost?[{id:'claims',label:t('supplier.claims'),href:'#rebates-claims',testId:'supplier-tab-claims'},{id:'purchases',label:t('supplier.purchases'),href:'#rebates-purchases',testId:'supplier-tab-purchases'},{id:'supplier',label:t('supplier.progress'),href:'#rebates-supplier',testId:'supplier-tab-progress'}]:[])]}/>{active==='customer'||props.tier==='starter'?<CustomerRebatesView {...props}/>:<SupplierClaimsView key={active} {...props} tab={active as 'claims'|'purchases'|'supplier'} manage={props.caps.includes('rebateManage')} data={props.caps.includes('data')}/>}{cost&&props.tier!=='starter'&&<FinanceExport client={props.client} busy={props.busy} operation={props.operation}/>}</>;
 }

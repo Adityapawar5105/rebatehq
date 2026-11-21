@@ -2,6 +2,7 @@
 import {PriceGrid,LandedCheck,WhatIfSlider,ScopeText} from './PricingTools';
 import {Badge,Button,Card,Field,Notice,SectionTabs} from "@/components/ui/ui";
 import {PricingOperations,type OpsTab} from "./PricingOps";
+import {ExportLayoutEditor,useExportLayouts} from "./ExportLayouts";
 
 import { useEffect,useState } from 'react';
 import type { VaultClient } from '@/lib/vault/client';
@@ -22,8 +23,11 @@ const RUN_STATUS:Record<string,MessageKey>={preview:"pricing.status.preview",app
 const runStatus=(s:string)=>s in RUN_STATUS?t(RUN_STATUS[s]):s;
 function PricingRulesView({client,userId,caps,busy,operation,refresh,initialPreview,tier}:{client:VaultClient;userId:string;caps:Cap[];busy:boolean;operation:(f:()=>Promise<void>)=>Promise<void>;refresh:()=>Promise<void>;initialPreview?:Preview|null;tier?:import("@/lib/vault/protocol").Tier}){
  const [state,setState]=useState<Results['pricingState']|null>(null),[owner,setOwner]=useState(''),[g,setG]=useState({tier:'T01',category:'Valves',start:'15000',target:'10000',floor:'5000'});
- const [rule,setRule]=useState({name:t("pricing.passThroughSupplierCost") as string,category:'Valves',vendor:'SteelWorks',threshold:'5',increase:'4.5'}),[needsSave,setNeedsSave]=useState(false),[ruleId,setRuleId]=useState(''),[p,setP]=useState<Preview|null>(initialPreview??null),[pq,setPq]=useState<GridQuery>({}),[profile,setProfile]=useState<ErpProfile>('generic'),[format,setFormat]=useState<'csv'|'xlsx'>('csv'),[note,setNote]=useState('');
+ const [rule,setRule]=useState({name:t("pricing.passThroughSupplierCost") as string,category:'Valves',vendor:'SteelWorks',threshold:'5',increase:'4.5'}),[needsSave,setNeedsSave]=useState(false),[ruleId,setRuleId]=useState(''),[p,setP]=useState<Preview|null>(initialPreview??null),[pq,setPq]=useState<GridQuery>({}),[profile,setProfile]=useState<string>('generic'),[format,setFormat]=useState<'csv'|'xlsx'>('csv'),[note,setNote]=useState('');
  useEffect(()=>{setPq({});},[p?.id]);
+ // Roadmap 15.6: the workspace's own layouts sit beside the six built-in ones as "custom:<id>".
+ const [layoutList,setLayoutList]=useExportLayouts(client,caps.includes('export'));
+ const custom=profile.startsWith('custom:')?profile.slice(7):null;
  const load=async()=>setState(await client.call('pricingState',{}));
  useEffect(()=>{void load().catch(()=>setNote(msg("pricing.couldNotLoadPricing")));},[client]);
  const run=(work:()=>Promise<void>)=>void operation(async()=>{await work();await load();await refresh();});
@@ -51,8 +55,9 @@ function PricingRulesView({client,userId,caps,busy,operation,refresh,initialPrev
  ]}/>
  <div className={styles.row}><Button disabled={busy||p.offset===0} onClick={()=>run(async()=>setP(await client.call('rulePreview',{id:p.id,offset:p.offset-50,grid:pq})))}>{t("pricing.previous50")}</Button><Button disabled={busy||p.offset+50>=Number(p.grid?.matched??p.count)} onClick={()=>run(async()=>setP(await client.call('rulePreview',{id:p.id,offset:p.offset+50,grid:pq})))}>{t("pricing.next50")}</Button></div>
  {p.status==='preview'&&<Button variant="primary" disabled={busy||state?.owner?.id!==userId||p.red!=='0'} onClick={()=>run(async()=>{const r=await client.call('ruleApprove',{id:p.id});setP(r.preview);setNote(msg(r.backup.error?"pricing.approvedAndSavedBackup":"pricing.approvedVersionedAndSaved"));})}>{t("pricing.approveAsPricingOwner")}</Button>}
- {p.status!=='preview'&&<><h3>{t("pricing.exportStudio")}</h3><Field label={t("pricing.erpExportLayout")}><select value={profile} onChange={e=>setProfile(e.target.value as ErpProfile)}>{PROFILE_IDS.map(id=><option key={id} value={id}>{say(PROFILES[id].label)}</option>)}</select></Field><Notice tone="warn">{t("pricing.everyLayoutIsUnverified")}</Notice><Field label={t("pricing.exportFormat")}><select value={format} onChange={e=>setFormat(e.target.value as 'csv'|'xlsx')}><option>csv</option><option>xlsx</option></select></Field><Button variant="primary" disabled={busy} onClick={()=>run(async()=>{const r=await client.call('priceExport',{id:p.id,profile,format});download(r.name,r.blob);download(r.logName,r.log);setNote(r.warning);setP(await client.call('rulePreview',{id:p.id}));})}>{t("pricing.exportPricesAndChange")}</Button></>}
+ {p.status!=='preview'&&<><h3>{t("pricing.exportStudio")}</h3><Field label={t("pricing.erpExportLayout")}><select value={profile} onChange={e=>setProfile(e.target.value)} data-testid="export-profile">{PROFILE_IDS.map(id=><option key={id} value={id}>{say(PROFILES[id].label)}</option>)}{layoutList.map(l=><option key={l.id} value={'custom:'+l.id} translate="no">{l.name}</option>)}</select></Field><Notice tone="warn">{t("pricing.everyLayoutIsUnverified")}</Notice><Field label={t("pricing.exportFormat")}><select value={format} onChange={e=>setFormat(e.target.value as 'csv'|'xlsx')}><option>csv</option><option>xlsx</option></select></Field><Button variant="primary" disabled={busy} onClick={()=>run(async()=>{const r=await client.call('priceExport',{id:p.id,profile:custom?'generic':profile as ErpProfile,format,...(custom?{layout:custom}:{})});download(r.name,r.blob);download(r.logName,r.log);setNote(r.warning);setP(await client.call('rulePreview',{id:p.id}));})}>{t("pricing.exportPricesAndChange")}</Button></>}
  </Card>}
+ {caps.includes('export')&&<ExportLayoutEditor client={client} busy={busy} run={run} list={layoutList} setList={l=>{setLayoutList(l);if(custom&&!l.some(x=>x.id===custom))setProfile('generic');}}/>}
  {caps.includes('pricing')&&<Card title={t("pricing.runHistory")}>{!state?.runs.length?<p>{t("pricing.noSimulationsYet")}</p>:state.runs.map(r=><p key={r.id}>{fmt.date(r.run_date.slice(0,10))}{" "}{t("pricing.pairs", { count: Number(r.affected), status: runStatus(r.status) })}{" "}<Button size="sm" disabled={busy} onClick={()=>run(async()=>setP(await client.call('rulePreview',{id:r.id})))}>{t("pricing.reviewRun")}</Button></p>)}</Card>}</>;
 }
 

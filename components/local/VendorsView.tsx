@@ -11,6 +11,7 @@ import { DataGrid } from "@/components/ui/DataGrid";
 import { CostIndexView } from "./CostIndexView";
 import { DeadStockView } from "./DeadStockView";
 import { NegotiationSheet } from "./Templates";
+import { SaveSimRun, SavedRuns, useSavedRuns } from "./SimRuns";
 import styles from "./vault.module.css";
 
 const STATUS: Record<string, MessageKey> = { unknown_sku: "vendor.status.unknown", conflict: "vendor.status.conflict", backdated: "vendor.status.backdated", first_cost: "vendor.status.first",
@@ -178,6 +179,8 @@ function Simulator({ client, version, operation }: { client: VaultClient; versio
     return () => { on = false; };
   }, [client, version]);
   const rows = useGrid((offset, grid) => client.call("simRows", { dim, offset, grid }), run ? `${dim}|${run.from}|${run.to}|${run.ms}|${run.lines}|${JSON.stringify(run.changes)}` : "");
+  // Roadmap 15.7: saved runs, compared side by side.
+  const [saved, setSaved] = useSavedRuns(client, version);
   const set = (i: number, patch: Partial<Change>) => setChanges(list => list.map((c, j) => j !== i ? c : { ...c, ...patch, ...(patch.kind === "cost" && c.scope === "customer" ? { scope: "all" as const, value: "" } : {}), ...(patch.scope === "all" ? { value: "" } : {}) }));
   const submit = () => void operation(async () => { setRunning(true); try { setRun(await client.call("simRun", { scenario: { from, to, changes } })); } finally { setRunning(false); } });
   if (error) return <Notice tone="warn" role="alert">{error}</Notice>;
@@ -226,6 +229,7 @@ function Simulator({ client, version, operation }: { client: VaultClient; versio
         { id: "scenario", name: t("sim.scenario"), type: "money", num: true, value: x => x.isMoney ? x.scenario : null, cell: x => x.isMoney ? money(x.scenario) : pct(x.scenario) },
         { id: "change", name: t("sim.change"), type: "money", num: true, value: x => x.change, cell: x => x.isMoney ? money(x.change) : "" },
       ]}/>
+      <SaveSimRun client={client} operation={operation} onSaved={setSaved}/>
     </Card>}
     {r && <Card title={t("sim.breakdown")} data-testid="sim-breakdown" aria-busy={rows.busy} actions={<select aria-label={t("sim.breakdownBy")} value={dim} onChange={e => setDim(e.target.value as Dim)} data-testid="sim-dim">{DIMS.map(d => <option key={d.id} value={d.id}>{t(d.label)}</option>)}</select>}>
       {rows.error && <Notice tone="warn" role="alert">{rows.error}</Notice>}
@@ -246,6 +250,7 @@ function Simulator({ client, version, operation }: { client: VaultClient; versio
         <Pager offset={rows.view.offset} matched={rows.view.grid.matched} busy={rows.busy} page={rows.page}/>
       </>}
     </Card>}
+    {saved && <SavedRuns client={client} list={saved} setList={setSaved} operation={operation} busy={running}/>}
   </>;
 }
 

@@ -3,6 +3,9 @@ import * as cadence from '../reports/pack';
 import * as compliance from '../reports/scorecard';
 import {reportPdf} from '../reports/pdf';
 import * as suppliers from '../rebate/supplier';
+import * as finance from "../rebate/finance";
+import * as layouts from "../pricing/layouts";
+import * as simRuns from "../vendor/sim-runs";
 import {claimExport} from '../rebate/claim-export';
 import * as rebates from '../rebate/store';
 import {salesInput} from '../rebate/input';
@@ -25,7 +28,7 @@ import { crossSell } from '../quotes/crosssell';
 import { parquetReader } from './parquet-engine';
 import { kindOf } from '../studio/formats';
 import { fileFingerprint } from '../studio/studio';
-import { importFolder, storeImportFolder } from './folder';
+import { importFolder, storeImportFolder, pickupConfig, storePickupConfig, checkPickupSettings, pickupDue, cleanForAuto, readPermission, folderFiles, type PickupResult } from "./folder";
 import * as grid from '../pricing/grid';
 import * as market from '../pricing/market';
 import {whatIf} from '../pricing/whatif';
@@ -141,7 +144,10 @@ export class VaultService {
       }).catch(error => reject(signal.aborted ? new VaultError("OTHER_TAB", msg("vault.thisVaultIsOpen")) : error));
     });
   }
+  /** Background work (the folder pickup) must not count as the person being active. */
+  private quiet = false;
   touch() {
+    if (this.quiet) return;
     if (this.timer) clearTimeout(this.timer);
     if (this.warnTimer) clearTimeout(this.warnTimer);
     this.warnTimer = null;
@@ -287,6 +293,36 @@ export class VaultService {
   // 7F-2 folder re-import: the remembered folder handle, and adding the folder's files that match a saved recipe.
   async folderGet() { const d = await importFolder(this.storage.scope); return { directory: d, name: d?.name ?? null }; }
   async folderSet(directory: FileSystemDirectoryHandle | null) { await storeImportFolder(this.storage.scope, directory ?? null); return this.folderGet(); }
+  // Roadmap 15.1: scheduled pickup from the remembered folder, only while the app is open and unlocked, and only with
+  // the read permission already granted in this session (the worker cannot show a prompt). New files a saved recipe
+  // recognises are added to Import Studio; with "import automatically" on, a batch with nothing to decide is imported
+  // under the signed-in person's role and audited as usual; anything else waits for review. A batch someone is
+  // preparing is never touched, and the check does not keep the vault from locking.
+  async folderPickup() { const scope = this.storage.scope, c = await pickupConfig(scope), d = await importFolder(scope); return { ...c, name: d?.name ?? null, permission: d ? await readPermission(d) : null }; }
+  async folderPickupSet(every: unknown, auto: unknown) { const scope = this.storage.scope, v = checkPickupSettings(every, auto); await storePickupConfig(scope, { ...await pickupConfig(scope), ...v }); return this.folderPickup(); }
+  async folderPickupDue(): Promise<PickupResult | null> {
+    if (!this.engine || this.dirty) return null;
+    const scope = this.storage.scope, c = await pickupConfig(scope);
+    if (!pickupDue(c, Date.now())) return null;
+    const d = await importFolder(scope);
+    if (!d || await readPermission(d) !== "granted") return null; // retried on the next tick once permission is granted
+    if (!(await this.access()).caps.includes("data") || (await this.studioState()).files.length) return null;
+    const at = new Date().toISOString(); let result: PickupResult;
+    this.quiet = true;
+    try {
+      const files = await folderFiles(d, name => !!kindOf(name));
+      const st = files.length ? await this.studioFolder(files) : null, added = st?.folder.added.length ?? 0, skipped = st?.folder.skipped.length ?? 0;
+      let imported = false;
+      if (added && c.auto && this.licence.writable) {
+        const planned = await this.studioPlan(new AbortController().signal, () => undefined);
+        if (cleanForAuto(planned.report, planned.files.map(f => f.role))) { await this.studioCommit(false, () => undefined); imported = true; }
+      }
+      result = { at, added, skipped, imported, review: added > 0 && !imported, error: false };
+    } catch { result = { at, added: 0, skipped: 0, imported: false, review: (await this.studioState()).files.length > 0, error: true }; }
+    finally { this.quiet = false; }
+    await storePickupConfig(scope, { ...c, last: at, result });
+    return result;
+  }
   async studioFolder(files: File[]) {
     const e = this.requireEngine();
     if (!Array.isArray(files) || files.length > 500 || !files.every(f => f instanceof File)) throw new VaultError("FOLDER", msg("folder.invalid"));
@@ -419,6 +455,11 @@ export class VaultService {
   async supplierClaimSave(input:suppliers.ClaimInput){this.rebateTier();const p=await suppliers.saveSql(this.requireEngine(),input,this.identity.userId);await this.write('supplier.claim_saved',{id:p.id,actor:this.identity.userId},e=>e.conn.query(p.sql).then(()=>undefined));return suppliers.preview(this.requireEngine(),p.id);}
   async supplierClaimStatus(id:string,status:suppliers.ClaimStatus){this.rebateTier();const sql=await suppliers.statusSql(this.requireEngine(),id,status);await this.write('supplier.claim_status',{id,status,actor:this.identity.userId},e=>e.conn.query(sql).then(()=>undefined));return suppliers.preview(this.requireEngine(),id);}
   async supplierClaimExport(id:string,format:'csv'|'xlsx',fingerprint:string){this.rebateTier();if(!['csv','xlsx'].includes(format))suppliers.bad();const p=await suppliers.exportPlan(this.requireEngine(),id,fingerprint),file=claimExport(p,format);await this.write('supplier.claim_exported',{id,format,actor:this.identity.userId},async e=>{if(p.sql)await e.conn.query(p.sql);});return file;}
+  // Roadmap 15.3: payments received against supplier claims, and the accrual export for finance.
+  async supplierClaimBalance(id:string){this.rebateTier();return finance.balance(this.requireEngine(),id,businessToday());}
+  async supplierPaymentRecord(input:finance.PaymentInput){this.rebateTier();const p=await finance.paymentSql(this.requireEngine(),input,this.identity.userId,new Date().toISOString(),businessToday());await this.write('supplier.payment_recorded',{id:p.id,claim:String(input.claim),method:String(input.method),full:String(p.full),actor:this.identity.userId},e=>e.conn.query(p.sql).then(()=>undefined));return this.supplierClaimBalance(String(input.claim));}
+  async supplierPaymentVoid(id:string){this.rebateTier();const p=await finance.voidSql(this.requireEngine(),id,this.identity.userId,new Date().toISOString(),businessToday());await this.write('supplier.payment_voided',{id,claim:p.claim,actor:this.identity.userId},e=>e.conn.query(p.sql).then(()=>undefined));return this.supplierClaimBalance(p.claim);}
+  async rebateFinanceExport(format:'csv'|'xlsx'){this.rebateTier();if(!['csv','xlsx'].includes(format))throw new VaultError('SUPPLIER',msg('payment.invalid'));const today=businessToday(),data=await finance.financeRows(this.requireEngine(),today,new Date().toISOString()),file=finance.financeFile(data,format,today);await this.write('rebate.finance_exported',{format,rows:file.rows,actor:this.identity.userId},async()=>undefined);return file;}
   async rebateProgress(offset=0,grid?:unknown){this.rebateTier();return rebates.progress(this.requireEngine(),offset,grid);}
   async rebateState(){this.rebateTier();return rebates.state(this.requireEngine());}
   async rebateRows(id:string,offset=0,grid?:unknown){this.rebateTier();return rebates.evidence(this.requireEngine(),id,offset,grid);}
@@ -482,6 +523,13 @@ export class VaultService {
   private simCurrent(){const e=this.requireEngine(),l=this.simLast;return l&&l.engine===e&&l.version===this.dataVersion?l:null;}
   async simOptions(){this.scaleTier();const e=this.requireEngine();return {...await sim.simOptions(e),last:this.simCurrent()?.result??null};}
   async simRun(scenario:unknown,signal:AbortSignal,progress:Progress){this.scaleTier();const e=this.requireEngine();this.simLast=null;const result=await sim.simulate(e,scenario,signal,progress);this.simLast={engine:e,version:this.dataVersion,result};this.touch();return result;}
+  // Roadmap 15.7: saved runs to compare. Saving keeps the last run's totals and a stamp of the data it replayed.
+  async simSaved(){this.scaleTier();return simRuns.saved(this.requireEngine());}
+  async simSave(name:unknown){this.scaleTier();const l=this.simCurrent();if(!l)throw new VaultError('SIM',msg('sim.runFirst'));const p=await simRuns.saveSql(l.engine,name,l.result,this.identity.userId,new Date().toISOString());const kept=l.engine.warm==='writable';await this.write('sim.run_saved',{id:p.id,actor:this.identity.userId},e=>e.conn.query(p.sql).then(()=>undefined));this.keepSim(l,kept);return this.simSaved();}
+  async simSavedDelete(id:unknown){this.scaleTier();const sql=await simRuns.deleteSql(this.requireEngine(),id);const l=this.simCurrent(),kept=l?.engine.warm==='writable';await this.write('sim.run_deleted',{id:String(id),actor:this.identity.userId},e=>e.conn.query(sql).then(()=>undefined));this.keepSim(l,kept);return this.simSaved();}
+  /** Saving or deleting a run changes no replayed data: the run in the temporary table stays current, as long as the
+   * engine was already writable (the first write after unlock can swap the engine and drop temporary tables). */
+  private keepSim(l:typeof this.simLast,kept:boolean){if(l&&kept&&this.simLast===l&&this.engine===l.engine)this.simLast={...l,version:this.dataVersion};}
   async simRows(dim:unknown,offset=0,grid?:unknown){this.scaleTier();const l=this.simCurrent();if(!l)throw new VaultError('SIM',msg('sim.runFirst'));return sim.simRows(l.engine,dim,offset,grid);}
 
   private packLast:{engine:Engine;version:number;data:cadence.Pack}|null=null;
@@ -973,11 +1021,25 @@ export class VaultService {
   }
   async rulePreview(id:string,offset=0,query?:unknown){if(id.startsWith("ops-"))this.opsTier();return id.startsWith("grid-")?grid.gridPreview(this.requireEngine(),id,this.licence.tier,offset,query):pricing.preview(this.requireEngine(),id,offset,query);}
   async ruleApprove(id:string){if(id.startsWith("ops-"))this.opsTier();await this.pricingWrite('pricing.approved',async e=>{const isGrid=id.startsWith('grid-');await e.conn.query(await pricing.approveSql(e,id,this.identity.userId,isGrid?await grid.gridApproval(e,id,this.licence.tier):await ops.approvalMatrixSql(e,id),isGrid?await grid.gridPreview(e,id,this.licence.tier):undefined));});await this.derived(this.requireEngine());await this.save();const config=await backupConfig(this.storage.scope);if(config.directory)await this.backupNow().catch(()=>undefined);return {preview:await this.rulePreview(id),backup:await this.backupStatus()};}
-  async priceExport(id:string,profile:ErpProfile,format:'csv'|'xlsx'){
+  // Roadmap 15.6: a workspace's own export layouts. Listing them needs export rights, as does changing them.
+  async exportLayouts(){return layouts.layouts(this.requireEngine());}
+  async exportLayoutSave(input:unknown,id?:unknown){const p=await layouts.saveSql(this.requireEngine(),input,id,this.identity.userId,new Date().toISOString());await this.write('pricing.layout_saved',{id:p.id,actor:this.identity.userId},e=>e.conn.query(p.sql).then(()=>undefined));return this.exportLayouts();}
+  async exportLayoutDelete(id:unknown){const sql=await layouts.deleteSql(this.requireEngine(),id);await this.write('pricing.layout_deleted',{id:String(id),actor:this.identity.userId},e=>e.conn.query(sql).then(()=>undefined));return this.exportLayouts();}
+  async priceExport(id:string,profile:ErpProfile,format:'csv'|'xlsx',layout?:string){
     if(id.startsWith('ops-'))this.opsTier();
+    if(layout!==undefined&&layout!==null)return this.priceExportCustom(id,layout,format);
     const e=this.requireEngine();const file=id.startsWith('grid-')?await market.gridExport(e,id,profile,format,this.licence.tier,await this.rulePreview(id)):await pricing.exportPrices(e,id,profile,format,await ops.exportCustomer(e,id));
     const receipt=await market.exportReceipt(e,id,profile,this.licence.tier),receiptSql=await market.receiptSql(id,profile,file.blob,receipt);
     await this.pricingWrite('pricing.exported',async e=>{await e.conn.query(`UPDATE rule_runs SET status='exported' WHERE id=${sqlText(id)};${receiptSql}`);});return file;
+  }
+  /** The approved rows of the run, reshaped by a custom layout. The receipt is the generic one: the same prices. */
+  private async priceExportCustom(id:string,layoutId:string,format:'csv'|'xlsx'){
+    if(!['csv','xlsx'].includes(format))throw new VaultError('PRICING',msg('layout.invalid'));
+    const e=this.requireEngine(),l=await layouts.layout(e,layoutId),status=(await this.rulePreview(id)).status;
+    if(!['approved','exported'].includes(status))throw new VaultError('PRICING',msg('rules.thePricingOwnerMust'));
+    const receipt=await market.exportReceipt(e,id,'generic',this.licence.tier),file=layouts.layoutFile(l,receipt,format),receiptSql=await market.receiptSql(id,'generic',file.blob,receipt);
+    await this.pricingWrite('pricing.exported',async e=>{await e.conn.query(`UPDATE rule_runs SET status='exported' WHERE id=${sqlText(id)};${receiptSql}`);});
+    return {...file,logName:'rebatehq-change-log.csv',log:market.csvBlob(market.receiptTable(receipt)),warning:msg('layout.unverified',{name:l.name})};
   }
   async backupStatus(){const c=await backupConfig(this.storage.scope);const settings=this.engine?(await this.pricingState()).owner:null;return {configured:!!c.directory,hours:c.hours,last:c.last,error:c.error,reminder:!c.last||Date.now()-Date.parse(c.last)>(settings?.backupDays??7)*86400000};}
   async backupConfigure(directory:FileSystemDirectoryHandle|null,hours:number){this.requireEngine();if(!Number.isInteger(hours)||hours<1||hours>168)throw new VaultError('BACKUP',msg("vault.chooseABackupInterval"));const old=await backupConfig(this.storage.scope);await storeBackupConfig(this.storage.scope,{...old,directory,hours});return this.backupStatus();}

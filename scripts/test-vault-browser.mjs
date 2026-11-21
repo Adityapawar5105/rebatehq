@@ -228,10 +228,18 @@ async function simUi(){
  await grid.getByTestId('grid-select-all').check();const total=grid.getByTestId('grid-total-margin_change');await total.waitFor();assert.equal(await total.getAttribute('data-sum'),'4900');assert.ok((await total.innerText()).includes('CA$49.00'),'Breakdown total lost its currency');
  // The run survives a tab switch while the data is unchanged.
  await page.getByTestId('vendor-tab-ppv').click();await page.getByTestId('vendor-tab-sim').click();await change.waitFor();assert.equal(await change.getAttribute('data-value'),'4900');assert.equal(await page.getByTestId('sim-pct').inputValue(),'10','The restored run lost its changes');
+ // Roadmap 15.7: save this run, run +5%, save it, and compare both side by side (+5%: margin 190.00 + 24.50 = 214.50).
+ await page.getByTestId('sim-save-name').fill('Plus 10');await page.getByTestId('sim-save-button').click();await page.getByTestId('sim-saved-run').first().waitFor();
+ await grid.locator('tbody tr').first().waitFor();
+ await page.getByTestId('sim-pct').fill('5');await page.getByTestId('sim-run').click();await page.locator('[data-testid="sim-margin-change"][data-value="2450"]').waitFor({timeout:60000});
+ await page.getByTestId('sim-save-name').fill('Plus 5');await page.getByTestId('sim-save-button').click();await page.getByTestId('sim-saved-run').nth(1).waitFor();
+ for(const run of await page.getByTestId('sim-saved-run').all())await run.getByRole('checkbox').check();
+ const compared=page.getByTestId('sim-compare-margin');await compared.waitFor();const comparedText=await compared.innerText();
+ assert.ok(comparedText.includes('CA$239.00')&&comparedText.includes('CA$214.50'),'Saved runs do not compare: '+comparedText);assert.equal(await page.getByTestId('sim-saved-stale').count(),0,'A run on unchanged data is marked stale');
  await page.setViewportSize({width:375,height:812});await page.waitForTimeout(400);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Simulator overflows a phone');await page.screenshot({path:'test-results/simulator-'+channel+'.png',fullPage:true});await page.setViewportSize({width:1280,height:800});
  await page.locator('nav a[href="#settings"]').click();await page.getByLabel('Preview as').selectOption('accountant');await page.getByTestId('preview-banner').waitFor();await page.locator('nav a[href="#vendors"]').click();await page.getByTestId('vendor-tab-review').waitFor();assert.equal(await page.getByTestId('vendor-tab-sim').count(),0,'An Accountant sees the simulator');
  await page.locator('nav a[href="#settings"]').click();await page.getByRole('button',{name:'Return to my own view'}).click();
- results.checks.simUi={currency:'CAD',marginChange:true,scenarioMargin:true,breakdownTotals:true,keptAcrossTabs:true,phone375:true,nonPricingHidden:true,privacyMarkers:true};
+ results.checks.simUi={currency:'CAD',marginChange:true,scenarioMargin:true,breakdownTotals:true,keptAcrossTabs:true,savedRunsCompared:true,phone375:true,nonPricingHidden:true,privacyMarkers:true};
  }catch(error){console.error('Simulator UI diagnostics:',JSON.stringify(await diagnose()));throw error;}finally{await context.close();context=savedContext;page=savedPage;dataPlaneActive=active;}
 }
 // 7F-2: the converters in the real Import Studio (fresh vault, under the request/console marker sensors): a fixed-width
@@ -290,7 +298,12 @@ async function convertersUi(){
  await page.getByRole('button',{name:'Confirm and import locally',exact:true}).click();await page.locator('[data-testid="line-count"][data-value="5"]').waitFor({timeout:120000});
  // Re-importing the same folder again adds nothing: the file is already imported, unchanged.
  await page.getByTestId('folder-reimport-run').click();await page.getByText('0 files added to the batch with their saved recipes; 1 left out.',{exact:false}).first().waitFor({timeout:60000});
- results.checks.convertersUi={fixedWidthRuler:true,manualBoundaries:true,detectAgain:true,recipe:true,pdfTable:true,parquetDuckdb:true,exactLines:true,folderReimport:true,alreadyImportedSkipped:true,phone375:true,privacyMarkers:true};
+ // Roadmap 15.1: the pickup schedule is set in the same panel; the folder shows as allowed (or offers Allow where the
+ // browser has no folder permission API).
+ await page.getByTestId('pickup-every').selectOption('15');await page.getByText('Folder pickup settings saved.',{exact:false}).first().waitFor();
+ await page.getByTestId('pickup-allowed').or(page.getByTestId('pickup-allow')).first().waitFor();await page.getByTestId('pickup-last').filter({hasText:/Not checked yet.|Last checked/}).waitFor();
+ await page.getByTestId('pickup-every').selectOption('0');await page.getByTestId('pickup-allowed').or(page.getByTestId('pickup-allow')).first().waitFor({state:'detached'});
+ results.checks.convertersUi={fixedWidthRuler:true,manualBoundaries:true,detectAgain:true,recipe:true,pdfTable:true,parquetDuckdb:true,exactLines:true,folderReimport:true,alreadyImportedSkipped:true,folderPickupSettings:true,phone375:true,privacyMarkers:true};
  }catch(error){console.error('Converters UI diagnostics:',JSON.stringify(await diagnose()));throw error;}finally{await context.close();context=savedContext;page=savedPage;dataPlaneActive=active;}
 }
 // 8A: explainable deal guidance and cross-sell in Quote Desk (fresh vault, under the request/console marker sensors),

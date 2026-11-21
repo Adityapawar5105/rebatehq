@@ -9,8 +9,8 @@
 | #16 | CI fixes for the red runs on `main` (#194, #196, #197): Node pinned to 24.22.1, the Supabase start retried once, the killed-tab close bounded | [CI #198](https://github.com/Adityapawar5105/rebatehq/actions/runs/44906135199) passed; `main` after the merge passed [CI #200](https://github.com/Adityapawar5105/rebatehq/actions/runs/44931126427) | `adc05d0` |
 | #17 | Phase 11: Quote Desk completion (vault v22) | [CI #199](https://github.com/Adityapawar5105/rebatehq/actions/runs/44906180815) **failed** (see below); after the fix, [CI #201](https://github.com/Adityapawar5105/rebatehq/actions/runs/44931475576) passed | `5fc157d` |
 | #18 | Phase 13: clean-up, OPERATIONS.md, parallel CI, client-address rate limit | [CI #202](https://github.com/Adityapawar5105/rebatehq/actions/runs/44931718412) passed: the first run of the three parallel jobs (`unit`, `chromium`, `firefox`) and the `verify` job that needs all three | `11a26c9` |
-| 13.10 | Actions on Node 24 | ACTIONS_RUN | `d7404aa` |
-| Phase 14 | Performance 14.1 to 14.5, the 14.6 study and its benchmark | PHASE14_RUN | PHASE14_SHA |
+| #19 | 13.10: Actions on Node 24 | [CI #205](https://github.com/Adityapawar5105/rebatehq/actions/runs/44934674962) **failed** on a Firefox test race in `reportsUi` (the scorecard was read before the quote submit landed; the check now waits for it), then [CI #207](https://github.com/Adityapawar5105/rebatehq/actions/runs/44936131839) passed | `ef60645` |
+| #20 | Phase 14: performance 14.1 to 14.5, the 14.6 study and its benchmark | [CI #208](https://github.com/Adityapawar5105/rebatehq/actions/runs/44936137037) passed | `b50c01e` |
 
 ### Why CI #199 failed, and the fix
 

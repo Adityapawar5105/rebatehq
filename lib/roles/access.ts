@@ -66,7 +66,7 @@ export const ACTIONS: Record<Action, { cap: Cap | null; mode: Mode }> = {
   reportState:r("cost"),reportCheck:w("cost"),reportExport:w("cost"),roiV2:r("cost"),roiRows:r("cost"),roiRecord:w("reconcile"),roiVoid:w("reconcile"),scorecard:r("quote"),scorecardOptIn:w("quote"),
   vendorSheets:r("cost"),vendorReview:r("cost"),vendorReviewQuotes:r("cost"),vendorPpv:r("cost"),vendorPpvLines:r("cost"),
   // 7E-2: the historical simulator is a pricing simulation (every role with "pricing" also has "cost"); Scale only.
-  simOptions:r("pricing"),simRun:r("pricing"),simRows:r("pricing"),
+  simOptions:r("pricing"),simRun:r("pricing"),simRows:r("pricing"),simSaved:r("pricing"),simSave:w("pricing"),simSavedDelete:w("pricing"),
   // 8A: deal guidance and cross-sell are Quote Desk reads; rep-safe and scanned for decision 16 (tests/quotes.test.ts).
   quoteGuidance:r("quote"),quoteCrossSell:r("quote"),
   // v2.6 gap 2: local yes/no for the relay set-up card (reviewed for decision 16 in tests/quotes.test.ts).
@@ -74,8 +74,8 @@ export const ACTIONS: Record<Action, { cap: Cap | null; mode: Mode }> = {
   // 8B-1: Margin Drain inbox and cost index triggers read cost; saving settings and triggers is a pricing decision.
   agentState:r("cost"),agentRows:r("cost"),agentRun:w("cost"),agentMark:w("cost"),agentSettingsSave:w("pricing"),indexState:r("cost"),indexSkus:r("cost"),indexTriggerSave:w("pricing"),indexTriggerDelete:w("pricing"),deadState:r("cost"),benchState:r("cost"),benchPreview:r("cost"),benchMapSave:w("cost"),benchShared:w("cost"),benchFiguresSave:w("cost"),benchWithdrawn:w("cost"),deadRows:r("cost"),deadSettingsSave:w("pricing"),deadDraft:w("pricing"),
   // 7F-2: folder re-import is an import (Import Studio, every tier).
-  folderGet:r("data"),folderSet:r("data"),studioFolder:w("data"),
-  supplierClaims:r("cost"),supplierPurchases:r("cost"),supplierProgress:r("cost"),supplierClaimPreview:r("cost"),supplierClaimSave:w("rebateManage"),supplierClaimStatus:w("rebateManage"),supplierClaimExport:w("rebateManage"),
+  folderGet:r("data"),folderSet:r("data"),studioFolder:w("data"),folderPickup:r("data"),folderPickupSet:r("data"),
+  supplierClaims:r("cost"),supplierPurchases:r("cost"),supplierProgress:r("cost"),supplierClaimPreview:r("cost"),supplierClaimSave:w("rebateManage"),supplierClaimStatus:w("rebateManage"),supplierClaimExport:w("rebateManage"),supplierClaimBalance:r("cost"),supplierPaymentRecord:w("rebateManage"),supplierPaymentVoid:w("rebateManage"),rebateFinanceExport:w("cost"),
   customerList:r("data"),productList:r("data"),noteSet:w("data"),sourceRemovePreview:r("data"),
   gridTotals:r("view"),
   rebateProgress:r("rebates"),rebateState:r("cost"),rebateRows:r("cost"),rebateSave:w("rebateManage"),rebateDelete:w("rebateManage"),rebateRecalculate:w("rebateManage"),
@@ -97,7 +97,7 @@ export const ACTIONS: Record<Action, { cap: Cap | null; mode: Mode }> = {
   status:r(null), search:r("view"), home:r("view"), checklist:r("view"), checklistMark:w("roles"), roleList:r("view"),
   // Previewing a role can only remove capabilities (see accessFor), so anyone may use it, which also lets an Owner leave a preview.
   roleSet:w("roles"), roleRemove:w("roles"), rolePreview:r("view"),
-  pricingState:r("guards"), pricingOwner:w("roles"), guardSet:w("pricing"), ruleSave:w("pricing"), ruleSimulate:w("pricing"), rulePreview:r("pricing"), ruleApprove:w("approve"), priceExport:w("export"),
+  pricingState:r("guards"), pricingOwner:w("roles"), guardSet:w("pricing"), ruleSave:w("pricing"), ruleSimulate:w("pricing"), rulePreview:r("pricing"), ruleApprove:w("approve"), priceExport:w("export"), exportLayouts:r("export"), exportLayoutSave:w("export"), exportLayoutDelete:w("export"),
   backupStatus:r("backup"), backupConfigure:r("backup"), backupNow:r("backup"), backupExport:r("backup"), backupRestore:w(null),
   verify:r("audit"),
   studioAdd:w("data"), studioUpdate:w("data"), studioDrop:w("data"), studioClear:w("data"), studioState:r("data"), studioPlan:w("data"), studioCommit:w("data"), studioDownload:r("data"), studioZip:r("data"),

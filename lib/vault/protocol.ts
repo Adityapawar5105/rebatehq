@@ -140,7 +140,8 @@ export type Commands = {
   ruleSimulate: { id:string };
   rulePreview: { id:string; offset?:number; grid?:GridQuery };
   ruleApprove: { id:string };
-  priceExport: { id:string; profile:ErpProfile; format:'csv'|'xlsx' };
+  priceExport: { id:string; profile:ErpProfile; format:'csv'|'xlsx'; layout?:string };
+  exportLayouts: Record<string, never>; simSaved: Record<string, never>; simSave: { name: string }; simSavedDelete: { id: string }; exportLayoutSave: { input: unknown; id?: string }; exportLayoutDelete: { id: string };
   backupStatus: Record<string, never>;
   backupConfigure: { directory:FileSystemDirectoryHandle|null; hours:number };
   backupNow: Record<string, never>;
@@ -160,7 +161,7 @@ export type Commands = {
   verify: Record<string, never>;
   storage: Record<string, never>;
   studioAdd: { files: File[]; replaces?: string | null };
-  folderGet: Record<string, never>; folderSet: { directory: FileSystemDirectoryHandle | null }; studioFolder: { files: File[] };
+  folderGet: Record<string, never>; folderSet: { directory: FileSystemDirectoryHandle | null }; studioFolder: { files: File[] }; folderPickup: Record<string, never>; supplierClaimBalance: { id: string }; supplierPaymentRecord: { input: import("../rebate/finance").PaymentInput }; supplierPaymentVoid: { id: string }; rebateFinanceExport: { format: "csv" | "xlsx" }; folderPickupSet: { every: number; auto: boolean };
   studioUpdate: { id: string; settings?: SettingsPatch; role?: Role | null; erp?: ErpProfile; field?: { name: string; source: FieldSource }; confirmed?: boolean; range?: { from: string | null; to: string | null } };
   studioDrop: { id: string };
   studioClear: Record<string, never>;
@@ -231,7 +232,7 @@ export type Results = {
   agentState:Awaited<ReturnType<VaultService["agentState"]>>; agentRows:Awaited<ReturnType<VaultService["agentRows"]>>; agentRun:Awaited<ReturnType<VaultService["agentRun"]>>; agentMark:Awaited<ReturnType<VaultService["agentMark"]>>;
   agentSettingsSave:Awaited<ReturnType<VaultService["agentSettingsSave"]>>; indexState:Awaited<ReturnType<VaultService["indexState"]>>; indexSkus:Awaited<ReturnType<VaultService["indexSkus"]>>;
   indexTriggerSave:Awaited<ReturnType<VaultService["indexTriggerSave"]>>; indexTriggerDelete:Awaited<ReturnType<VaultService["indexTriggerDelete"]>>; deadState:Awaited<ReturnType<VaultService["deadState"]>>; benchState:Awaited<ReturnType<VaultService["benchState"]>>; benchPreview:Awaited<ReturnType<VaultService["benchPreview"]>>; benchMapSave:Awaited<ReturnType<VaultService["benchMapSave"]>>; benchShared:Awaited<ReturnType<VaultService["benchShared"]>>; benchFiguresSave:Awaited<ReturnType<VaultService["benchFiguresSave"]>>; benchWithdrawn:Awaited<ReturnType<VaultService["benchWithdrawn"]>>; deadRows:Awaited<ReturnType<VaultService["deadRows"]>>; deadSettingsSave:Awaited<ReturnType<VaultService["deadSettingsSave"]>>; deadDraft:Awaited<ReturnType<VaultService["deadDraft"]>>; quoteGuidance:Awaited<ReturnType<VaultService["quoteGuidance"]>>; quoteCrossSell:Awaited<ReturnType<VaultService["quoteCrossSell"]>>;
-  folderGet:Awaited<ReturnType<VaultService["folderGet"]>>; folderSet:Awaited<ReturnType<VaultService["folderSet"]>>; studioFolder:Awaited<ReturnType<VaultService["studioFolder"]>>;
+  folderGet:Awaited<ReturnType<VaultService["folderGet"]>>; folderSet:Awaited<ReturnType<VaultService["folderSet"]>>; studioFolder:Awaited<ReturnType<VaultService["studioFolder"]>>; folderPickup:Awaited<ReturnType<VaultService["folderPickup"]>>; supplierClaimBalance:Awaited<ReturnType<VaultService["supplierClaimBalance"]>>; supplierPaymentRecord:Awaited<ReturnType<VaultService["supplierPaymentRecord"]>>; supplierPaymentVoid:Awaited<ReturnType<VaultService["supplierPaymentVoid"]>>; rebateFinanceExport:Awaited<ReturnType<VaultService["rebateFinanceExport"]>>; folderPickupSet:Awaited<ReturnType<VaultService["folderPickupSet"]>>;
   simRun:Awaited<ReturnType<VaultService["simRun"]>>;
   simRows:Awaited<ReturnType<VaultService["simRows"]>>;
   customerList:Awaited<ReturnType<VaultService["customerList"]>>;
@@ -287,6 +288,7 @@ export type Results = {
   rulePreview: Awaited<ReturnType<VaultService['rulePreview']>>;
   ruleApprove: Awaited<ReturnType<VaultService['ruleApprove']>>;
   priceExport: Awaited<ReturnType<VaultService['priceExport']>>;
+  exportLayouts: Awaited<ReturnType<VaultService['exportLayouts']>>; simSaved: Awaited<ReturnType<VaultService['simSaved']>>; simSave: Awaited<ReturnType<VaultService['simSave']>>; simSavedDelete: Awaited<ReturnType<VaultService['simSavedDelete']>>; exportLayoutSave: Awaited<ReturnType<VaultService['exportLayoutSave']>>; exportLayoutDelete: Awaited<ReturnType<VaultService['exportLayoutDelete']>>;
   backupStatus: Awaited<ReturnType<VaultService['backupStatus']>>;
   backupConfigure: Awaited<ReturnType<VaultService['backupConfigure']>>;
   backupNow: Awaited<ReturnType<VaultService['backupNow']>>;
@@ -319,6 +321,7 @@ export type Response = { [K in Action]: { id: string; action: K; result: Results
   | { event: "locking" }
   | { event: "writable" }
   | { event: "agents" }
+  | { event: "pickup"; result: import("./folder").PickupResult; name: string | null }
   | { event: "licence"; status:VaultStatus };
 /** Command palette hit: IDs and names only, never cost or price (chunk 7U). */
 /** `note` is an excerpt of a matching note, only for a role allowed to see notes (never a Sales Rep). */

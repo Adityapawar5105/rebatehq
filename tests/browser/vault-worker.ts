@@ -19,6 +19,7 @@ import { rha } from "../../lib/margin/decimal";
 import { findLeaks, hitKinds, hitRows } from "../../lib/margin/leaks";
 import { REBUILD_SQL, findDifferences } from "../../lib/margin/aggregate";
 import { rebuildAccruals } from "../../lib/rebate/store";
+import { pickupConfig, storePickupConfig } from "../../lib/vault/folder";
 import { moneyText } from "../../lib/spike/exact";
 import { ensureParquet } from "../../lib/vault/parquet-engine";
 import { printReport, priceListPdf } from "../helpers/converter-fixtures";
@@ -65,7 +66,7 @@ async function testFixture(bytes: Uint8Array) {
   await closeMemory(probe);
   const service = new VaultService(() => undefined); await service.init(fixtureScope);
   const result = await service.unlock(secret);
-  assert(result.schemaVersion === "22" && result.lines === "1", "V1 snapshot did not upgrade with its row intact");
+  assert(result.schemaVersion === "23" && result.lines === "1", "V1 snapshot did not upgrade with its row intact");
   const agg = (await service.engine!.conn.query("SELECT count(*)::VARCHAR AS n, sum(list_cents)::VARCHAR AS l, max(line_kind) AS k FROM agg_cpm")).toArray()[0];
   assert(agg.n === "1" && agg.l === "1250" && agg.k === "sale", "V1 upgrade must build the margin pre-aggregate from existing lines");
   assert((await service.marginWaterfall()).margin === "375", "Upgraded v1 line waterfall wrong");
@@ -409,7 +410,7 @@ async function margin() {
   const service = new VaultService(() => undefined); await service.init(scope); await service.create(secret, "professional");
   const result: Record<string, unknown> = {};
   const out = await service.playgroundLoad(noop), manifest = out.manifest;
-  assert((await service.status()).schemaVersion === "22", "New vaults must be schema v22");
+  assert((await service.status()).schemaVersion === "23", "New vaults must be schema v23");
   // 1. The waterfall equals the imported lines recomputed one by one with the JS engine.
   const raw = await rowsOf(service, "SELECT invoice_id, customer_id, strftime(sale_date, '%Y-%m') AS m, list_cents::VARCHAR AS l, discount_cents::VARCHAR AS d, rebate_cents::VARCHAR AS r, freight_cents::VARCHAR AS f, cost_cents::VARCHAR AS c, line_kind AS k FROM sales_lines");
   let list = Z, discount = Z, rebate = Z, freight = Z, pocket = Z, costedPocket = Z, cost = Z, marginJs = Z;
@@ -738,6 +739,11 @@ async function pricingFlow() {
   const noteProduct=String((await service.engine!.conn.query('SELECT product_id FROM products ORDER BY product_id LIMIT 1')).toArray()[0].product_id),noteText='Backup round-trip note '+crypto.randomUUID();
   await service.noteSet('product',noteProduct,noteText);
   for(const format of ['csv','xlsx'] as const){const file=await service.priceExport(sim.id,'netsuite',format);assert(file.blob.size>100&&(await file.log.text()).includes('Before'),'Export missing price rows or change log');if(format==='csv')assert(!(await file.blob.text()).includes(noteText)&&!(await file.log.text()).includes(noteText),'ERP export or change log contains a row note');}
+  // Roadmap 15.6: a custom layout reshapes the same approved prices; the receipt stays the generic one.
+  const custom=(await service.exportLayoutSave({name:'Acme ERP',columns:[{header:'ItemNo',field:'product_id'},{header:'Amount',field:'price'},{header:'ValidFrom',field:'effective_from'},{header:'Co',field:'constant',value:'01'}],delimiter:';',decimal:'comma',date:'DD.MM.YYYY',header:true}))[0];
+  const generic=await (await service.priceExport(sim.id,'generic','csv')).blob.text(),customFile=await service.priceExport(sim.id,'generic','csv',custom.id),customText=await customFile.blob.text();
+  const lines=customText.trim().split(/\r?\n/);assert(lines[0]==='ItemNo;Amount;ValidFrom;Co'&&lines.length===generic.trim().split(/\r?\n/).length&&/^[^;]+;\d+,\d{2};\d{2}\.\d{2}\.\d{4};01$/.test(lines[1])&&!customText.includes(noteText),'Custom layout export differs: '+lines.slice(0,2).join(' | '));
+  assert((await service.exportLayoutDelete(custom.id)).length===0,'Layout was not deleted');
   // Save the audit of exports in the final backup too.
   const cfg=await backupConfig(service.storage.scope);await storeBackupConfig(service.storage.scope,{...cfg,last:'2020-01-01T00:00:00Z'});await service.backupDue();assert((await service.backupStatus()).last!=='2020-01-01T00:00:00Z','Due scheduled backup did not run');
   await service.backupNow();const backup=await (await dir.getFileHandle('rebatehq-backup.enc')).getFile();
@@ -813,7 +819,7 @@ async function phase5a() {
   let refusedNoOwner=false;try{await call(service,'create',{passphrase:secret,tier:'professional',ownerName:'  '});}catch(e){refusedNoOwner=(e as Error).message.includes('Pricing Owner');}
   assert(refusedNoOwner&&!(await service.status()).exists,'A vault was created without a named Pricing Owner');
   const created=await call(service,'create',{passphrase:secret,tier:'professional',ownerName:'Synthetic Pricing Owner'});
-  assert(created.schemaVersion==='22'&&created.access.role==='owner'&&created.access.ownerNamed&&created.access.caps.includes('approve'),'The creator is not the Owner and named Pricing Owner');
+  assert(created.schemaVersion==='23'&&created.access.role==='owner'&&created.access.ownerNamed&&created.access.caps.includes('approve'),'The creator is not the Owner and named Pricing Owner');
   assert((await call(service,'pricingState')).owner.name==='Synthetic Pricing Owner','Pricing Owner was not stored at setup');
   // Sample data never completes setup steps; it still feeds every view.
   await service.playgroundLoad(()=>undefined);
@@ -1014,9 +1020,14 @@ async function suppliersFlow(){
  await call('noteSet',{kind:'product',id:'P',text:'PRIVATE-SUPPLIER-NOTE'});
  const csvFile=await call('supplierClaimExport',{id,format:'csv',fingerprint:p.fingerprint});const text=await csvFile.blob.text();assert(text.includes('CAD')&&text.includes('590.00')&&text.includes('29500.00')&&!text.includes('PRIVATE-SUPPLIER-NOTE'),'Supplier CSV lost currency/exact amount or exposed notes');
  p=await call('supplierClaimPreview',{id});assert(p.claim.status==='prepared'&&p.claim.claimed==='59000','Export did not freeze amount');const xlsx=await call('supplierClaimExport',{id,format:'xlsx',fingerprint:p.fingerprint});assert(xlsx.blob.size>1000,'XLSX export is empty');
- for(const status of ['submitted','approved','paid'])p=await call('supplierClaimStatus',{id,status});assert(p.claim.status==='paid','Claim status flow failed');
- await call('rolePreview',{role:'sales_rep'});for(const action of ['supplierClaims','supplierPurchases','supplierProgress','supplierClaimPreview','supplierClaimSave','supplierClaimStatus','supplierClaimExport']){let blocked=false;try{await call(action,{id});}catch(e){blocked=(e as {code:string}).code==='FORBIDDEN';}assert(blocked,'Rep reached a supplier command');}await call('rolePreview',{role:null});
- await service.lock();await call('unlock',{passphrase:secret});p=await call('supplierClaimPreview',{id});assert(p.claim.status==='paid'&&p.claim.claimed==='59000'&&(await call('status')).schemaVersion==='22','Encrypted v16 snapshot lost claim');
+ for(const status of ['submitted','approved'])p=await call('supplierClaimStatus',{id,status});
+ // Roadmap 15.3: a part payment leaves a balance; the rest marks the claim paid; the finance export lists it.
+ let bal=await call('supplierPaymentRecord',{input:{claim:id,received:'2026-05-02',amount:'200.00',reference:'REM-1',method:'transfer'}});assert(bal.paid==='20000'&&bal.outstanding==='39000','Part payment balance differs');
+ bal=await call('supplierPaymentRecord',{input:{claim:id,received:'2026-05-09',amount:'390.00',reference:'CM-2',method:'credit_memo'}});p=await call('supplierClaimPreview',{id});assert(bal.outstanding==='0'&&p.claim.status==='paid','Full payment did not mark the claim paid');
+ assert((await call('supplierClaims')).rows.some((r:any)=>r.id===id&&r.paid==='59000'&&r.outstanding==='0'),'Claims grid lacks paid/outstanding');
+ const fin=await call('rebateFinanceExport',{format:'csv'}),finText=await fin.blob.text();assert(fin.rows==='1'&&finText.includes('supplier_claim')&&finText.includes('590.00')&&!finText.includes('PRIVATE-SUPPLIER-NOTE'),'Finance export differs');
+ await call('rolePreview',{role:'sales_rep'});for(const action of ['supplierClaims','supplierPurchases','supplierProgress','supplierClaimPreview','supplierClaimSave','supplierClaimStatus','supplierClaimExport','supplierClaimBalance','supplierPaymentRecord','supplierPaymentVoid','rebateFinanceExport']){let blocked=false;try{await call(action,{id});}catch(e){blocked=(e as {code:string}).code==='FORBIDDEN';}assert(blocked,'Rep reached a supplier command');}await call('rolePreview',{role:null});
+ await service.lock();await call('unlock',{passphrase:secret});p=await call('supplierClaimPreview',{id});assert(p.claim.status==='paid'&&p.claim.claimed==='59000'&&(await call('status')).schemaVersion==='23'&&(await call('supplierClaimBalance',{id})).payments.length===2,'Encrypted snapshot lost claim or payments');
  const source=(await call('sources')).find((s:any)=>s.role==='purchases');assert(source,'Purchase source kind missing');await call('studioClear');await call('studioAdd',{files:[new File([csv.replace('30000.00','31000.00')],'po-receipts.csv')],replaces:source.id});await call('studioPlan');await call('studioCommit',{acknowledge:true});p=await call('supplierClaimPreview',{id});assert(p.claim.claimed==='59000'&&p.live.earned==='61000','Replacement rewrote frozen claim or failed to update live attainment');let blocked=false;try{await call('supplierClaimExport',{id,format:'csv',fingerprint:p.fingerprint});}catch{blocked=true;}assert(blocked,'Changed evidence silently re-exported');
  await call('sourceRemove',{id:(await call('sources')).find((s:any)=>s.role==='purchases').id});assert((await call('supplierPurchases')).grid.total==='0','Purchase removal left rows');assert((await call('verify')).valid,'Supplier changes damaged audit');
  const audit=JSON.stringify((await service.engine!.conn.query('SELECT details FROM audit_log')).toArray());assert(!audit.includes('SUPPLIER-NORTH')&&!audit.includes('PRIVATE-SUPPLIER-NOTE'),'Supplier audit carries business terms');
@@ -1055,13 +1066,34 @@ async function convertersFlow(){
   assert(st.folder.added.join()==='february.prn'&&st.folder.skipped.length===3&&st.files[0].appliedRecipe==='Print sales','Folder re-import did not keep only the recipe match: '+JSON.stringify(st.folder.added));
   await call('studioPlan');await call('studioCommit',{acknowledge:true});
   n=await one("SELECT count(*) AS \"s\" FROM sales_lines");assert(n.s==='5','Folder re-import rows did not load');
+  // Roadmap 15.1: scheduled pickup reads the remembered folder itself (an OPFS folder is already granted).
+  const put=async(name:string,text:string)=>{const w=await (await dir.getFileHandle(name,{create:true})).createWritable();await w.write(text);await w.close();};
+  const svc=service as unknown as {folderPickupDue():Promise<{added:number;imported:boolean;review:boolean;error:boolean}|null>};
+  await put('sales.prn',sales);await put('february.prn',feb);
+  assert((await call('folderPickup')).every===0&&await svc.folderPickupDue()===null,'Pickup ran while switched off');
+  let pk=await call('folderPickupSet',{every:15,auto:false});assert(pk.every===15,'Pickup settings were not saved');
+  // Firefox has no folder permission API, so pickup never runs there (folder features are Chrome and Edge only).
+  if(pk.permission!=='granted'){assert(await svc.folderPickupDue()===null,'Pickup ran without a granted folder');}else{
+  let r=await svc.folderPickupDue();assert(r&&r.added===0&&!r.review&&!r.error,'Pickup re-added files already imported: '+JSON.stringify(r));
+  assert(await svc.folderPickupDue()===null,'Pickup ran again before its interval');
+  const pickupScope=(service as unknown as {storage:{scope:string}}).storage.scope,due=async(auto:boolean)=>{await storePickupConfig(pickupScope,{...await pickupConfig(pickupScope),auto,last:null});return svc.folderPickupDue();};
+  const mar=printReport([['6','P-300','PQ-C1','2026-03-02','2','15.00','9.30']]);await put('march.prn',mar);
+  r=await due(false);assert(r&&r.added===1&&r.review&&!r.imported,'Pickup did not leave the new file for review: '+JSON.stringify(r));
+  st=await call('studioState');assert(st.files.length===1&&st.files[0].appliedRecipe==='Print sales','Pickup batch differs');
+  assert(await due(true)===null,'Pickup touched a batch waiting in Import Studio');
+  await call('studioClear');
+  r=await due(true);assert(r&&r.added===1&&r.imported&&!r.review,'Pickup did not import a clean batch: '+JSON.stringify(r));
+  n=await one("SELECT count(*) AS \"s\" FROM sales_lines");assert(n.s==='6','Picked-up rows did not load');
+  assert((await call('studioState')).files.length===0,'The imported batch was left in Import Studio');
+  }
+  await call('folderPickupSet',{every:0,auto:false});
   assert((await call('folderSet',{directory:null})).directory===null,'Import folder was not forgotten');
   // Malformed and scanned files are refused with a reason; nothing is added.
   await fails('studioAdd',{files:[new File([new Uint8Array([80,65,82,49,1,2,3,80,65,82,49])],'broken.parquet')]},/Parquet file could not be read/);
   await fails('studioAdd',{files:[new File([makePdf([[]]) as BlobPart],'scan.pdf')]},/no text to read.*OCR/);
   await fails('studioAdd',{files:[new File(['%PDF-1.4 nope'],'broken.pdf')]},/could not be read/);
   assert((await call('studioState')).files.length===0,'A refused file stayed in the batch');
-  return {parquetViaPinnedExtension:true,pdfTables:true,fixedWidth:true,exactLoad:true,recipe:true,folderHandle:true,folderReimport:true,malformedRefused:true,parquetBytes:btoa(String.fromCharCode(...parquet))};
+  return {parquetViaPinnedExtension:true,pdfTables:true,fixedWidth:true,exactLoad:true,recipe:true,folderHandle:true,folderReimport:true,folderPickup:true,malformedRefused:true,parquetBytes:btoa(String.fromCharCode(...parquet))};
  }finally{await service.lock();await reset(scope);}
 }
 
