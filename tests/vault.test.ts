@@ -136,7 +136,11 @@ test("local data paths contain no business API, raw SQL protocol, or real OPFS w
   assert.ok(/timeout (-k \d+ )?\d+ pnpm exec playwright install --with-deps "\$browser"/.test(install) && /timeout (-k \d+ )?\d+ pnpm exec playwright install "\$browser"/.test(install) && install.includes('Acquire::http::Timeout') && install.includes('DPkg::Lock::Timeout') && install.includes("pgrep -x dpkg") && install.includes(".launch()"), "the browser install is bounded, retried, falls back without apt and proves a launch");
   assert.match(workflow, /Required Firefox local-vault lab gate\n\s+timeout-minutes: \d+/);
   assert.ok(workflow.includes('pnpm test:vault --browser=firefox'));
-  assert.match(workflow,/verify:\n\s+runs-on: [^\n]+\n(\s+#[^\n]*\n)*\s+timeout-minutes: 60/);
+  // Roadmap 13.9: parallel jobs, each with a time limit; `verify` (the required check) needs all three and always runs,
+  // so a failed job fails `verify` instead of leaving it "skipped".
+  for (const job of ["unit", "chromium", "firefox"]) assert.match(workflow, new RegExp(`\\n  ${job}:\\n(\\s+(name|runs-on|#)[^\\n]*\\n)*\\s+timeout-minutes: (\\d+)`), `${job} needs a time limit`);
+  assert.match(workflow, /verify:\n\s+runs-on: [^\n]+\n\s+timeout-minutes: \d+\n\s+needs: \[unit, chromium, firefox\]\n\s+if: always\(\)/);
+  for (const job of ["unit", "chromium", "firefox"]) assert.ok(workflow.includes(`test "\${{ needs.${job}.result }}" = success`), `verify must check ${job}`);
   assert.ok(!readFileSync("scripts/vault-test-auth.mjs", "utf8").includes("setSession("));
   assert.ok(readFileSync("app/lab/vault/page.tsx", "utf8").includes('process.env.VAULT_LAB_ENABLED !== "true"'));
 });
