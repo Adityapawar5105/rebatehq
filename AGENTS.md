@@ -216,3 +216,22 @@ The pushes to main after those merges failed for causes outside the app code, fi
 - Node 24.22.3 crashed at test exit;
 - runner Docker networking failed;
 - the gate hung after its deliberate tab crash.
+
+PR #16 passed [CI #198](https://github.com/Adityapawar5105/rebatehq/actions/runs/44906135199), and `main` after it passed [CI #200](https://github.com/Adityapawar5105/rebatehq/actions/runs/44931126427).
+
+**Roadmap phases 11, 13 and 14 (21 November 2026; built by Claude Code).**
+- **Phase 11 (PR #17):** Quote Desk completion: copy and revise, validity date, branded customer PDF, price list and mailing list, barcode lookup. Local vault **v22 / 62 tables**; blueprint section 22, item 34. Its first run (CI #199) failed because the Account device table overflowed a phone screen; the table now scrolls in its own box.
+- **Phase 13 (PR #18):**
+  - removed the prototype, the legacy business pages and the spike lab (D15, D12, D13);
+  - rewrote `OPERATIONS.md`;
+  - added dated notes on stale statements;
+  - moved the chunk evidence files to `docs/evidence/`;
+  - added formatter settings (D14);
+  - the rate limiter now keys on the platform's client address (audit B-9);
+  - CI now runs as three parallel jobs, and `verify` passes only when all three pass.
+- **13.10:** Actions on their first Node 24 majors.
+- **Phase 14:** Home reuses saved leak results per window, rebates are rebuilt once per import, the user is looked up once per page, the offline copy prunes old build files, and Reconciliation writes only on change. 14.6 is a measured study with no code change.
+
+PR #18 passed [CI #202](https://github.com/Adityapawar5105/rebatehq/actions/runs/44931718412), the first run of the parallel jobs. Local 1M-line measurements, the 14.6 study and the other CI runs are in `docs/evidence/ROADMAP_PHASES_11_13_14_VERIFICATION.md`.
+
+Phase 12 (payments) and the mobile app (15.5) are excluded by the user's instruction. Phase 15 items start only on the user's explicit confirmation.
