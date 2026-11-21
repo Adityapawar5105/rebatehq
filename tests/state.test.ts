@@ -37,3 +37,21 @@ test("roadmap 9.2: the vault status carries one phase, decided in the worker, be
   assert.match(service, /base\.phase = vaultPhase\(base\);/, "status() sets the phase from its own facts");
   assert.match(app, /status\.phase !== "none" && status\.phase !== "locked"/); assert.match(app, /status\?\.phase === "preparing"/);
 });
+
+test("roadmap 9.4: the engine warm-up is one value that moves snapshot, copying, copied or failed, then writable", async () => {
+  const { startWarmup, makeWritable, readyToWrite } = await import("../lib/vault/engine");
+  type E = Parameters<typeof startWarmup>[0];
+  const conn = (fail: boolean) => ({ query: async (sql: string) => { if (fail && !/ROLLBACK/.test(sql)) throw new Error("copy failed"); return { toArray: () => [{ schema_version: 21 }] }; }, close: async () => undefined });
+  const engine = (fail: boolean) => ({ warm: "snapshot", warming: null, conn: conn(false), db: { connect: async () => conn(fail), dropFile: async () => undefined } }) as unknown as E;
+  const ok = engine(false);
+  assert.equal(readyToWrite(ok), false);
+  const job = startWarmup(ok); assert.equal(ok.warm, "copying", "the copy is marked running at once");
+  assert.equal(await job, true); assert.equal(ok.warm, "copied"); assert.equal(readyToWrite(ok), true);
+  await makeWritable(ok); assert.equal(ok.warm, "writable"); assert.equal(ok.warming, null);
+  assert.equal(startWarmup(ok), null, "a writable engine starts no copy");
+  const bad = engine(true);
+  assert.equal(await startWarmup(bad), false); assert.equal(bad.warm, "failed"); assert.equal(readyToWrite(bad), false);
+  await makeWritable(bad); assert.equal(bad.warm, "writable", "after a failed background copy the first change copies on the main connection");
+  const src = readFileSync("lib/vault/engine.ts", "utf8");
+  assert.doesNotMatch(src, /warmDone|warmReady|writable: boolean/, "the four warm-up flags are gone");
+});

@@ -1,10 +1,19 @@
 import * as duckdb from "@duckdb/duckdb-wasm";
 import { schemaSql, tablesFor, upgradeSql } from "./schema";
 import { verifiedAssetUrl } from "./asset-integrity";
-// `warming` is the background copy-on-write started after unlock (true = copied);
-// `warmDone` turns true when it settles (`warmReady` when it succeeded), before the
-// main connection switches over.
-export type Engine = { db: duckdb.AsyncDuckDB; conn: duckdb.AsyncDuckDBConnection; worker: Worker; writable: boolean; warming: Promise<boolean> | null; warmDone: boolean; warmReady: boolean };
+/**
+ * Roadmap 9.4: the copy-on-write warm-up as one value instead of four flags.
+ * - "snapshot": unlocked on the read-only snapshot; no copy started yet.
+ * - "copying": the background copy is running on a second connection.
+ * - "copied": the copy succeeded; the first change only switches connections.
+ * - "failed": the background copy rolled back; the first change copies on the main connection.
+ * - "writable": the main connection is on the writable copy (a new vault starts here).
+ * `warming` is only the handle of the running or settled copy, so the first change can wait for it.
+ */
+export type Warm = "snapshot" | "copying" | "copied" | "failed" | "writable";
+export type Engine = { db: duckdb.AsyncDuckDB; conn: duckdb.AsyncDuckDBConnection; worker: Worker; warm: Warm; warming: Promise<boolean> | null };
+/** True when the first change needs no copy (already writable, or the background copy is ready). */
+export const readyToWrite = (engine: Pick<Engine, "warm">) => engine.warm === "writable" || engine.warm === "copied";
 export const MEMORY_PATH = "opfs://vault-ram.duckdb";
 export async function openMemory(bytes?: Uint8Array): Promise<Engine> {
   const workerUrl = await verifiedAssetUrl("vault-ram-worker.js");
@@ -30,7 +39,7 @@ export async function openMemory(bytes?: Uint8Array): Promise<Engine> {
       if (JSON.stringify(inventory) !== JSON.stringify([...tablesFor(version)].sort())) throw new Error("Unsupported vault table inventory");
       await conn.query("USE incoming");
     }
-    return { db, conn, worker, writable: !bytes, warming: null, warmDone: false, warmReady: false };
+    return { db, conn, worker, warm: bytes ? "snapshot" : "writable", warming: null };
   } catch (error) { try { await db.terminate(); } finally { worker.terminate(); } throw error; }
   finally { URL.revokeObjectURL(workerUrl); URL.revokeObjectURL(wasmUrl); }
 }
@@ -48,24 +57,25 @@ async function copyToWritable(engine: Engine, conn: duckdb.AsyncDuckDBConnection
   } catch (error) { await conn.query("ROLLBACK").catch(() => undefined); throw error; }
 }
 async function switchToWritable(engine: Engine) {
-  await engine.conn.query('USE "vault-ram"; DETACH incoming'); await engine.db.dropFile("vault-input.duckdb"); engine.writable = true;
+  await engine.conn.query('USE "vault-ram"; DETACH incoming'); await engine.db.dropFile("vault-input.duckdb"); engine.warm = "writable";
 }
 /**
  * Start the copy on a second connection right after unlock. The main connection
  * keeps reading the snapshot meanwhile; makeWritable() finishes the switch.
  */
 export function startWarmup(engine: Engine) {
-  if (engine.writable || engine.warming) return engine.warming;
+  if (engine.warm === "writable" || engine.warming) return engine.warming;
+  engine.warm = "copying";
   engine.warming = (async () => {
-    let conn: duckdb.AsyncDuckDBConnection | null = null;
-    try { conn = await engine.db.connect(); await copyToWritable(engine, conn); engine.warmReady = true; return true; }
+    let conn: duckdb.AsyncDuckDBConnection | null = null, copied = false;
+    try { conn = await engine.db.connect(); await copyToWritable(engine, conn); copied = true; return true; }
     catch { return false; } // the first change then copies on the main connection
-    finally { await conn?.close().catch(() => undefined); engine.warmDone = true; }
+    finally { await conn?.close().catch(() => undefined); if (engine.warm === "copying") engine.warm = copied ? "copied" : "failed"; }
   })();
   return engine.warming;
 }
 export async function makeWritable(engine: Engine) {
-  if (engine.writable) return;
+  if (engine.warm === "writable") return;
   if (engine.warming) {
     const copied = await engine.warming; engine.warming = null;
     if (copied) { await switchToWritable(engine); return; }

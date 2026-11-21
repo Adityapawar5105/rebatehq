@@ -36,7 +36,7 @@ import { VaultLicence, capacitySql } from "./licence";
 import type { Action } from "./protocol";
 import * as pricing from '../pricing/rules';
 import { backupConfig, storeBackupConfig, writeBackup } from './backup';
-import { openMemory, snapshotBytes, closeMemory, makeWritable, startWarmup, type Engine } from "./engine";
+import { openMemory, snapshotBytes, closeMemory, makeWritable, readyToWrite, startWarmup, type Engine } from "./engine";
 import { VaultStorage } from "./storage";
 import { decrypt, deriveKey, type Key } from "./crypto";
 import { appendAudit, verifyAudit, GENESIS } from "./audit";
@@ -273,7 +273,7 @@ export class VaultService {
     this.licence.assert();
     const engine = this.requireEngine();
     if (this.dirty) throw new VaultError("SAVE", msg("vault.saveThePendingChange"));
-    if (!engine.writable) { progress?.(engine.warming ? msg("vault.finishingPreparingTheVault") : msg("vault.preparingTheVaultFor"), "0", "1"); await makeWritable(engine); }
+    if (engine.warm !== "writable") { progress?.(engine.warm === "copying" || engine.warm === "copied" ? msg("vault.finishingPreparingTheVault") : msg("vault.preparingTheVaultFor"), "0", "1"); await makeWritable(engine); }
     return engine;
   }
   private async recipes() { return loadRecipes(this.requireEngine()); }
@@ -780,7 +780,7 @@ export class VaultService {
   async checklist() {
     const e = this.requireEngine(), { view, newly } = await setup.read(e);
     // Persist newly reached steps only when that costs nothing extra (no unsaved change, vault already writable).
-    if (this.licence.writable && newly.length && !this.dirty && (e.writable || e.warmReady)) {
+    if (this.licence.writable && newly.length && !this.dirty && readyToWrite(e)) {
       await this.write("setup.steps", { steps: newly.join(",") }, async w => { await w.conn.query(setup.saveSql(newly, "auto", new Date().toISOString())); });
       return (await setup.read(this.requireEngine())).view;
     }
@@ -965,7 +965,7 @@ export class VaultService {
   }
   async status(): Promise<VaultStatus> {
     const base: VaultStatus = { phase: "none", licence:this.licence.view(), state: this.engine ? "unlocked" : "locked", exists: await this.storage.exists(), dirty: this.dirty,
-      writable: !!this.engine?.writable || !!this.engine?.warmReady, preparing: !!this.engine && !this.engine.writable && !!this.engine.warming && !this.engine.warmDone, recovered: this.recovered, lines: "0", products: "0", customers: "0", auditEntries: "0", currency: "USD", schemaVersion: "0", generation: this.generation, tier: this.tier, lastSaved: this.lastSaved };
+      writable: !!this.engine && readyToWrite(this.engine), preparing: this.engine?.warm === "copying", recovered: this.recovered, lines: "0", products: "0", customers: "0", auditEntries: "0", currency: "USD", schemaVersion: "0", generation: this.generation, tier: this.tier, lastSaved: this.lastSaved };
     base.phase = vaultPhase(base); // 9.2: one value beside the flags, from the same facts
     if (!this.engine) return base;
     const data = (await this.engine.conn.query(`SELECT (SELECT count(*) FROM sales_lines)::VARCHAR AS lines,(SELECT count(*) FROM products)::VARCHAR AS products,(SELECT count(*) FROM customers)::VARCHAR AS customers,audit_count::VARCHAR AS entries,schema_version::VARCHAR AS version FROM vault_meta WHERE id=1`)).toArray()[0];
