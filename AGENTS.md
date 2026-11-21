@@ -2,7 +2,7 @@
 
 ## Governing blueprint
 
-Read `BLUEPRINT.md` before planning or implementing RebateHQ work. The user-approved **Blueprint v2.6** governs (v2.6, 10 Nov 2026: B2B buyer gap registry, section 22 item 28; two pre-8A fixes; item 29 records the 8R retirement; item 30 the 14 Nov 2026 user feedback pass: checklist off Home, Scale 2M lines, Leak Report redesign; item 31 the operator subscriptions view, migration locked after CI #160 and Restore Drill #22; item 32 the 15 Nov 2026 Home greeting and work tabs and the trimmed command palette; item 33 the 16 Nov 2026 interface polish: checkbox size, spacing, lock screen, sub-tab search, page-scoped errors). Section 22 records its approved changes. v2.3 UX/quoting/pricing, v2.4 multi-currency/Firefox, and v2.5 selection aggregates/row notes/grid filter-sort work have been implemented only as the verified chunks below state; other roadmap items remain future work. Later explicit user instructions take precedence. Any blueprint edit must add a section 22 entry and be reported to the user.
+Read `BLUEPRINT.md` before planning or implementing RebateHQ work. The user-approved **Blueprint v2.6** governs (v2.6, 10 Nov 2026: B2B buyer gap registry, section 22 item 28; two pre-8A fixes; item 29 records the 8R retirement; item 30 the 14 Nov 2026 user feedback pass: checklist off Home, Scale 2M lines, Leak Report redesign; item 31 the operator subscriptions view, migration locked after CI #160 and Restore Drill #22; item 32 the 15 Nov 2026 Home greeting and work tabs and the trimmed command palette; item 33 the 16 Nov 2026 interface polish: checkbox size, spacing, lock screen, sub-tab search, page-scoped errors; item 34 the 21 Nov 2026 Quote Desk completion, vault v22; item 35 the 22 Nov 2026 Phase 15 pull-forward, vault v23). Section 22 records its approved changes. v2.3 UX/quoting/pricing, v2.4 multi-currency/Firefox, and v2.5 selection aggregates/row notes/grid filter-sort work have been implemented only as the verified chunks below state; other roadmap items remain future work. Later explicit user instructions take precedence. Any blueprint edit must add a section 22 entry and be reported to the user.
 
 `BLUEPRINT_EXECUTION_PLAN.md` sequences the work into repo chunks (4.0, 4A-4E,
 5A-5B, 6A, 6R, 6B, 7A, 7U, 7B, 7V (7V-1, 7V-2, 7V-3), 7C (7C-1, 7C-2, 7C-3), 7D (7D-1, 7D-2), 7E-7F, 8A-8D, 8R, 9A) with a standard preamble and "Done when" criteria.
@@ -234,4 +234,12 @@ PR #16 passed [CI #198](https://github.com/Adityapawar5105/rebatehq/actions/runs
 
 PR #18 passed [CI #202](https://github.com/Adityapawar5105/rebatehq/actions/runs/44931718412), the first run of the parallel jobs. Local 1M-line measurements, the 14.6 study and the other CI runs are in `docs/evidence/ROADMAP_PHASES_11_13_14_VERIFICATION.md`.
 
-Phase 12 (payments) and the mobile app (15.5) are excluded by the user's instruction. Phase 15 items start only on the user's explicit confirmation.
+Phase 12 (payments) and the mobile app (15.5) are excluded by the user's instruction.
+
+**Roadmap Phase 15 pull-forward (22 November 2026; built by Claude Code after the user confirmed "Yes, build them"; blueprint section 22, item 35).**
+- **15.1:** scheduled pickup from the remembered import folder. It runs only while the app is open, with permission granted in the session; a clean batch can be imported automatically, and everything else waits for review.
+- **15.3:** claim payment tracking, and the rebate accrual export for finance.
+- **15.6:** custom ERP export layouts, with a column editor.
+- **15.7:** saved simulator runs, compared side by side.
+
+Local vault **v23 / 65 tables** (`claim_payments`, `export_layouts`, `sim_runs`); no Supabase migration. See `docs/evidence/ROADMAP_PHASE_15_VERIFICATION.md`. Not built: 15.2 and 15.8 need a design first, and 15.4 needs the operator's OAuth credentials.
