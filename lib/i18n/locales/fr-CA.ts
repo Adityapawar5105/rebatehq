@@ -50,4 +50,6 @@ export const frCA: Partial<Catalog> = {
   "vendor.noQuotes": "Aucune soumission ouverte n'utilise un article dont le coût change.",
   "vendor.quoteCost": "Coût lors de la soumission",
   "vendor.openQuotes": "Soumissions ouvertes",
+  "quotes.discard.body": "Les quantités et les prix saisis sur cette soumission ne sont pas enregistrés.",
+  "quotes.discard.yes": "Abandonner et commencer une nouvelle soumission",
 };
