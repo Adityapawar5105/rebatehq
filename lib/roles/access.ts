@@ -74,7 +74,7 @@ export const ACTIONS: Record<Action, { cap: Cap | null; mode: Mode }> = {
   // 8B-1: Margin Drain inbox and cost index triggers read cost; saving settings and triggers is a pricing decision.
   agentState:r("cost"),agentRows:r("cost"),agentRun:w("cost"),agentMark:w("cost"),agentSettingsSave:w("pricing"),indexState:r("cost"),indexSkus:r("cost"),indexTriggerSave:w("pricing"),indexTriggerDelete:w("pricing"),deadState:r("cost"),benchState:r("cost"),benchPreview:r("cost"),benchMapSave:w("cost"),benchShared:w("cost"),benchFiguresSave:w("cost"),benchWithdrawn:w("cost"),deadRows:r("cost"),deadSettingsSave:w("pricing"),deadDraft:w("pricing"),
   // 7F-2: folder re-import is an import (Import Studio, every tier).
-  folderGet:r("data"),folderSet:r("data"),studioFolder:w("data"),
+  folderGet:r("data"),folderSet:r("data"),studioFolder:w("data"),folderPickup:r("data"),folderPickupSet:r("data"),
   supplierClaims:r("cost"),supplierPurchases:r("cost"),supplierProgress:r("cost"),supplierClaimPreview:r("cost"),supplierClaimSave:w("rebateManage"),supplierClaimStatus:w("rebateManage"),supplierClaimExport:w("rebateManage"),
   customerList:r("data"),productList:r("data"),noteSet:w("data"),sourceRemovePreview:r("data"),
   gridTotals:r("view"),

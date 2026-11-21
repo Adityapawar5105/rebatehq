@@ -43,5 +43,7 @@ scope.onmessage = event => {
 // Scheduled work is serialized with every mutation and runs only while unlocked.
 // 8B-1: Margin Drain agents run on their saved schedule while the app is open, queued like any other work.
 const agentsDue = () => { queue = queue.then(() => service.agentsDue()).then(ran => { if (ran) post({ event: "agents" }); }).catch(() => undefined); };
-setInterval(()=>{queue=queue.then(()=>service.backupDue()).catch(()=>undefined);agentsDue();},60_000);
+// Roadmap 15.1: the folder pickup joins the same tick; a check that added files tells the page.
+const pickupDue = () => { queue = queue.then(() => service.folderPickupDue()).then(async result => { if (result && (result.added || result.error)) post({ event: "pickup", result, name: (await service.folderGet()).name }); }).catch(() => undefined); };
+setInterval(()=>{queue=queue.then(()=>service.backupDue()).catch(()=>undefined);agentsDue();pickupDue();},60_000);
 

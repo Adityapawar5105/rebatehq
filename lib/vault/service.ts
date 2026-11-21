@@ -25,7 +25,7 @@ import { crossSell } from '../quotes/crosssell';
 import { parquetReader } from './parquet-engine';
 import { kindOf } from '../studio/formats';
 import { fileFingerprint } from '../studio/studio';
-import { importFolder, storeImportFolder } from './folder';
+import { importFolder, storeImportFolder, pickupConfig, storePickupConfig, checkPickupSettings, pickupDue, cleanForAuto, readPermission, folderFiles, type PickupResult } from "./folder";
 import * as grid from '../pricing/grid';
 import * as market from '../pricing/market';
 import {whatIf} from '../pricing/whatif';
@@ -141,7 +141,10 @@ export class VaultService {
       }).catch(error => reject(signal.aborted ? new VaultError("OTHER_TAB", msg("vault.thisVaultIsOpen")) : error));
     });
   }
+  /** Background work (the folder pickup) must not count as the person being active. */
+  private quiet = false;
   touch() {
+    if (this.quiet) return;
     if (this.timer) clearTimeout(this.timer);
     if (this.warnTimer) clearTimeout(this.warnTimer);
     this.warnTimer = null;
@@ -287,6 +290,36 @@ export class VaultService {
   // 7F-2 folder re-import: the remembered folder handle, and adding the folder's files that match a saved recipe.
   async folderGet() { const d = await importFolder(this.storage.scope); return { directory: d, name: d?.name ?? null }; }
   async folderSet(directory: FileSystemDirectoryHandle | null) { await storeImportFolder(this.storage.scope, directory ?? null); return this.folderGet(); }
+  // Roadmap 15.1: scheduled pickup from the remembered folder, only while the app is open and unlocked, and only with
+  // the read permission already granted in this session (the worker cannot show a prompt). New files a saved recipe
+  // recognises are added to Import Studio; with "import automatically" on, a batch with nothing to decide is imported
+  // under the signed-in person's role and audited as usual; anything else waits for review. A batch someone is
+  // preparing is never touched, and the check does not keep the vault from locking.
+  async folderPickup() { const scope = this.storage.scope, c = await pickupConfig(scope), d = await importFolder(scope); return { ...c, name: d?.name ?? null, permission: d ? await readPermission(d) : null }; }
+  async folderPickupSet(every: unknown, auto: unknown) { const scope = this.storage.scope, v = checkPickupSettings(every, auto); await storePickupConfig(scope, { ...await pickupConfig(scope), ...v }); return this.folderPickup(); }
+  async folderPickupDue(): Promise<PickupResult | null> {
+    if (!this.engine || this.dirty) return null;
+    const scope = this.storage.scope, c = await pickupConfig(scope);
+    if (!pickupDue(c, Date.now())) return null;
+    const d = await importFolder(scope);
+    if (!d || await readPermission(d) !== "granted") return null; // retried on the next tick once permission is granted
+    if (!(await this.access()).caps.includes("data") || (await this.studioState()).files.length) return null;
+    const at = new Date().toISOString(); let result: PickupResult;
+    this.quiet = true;
+    try {
+      const files = await folderFiles(d, name => !!kindOf(name));
+      const st = files.length ? await this.studioFolder(files) : null, added = st?.folder.added.length ?? 0, skipped = st?.folder.skipped.length ?? 0;
+      let imported = false;
+      if (added && c.auto && this.licence.writable) {
+        const planned = await this.studioPlan(new AbortController().signal, () => undefined);
+        if (cleanForAuto(planned.report, planned.files.map(f => f.role))) { await this.studioCommit(false, () => undefined); imported = true; }
+      }
+      result = { at, added, skipped, imported, review: added > 0 && !imported, error: false };
+    } catch { result = { at, added: 0, skipped: 0, imported: false, review: (await this.studioState()).files.length > 0, error: true }; }
+    finally { this.quiet = false; }
+    await storePickupConfig(scope, { ...c, last: at, result });
+    return result;
+  }
   async studioFolder(files: File[]) {
     const e = this.requireEngine();
     if (!Array.isArray(files) || files.length > 500 || !files.every(f => f instanceof File)) throw new VaultError("FOLDER", msg("folder.invalid"));

@@ -81,6 +81,13 @@ export function VaultApp({ scope, email, workspace, lab = false, relayEnabled = 
       else if (event.event === "locking") setLocking(true);
       else if (event.event === "progress") { setProgress(event); window.dispatchEvent(new CustomEvent("vault-progress", { detail: { stage: event.stage } })); }
       else if (event.event === "writable" || event.event === "agents") { void c.call("status", {}).then(s => { if (active) setStatus(s); }).catch(() => undefined); }
+      else if (event.event === "pickup") {
+        // Roadmap 15.1: the scheduled folder pickup imported files or left them for review; Import Studio reloads its batch.
+        const r = event.result, name = event.name ?? "";
+        setMessage(r.error ? msg("pickup.noticeError", { name }) : r.imported ? msg("pickup.noticeImported", { count: r.added, name }) : msg("pickup.noticeReview", { count: r.added, name }));
+        window.dispatchEvent(new CustomEvent("vault-pickup"));
+        void c.call("status", {}).then(s => { if (active) setStatus(s); }).catch(() => undefined);
+      }
       else { setLocking(false); setPassphrase(""); setMessage(event.reason); void c.call("status", {}).then(s => { if (active) setStatus(s); }); }
     }, () => { if (active) setDead(true); });
     // A worker that never answers is treated as dead, instead of an endless "starting" card (audit X-4).

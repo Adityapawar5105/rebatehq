@@ -51,8 +51,11 @@ export function ImportStudio({ client, status, caps = [], busy, operation, onSta
   const [recipeName, setRecipeName] = useState(""), [removing, setRemoving] = useState<string | null>(null), [losing, setLosing] = useState<{ products: string; customers: string } | null>(null);
   useEffect(() => {
     let active = true;
-    void Promise.all([client.call("studioState", {}), client.call("sources", {})]).then(([s, list]) => { if (active) { setStudio(s); setSources(list); } }).catch(() => undefined);
-    return () => { active = false; };
+    const load = () => void Promise.all([client.call("studioState", {}), client.call("sources", {})]).then(([s, list]) => { if (active) { setStudio(s); setSources(list); } }).catch(() => undefined);
+    load();
+    // Roadmap 15.1: a scheduled folder pickup added or imported files while this screen is open.
+    window.addEventListener("vault-pickup", load);
+    return () => { active = false; window.removeEventListener("vault-pickup", load); };
   }, [client]);
   const refreshSources = async () => setSources(await client.call("sources", {}));
   // The sample banner can remove the Playground from any screen: re-read the file list when the vault changes.

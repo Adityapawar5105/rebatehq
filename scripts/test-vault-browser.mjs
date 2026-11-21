@@ -290,7 +290,12 @@ async function convertersUi(){
  await page.getByRole('button',{name:'Confirm and import locally',exact:true}).click();await page.locator('[data-testid="line-count"][data-value="5"]').waitFor({timeout:120000});
  // Re-importing the same folder again adds nothing: the file is already imported, unchanged.
  await page.getByTestId('folder-reimport-run').click();await page.getByText('0 files added to the batch with their saved recipes; 1 left out.',{exact:false}).first().waitFor({timeout:60000});
- results.checks.convertersUi={fixedWidthRuler:true,manualBoundaries:true,detectAgain:true,recipe:true,pdfTable:true,parquetDuckdb:true,exactLines:true,folderReimport:true,alreadyImportedSkipped:true,phone375:true,privacyMarkers:true};
+ // Roadmap 15.1: the pickup schedule is set in the same panel; the folder shows as allowed (or offers Allow where the
+ // browser has no folder permission API).
+ await page.getByTestId('pickup-every').selectOption('15');await page.getByText('Folder pickup settings saved.',{exact:false}).first().waitFor();
+ await page.getByTestId('pickup-allowed').or(page.getByTestId('pickup-allow')).first().waitFor();await page.getByTestId('pickup-last').filter({hasText:/Not checked yet.|Last checked/}).waitFor();
+ await page.getByTestId('pickup-every').selectOption('0');await page.getByTestId('pickup-allowed').or(page.getByTestId('pickup-allow')).first().waitFor({state:'detached'});
+ results.checks.convertersUi={fixedWidthRuler:true,manualBoundaries:true,detectAgain:true,recipe:true,pdfTable:true,parquetDuckdb:true,exactLines:true,folderReimport:true,alreadyImportedSkipped:true,folderPickupSettings:true,phone375:true,privacyMarkers:true};
  }catch(error){console.error('Converters UI diagnostics:',JSON.stringify(await diagnose()));throw error;}finally{await context.close();context=savedContext;page=savedPage;dataPlaneActive=active;}
 }
 // 8A: explainable deal guidance and cross-sell in Quote Desk (fresh vault, under the request/console marker sensors),
