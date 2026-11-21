@@ -59,12 +59,12 @@ test("roadmap 9.4: the engine warm-up is one value that moves snapshot, copying,
 test("roadmap 9.5: one loading/ready/failed machine for worker reads; a failure offers Retry instead of loading forever", async () => {
   const { nextQuery, initialQuery } = await import("../components/local/queryState");
   let s = initialQuery<number>(); assert.deepEqual(s, { status: "loading", data: null, error: "" });
-  s = nextQuery(s, { type: "fail", error: "No" }); assert.deepEqual(s, { status: "failed", data: null, error: "No" });
-  s = nextQuery(s, { type: "start" }); assert.equal(s.status, "loading"); assert.equal(s.error, "", "a retry clears the old error");
-  s = nextQuery(s, { type: "done", data: 7 }); assert.deepEqual(s, { status: "ready", data: 7, error: "" });
-  s = nextQuery(s, { type: "start" }); assert.equal(s.data, 7, "a reload keeps showing the last data");
-  s = nextQuery(s, { type: "fail", error: "Again" }); assert.equal(s.data, 7, "a failed reload does not blank the panel");
-  assert.deepEqual(nextQuery(s, { type: "set", data: 9 }), { status: "ready", data: 9, error: "" }, "a write's answer replaces the data");
+  s = nextQuery<number>(s, { type: "fail", error: "No" }); assert.deepEqual(s, { status: "failed", data: null, error: "No" });
+  s = nextQuery<number>(s, { type: "start" }); assert.equal(s.status, "loading"); assert.equal(s.error, "", "a retry clears the old error");
+  s = nextQuery<number>(s, { type: "done", data: 7 }); assert.deepEqual(s, { status: "ready", data: 7, error: "" });
+  s = nextQuery<number>(s, { type: "start" }); assert.equal(s.data, 7, "a reload keeps showing the last data");
+  s = nextQuery<number>(s, { type: "fail", error: "Again" }); assert.equal(s.data, 7, "a failed reload does not blank the panel");
+  assert.deepEqual(nextQuery<number>(s, { type: "set", data: 9 }), { status: "ready", data: 9, error: "" }, "a write's answer replaces the data");
   const hook = readFileSync("components/local/useVaultQuery.ts", "utf8");
   assert.match(hook, /id === seq\.current/, "an answer from an older run is ignored");
   const basis = readFileSync("components/local/CostBasisView.tsx", "utf8");
