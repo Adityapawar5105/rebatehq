@@ -3,6 +3,7 @@ import * as cadence from '../reports/pack';
 import * as compliance from '../reports/scorecard';
 import {reportPdf} from '../reports/pdf';
 import * as suppliers from '../rebate/supplier';
+import * as finance from "../rebate/finance";
 import {claimExport} from '../rebate/claim-export';
 import * as rebates from '../rebate/store';
 import {salesInput} from '../rebate/input';
@@ -452,6 +453,11 @@ export class VaultService {
   async supplierClaimSave(input:suppliers.ClaimInput){this.rebateTier();const p=await suppliers.saveSql(this.requireEngine(),input,this.identity.userId);await this.write('supplier.claim_saved',{id:p.id,actor:this.identity.userId},e=>e.conn.query(p.sql).then(()=>undefined));return suppliers.preview(this.requireEngine(),p.id);}
   async supplierClaimStatus(id:string,status:suppliers.ClaimStatus){this.rebateTier();const sql=await suppliers.statusSql(this.requireEngine(),id,status);await this.write('supplier.claim_status',{id,status,actor:this.identity.userId},e=>e.conn.query(sql).then(()=>undefined));return suppliers.preview(this.requireEngine(),id);}
   async supplierClaimExport(id:string,format:'csv'|'xlsx',fingerprint:string){this.rebateTier();if(!['csv','xlsx'].includes(format))suppliers.bad();const p=await suppliers.exportPlan(this.requireEngine(),id,fingerprint),file=claimExport(p,format);await this.write('supplier.claim_exported',{id,format,actor:this.identity.userId},async e=>{if(p.sql)await e.conn.query(p.sql);});return file;}
+  // Roadmap 15.3: payments received against supplier claims, and the accrual export for finance.
+  async supplierClaimBalance(id:string){this.rebateTier();return finance.balance(this.requireEngine(),id,businessToday());}
+  async supplierPaymentRecord(input:finance.PaymentInput){this.rebateTier();const p=await finance.paymentSql(this.requireEngine(),input,this.identity.userId,new Date().toISOString(),businessToday());await this.write('supplier.payment_recorded',{id:p.id,claim:String(input.claim),method:String(input.method),full:String(p.full),actor:this.identity.userId},e=>e.conn.query(p.sql).then(()=>undefined));return this.supplierClaimBalance(String(input.claim));}
+  async supplierPaymentVoid(id:string){this.rebateTier();const p=await finance.voidSql(this.requireEngine(),id,this.identity.userId,new Date().toISOString(),businessToday());await this.write('supplier.payment_voided',{id,claim:p.claim,actor:this.identity.userId},e=>e.conn.query(p.sql).then(()=>undefined));return this.supplierClaimBalance(p.claim);}
+  async rebateFinanceExport(format:'csv'|'xlsx'){this.rebateTier();if(!['csv','xlsx'].includes(format))throw new VaultError('SUPPLIER',msg('payment.invalid'));const today=businessToday(),data=await finance.financeRows(this.requireEngine(),today,new Date().toISOString()),file=finance.financeFile(data,format,today);await this.write('rebate.finance_exported',{format,rows:file.rows,actor:this.identity.userId},async()=>undefined);return file;}
   async rebateProgress(offset=0,grid?:unknown){this.rebateTier();return rebates.progress(this.requireEngine(),offset,grid);}
   async rebateState(){this.rebateTier();return rebates.state(this.requireEngine());}
   async rebateRows(id:string,offset=0,grid?:unknown){this.rebateTier();return rebates.evidence(this.requireEngine(),id,offset,grid);}

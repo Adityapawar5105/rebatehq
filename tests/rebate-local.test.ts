@@ -26,7 +26,7 @@ async function fixture(){const c=await duckdbConnection();c.query('DROP VIEW IF 
  INSERT INTO sales_lines(source_id,line_id,product_id,customer_id,sale_date,quantity,list_cents,discount_cents,freight_cents,rebate_cents,cost_cents,source_row,invoice_id) VALUES('sales',1,'A','C','2026-03-31',1,2950000,0,0,35000,1000000,2,'I');`);
  return {c,e:{conn:{query:async(s:string)=>c.query(s)}} as unknown as Engine};}
 test('7D-1 schema v13 upgrades with AR sidecar intact; three new tables and a nonmutating financial view',async()=>{
- const {c}=await fixture();try{c.query('DROP VIEW rebate_sales');for(const t of ['rebate_accruals','rebate_tiers','rebate_programs'])c.query('DROP TABLE '+t);c.query("INSERT INTO source_kinds VALUES('old-ar','ar_aging')");c.query(V14_SQL);assert.equal(rows(c,'SELECT kind FROM source_kinds')[0].kind,'ar_aging');assert.ok(upgradeSql(13).startsWith(V14_SQL));assert.equal(tablesFor(13).length,42);assert.equal(TABLES.length,62);assert.equal(rows(c,'SELECT rebate_cents::VARCHAR r FROM rebate_sales')[0].r,'35000');}finally{c.close();}
+ const {c}=await fixture();try{c.query('DROP VIEW rebate_sales');for(const t of ['rebate_accruals','rebate_tiers','rebate_programs'])c.query('DROP TABLE '+t);c.query("INSERT INTO source_kinds VALUES('old-ar','ar_aging')");c.query(V14_SQL);assert.equal(rows(c,'SELECT kind FROM source_kinds')[0].kind,'ar_aging');assert.ok(upgradeSql(13).startsWith(V14_SQL));assert.equal(tablesFor(13).length,42);assert.equal(TABLES.length,65);assert.equal(rows(c,'SELECT rebate_cents::VARCHAR r FROM rebate_sales')[0].r,'35000');}finally{c.close();}
 });
 test('7D-1 CAD customer accruals reconcile booked 350 + adjustment 240 = liability 590; additional and returns allocate exactly',async()=>{
  const {c,e}=await fixture();try{

@@ -54,6 +54,10 @@ export async function dispatch(service: VaultService, request: Request, hooks: H
     case "folderSet":return service.folderSet(request.data.directory);
     case "studioFolder":return service.studioFolder(request.data.files);
     case "folderPickup":return service.folderPickup();
+    case "supplierClaimBalance":return service.supplierClaimBalance(request.data.id);
+    case "supplierPaymentRecord":return service.supplierPaymentRecord(request.data.input);
+    case "supplierPaymentVoid":return service.supplierPaymentVoid(request.data.id);
+    case "rebateFinanceExport":return service.rebateFinanceExport(request.data.format);
     case "folderPickupSet":return service.folderPickupSet(request.data.every, request.data.auto);
     case "simRun":return service.simRun(request.data.scenario,hooks.signal(),progress);
     case "simRows":return service.simRows(request.data.dim,request.data.offset,request.data.grid);
