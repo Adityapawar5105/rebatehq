@@ -26,7 +26,7 @@ export async function proxy(request:NextRequest){
  const supabaseUrl=process.env.NEXT_PUBLIC_SUPABASE_URL||"";let connectOrigin="";try{connectOrigin=new URL(supabaseUrl).origin}catch{}
  const dev=process.env.NODE_ENV!=="production";
  // Header configuration only: local Wasm/workers on the lab and local shell.
- const lab=["/lab/spike","/lab/vault","/home"].includes(request.nextUrl.pathname)||request.nextUrl.pathname.startsWith("/spike/");
+ const lab=["/lab/vault","/home"].includes(request.nextUrl.pathname)||request.nextUrl.pathname.startsWith("/spike/");
  // Only engine workers fetch verified in-memory WASM blobs. Page fetch policy
  // stays self-only; no external host or JS unsafe-eval is added.
  const workerAsset=request.nextUrl.pathname.startsWith("/spike/");

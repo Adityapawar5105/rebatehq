@@ -20,10 +20,10 @@ const walk = (dir: string): string[] => readdirSync(dir).flatMap(n => { const p 
  * The product UI covered by 7U: the local vault app, the sign-in/setup/account pages and their
  * components. Out of scope, on purpose: app/legacy/** and its two legacy-only components (behind
  * the default-off LEGACY flag, retired in 8R), app/dashboard/** (a legacy-only redirect that is
- * "not found" unless LEGACY is on), app/lab/spike (engine spike harness), app/api/**.
+ * "not found" unless LEGACY is on), app/api/**.
  */
 const UI_FILES = [...walk("components"), ...walk("app")].map(f => f.split(path.sep).join("/"))
-  .filter(f => f.endsWith(".tsx") && !f.startsWith("app/legacy/") && !f.startsWith("app/dashboard/") && !f.startsWith("app/lab/spike/") && !f.startsWith("app/api/"))
+  .filter(f => f.endsWith(".tsx") && !f.startsWith("app/legacy/") && !f.startsWith("app/dashboard/") && !f.startsWith("app/api/"))
   .filter(f => !["components/GlobalSearch.tsx"].includes(f));
 /** Text that is not translated on purpose: product and format names, sample form defaults, CSS values. */
 const ALLOWED = new Map<string, string>([
