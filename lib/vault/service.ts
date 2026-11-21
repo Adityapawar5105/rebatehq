@@ -101,7 +101,8 @@ export class VaultService {
   }
   readonly licence = new VaultLicence(process.env.NEXT_PUBLIC_LICENCE_VERIFY_KEY || "");
   // Starting again on this device deletes only local files: it never needs a licence (audit B-3).
-  licenceGuard(action:Action) { if (action === "vaultReset") return; this.licence.guard(action); }
+  /** 9.3: the licence rule comes from ACTIONS (vaultReset is marked "always": a forgotten passphrase needs no licence). */
+  licenceGuard(action:Action) { this.licence.guard(action); }
   async licenceSet(envelope:import("../licence-policy").LicenceEnvelope|null,device:string,offline:boolean){try{await this.licence.set(envelope,this.identity,device,offline);}catch{/* Invalid assertions clear authority but never prevent read-only unlock/recovery. */}this.tier=this.licence.effective(this.tier);return this.status();}
   private identity!: Scope;
   storage!: VaultStorage;

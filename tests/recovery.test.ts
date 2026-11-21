@@ -3,7 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { VaultStorage, type Head } from "../lib/vault/storage";
-import { ACTION_CAP } from "../lib/roles/access";
+import { ACTION_CAP, ACTIONS } from "../lib/roles/access";
 import { READ_ONLY_ACTIONS } from "../lib/vault/licence";
 
 /** A minimal in-memory stand-in for an OPFS directory: just what VaultStorage uses. */
@@ -46,7 +46,9 @@ test("B-3: the recovery commands are wired, guarded and need no extra capability
   assert.equal(ACTION_CAP.vaultReset, null); assert.equal(ACTION_CAP.passphraseChange, null);
   assert.ok(!READ_ONLY_ACTIONS.has("vaultReset") && !READ_ONLY_ACTIONS.has("passphraseChange"));
   const src = readFileSync("lib/vault/service.ts", "utf8");
-  assert.match(src, /licenceGuard\(action:Action\) \{ if \(action === "vaultReset"\) return; this\.licence\.guard\(action\); \}/);
+  // 9.3: Start again's "no licence needed" rule now sits in the command table rather than a special case in the service.
+  assert.equal(ACTIONS.vaultReset.mode, "always"); assert.equal(ACTIONS.passphraseChange.mode, "write");
+  assert.match(src, /licenceGuard\(action:Action\) \{ this\.licence\.guard\(action\); \}/);
   const reset = src.slice(src.indexOf("async vaultReset()"), src.indexOf("async passphraseChange("));
   assert.match(reset, /if \(this\.engine\) throw new VaultError\("STATE"/, "start again only while locked");
   assert.match(reset, /await this\.lease\(\);[^]*await this\.storage\.clear\(\)/, "and only while no other tab holds the vault");

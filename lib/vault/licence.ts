@@ -2,7 +2,9 @@ import { licenceWritable, lowerTier, type LicenceClaims, type LicenceEnvelope } 
 import { verifyLicence } from '../licence-verify';
 import { VaultError, type Action, type Scope, type Tier } from './protocol';
 import { msg } from "../i18n/core";
-export const READ_ONLY_ACTIONS = new Set<Action>(['benchState','benchPreview','winLoss','templateVendors','agentState','agentRows','indexState','indexSkus','deadState','deadRows','relayLocal','quoteGuidance','quoteCrossSell','folderGet','folderSet','reportState','roiV2','roiRows','scorecard','simOptions','simRun','simRows','vendorSheets','vendorReview','vendorReviewQuotes','vendorPpv','vendorPpvLines','supplierClaims','supplierPurchases','supplierProgress','supplierClaimPreview','customerList','productList','sourceRemovePreview','gridTotals','rebateProgress','rebateState','rebateRows','homeMonitor','competitorList','priceGrid','priceGridPaste','ruleWhatIf','priceLandedState','serviceOrders','marginBridge','priceOpsState','priceExceptions','priceExpiry','init','licenceSet','unlock','lock','touch','status','storage','save','verify','search','priceCheck','quoteGet','quoteList','home','checklist','roleList','rolePreview','cleanupScan','cleanupHistory','costBasis','pricingState','rulePreview','backupStatus','backupConfigure','backupNow','backupExport','studioState','studioDownload','studioZip','sources','fixGroups','fixRows','health','marginWaterfall','marginDrill','marginWhale','marginMath','leaks','leakRows','roi','reconcile','cancel']);
+// Roadmap 9.3: read or write is marked beside each command's capability in lib/roles/access.ts (ACTIONS); this re-export keeps old imports working.
+export { READ_ONLY_ACTIONS } from "../roles/access";
+import { ACTIONS } from "../roles/access";
 export class VaultLicence {
   claims: LicenceClaims | null = null;
   offline = false;
@@ -16,7 +18,7 @@ export class VaultLicence {
   get tier(): Tier { return this.claims?.tier ?? 'starter'; }
   effective(tier:Tier) { return lowerTier(tier,this.tier); }
   assert() { if (!this.writable) throw new VaultError('LICENCE',this.claims?.reason || msg("licence.yourLicenceIsUnavailable")); }
-  guard(action:Action) { if(!READ_ONLY_ACTIONS.has(action))this.assert(); }
+  guard(action:Action) { if(ACTIONS[action].mode==="write")this.assert(); }
   view() { return {writable:this.writable,tier:this.tier,offline:this.offline,until:this.claims ? String((this.offline?this.claims.offlineUntil:this.claims.expires)*1000) : null,reason:this.writable?'':this.claims?.reason||msg("licence.reconnectToVerifyYour")}; }
 }
 

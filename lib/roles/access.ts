@@ -57,54 +57,63 @@ export const intersect = (a: Cap[], b: Cap[]) => a.filter(c => b.includes(c));
  * progress, storage). Every command must be listed: TypeScript and tests/roles.test.ts
  * fail when a new command is added without a decision.
  */
-export const ACTION_CAP: Record<Action, Cap | null> = {
-  reportState:'cost',reportCheck:'cost',reportExport:'cost',roiV2:'cost',roiRows:'cost',roiRecord:'reconcile',roiVoid:'reconcile',scorecard:'quote',scorecardOptIn:'quote',
-  vendorSheets:'cost',vendorReview:'cost',vendorReviewQuotes:'cost',vendorPpv:'cost',vendorPpvLines:'cost',
+/** Roadmap 9.3 (audit B-6): whether a command only reads, writes, or may run with no licence at all. A command that writes
+ *  needs a writable licence; a read keeps working while the licence is read-only. Kept beside the capability so the two
+ *  cannot drift apart (they were two hand-kept lists before). */
+export type Mode = "read" | "write" | "always";
+const r = (cap: Cap | null) => ({ cap, mode: "read" as Mode }), w = (cap: Cap | null) => ({ cap, mode: "write" as Mode }), always = (cap: Cap | null) => ({ cap, mode: "always" as Mode });
+export const ACTIONS: Record<Action, { cap: Cap | null; mode: Mode }> = {
+  reportState:r("cost"),reportCheck:w("cost"),reportExport:w("cost"),roiV2:r("cost"),roiRows:r("cost"),roiRecord:w("reconcile"),roiVoid:w("reconcile"),scorecard:r("quote"),scorecardOptIn:w("quote"),
+  vendorSheets:r("cost"),vendorReview:r("cost"),vendorReviewQuotes:r("cost"),vendorPpv:r("cost"),vendorPpvLines:r("cost"),
   // 7E-2: the historical simulator is a pricing simulation (every role with "pricing" also has "cost"); Scale only.
-  simOptions:'pricing',simRun:'pricing',simRows:'pricing',
+  simOptions:r("pricing"),simRun:r("pricing"),simRows:r("pricing"),
   // 8A: deal guidance and cross-sell are Quote Desk reads; rep-safe and scanned for decision 16 (tests/quotes.test.ts).
-  quoteGuidance:'quote',quoteCrossSell:'quote',
+  quoteGuidance:r("quote"),quoteCrossSell:r("quote"),
   // v2.6 gap 2: local yes/no for the relay set-up card (reviewed for decision 16 in tests/quotes.test.ts).
-  relayLocal:'collaborate',
+  relayLocal:r("collaborate"),
   // 8B-1: Margin Drain inbox and cost index triggers read cost; saving settings and triggers is a pricing decision.
-  agentState:'cost',agentRows:'cost',agentRun:'cost',agentMark:'cost',agentSettingsSave:'pricing',indexState:'cost',indexSkus:'cost',indexTriggerSave:'pricing',indexTriggerDelete:'pricing',deadState:'cost',benchState:'cost',benchPreview:'cost',benchMapSave:'cost',benchShared:'cost',benchFiguresSave:'cost',benchWithdrawn:'cost',deadRows:'cost',deadSettingsSave:'pricing',deadDraft:'pricing',
+  agentState:r("cost"),agentRows:r("cost"),agentRun:w("cost"),agentMark:w("cost"),agentSettingsSave:w("pricing"),indexState:r("cost"),indexSkus:r("cost"),indexTriggerSave:w("pricing"),indexTriggerDelete:w("pricing"),deadState:r("cost"),benchState:r("cost"),benchPreview:r("cost"),benchMapSave:w("cost"),benchShared:w("cost"),benchFiguresSave:w("cost"),benchWithdrawn:w("cost"),deadRows:r("cost"),deadSettingsSave:w("pricing"),deadDraft:w("pricing"),
   // 7F-2: folder re-import is an import (Import Studio, every tier).
-  folderGet:'data',folderSet:'data',studioFolder:'data',
-  supplierClaims:'cost',supplierPurchases:'cost',supplierProgress:'cost',supplierClaimPreview:'cost',supplierClaimSave:'rebateManage',supplierClaimStatus:'rebateManage',supplierClaimExport:'rebateManage',
-  customerList:'data',productList:'data',noteSet:'data',sourceRemovePreview:'data',
-  gridTotals:'view',
-  rebateProgress:'rebates',rebateState:'cost',rebateRows:'cost',rebateSave:'rebateManage',rebateDelete:'rebateManage',rebateRecalculate:'rebateManage',
-  currencySet: "roles",
-  competitorList:"cost",
-  homeMonitor:"cost",
-  competitorAdd:"pricing",
-  priceGrid:"pricing",
-  priceGridPaste:"pricing",
-  priceGridDraft:"pricing",
-  ruleWhatIf:"pricing",
-  priceLandedState:"pricing",
-  priceLandedCheck:"pricing",
-  serviceOrders:"cost",
-  serviceFlag:"pricing",
-  marginBridge:"cost",priceOpsState:"pricing",priceExceptions:"cost",priceExpiry:"cost",pricePlan:"pricing",priceRollback:"pricing",priceLetter:"pricing",quoteOutcome:"quote",winLoss:"quote",auditPack:"audit",templateVendors:"cost",negotiationSheet:"cost",rebateAgreement:"rebateManage",
-  relayView:"collaborate",relayRegister:"collaborate",relayJoin:"collaborate",relayRotate:"collaborate",relaySync:"collaborate",relayShare:"collaborate",relayRequest:"collaborate",relayDecide:"collaborate",relayComment:"collaborate",relayRetry:"collaborate",relayDiscard:"collaborate",
-  capacityUpgrade: "roles", licenceSet: null, init: null, create: null, unlock: null, vaultReset: null, passphraseChange: null, lock: null, touch: null, cancel: null, save: null, storage: null,
-  status: null, search: "view", home: "view", checklist: "view", checklistMark: "roles", roleList: "view",
+  folderGet:r("data"),folderSet:r("data"),studioFolder:w("data"),
+  supplierClaims:r("cost"),supplierPurchases:r("cost"),supplierProgress:r("cost"),supplierClaimPreview:r("cost"),supplierClaimSave:w("rebateManage"),supplierClaimStatus:w("rebateManage"),supplierClaimExport:w("rebateManage"),
+  customerList:r("data"),productList:r("data"),noteSet:w("data"),sourceRemovePreview:r("data"),
+  gridTotals:r("view"),
+  rebateProgress:r("rebates"),rebateState:r("cost"),rebateRows:r("cost"),rebateSave:w("rebateManage"),rebateDelete:w("rebateManage"),rebateRecalculate:w("rebateManage"),
+  currencySet:w("roles"),
+  competitorList:r("cost"),
+  homeMonitor:r("cost"),
+  competitorAdd:w("pricing"),
+  priceGrid:r("pricing"),
+  priceGridPaste:r("pricing"),
+  priceGridDraft:w("pricing"),
+  ruleWhatIf:r("pricing"),
+  priceLandedState:r("pricing"),
+  priceLandedCheck:w("pricing"),
+  serviceOrders:r("cost"),
+  serviceFlag:w("pricing"),
+  marginBridge:r("cost"),priceOpsState:r("pricing"),priceExceptions:r("cost"),priceExpiry:r("cost"),pricePlan:w("pricing"),priceRollback:w("pricing"),priceLetter:w("pricing"),quoteOutcome:w("quote"),winLoss:r("quote"),auditPack:w("audit"),templateVendors:r("cost"),negotiationSheet:w("cost"),rebateAgreement:w("rebateManage"),
+  relayView:w("collaborate"),relayRegister:w("collaborate"),relayJoin:w("collaborate"),relayRotate:w("collaborate"),relaySync:w("collaborate"),relayShare:w("collaborate"),relayRequest:w("collaborate"),relayDecide:w("collaborate"),relayComment:w("collaborate"),relayRetry:w("collaborate"),relayDiscard:w("collaborate"),
+  capacityUpgrade:w("roles"), licenceSet:r(null), init:r(null), create:w(null), unlock:r(null), vaultReset:always(null), passphraseChange:w(null), lock:r(null), touch:r(null), cancel:r(null), save:r(null), storage:r(null),
+  status:r(null), search:r("view"), home:r("view"), checklist:r("view"), checklistMark:w("roles"), roleList:r("view"),
   // Previewing a role can only remove capabilities (see accessFor), so anyone may use it, which also lets an Owner leave a preview.
-  roleSet: "roles", roleRemove: "roles", rolePreview: "view",
-  pricingState: "guards", pricingOwner: "roles", guardSet: "pricing", ruleSave: "pricing", ruleSimulate: "pricing", rulePreview: "pricing", ruleApprove: "approve", priceExport: "export",
-  backupStatus: "backup", backupConfigure: "backup", backupNow: "backup", backupExport: "backup", backupRestore: null,
-  verify: "audit",
-  studioAdd: "data", studioUpdate: "data", studioDrop: "data", studioClear: "data", studioState: "data", studioPlan: "data", studioCommit: "data", studioDownload: "data", studioZip: "data",
-  recipeSave: "data", recipeApply: "data", sources: "data", sourceRemove: "data",
-  fixGroups: "data", fixRows: "data", fixSet: "data", fixDismiss: "data", fixRecheck: "data", health: "data",
-  playgroundLoad: "data", playgroundRemove: "data", creditsLoad: "data",
-  cleanupScan: "data", cleanupApply: "data", cleanupUndo: "data", cleanupMergeAll: "data", cleanupUndoMany: "data", cleanupHistory: "data", costBasis: "cost", costBasisSet: "data",
-  marginWaterfall: "cost", marginDrill: "cost", marginWhale: "cost", marginMath: "cost", leaks: "cost", leakRows: "cost", leakReport: "cost", roi: "cost",
-  reconcile: "reconcile", reconAccept: "reconcile", reconRebuild: "reconcile",
+  roleSet:w("roles"), roleRemove:w("roles"), rolePreview:r("view"),
+  pricingState:r("guards"), pricingOwner:w("roles"), guardSet:w("pricing"), ruleSave:w("pricing"), ruleSimulate:w("pricing"), rulePreview:r("pricing"), ruleApprove:w("approve"), priceExport:w("export"),
+  backupStatus:r("backup"), backupConfigure:r("backup"), backupNow:r("backup"), backupExport:r("backup"), backupRestore:w(null),
+  verify:r("audit"),
+  studioAdd:w("data"), studioUpdate:w("data"), studioDrop:w("data"), studioClear:w("data"), studioState:r("data"), studioPlan:w("data"), studioCommit:w("data"), studioDownload:r("data"), studioZip:r("data"),
+  recipeSave:w("data"), recipeApply:w("data"), sources:r("data"), sourceRemove:w("data"),
+  fixGroups:r("data"), fixRows:r("data"), fixSet:w("data"), fixDismiss:w("data"), fixRecheck:w("data"), health:r("data"),
+  playgroundLoad:w("data"), playgroundRemove:w("data"), creditsLoad:w("data"),
+  cleanupScan:r("data"), cleanupApply:w("data"), cleanupUndo:w("data"), cleanupMergeAll:w("data"), cleanupUndoMany:w("data"), cleanupHistory:r("data"), costBasis:r("cost"), costBasisSet:w("data"),
+  marginWaterfall:r("cost"), marginDrill:r("cost"), marginWhale:r("cost"), marginMath:r("cost"), leaks:r("cost"), leakRows:r("cost"), leakReport:w("cost"), roi:r("cost"),
+  reconcile:r("reconcile"), reconAccept:w("reconcile"), reconRebuild:w("reconcile"),
   // 7B. Cost and margin inside a quote view also need "cost" (checked in the service, not here).
-  priceCheck: "quote", quoteCreate: "quote", quoteLines: "quote", quoteSubmit: "quote", quoteWithdraw: "quote", quoteGet: "quote", quoteList: "quote", quoteShare: "quote", quoteRelaySync: "quote", quoteDecide: "quoteApprove",
+  priceCheck:r("quote"), quoteCreate:w("quote"), quoteLines:w("quote"), quoteSubmit:w("quote"), quoteWithdraw:w("quote"), quoteGet:r("quote"), quoteList:r("quote"), quoteShare:w("quote"), quoteRelaySync:w("quote"), quoteDecide:w("quoteApprove"),
 };
+/** The capability each command needs, read from ACTIONS. */
+export const ACTION_CAP = Object.fromEntries(Object.entries(ACTIONS).map(([action, v]) => [action, v.cap])) as Record<Action, Cap | null>;
+/** Commands that keep working while the licence is read-only, read from ACTIONS. */
+export const READ_ONLY_ACTIONS: ReadonlySet<Action> = new Set((Object.keys(ACTIONS) as Action[]).filter(action => ACTIONS[action].mode === "read"));
 /** Sections of the app a role can open (the worker still checks every command). */
 export function sectionsFor(caps: Cap[]): string[] {
   const has = (c: Cap) => caps.includes(c);
