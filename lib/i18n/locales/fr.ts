@@ -2557,6 +2557,8 @@ export const fr: Catalog = {
   "glossary.auditChain": "Chaîne d'audit",
   "glossary.auditChain.def": "Un journal infalsifiable sur cet appareil : chaque entrée contient un hachage de la précédente, si bien qu'un enregistrement modifié, manquant ou réordonné est détecté.",
   "common.definitionSeparator": " : ",
+  "common.retry": "Réessayer",
+  "bench.withdrawFinished": "Un retrait envoyé plus tôt au serveur est maintenant aussi enregistré sur cet appareil.",
   "palette.title": "Palette de commandes",
   "palette.search": "Rechercher des écrans, des commandes, des SKU et des clients",
   "palette.placeholder": "Tapez pour filtrer les écrans et les commandes, ou au moins 2 caractères d'un SKU ou d'un client",

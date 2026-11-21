@@ -55,3 +55,28 @@ test("roadmap 9.4: the engine warm-up is one value that moves snapshot, copying,
   const src = readFileSync("lib/vault/engine.ts", "utf8");
   assert.doesNotMatch(src, /warmDone|warmReady|writable: boolean/, "the four warm-up flags are gone");
 });
+
+test("roadmap 9.5: one loading/ready/failed machine for worker reads; a failure offers Retry instead of loading forever", async () => {
+  const { nextQuery, initialQuery } = await import("../components/local/queryState");
+  let s = initialQuery<number>(); assert.deepEqual(s, { status: "loading", data: null, error: "" });
+  s = nextQuery(s, { type: "fail", error: "No" }); assert.deepEqual(s, { status: "failed", data: null, error: "No" });
+  s = nextQuery(s, { type: "start" }); assert.equal(s.status, "loading"); assert.equal(s.error, "", "a retry clears the old error");
+  s = nextQuery(s, { type: "done", data: 7 }); assert.deepEqual(s, { status: "ready", data: 7, error: "" });
+  s = nextQuery(s, { type: "start" }); assert.equal(s.data, 7, "a reload keeps showing the last data");
+  s = nextQuery(s, { type: "fail", error: "Again" }); assert.equal(s.data, 7, "a failed reload does not blank the panel");
+  assert.deepEqual(nextQuery(s, { type: "set", data: 9 }), { status: "ready", data: 9, error: "" }, "a write's answer replaces the data");
+  const hook = readFileSync("components/local/useVaultQuery.ts", "utf8");
+  assert.match(hook, /id === seq\.current/, "an answer from an older run is ignored");
+  const basis = readFileSync("components/local/CostBasisView.tsx", "utf8");
+  assert.match(basis, /useVaultQuery\(\(\) => client\.call\("costBasis", \{\}\)/); assert.match(basis, /query\.reload/);
+});
+
+test("roadmap 9.6: a benchmark withdrawal the server recorded but the vault did not is finished locally on the next load", () => {
+  const view = readFileSync("components/local/BenchmarksView.tsx", "utf8");
+  // The marker is set after the server confirms and cleared only after the vault records it.
+  assert.match(view, /await benchWithdraw\(\); setMarker\(pendingKey\);[^]*client\.call\("benchWithdrawn", \{\}\)\); clearMarker\(pendingKey\);/);
+  // On load: an active local share plus the marker means the vault's half never happened; it runs locally, with no request.
+  assert.match(view, /if \(readMarker\(pendingKey\)\) \{ if \(s\.shares\.some\(x => !x\.withdrawnAt\)\) \{ s = await client\.call\("benchWithdrawn", \{\}\);/);
+  assert.doesNotMatch(view.slice(view.indexOf("readMarker(pendingKey))"), view.indexOf("clearMarker(pendingKey); }")), /bench(Withdraw|Consent|Share)\(/, "reconciling makes no server call");
+  assert.match(readFileSync("components/local/VaultApp.tsx", "utf8"), /pendingKey=\{`rebatehq\.bench\.withdrawPending:\$\{scope\.tenantId\}:\$\{scope\.userId\}`\}/, "one marker per workspace and user");
+});

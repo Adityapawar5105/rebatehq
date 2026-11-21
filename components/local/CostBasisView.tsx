@@ -1,5 +1,7 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { Button, Notice } from "@/components/ui/ui";
+import { useVaultQuery } from "./useVaultQuery";
 import type { VaultClient } from "@/lib/vault/client";
 import type { BasisId, CostBasisView as View } from "@/lib/cost/basis";
 import { BASES, BASIS_LABEL, NO_CATEGORY } from "@/lib/cost/basis";
@@ -10,9 +12,11 @@ const money = (c: string) => fmt.currency(c);
 const groupName = (g: string) => g === NO_CATEGORY ? t("basis.noCategory") : g;
 /** Cost basis selector: margin under invoice, last, average and replacement cost, side by side, per product group. */
 export function CostBasisView({ client, version, busy, operation, canChoose }: { client: VaultClient; version: string; busy: boolean; operation: (f: () => Promise<void>) => Promise<void>; canChoose: boolean }) {
-  const [view, setView] = useState<View | null>(null), [note, setNote] = useState("");
-  useEffect(() => { let on = true; void client.call("costBasis", {}).then(v => { if (on) setView(v); }).catch(() => { if (on) setNote(msg("basis.couldNotLoadCost")); }); return () => { on = false; }; }, [client, version]);
-  if (!view) return <section className={styles.card} aria-busy="true"><h2>{t("basis.costBasis2")}</h2><p role="status">{say(note) || t("basis.comparingCostBases")}</p></section>;
+  // 9.5: the shared query hook; a failed load now says so and offers Retry instead of staying "comparing" forever.
+  const query = useVaultQuery(() => client.call("costBasis", {}), [client, version], msg("basis.couldNotLoadCost")), view = query.data, setView = query.set;
+  const [note, setNote] = useState("");
+  if (!view) return <section className={styles.card} aria-busy={query.status === "loading"} data-testid="basis-loading" data-status={query.status}><h2>{t("basis.costBasis2")}</h2>
+    {query.status === "failed" ? <Notice tone="warn" role="alert" actions={<Button size="sm" onClick={query.reload}>{t("common.retry")}</Button>}>{say(query.error)}</Notice> : <p role="status">{t("basis.comparingCostBases")}</p>}</section>;
   const choose = (group: string, basis: BasisId | null) => void operation(async () => { setView(await client.call("costBasisSet", { group, basis })); setNote(msg("basis.chosen", { group, basis: basis ? BASIS_LABEL[basis] : BASIS_LABEL.invoice })); });
   const cell = (c: { margin: string; rate: string; uncostedLines: string }) => <><strong>{money(c.margin)}</strong> · {fmt.percent(c.rate)}{c.uncostedLines !== "0" && <span className={styles.small}>{" "}{t("basis.linesUnknown", { count: Number(c.uncostedLines) })}</span>}</>;
   return <section className={styles.card} aria-labelledby="basis-heading" data-testid="cost-basis">
