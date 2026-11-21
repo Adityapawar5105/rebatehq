@@ -1129,6 +1129,33 @@ try {
   await page.getByTestId('quote-total').filter({hasText:'$500.00'}).waitFor();
   assert.equal(await page.getByTestId('price-1').count(),0,'A submitted quote is still editable');
   results.checks.quoteFlowUi={withdrawPending:true,typedPriceSubmitted:true,shareOrNotice:true,answerFirst:true,tabArrowKeys:true,lineThermometerOnOpen:true,discardConfirm:true};
+  // Phase 11 (21 Nov 2026): on the quote just submitted, the Owner sets the quote branding, downloads the customer PDF
+  // (prices only), revises it into a new version, sets that version's validity date, copies it, and exports a price list.
+  const quoteNumber=/Q-\d{4}-\d{4}/.exec(await page.locator('#quote-heading').innerText())?.[0];assert.ok(quoteNumber,'The open quote shows no number');
+  await page.getByRole('link',{name:'Settings',exact:true}).click();await page.getByTestId('quote-branding').waitFor();
+  await page.getByTestId('branding-company').fill('Gate Supply Co');await page.getByTestId('branding-terms').fill('Net 30 gate terms');
+  await page.getByTestId('branding-save').click();await page.getByRole('status').filter({hasText:'Quote branding saved.'}).waitFor();
+  await page.getByRole('link',{name:'Quotes',exact:true}).click();await page.getByRole('tab',{name:'History',exact:true}).click();
+  await page.getByRole('table',{name:'Quote history',exact:true}).locator('tbody').getByRole('button',{name:quoteNumber,exact:true}).click();
+  await page.locator('[data-testid="quote"][data-status="submitted"]').waitFor();
+  const [pdfDownload]=await Promise.all([page.waitForEvent('download'),page.getByTestId('quote-pdf').click()]);
+  const pdfText=(await readFile(await pdfDownload.path())).toString('latin1');
+  assert.ok(pdfText.startsWith('%PDF-')&&pdfText.includes('Gate Supply Co')&&pdfText.includes('Net 30 gate terms')&&pdfText.includes('Quote '+quoteNumber),'The customer PDF lacks the branding or the quote number');
+  assert.ok(!/Floor|Target|Margin|margin/.test(pdfText),'The customer PDF shows guardrails or margin');
+  await page.getByTestId('quote-revise').click();await page.locator('[data-testid="quote"][data-status="draft"]').waitFor();
+  await page.getByTestId('quote-revision-of').filter({hasText:quoteNumber}).waitFor();
+  assert.ok((await page.locator('#quote-heading').innerText()).includes(quoteNumber+'-R1'),'The revision is not numbered after the original');
+  const validTo=new Date(Date.now()+20*86400000).toLocaleDateString('en-CA');
+  await page.getByTestId('quote-validity-input').fill(validTo);await page.getByRole('button',{name:'Save validity date',exact:true}).click();
+  await page.getByTestId('quote-valid-until').filter({hasText:'Valid until'}).waitFor();
+  await page.getByTestId('quote-copy').click();await page.getByRole('status').filter({hasText:'Copied into a new draft quote'}).waitFor();
+  assert.equal(await page.getByTestId('quote-revision-of').count(),0,'A copy claims to revise another quote');
+  await page.getByRole('tab',{name:'Price Check',exact:true}).click();await page.getByTestId('check-customer').fill('E-CUSTOMER');
+  const [listDownload]=await Promise.all([page.waitForEvent('download'),page.getByTestId('price-list-csv').click()]);
+  const listText=(await readFile(await listDownload.path())).toString('utf8');
+  assert.ok(listText.includes('"product_id","description","category","uom","barcode","unit_price","price_basis"')&&listText.includes(priceSku),'The price list misses its header or the priced item');
+  assert.ok(!/cost|margin/i.test(listText),'The price list carries cost');
+  results.checks.quoteDeskUi={branding:true,customerPdfPricesOnly:true,reviseNumbered:true,validityDate:true,copy:true,priceList:true};
 
   // 7V: no section overflows horizontally at desktop or phone width, in light or dark; the phone menu opens
   // the navigation drawer and closes it again.
