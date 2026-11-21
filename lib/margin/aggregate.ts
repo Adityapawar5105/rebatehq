@@ -70,10 +70,20 @@ FROM ${input} l JOIN s USING (invoice_id) GROUP BY l.invoice_id ORDER BY l.invoi
   return { found, invoices: String(counts.invoices), customerMonths: String(counts.cms), lines: String(counts.lines) };
 }
 /** SQL that replaces the open issues with the differences just found; accepted issues keep their status. Run in a transaction. */
+/** A difference's ID covers its level, scope, component and both amounts, so the same ID means the same difference. */
+export const issueId = (f: Omit<ReconIssue, "id" | "status">) => idFor([f.level, f.scopeKey, f.component, f.imported ?? "", f.waterfall ?? ""]);
+/** Roadmap 14.5 (audit L-1): true when recording `found` would change the open differences. Accepted ones keep their
+ * status (the insert skips them), so they are left out of the comparison. */
+export async function differencesChanged(engine: Engine, found: Omit<ReconIssue, "id" | "status">[]) {
+  const ids = async (status: string) => new Set((await engine.conn.query(`SELECT id FROM recon_issues WHERE status='${status}'`)).toArray().map(r => String(r.id)));
+  const open = await ids("open"), accepted = await ids("accepted"), next = new Set<string>();
+  for (const f of found) { const id = await issueId(f); if (!accepted.has(id)) next.add(id); }
+  return next.size !== open.size || [...next].some(id => !open.has(id));
+}
 export async function recordSql(found: Omit<ReconIssue, "id" | "status">[], at: string) {
   const values: string[] = [];
   for (const f of found) {
-    const id = await idFor([f.level, f.scopeKey, f.component, f.imported ?? "", f.waterfall ?? ""]);
+    const id = await issueId(f);
     const n = (v: string | null) => v === null ? "NULL" : `CAST(${sqlText(v)} AS HUGEINT)`;
     values.push(`(${sqlText(id)},${sqlText(f.level)},${sqlText(f.scopeKey)},${sqlText(f.component)},${n(f.imported)},${n(f.waterfall)},${f.sourceId === null ? "NULL" : sqlText(f.sourceId)},${f.sourceRow === null ? "NULL" : f.sourceRow},${sqlText(f.message)},'open',${sqlText(at)})`);
   }

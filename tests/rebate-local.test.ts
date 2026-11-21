@@ -41,7 +41,7 @@ import {createStage,resetStage,validate,commitSql,removeChildrenSql,CODES,issueM
 import {ROLE_FIELDS,type Settings} from '../lib/studio/formats';
 import {sqlText as Q} from '../lib/spike/exact';
 import {recheck,fixSetSql,dismissSql,fixGroups} from '../lib/studio/fixlater';
-import {rebuildAggregates,findDifferences} from '../lib/margin/aggregate';
+import {rebuildAggregates,findDifferences,differencesChanged,issueId,recordSql} from '../lib/margin/aggregate';
 import {waterfall,math,drill} from '../lib/margin/views';
 const settings:Settings={sheet:null,headerRow:0,headerDepth:1,delimiter:',',encoding:'utf-8',decimal:'dot',dateFormat:'YYYY-MM-DD'};
 const file={ord:0,role:'rebate_agreement' as const,name:'synthetic-agreement.csv',bytes:1,fingerprint:'',alignment:ROLE_FIELDS.rebate_agreement.map((f,index)=>({field:f.name,index})),settings,keyed:true,headers:ROLE_FIELDS.rebate_agreement.map(f=>f.name),colOffset:0};
@@ -108,5 +108,19 @@ test('7D-1 app-open reminder uses the next threshold and the local period end; S
   let progress=(await rebates.progress(e)).rows[0];assert.equal(progress.remaining,'500000');assert.equal(progress.nextRate,'4.000');assert.equal(progress.reminder,true);
   c.query("UPDATE rebate_programs SET enabled=false");await rebates.rebuildAccruals(e);progress=(await rebates.progress(e)).rows[0];assert.equal(progress.reminder,false);
   c.query("INSERT INTO products(product_id) VALUES('a')");await assert.rejects(cleanupPlan(e,'merge_duplicates','A',null,'actor','2026-11-08'),/agreement inclusion/);
+ }finally{c.close();}
+});
+test('roadmap 14.5: reconcile records differences only when they changed; accepted ones are left out of the comparison',async()=>{
+ const {c,e}=await fixture();try{
+  const issue=(scopeKey:string,imported:string)=>({level:'invoice' as const,scopeKey,component:'rebate',imported,waterfall:'0',sourceId:null,sourceRow:null,message:'synthetic'});
+  const a=issue('I-1','5'),b=issue('I-2','7');
+  assert.equal(await differencesChanged(e,[]),false,'no differences and none open');
+  assert.equal(await differencesChanged(e,[a,b]),true);c.query(await recordSql([a,b],'2026-11-21T00:00:00Z'));
+  assert.equal(await differencesChanged(e,[a,b]),false,'the same differences again are not rewritten');
+  assert.equal(await differencesChanged(e,[issue('I-2','8'),a]),true,'a changed amount is a new difference');
+  c.query(`UPDATE recon_issues SET status='accepted' WHERE id='${await issueId(a)}'`);
+  assert.equal(await differencesChanged(e,[a,b]),false,'an accepted difference found again changes nothing');
+  assert.equal(await differencesChanged(e,[a]),true,'a resolved open difference is a change');
+  assert.equal(await differencesChanged(e,[]),true);
  }finally{c.close();}
 });

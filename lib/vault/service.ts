@@ -49,7 +49,7 @@ import { dismissSql, fixGroups, fixRows, fixSetSql, recheck } from "../studio/fi
 import { health } from "../studio/health";
 import { PLAYGROUND_PREFIX, SAMPLE_COUNTS_SQL, generatePlayground, sampleState } from "../studio/playground";
 import { AUTO_LOCK_MS, LOCK_WARNING_MS, LEASE_WAIT_MS, VaultError, vaultPhase, type LeaksView, type Scope, type Tier, type VaultStatus } from "./protocol";
-import { REBUILD_SQL, effectiveRebuildSql, findDifferences, reconSummary, recordSql } from "../margin/aggregate";
+import { REBUILD_SQL, differencesChanged, effectiveRebuildSql, findDifferences, reconSummary, recordSql } from "../margin/aggregate";
 import { drill, math, waterfall, whale, type Dim, type Filters, type Metric } from "../margin/views";
 import { findLeaks, leakRows, scopeTotals, type LeakResult } from "../margin/leaks";
 import { REMOVE_SAMPLE_SQL, ledgerSql, roiSummary } from "../margin/roi";
@@ -764,9 +764,9 @@ export class VaultService {
   /** Re-run reconciliation; open differences are replaced, accepted ones keep their status. */
   async reconcile() {
     const engine = this.requireEngine(), d = await findDifferences(engine), at = new Date().toISOString();
-    const open = Number((await engine.conn.query("SELECT count(*) AS n FROM recon_issues WHERE status='open'")).toArray()[0].n);
-    // A read-only command (audit B-6): open differences are recorded only while the licence allows writes.
-    if ((d.found.length || open) && this.licence.writable) {
+    // A read-only command (audit B-6): open differences are recorded only while the licence allows writes. Roadmap 14.5
+    // (audit L-1): and only when they changed; before, every visit with an open difference rewrote and saved the vault.
+    if (this.licence.writable && await differencesChanged(engine, d.found)) {
       const w = await this.writable();
       await w.conn.query("BEGIN");
       try { await w.conn.query(await recordSql(d.found, at)); await w.conn.query("COMMIT"); } catch (error) { await w.conn.query("ROLLBACK").catch(() => undefined); throw error; }
