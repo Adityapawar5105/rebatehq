@@ -7,7 +7,7 @@
 | PR | What | CI `verify` | Commit |
 |---|---|---|---|
 | #16 | CI fixes for the red runs on `main` (#194, #196, #197): Node pinned to 24.22.1, the Supabase start retried once, the killed-tab close bounded | [CI #198](https://github.com/Adityapawar5105/rebatehq/actions/runs/44906135199) passed; `main` after the merge passed [CI #200](https://github.com/Adityapawar5105/rebatehq/actions/runs/44931126427) | `adc05d0` |
-| #17 | Phase 11: Quote Desk completion (vault v22) | [CI #199](https://github.com/Adityapawar5105/rebatehq/actions/runs/44906180815) **failed** (see below); after the fix, PR17_RUN | `5fc157d` |
+| #17 | Phase 11: Quote Desk completion (vault v22) | [CI #199](https://github.com/Adityapawar5105/rebatehq/actions/runs/44906180815) **failed** (see below); after the fix, [CI #201](https://github.com/Adityapawar5105/rebatehq/actions/runs/44931475576) passed | `5fc157d` |
 | #18 | Phase 13: clean-up, OPERATIONS.md, parallel CI, client-address rate limit | [CI #202](https://github.com/Adityapawar5105/rebatehq/actions/runs/44931718412) passed: the first run of the three parallel jobs (`unit`, `chromium`, `firefox`) and the `verify` job that needs all three | `11a26c9` |
 | 13.10 | Actions on Node 24 | ACTIONS_RUN | `d7404aa` |
 | Phase 14 | Performance 14.1 to 14.5, the 14.6 study and its benchmark | PHASE14_RUN | PHASE14_SHA |
@@ -37,6 +37,10 @@ Copy and revise a quote, a validity date with an expired flag, a customer PDF wi
 | 14.3 (X-5) | A page builds its context from one lookup of the person and their memberships |
 | 14.4 (N-2) | The offline copy prunes old build files. `sw.js` does not change per release, so `activate` cannot do it. A build is named by a hash of the `/_next/static/` paths its page references. Each stored file carries the build that last used it, and storing a new build's page deletes files used by neither that build nor the previous one |
 | 14.5 (L-1) | A Reconciliation visit writes and saves only when the open differences changed |
+
+### Local checks before the push
+
+335 TS and 78 JS unit tests passed, and typecheck passed. The local Chromium lab gate passed with 72 named checks, including `monitor`, `margin`, `rebates`, `offlineUi` and `phase8Ui`. A new unit test makes the engine stop during Home's finder run; it fails without the 14.1 guard.
 
 ### Local measurements (1 million lines, not CI evidence)
 
