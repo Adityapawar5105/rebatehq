@@ -128,21 +128,21 @@ asserts the 1M target; the 2M miss is recorded, with the cap recommendation in
 `SPIKE_RESULTS.md`. Startup numbers before the whole-browser restart change
 (about 2.6s at 2M) were page reloads and are not substituted for these results.
 
-Evidence: [Chrome](./vault-evidence/chrome-2026-11-03.json),
-[Edge](./vault-evidence/msedge-2026-11-03.json),
-[worker/asset hashes](./vault-evidence/assets-2026-11-03.json).
+Evidence: [Chrome](../../vault-evidence/chrome-2026-11-03.json),
+[Edge](../../vault-evidence/msedge-2026-11-03.json),
+[worker/asset hashes](../../vault-evidence/assets-2026-11-03.json).
 Only synthetic counts, timings and checks are retained; invoice totals and
-cell contents are removed. [STORAGE_FINDINGS.md](./STORAGE_FINDINGS.md) records
+cell contents are removed. [STORAGE_FINDINGS.md](../../STORAGE_FINDINGS.md) records
 the controlled storage probe and its unresolved limits.
 Final strengthened marker-sensor smoke runs also pass in
-[Chrome](./vault-evidence/chrome-privacy-2026-11-03.json) and
-[Edge](./vault-evidence/msedge-privacy-2026-11-03.json), checking decimal,
+[Chrome](../../vault-evidence/chrome-privacy-2026-11-03.json) and
+[Edge](../../vault-evidence/msedge-privacy-2026-11-03.json), checking decimal,
 integer-cent and formatted-money variants plus serialized console arguments.
 
 The resumed full runs also pass with the final hardening and first-change
-instrumentation: [Chrome](./vault-evidence/chrome-resume-2026-11-03.json),
-[Edge](./vault-evidence/msedge-resume-2026-11-03.json),
-[current asset hashes](./vault-evidence/assets-resume-2026-11-03.json).
+instrumentation: [Chrome](../../vault-evidence/chrome-resume-2026-11-03.json),
+[Edge](../../vault-evidence/msedge-resume-2026-11-03.json),
+[current asset hashes](../../vault-evidence/assets-resume-2026-11-03.json).
 Their startup samples are 2.665/2.668 s at 1M and 3.204/3.209 s at 2M.
 `VAULT_RESULTS.md` retains the requested earlier 2.65/2.68 and 3.16/3.18 s
 baseline alongside these later trials. The provisional Scale cap stays 1M.

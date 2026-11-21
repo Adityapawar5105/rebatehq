@@ -8,7 +8,7 @@ DuckDB limit and spill disabled. SQL simulation: **273 ms**; through saved
 preview, audit and encrypted snapshot: **3,448 ms**; 50-row preview: **18 ms**.
 SQL meets the 2 s target locally; full user wait exceeds it. No temporary
 invoice copy. Synthetic results are not a guarantee for arbitrary SKU/tier
-distributions. Scale stays at 1M lines. Implementation acceptance is verified in [MarginDesk CI #55](https://github.com/Adityapawar5105/rebatehq/actions/runs/41814159704), 4 November 2026, commit `7fe3db82951e82d5ba8a049158a7ef0a17a69597`; the authenticated gate ran 25 named checks. These pricing timings remain local measurements. See CHUNK_4E_VERIFICATION.md.
+distributions. Scale stays at 1M lines. Implementation acceptance is verified in [MarginDesk CI #55](https://github.com/Adityapawar5105/rebatehq/actions/runs/41814159704), 4 November 2026, commit `7fe3db82951e82d5ba8a049158a7ef0a17a69597`; the authenticated gate ran 25 named checks. These pricing timings remain local measurements. See docs/evidence/CHUNK_4E_VERIFICATION.md.
 
 **Chunk 4B — CI-verified in [MarginDesk CI #44](https://github.com/Adityapawar5105/rebatehq/actions/runs/41660146540), 3 November 2026, commit `c382f7d`.** The GitHub job API confirms step 18, "Required authenticated local-vault privacy gate", completed successfully (not skipped). Its log records `pnpm test:vault:privacy --browser=chromium`, `auth: true`, `status: passed`: **one authenticated harness with 14 named checks**, not a Playwright test-runner count. The separate unit suite passed **67 JavaScript + 56 TypeScript = 123 tests**.
 
@@ -127,7 +127,7 @@ the final suite/build. No synthetic Supabase configuration was set. Read-only
 used to inspect the preserved work and test progress; they changed no files.
 
 The original command/SQL execution register and complete grouped file list are
-in [CHUNK_4B_VERIFICATION.md](./CHUNK_4B_VERIFICATION.md). The governing
+in [docs/evidence/CHUNK_4B_VERIFICATION.md](docs/evidence/CHUNK_4B_VERIFICATION.md). The governing
 **blueprint is unchanged**, as are locked migrations and their hashes.
 
 ## CI #45 privacy-gate failure and lease fix — 3 Nov 2026
@@ -174,7 +174,7 @@ The 4B open item (first change after unlock: 7.6 s at 1M lines, about 15 s at 2M
 | First change after warm-up, 1M / 2M (committed + encrypted save) | **767** / 1,595 ms | **708** / 1,504 ms |
 | Max UI long task during first change | 0 ms | 0 ms |
 
-The target (first change after warm-up under 2 s at 1M lines) is met locally in both browsers. An import started during warm-up waits for it (up to about 7 s at 1M lines) while the UI stays responsive. The 2M startup still misses 3 s, so the Scale cap stays at 1M lines. 4C-1 is CI-verified in [CI #48](https://github.com/Adityapawar5105/rebatehq/actions/runs/41690570143) (`ea4e5b6`); these timings are local. Details: [CHUNK_4C1_VERIFICATION.md](./CHUNK_4C1_VERIFICATION.md).
+The target (first change after warm-up under 2 s at 1M lines) is met locally in both browsers. An import started during warm-up waits for it (up to about 7 s at 1M lines) while the UI stays responsive. The 2M startup still misses 3 s, so the Scale cap stays at 1M lines. 4C-1 is CI-verified in [CI #48](https://github.com/Adityapawar5105/rebatehq/actions/runs/41690570143) (`ea4e5b6`); these timings are local. Details: [docs/evidence/CHUNK_4C1_VERIFICATION.md](docs/evidence/CHUNK_4C1_VERIFICATION.md).
 
 ## Chunk 4D margin views — 4 Nov 2026
 

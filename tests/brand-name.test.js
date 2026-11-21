@@ -12,7 +12,7 @@ const TEXT = /\.(md|ts|tsx|js|mjs|json|html|css|yml|yaml|toml|sql|txt|example)$/
 // Whole files that legitimately mention the old name.
 const LEGACY_FILES = new Set([
   'migrations.lock', 'schema.sql',
-  'lib/vault/storage.ts', 'lib/vault/backup.ts', 'app.js',
+  'lib/vault/storage.ts', 'lib/vault/backup.ts',
   'scripts/check-schema.mjs',
   'tests/brand-name.test.js', 'tests/rename-app-role.test.js', 'tests/vault-legacy-storage.test.ts',
   'tests/browser/vault-worker.ts', 'tests/chunk2a-schema.test.js', 'tests/schema-migration-lint.test.js',

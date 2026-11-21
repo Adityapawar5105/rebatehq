@@ -91,9 +91,8 @@ test("8R: the migration drops only the wave-2 list, with no CASCADE and no IF EX
 
 test("8R: no server code reads a retired wave-2 table; the legacy rebates page is a fixed not-found", () => {
   assert.ok(!existsSync("lib/rebates.ts"), "the server rebate helper is removed");
-  const page = readFileSync("app/legacy/rebates/page.tsx", "utf8");
-  assert.match(page, /export default function RetiredPage\(\) \{ notFound\(\); \}/);
-  assert.doesNotMatch(page, /withDatabase|@\/lib\/db/);
+  // Roadmap 13.3 (21 Nov 2026): the whole legacy page tree, including the not-found rebates page, is removed.
+  assert.ok(!existsSync("app/legacy"), "the legacy pages are retired");
   const files = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap(e => e.isDirectory() ? files(join(dir, e.name)) : /\.(ts|tsx|mjs)$/.test(e.name) ? [join(dir, e.name)] : []);
   // Server code: every route and page, and the top-level server helpers (lib subfolders are local-vault code).
   const server = [...files("app"), ...readdirSync("lib").filter(n => /\.(ts|tsx)$/.test(n)).map(n => join("lib", n))];

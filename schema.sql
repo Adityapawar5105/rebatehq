@@ -1,3 +1,6 @@
+-- 21 Nov 2026 (roadmap 13.6): this file NO LONGER MATCHES THE DATABASE. It mirrors only the Phase 1 migration and is kept
+-- for older tooling and the brand-name allow-list. The live schema is supabase/migrations/ (14 locked migrations);
+-- the business data itself is in each device's local vault, not on the server.
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;
 

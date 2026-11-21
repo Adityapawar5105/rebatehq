@@ -4,7 +4,7 @@
 
 ## What was tested
 
-See [PILOT_FILES.md](./PILOT_FILES.md) for the per-file record. In short:
+See [PILOT_FILES.md](../../PILOT_FILES.md) for the per-file record. In short:
 
 - **Real public exports.** UCI Online Retail (541,909 rows) and Online Retail II (1,067,371 rows across two sheets), Microsoft AdventureWorks reseller sales with its product and reseller lists (62,162 rows, no header row), and Northwind.
 - **Synthetic ERP-shaped files with planted leaks.** These follow the export layouts of Business Central, NetSuite, QuickBooks and SAP Business One (German locale). They are not real ERP exports; **the five ERP profiles stay unverified.**
@@ -48,7 +48,7 @@ The first local gate run caught a 6A regression. A canonical `discount_amount` c
 
 ## Follow-up: parked gaps, near quota (5 Nov 2026, local evidence)
 
-Built at the user's request (blueprint section 22, item 17); details in [PILOT_FILES.md](./PILOT_FILES.md).
+Built at the user's request (blueprint section 22, item 17); details in [PILOT_FILES.md](../../PILOT_FILES.md).
 
 | Gap | Now | Evidence |
 |---|---|---|
@@ -67,7 +67,7 @@ Built at the user's request (blueprint section 22, item 17); details in [PILOT_F
 
 ## 8 GB rerun (task 4, local evidence)
 
-Run on this laptop by `benchmark:spike` and `benchmark:vault` (`--full`), headless, in Chrome 156.0.8078.80 and Edge 156.0.4314.58. Figures are in [SPIKE_RESULTS.md](./SPIKE_RESULTS.md) and [VAULT_RESULTS.md](./VAULT_RESULTS.md).
+Run on this laptop by `benchmark:spike` and `benchmark:vault` (`--full`), headless, in Chrome 156.0.8078.80 and Edge 156.0.4314.58. Figures are in [SPIKE_RESULTS.md](../../SPIKE_RESULTS.md) and [VAULT_RESULTS.md](../../VAULT_RESULTS.md).
 
 - **Targets.** 1M startup 2.77 / 2.79 s (pass), 2M startup 3.28 / 3.32 s (miss, as before), first change after warm-up at 1M 0.78 / 0.82 s (pass). The 2M analytical queries take 3–155 ms.
 - **Failure found and fixed.** The 1M-line Import Studio benchmark ran out of the 512 MB DuckDB budget in both browsers, in the duplicate check (a window over every staged row). A 64-bit hash count now finds the repeating keys first, so the exact check runs on those rows only. The 1M import then took 10.6 / 11.2 s to review and 9.3 / 9.7 s to commit. A unit test pins the unchanged duplicate rules.
@@ -82,7 +82,7 @@ Run on this laptop by `benchmark:spike` and `benchmark:vault` (`--full`), headle
 - **A headed visual pass and real Supabase sign-in** on the 8 GB laptop.
 - **Timings in CI:** the benchmarks run only on this laptop.
 - **A real full disk** (the quota was simulated per origin).
-- **Parked:** credits on item-list cost files keep an unknown cost; freight of orders whose lines all failed is not reloaded from Fix Later. See [PARKING_LOT.md](./PARKING_LOT.md).
+- **Parked:** credits on item-list cost files keep an unknown cost; freight of orders whose lines all failed is not reloaded from Fix Later. See [PARKING_LOT.md](../../PARKING_LOT.md).
 - **Not started:** 6R table retirement and 6B.
 
 **Blueprint:** section 22, item 16 records the changes to sections 2 and 6A, and engine rule 9 is now implemented. Item 17 records the follow-up (section 6A conversion rules).

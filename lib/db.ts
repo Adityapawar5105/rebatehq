@@ -66,10 +66,18 @@ export async function closeDatabasePool(): Promise<void> {
   }
 }
 
+/**
+ * The visitor's address as the hosting platform saw it (audit B-9, roadmap 3.7 and 13.11; 21 Nov 2026).
+ * The app runs on Netlify, so its own `x-nf-client-connection-ip` comes first, then `x-real-ip`. For
+ * `x-forwarded-for` the LAST entry is used: a proxy appends the address it saw, so only earlier entries can be
+ * supplied by the caller (reading the first entry let a caller pick their own rate-limit key). The Vercel header
+ * is no longer read. Netlify's docs do not describe these headers; this order is safe whether Netlify overwrites
+ * or appends `x-forwarded-for`, and was not observed on the live site.
+ */
 export function clientIp(headers?: Headers): string {
-  const value = headers?.get("x-vercel-forwarded-for")?.split(",")[0]?.trim()
-    || headers?.get("x-real-ip")?.trim()
-    || headers?.get("x-forwarded-for")?.split(",")[0]?.trim()
-    || "";
-  return isIP(value) ? value : "";
+  const forwarded = headers?.get("x-forwarded-for")?.split(",").map(part => part.trim()).filter(Boolean) ?? [];
+  for (const value of [headers?.get("x-nf-client-connection-ip")?.trim(), headers?.get("x-real-ip")?.trim(), forwarded.at(-1)]) {
+    if (value && isIP(value)) return value;
+  }
+  return "";
 }

@@ -51,7 +51,7 @@ test("7U: every theme passes WCAG contrast (AA; AAA text in high contrast)", () 
 test("7U: colours come only from theme tokens", () => {
   const walk = (dir: string): string[] => readdirSync(dir).flatMap(n => { const p = path.join(dir, n); return statSync(p).isDirectory() ? walk(p) : [p]; });
   const files = [...walk("app"), ...walk("components")].map(f => f.split(path.sep).join("/"))
-    .filter(f => /\.(css|tsx)$/.test(f) && f !== "app/theme.css" && !f.startsWith("app/legacy/") && !f.startsWith("app/lab/spike/") && !f.startsWith("app/dashboard/") && !["components/GlobalSearch.tsx", "components/DeleteTenantForm.tsx"].includes(f));
+    .filter(f => /\.(css|tsx)$/.test(f) && f !== "app/theme.css" && !["components/DeleteTenantForm.tsx"].includes(f));
   const COLOUR = /#[0-9a-f]{3,8}\b|\brgba?\(|\bhsla?\(|(?<![\w.-])(white|black|red|green|blue|orange|yellow|gray|grey|navy|teal)(?![\w-])/gi;
   const found: string[] = [];
   for (const f of files) {

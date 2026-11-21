@@ -1,6 +1,6 @@
 # Chunk 4D — Pocket-margin engine and Margin Intelligence
 
-**4 Nov 2026. CI-verified in [MarginDesk CI #53](https://github.com/Adityapawar5105/rebatehq/actions/runs/41797151106) on commit `6d21cf0` (16m 25s).** That run includes the required authenticated privacy gate, which now runs the `margin` suite and drives the Margin UI, credits, show-the-math and the Leak Report download. In the same run, the legacy server benchmark measured commitImport at 24,886 ms. That path is unchanged by 4D, and CI #44 saw a similar runner-variance value. Built on 4C-2 (CI #51, `a9ca8f7`). All measurements are local. Real-file results: [REAL_FILE_RESULTS.md](./REAL_FILE_RESULTS.md). Assumptions: `ASSUMPTIONS.md`, "Chunk 4D assumptions". Blueprint change: section 22 entry 12.
+**4 Nov 2026. CI-verified in [MarginDesk CI #53](https://github.com/Adityapawar5105/rebatehq/actions/runs/41797151106) on commit `6d21cf0` (16m 25s).** That run includes the required authenticated privacy gate, which now runs the `margin` suite and drives the Margin UI, credits, show-the-math and the Leak Report download. In the same run, the legacy server benchmark measured commitImport at 24,886 ms. That path is unchanged by 4D, and CI #44 saw a similar runner-variance value. Built on 4C-2 (CI #51, `a9ca8f7`). All measurements are local. Real-file results: [REAL_FILE_RESULTS.md](../../REAL_FILE_RESULTS.md). Assumptions: `ASSUMPTIONS.md`, "Chunk 4D assumptions". Blueprint change: section 22 entry 12.
 
 ## What was built
 

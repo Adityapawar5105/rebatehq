@@ -6,12 +6,14 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+# Roadmap 13.9 (21 Nov 2026): three jobs run in parallel and `verify` passes only when all three pass, so a failure in
+# one browser gate no longer repeats everything else and the run ends sooner. `verify` keeps the check name that
+# branch protection and the merge rule use; it runs even when a job fails, so a failure can never read as "skipped".
 jobs:
-  verify:
+  unit:
+    name: unit tests, audit and build
     runs-on: ubuntu-24.04
-    # Recent runs take 11–22 minutes; Firefox needs additional headroom. Keep a job limit:
-    # CI #87 ran for six hours when the apt mirror stalled inside playwright install.
-    timeout-minutes: 60
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -33,6 +35,25 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
+  chromium:
+    name: database tests and Chromium privacy and relay gates
+    runs-on: ubuntu-24.04
+    # CI #87 ran for six hours when the apt mirror stalled inside playwright install: every job has a limit.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          # Pinned (21 Nov 2026): CI #194 on Node 24.22.3 crashed in V8 ("jit_page allocations" check) while a passing
+          # WebAssembly test file exited. 24.22.1 is the version every local run uses. Raise it deliberately, not implicitly.
+          node-version: 24.22.1
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Generate disposable signing keys (masked)
+        run: node scripts/control-plane-keys.mjs --ci-env
       - name: Start local Supabase services
         # CI #196 (21 Nov 2026): the runner's Docker failed to set up container networking. One clean stop and retry.
         shell: bash
@@ -107,6 +128,90 @@ jobs:
           JS
           pnpm test:vault:privacy --browser=chromium
           node scripts/test-relay-browser.mjs --auth --browser=chromium
+      - name: Upload privacy gate failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chromium-privacy-gate-diagnostics
+          # Screenshot and scrubbed result JSON only; the synthetic CSV fixtures stay on the runner.
+          path: |
+            test-results/*.png
+            test-results/vault-*.json
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Stop local Supabase services
+        if: always()
+        run: pnpm exec supabase stop --no-backup
+  firefox:
+    name: Firefox lab gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          # Pinned (21 Nov 2026): CI #194 on Node 24.22.3 crashed in V8 ("jit_page allocations" check) while a passing
+          # WebAssembly test file exited. 24.22.1 is the version every local run uses. Raise it deliberately, not implicitly.
+          node-version: 24.22.1
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Generate disposable signing keys (masked)
+        run: node scripts/control-plane-keys.mjs --ci-env
+      - name: Start local Supabase services
+        # CI #196 (21 Nov 2026): the runner's Docker failed to set up container networking. One clean stop and retry.
+        shell: bash
+        run: |
+          start() { pnpm exec supabase start -x studio,edge-runtime,storage-api,imgproxy,logflare,vector; }
+          if ! start; then
+            echo "::warning::Supabase did not start; stopping and retrying once."
+            pnpm exec supabase stop --no-backup || true
+            sleep 15
+            start
+          fi
+      - name: Apply every migration to the clean local database
+        env:
+          PGOPTIONS: -c client_min_messages=warning
+        run: |
+          set -o pipefail
+          migration_log="$RUNNER_TEMP/migration-reset.log"
+          pnpm exec supabase db reset 2>&1 | tee "$migration_log"
+          if grep -Eiq 'no privileges (were granted|could be revoked|were revoked)' "$migration_log"; then
+            echo "::error::Migration emitted a warning for an ineffective GRANT or REVOKE."
+            exit 1
+          fi
+      - name: Export local database URLs for this job
+        shell: bash
+        run: |
+          pnpm exec supabase status --output env > "$RUNNER_TEMP/supabase-status.env"
+          db_url="$(sed -n 's/^DB_URL=//p' "$RUNNER_TEMP/supabase-status.env" | head -n 1 | sed 's/^"//; s/"$//')"
+          if [[ -z "$db_url" ]]; then
+            echo "Supabase CLI status did not return DB_URL." >&2
+            exit 1
+          fi
+          {
+            printf 'SEED_DATABASE_URL=%s\n' "$db_url"
+            printf 'TEST_DATABASE_URL=%s\n' "$db_url"
+          } >> "$GITHUB_ENV"
+      - name: Install private audit signer key
+        run: node scripts/control-plane-keys.mjs --install
+      - name: Create restricted app login (pgTAP creates disposable test users)
+        run: pnpm setup:test-db-role
+      - name: Verify runtime pool role and missing-auth isolation
+        run: pnpm check:db-role
+      - name: Export real local Auth configuration for the required privacy gate
+        shell: bash
+        run: |
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          const text=fs.readFileSync(process.env.RUNNER_TEMP+'/supabase-status.env','utf8');
+          const entries=Object.fromEntries(text.split('\n').filter(l=>l.includes('=')).map(l=>{const i=l.indexOf('=');return [l.slice(0,i),l.slice(i+1).replace(/^"|"$/g,'')]}));
+          const values={NEXT_PUBLIC_SUPABASE_URL:entries.API_URL,NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:entries.PUBLISHABLE_KEY||entries.ANON_KEY,VAULT_MAIL_URL:entries.MAILPIT_URL||entries.INBUCKET_URL,VAULT_TEST_URL:'http://localhost:3000',APP_BASE_URL:'http://localhost:3000'};
+          for(const [key,value] of Object.entries(values)){if(!value)throw Error('Missing local-stack setting '+key);if(key.includes('KEY'))console.log('::add-mask::'+value);fs.appendFileSync(process.env.GITHUB_ENV,key+'='+value+'\n');}
+          JS
+      - run: pnpm build
       - name: Install Playwright Firefox and its system packages (bounded, retried)
         timeout-minutes: 25
         shell: bash
@@ -130,7 +235,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: vault-privacy-gate-diagnostics
+          name: firefox-lab-gate-diagnostics
           # Screenshot and scrubbed result JSON only; the synthetic CSV fixtures stay on the runner.
           path: |
             test-results/*.png
@@ -140,3 +245,16 @@ jobs:
       - name: Stop local Supabase services
         if: always()
         run: pnpm exec supabase stop --no-backup
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    needs: [unit, chromium, firefox]
+    if: always()
+    steps:
+      - name: Every job passed
+        shell: bash
+        run: |
+          echo "unit=${{ needs.unit.result }} chromium=${{ needs.chromium.result }} firefox=${{ needs.firefox.result }}"
+          test "${{ needs.unit.result }}" = success
+          test "${{ needs.chromium.result }}" = success
+          test "${{ needs.firefox.result }}" = success

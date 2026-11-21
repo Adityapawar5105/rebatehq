@@ -28,7 +28,7 @@ for(const name of Object.keys(files))pins[name]={integrity:"sha256-"+Buffer.from
 // The vault worker is a module worker split into chunks, so code used only on demand (pdf.js for PDF tables, 7F-2)
 // is fetched from this origin when first needed instead of with every unlock. Old chunks are removed first.
 await rm(path.join(output,"chunks"),{recursive:true,force:true});
-for(const [entry,out] of [["lib/spike/worker.ts","spike-worker.js"],["lib/vault/worker.ts","vault-worker.js"]]){
+for(const [entry,out] of [["lib/vault/worker.ts","vault-worker.js"]]){ // the spike lab worker went with the lab (13.4)
  const split=out==="vault-worker.js";
  await build({entryPoints:split?{"vault-worker":path.join(root,entry)}:[path.join(root,entry)],...(split?{outdir:output,splitting:true,entryNames:"[name]",chunkNames:"chunks/[name]-[hash]"}:{outfile:path.join(output,out)}),bundle:true,format:"esm",platform:"browser",target:"es2022",minify:true,legalComments:"eof",banner:{js:silence},define:{__DUCKDB_ASSET_PINS__:JSON.stringify(pins),"process.env.NODE_ENV":'"production"',"process.env.NEXT_PUBLIC_LICENCE_VERIFY_KEY":JSON.stringify(process.env.NEXT_PUBLIC_LICENCE_VERIFY_KEY||"")}});
 }

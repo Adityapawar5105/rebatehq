@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {readFileSync} from "node:fs";
+import {existsSync,readFileSync} from "node:fs";
 import JSZip from "jszip";
 import {minorUnits,moneyText,decimalText,validDate} from "../lib/spike/exact";
 import {exactRow,cleanCsv,xlsxRows} from "../lib/spike/converter";
@@ -64,9 +64,11 @@ test("snapshot rejects wrong keys, tampering, truncation, reordering and unsuppo
  const unsupported=new Uint8Array(data);unsupported.set(new TextEncoder().encode(text.replace('600000','600001')),12);
  await assert.rejects(decryptSnapshot(new Blob([unsupported]),sink().stream,"unit-test-snapshot-passphrase"));
 });
-test("spike boundary has no business-data API imports and uses only self-hosted workers",()=>{
- const page=readFileSync("app/lab/spike/SpikeClient.tsx","utf8"),worker=readFileSync("lib/spike/worker.ts","utf8"),db=readFileSync("lib/spike/db.ts","utf8");
- assert.ok(!/fetch\s*\(|\/api\//.test(page));assert.ok(!/from ["'](?:pg|.*supabase|@\/lib\/db|\.\.\/db)["']/.test(worker));
+test("spike boundary: the lab is retired (13.4), money helpers moved, and the engine loader stays self-hosted",()=>{
+ for(const gone of ["app/lab/spike/page.tsx","app/lab/spike/SpikeClient.tsx","lib/spike/worker.ts","scripts/test-spike-browser.mjs"])assert.ok(!existsSync(gone),gone+" should be gone");
+ assert.ok(!readFileSync("scripts/build-spike.mjs","utf8").includes("spike-worker.js"),"the lab worker is no longer built");
+ assert.match(readFileSync("lib/spike/exact.ts","utf8"),/export \* from "\.\.\/money\/exact";/,"the old import path re-exports the moved helpers");
+ const db=readFileSync("lib/spike/db.ts","utf8");
  assert.ok(db.includes('verifiedAssetUrl(`duckdb-'));assert.ok(readFileSync("lib/vault/asset-integrity.ts","utf8").includes('new URL("/spike/"'));assert.ok(!db.includes("getJsDelivrBundles"));assert.ok(db.includes("VoidLogger"));
  const dependency=JSON.parse(readFileSync("package.json","utf8")).dependencies["@duckdb/duckdb-wasm"];assert.equal(dependency,"1.32.0");
 });

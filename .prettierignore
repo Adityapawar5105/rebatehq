@@ -1,0 +1,8 @@
+# Applied migrations, their lock and generated or vendored files are never reformatted.
+supabase/migrations/
+migrations.lock
+schema.sql
+public/
+tests/fixtures/
+pnpm-lock.yaml
+.next/

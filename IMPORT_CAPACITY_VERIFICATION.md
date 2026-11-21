@@ -1,6 +1,6 @@
 # Import capacity verification — updated 2026-10-30
 
-**Chunk 3C and Phase 3 are verified in [MarginDesk CI #39](https://github.com/Adityapawar5105/rebatehq/actions/runs/40937330833) and [MarginDesk Restore Drill #13](https://github.com/Adityapawar5105/rebatehq/actions/runs/40938982321), 2026-10-30 (Asia/Calcutta), commit `2f8b06d`.** Current acceptance is **162 fresh / 165 restore-mode checks**, planned = ran with two-run repeatability, **38 tenant tables** and seven locked migrations. Restore Drill #13 used a local target. Phase 4 has not started. See [CHUNK_3C_VERIFICATION.md](./CHUNK_3C_VERIFICATION.md).
+**Chunk 3C and Phase 3 are verified in [MarginDesk CI #39](https://github.com/Adityapawar5105/rebatehq/actions/runs/40937330833) and [MarginDesk Restore Drill #13](https://github.com/Adityapawar5105/rebatehq/actions/runs/40938982321), 2026-10-30 (Asia/Calcutta), commit `2f8b06d`.** Current acceptance is **162 fresh / 165 restore-mode checks**, planned = ran with two-run repeatability, **38 tenant tables** and seven locked migrations. Restore Drill #13 used a local target. Phase 4 has not started. See [docs/evidence/CHUNK_3C_VERIFICATION.md](docs/evidence/CHUNK_3C_VERIFICATION.md).
 
 ## Real-Postgres 10,000-row timing — CI #39 and CI #44 observations
 
@@ -19,7 +19,7 @@ This benchmark executes the real import modules in a disposable fresh catalog as
 
 The rest of this record preserves the earlier CI #37 capacity milestone and original local measurements. No real-Postgres timing values are retroactively attributed to CI #37.
 
-**Verified in [MarginDesk CI #37 on `32aff35`](https://github.com/Adityapawar5105/rebatehq/commit/32aff35cd2842723206272a4147769779aa5a0d3/checks), 2026-10-29; CI job duration: 10m 24s.** The configurable **10,000-row** `MAX_IMPORT_DATA_ROWS`, batched commit/undo with exact restoration, and later-batch rollback passed the fresh/populated PGlite tests. This supersedes the former 200-row capacity evidence from [CI #35](https://github.com/Adityapawar5105/rebatehq/actions/runs/40844679109), commit `87d7d90`. No Restore Drill was run because no migration or restore inventory changed. Chunk 3C had not started at that milestone; its current status is recorded in CHUNK_3C_VERIFICATION.md.
+**Verified in [MarginDesk CI #37 on `32aff35`](https://github.com/Adityapawar5105/rebatehq/commit/32aff35cd2842723206272a4147769779aa5a0d3/checks), 2026-10-29; CI job duration: 10m 24s.** The configurable **10,000-row** `MAX_IMPORT_DATA_ROWS`, batched commit/undo with exact restoration, and later-batch rollback passed the fresh/populated PGlite tests. This supersedes the former 200-row capacity evidence from [CI #35](https://github.com/Adityapawar5105/rebatehq/actions/runs/40844679109), commit `87d7d90`. No Restore Drill was run because no migration or restore inventory changed. Chunk 3C had not started at that milestone; its current status is recorded in docs/evidence/CHUNK_3C_VERIFICATION.md.
 
 ## CI #37 evidence and limits
 

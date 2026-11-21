@@ -33,6 +33,8 @@ The explicitly reviewed owner-only table rebatehq_private.actor_key has a nullab
 
 ## Current inventory after 7A (pending evidence)
 
+> **21 Nov 2026 (roadmap 13.6):** historical heading. The 7A migration has been locked since 5 November 2026 (CI #82, Restore Drill #19), and later migrations up to 8R and the operator subscriptions view are locked too: 14 applied, 0 pending. The "must not be locked until" paragraph below describes the state before that evidence.
+
 The public tenant-table minimum is **24**, superseding the historical 42/20
 counts above. The four append-only relay tables have explicit dependency-ordered
 fixtures in `supabase/tests/chunk7a_relay.sql`, included by the shared SQL loader;

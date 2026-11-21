@@ -23,8 +23,6 @@
     "prepare:spike": "node scripts/build-spike.mjs",
     "predev": "pnpm prepare:spike",
     "prebuild": "pnpm prepare:spike",
-    "test:spike": "node scripts/test-spike-browser.mjs",
-    "benchmark:spike": "node scripts/test-spike-browser.mjs --full",
     "test:vault": "node scripts/test-vault-browser.mjs",
     "benchmark:vault": "node scripts/test-vault-browser.mjs --full",
     "test:vault:privacy": "node scripts/test-vault-browser.mjs --auth"

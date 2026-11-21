@@ -83,3 +83,16 @@ test("X-4: the page keeps the worker's error code and notices a dead worker", ()
   assert.match(src, /this\.failed = true;/);
   assert.match(readFileSync("components/local/VaultApp.tsx", "utf8"), /data-testid="worker-failed"/);
 });
+
+test("B-9: the rate-limit and audit address is the platform's, never a caller-chosen first x-forwarded-for hop", async () => {
+  const { clientIp } = await import("../lib/db");
+  const h = (o: Record<string, string>) => new Headers(o);
+  assert.equal(clientIp(h({ "x-nf-client-connection-ip": "203.0.113.7", "x-forwarded-for": "1.2.3.4, 203.0.113.7" })), "203.0.113.7", "Netlify's own header wins");
+  assert.equal(clientIp(h({ "x-forwarded-for": "1.2.3.4, 198.51.100.9" })), "198.51.100.9", "the last hop, added by the proxy, not the caller's first");
+  assert.equal(clientIp(h({ "x-real-ip": "198.51.100.1", "x-forwarded-for": "1.2.3.4" })), "198.51.100.1");
+  assert.equal(clientIp(h({ "x-vercel-forwarded-for": "1.2.3.4" })), "", "the Vercel header is no longer trusted (13.11)");
+  assert.equal(clientIp(h({ "x-nf-client-connection-ip": "not-an-ip", "x-forwarded-for": "2001:db8::1" })), "2001:db8::1");
+  assert.equal(clientIp(undefined), "");
+  const { readFileSync } = await import("node:fs");
+  assert.match(readFileSync("lib/rate-limit.ts", "utf8"), /const ip=clientIp\(request\.headers\)\|\|"unknown";/, "the sign-in limiter keys on the same address");
+});

@@ -58,15 +58,15 @@ light and dark, at 1366x768 and 375x812, and reports any horizontal overflow:
 
 | Screen | Before | After |
 |---|---|---|
-| Create vault, desktop | [before](docs/ui/before/create-light-desktop.png) | [after](docs/ui/after/create-light-desktop.png) |
-| Create vault, phone | [before](docs/ui/before/create-light-phone.png) | [after](docs/ui/after/create-light-phone.png) |
-| Unlock, dark | [before](docs/ui/before/unlock-dark-desktop.png) | [after](docs/ui/after/unlock-dark-desktop.png) |
-| Home, light desktop | [before](docs/ui/before/home-light-desktop.png) | [after](docs/ui/after/home-light-desktop.png) |
-| Home, dark desktop | [before](docs/ui/before/home-dark-desktop.png) | [after](docs/ui/after/home-dark-desktop.png) |
-| Home, light phone | [before](docs/ui/before/home-light-phone.png) | [after](docs/ui/after/home-light-phone.png) |
-| Home, dark phone | [before](docs/ui/before/home-dark-phone.png) | [after](docs/ui/after/home-dark-phone.png) |
-| Margin (moves to the components in 7V-2) | [before](docs/ui/before/margin-light-desktop.png) | [after](docs/ui/after/margin-light-desktop.png) |
-| Quotes (moves to the components in 7V-2) | [before](docs/ui/before/quotes-light-desktop.png) | [after](docs/ui/after/quotes-light-desktop.png) |
+| Create vault, desktop | [before](../../docs/ui/before/create-light-desktop.png) | [after](../../docs/ui/after/create-light-desktop.png) |
+| Create vault, phone | [before](../../docs/ui/before/create-light-phone.png) | [after](../../docs/ui/after/create-light-phone.png) |
+| Unlock, dark | [before](../../docs/ui/before/unlock-dark-desktop.png) | [after](../../docs/ui/after/unlock-dark-desktop.png) |
+| Home, light desktop | [before](../../docs/ui/before/home-light-desktop.png) | [after](../../docs/ui/after/home-light-desktop.png) |
+| Home, dark desktop | [before](../../docs/ui/before/home-dark-desktop.png) | [after](../../docs/ui/after/home-dark-desktop.png) |
+| Home, light phone | [before](../../docs/ui/before/home-light-phone.png) | [after](../../docs/ui/after/home-light-phone.png) |
+| Home, dark phone | [before](../../docs/ui/before/home-dark-phone.png) | [after](../../docs/ui/after/home-dark-phone.png) |
+| Margin (moves to the components in 7V-2) | [before](../../docs/ui/before/margin-light-desktop.png) | [after](../../docs/ui/after/margin-light-desktop.png) |
+| Quotes (moves to the components in 7V-2) | [before](../../docs/ui/before/quotes-light-desktop.png) | [after](../../docs/ui/after/quotes-light-desktop.png) |
 
 Neither set showed horizontal overflow on any section, at either width or in either theme.
 
@@ -138,13 +138,13 @@ builds its new screens on `components/ui` and can move an older card when it tou
 ### Screenshots
 | Screen | Before | After |
 |---|---|---|
-| Margin, light | [before](docs/ui/before/margin-light-desktop.png) | [after](docs/ui/after/margin-light-desktop.png) |
-| Margin, dark | — | [after](docs/ui/after/margin-dark-desktop.png) |
-| Data Hub | [before](docs/ui/before/data-hub-light-desktop.png) | [after](docs/ui/after/data-hub-light-desktop.png) |
-| Pricing | [before](docs/ui/before/pricing-light-desktop.png) | [after](docs/ui/after/pricing-light-desktop.png) |
-| Quotes | [before](docs/ui/before/quotes-light-desktop.png) | [after](docs/ui/after/quotes-light-desktop.png) |
-| Settings, dark | [before](docs/ui/before/settings-dark-desktop.png) | [after](docs/ui/after/settings-dark-desktop.png) |
-| Margin, phone | [before](docs/ui/before/margin-light-phone.png) | [after](docs/ui/after/margin-light-phone.png) |
+| Margin, light | [before](../../docs/ui/before/margin-light-desktop.png) | [after](../../docs/ui/after/margin-light-desktop.png) |
+| Margin, dark | — | [after](../../docs/ui/after/margin-dark-desktop.png) |
+| Data Hub | [before](../../docs/ui/before/data-hub-light-desktop.png) | [after](../../docs/ui/after/data-hub-light-desktop.png) |
+| Pricing | [before](../../docs/ui/before/pricing-light-desktop.png) | [after](../../docs/ui/after/pricing-light-desktop.png) |
+| Quotes | [before](../../docs/ui/before/quotes-light-desktop.png) | [after](../../docs/ui/after/quotes-light-desktop.png) |
+| Settings, dark | [before](../../docs/ui/before/settings-dark-desktop.png) | [after](../../docs/ui/after/settings-dark-desktop.png) |
+| Margin, phone | [before](../../docs/ui/before/margin-light-phone.png) | [after](../../docs/ui/after/margin-light-phone.png) |
 
 ### Checks
 **CI-verified:** [CI #96](https://github.com/Adityapawar5105/rebatehq/actions/runs/42269867429) passed on `9063e73` in 13m 54s:
