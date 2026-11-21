@@ -25,7 +25,16 @@ export type Tier = "starter" | "professional" | "scale";
 export type Scope = { userId: string; tenantId: string };
 /** What the signed-in person may do in this vault. Computed in the worker; the UI only mirrors it. */
 export type Access = { role: RoleId; roleLabel: string; assigned: boolean; viewAs: RoleId | null; caps: Cap[]; sections: string[]; ownerNamed: boolean };
+/** Roadmap 9.2: the vault's state as one value, decided in the worker (the older flags stay beside it). In order of
+ *  precedence: no vault on this device, locked, read-only licence, unsaved changes, preparing the first change, ready. */
+export type VaultPhase = "none" | "locked" | "readOnly" | "unsaved" | "preparing" | "ready";
+export function vaultPhase(s: { state: "locked" | "unlocked"; exists: boolean; dirty: boolean; preparing: boolean; licence?: { writable: boolean } }): VaultPhase {
+  if (s.state === "locked") return s.exists ? "locked" : "none";
+  if (s.licence && !s.licence.writable) return "readOnly";
+  return s.dirty ? "unsaved" : s.preparing ? "preparing" : "ready";
+}
 export type VaultStatus = {
+  phase: VaultPhase;
   licence?: {writable:boolean;tier:Tier;offline:boolean;until:string|null;reason:string};
   state: "locked" | "unlocked"; exists: boolean; dirty: boolean; recovered: boolean;
   /** writable: the first change will not need a copy; preparing: that copy is running in the background. */

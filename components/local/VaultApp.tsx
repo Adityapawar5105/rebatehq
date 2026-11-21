@@ -103,7 +103,8 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
     try { await work(); } catch (e) { setError(e instanceof Error && e.message ? e.message : msg("common.operationFailed")); try { setStatus(await client.current!.call("status", {})); } catch {} }
     finally { setBusy(false); setProgress(null); }
   }
-  const unlocked = status?.state === "unlocked", access = status?.access, caps = access?.caps ?? [], visible = access?.sections ?? [...sections], shown: Section = visible.includes(section) ? section : "Home";
+  // 9.2: the page reads the worker's one phase value instead of combining flags.
+  const unlocked = !!status && status.phase !== "none" && status.phase !== "locked", access = status?.access, caps = access?.caps ?? [], visible = access?.sections ?? [...sections], shown: Section = visible.includes(section) ? section : "Home";
   const navItems = sections.filter(item => !unlocked || visible.includes(item));
   useEffect(() => {
     if (!unlocked || lab) { setWaiting(0); return; }
@@ -161,7 +162,7 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
         {!supported && <Notice data-testid="browser-support-notice" tone="warn">{t("shell.browserNotice")}</Notice>}
         <p role="status" aria-live="polite" className={sh.message}>{say(message)}</p>
         {error && <Notice tone="bad" role="alert">{say(error)}</Notice>}
-        {status?.preparing && <Notice tone="info" data-testid="preparing">{t("shell.preparing")}</Notice>}
+        {status?.phase === "preparing" && <Notice tone="info" data-testid="preparing">{t("shell.preparing")}</Notice>}
         {locking && unlocked && <Notice tone="warn" role="alert" data-testid="locking-soon" actions={<Button size="sm" variant="primary" onClick={() => { setLocking(false); void client.current?.call("touch", {}).catch(() => undefined); }}>{t("shell.stayUnlocked")}</Button>}>{t("shell.lockingSoon")}</Notice>}
         {status?.recovered && <Notice tone="warn">{t("shell.recovered")}</Notice>}
         {progress && <div className={sh.progress}><label htmlFor="vault-progress">{say(progress.stage)}</label><progress id="vault-progress" value={Number(progress.done)} max={Math.max(1, Number(progress.total))}/>{progress.kind !== "save" && <Button size="sm" onClick={() => void client.current!.call("cancel", {})}>{t(progress.kind === "sim" ? "sim.cancel" : progress.kind === "check" ? "cadence.cancel" : "shell.cancelImport")}</Button>}</div>}

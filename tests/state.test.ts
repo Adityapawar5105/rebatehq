@@ -22,3 +22,18 @@ test("audit 1.3: an import plan reviewed before another change to the vault is r
   assert.match(commit, /if \(this\.planVersion !== this\.dataVersion\) throw new VaultError\("STUDIO", msg\("studio\.planStale"\)\);/);
   assert.ok(commit.indexOf("planStale") < commit.indexOf("await this.writable("), "checked before anything is written");
 });
+
+test("roadmap 9.2: the vault status carries one phase, decided in the worker, beside the old flags", async () => {
+  const { vaultPhase } = await import("../lib/vault/protocol");
+  const base = { state: "unlocked" as const, exists: true, dirty: false, preparing: false, licence: { writable: true } };
+  assert.equal(vaultPhase({ ...base, state: "locked", exists: false }), "none");
+  assert.equal(vaultPhase({ ...base, state: "locked" }), "locked");
+  assert.equal(vaultPhase({ ...base, licence: { writable: false }, dirty: true }), "readOnly", "a read-only licence outranks unsaved changes");
+  assert.equal(vaultPhase({ ...base, dirty: true, preparing: true }), "unsaved");
+  assert.equal(vaultPhase({ ...base, preparing: true }), "preparing");
+  assert.equal(vaultPhase(base), "ready");
+  assert.equal(vaultPhase({ ...base, licence: undefined }), "ready", "no licence yet (lab) is not read-only");
+  const service = readFileSync("lib/vault/service.ts", "utf8"), app = readFileSync("components/local/VaultApp.tsx", "utf8");
+  assert.match(service, /base\.phase = vaultPhase\(base\);/, "status() sets the phase from its own facts");
+  assert.match(app, /status\.phase !== "none" && status\.phase !== "locked"/); assert.match(app, /status\?\.phase === "preparing"/);
+});
