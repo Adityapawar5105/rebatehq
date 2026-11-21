@@ -150,12 +150,14 @@ test("Phase 1: one table of quote moves, and the caller's allowed next moves", a
   for (const [from, to] of Object.entries(TRANSITIONS)) for (const x of to) assert.ok(canMove(from, x), from + " to " + x);
   assert.deepEqual([TRANSITIONS.submitted, TRANSITIONS.approved], [[], []]);
   assert.ok(canMove("pending", "draft") && !canMove("submitted", "draft") && !canMove("approved", "pending") && !canMove("nonsense", "draft"));
-  assert.deepEqual(allowedNext("draft", true, false), ["edit", "submit"]);
-  assert.deepEqual(allowedNext("rejected", true, true), ["edit", "submit"]);
-  assert.deepEqual(allowedNext("pending", true, true), ["withdraw"], "an approver never decides their own quote");
-  assert.deepEqual(allowedNext("pending", false, true), ["decide"]);
-  assert.deepEqual(allowedNext("pending", false, false), []);
-  assert.deepEqual([allowedNext("submitted", true, true), allowedNext("approved", true, true)], [[], []]);
+  assert.deepEqual(allowedNext("draft", true, false), ["edit", "submit", "copy"]);
+  assert.deepEqual(allowedNext("rejected", true, true), ["edit", "submit", "copy"]);
+  assert.deepEqual(allowedNext("pending", true, true), ["withdraw", "copy"], "an approver never decides their own quote");
+  assert.deepEqual(allowedNext("pending", false, true), ["decide", "copy"]);
+  assert.deepEqual(allowedNext("pending", false, false), ["copy"]);
+  // Phase 11: a sent quote is revised (author or approver) and prints as a customer PDF; anyone who can open it copies it.
+  assert.deepEqual(allowedNext("submitted", false, false), ["copy", "pdf"]);
+  assert.deepEqual([allowedNext("submitted", true, true), allowedNext("approved", false, true)], [["copy", "revise", "pdf"], ["copy", "revise", "pdf"]]);
 });
 
 test("Phase 1: the author withdraws a stuck below-floor quote, edits it and resubmits", async () => {
@@ -165,14 +167,14 @@ test("Phase 1: the author withdraws a stuck below-floor quote, edits it and resu
     const id = (await call(rep, "quoteCreate", { customerId: "C1" }) as { id: string }).id;
     await call(rep, "quoteLines", { id, lines: [{ productId: "P1", quantity: "10", unitCents: "7000" }] });
     let view = await call(rep, "quoteSubmit", { id, reason: "Match a competitor bid" }) as Record<string, never>;
-    assert.equal(view.status, "pending"); assert.deepEqual(view.allowedNext, ["withdraw"]);
-    assert.deepEqual((await call(po, "quoteGet", { id }) as Record<string, never>).allowedNext, ["decide"]);
+    assert.equal(view.status, "pending"); assert.deepEqual(view.allowedNext, ["withdraw", "copy"]);
+    assert.deepEqual((await call(po, "quoteGet", { id }) as Record<string, never>).allowedNext, ["decide", "copy"]);
     await assert.rejects(call(rep2, "quoteWithdraw", { id }), code("QUOTE")); // only the author
     await assert.rejects(call(po, "quoteWithdraw", { id }), code("QUOTE"));
     c.query(`UPDATE quotes SET relay_object='relay-1' WHERE id='${id}'`); // as if it had been shared
     view = await call(rep, "quoteWithdraw", { id }) as Record<string, never>;
     assert.deepEqual([view.status, view.exceptionReason, view.relayObject, view.decidedBy], ["draft", null, null, null]);
-    assert.deepEqual(view.allowedNext, ["edit", "submit"]);
+    assert.deepEqual(view.allowedNext, ["edit", "submit", "copy"]);
     await assert.rejects(call(rep, "quoteWithdraw", { id }), code("QUOTE")); // a draft is not pending
     await assert.rejects(call(po, "quoteDecide", { id, decision: "approve", note: null }), code("QUOTE")); // nothing left to approve
     view = await call(rep, "quoteLines", { id, lines: [{ productId: "P1", quantity: "10", unitCents: "10500" }] }) as Record<string, never>;
@@ -198,7 +200,7 @@ test("7B Quote Desk and Price Check need Professional", async () => {
 // Decision 16 (blueprint section 22, item 21). Every command a Sales Rep can reach is listed here and
 // either scanned (its real payload is checked for cost and margin keys and for the cost value) or
 // reviewed (it cannot carry cost). Adding a rep-reachable command fails this test until it is classified.
-const SCANNED = ["quoteOutcome","winLoss","quoteGuidance","quoteCrossSell","scorecard","scorecardOptIn","rebateProgress","status", "home", "checklist", "search", "roleList", "pricingState", "priceCheck", "quoteCreate", "quoteLines", "quoteSubmit", "quoteWithdraw", "quoteGet", "quoteList"] as const;
+const SCANNED = ["quoteCopy","quoteRevise","quoteValidity","quotePdf","brandingGet","priceList","quoteOutcome","winLoss","quoteGuidance","quoteCrossSell","scorecard","scorecardOptIn","rebateProgress","status", "home", "checklist", "search", "roleList", "pricingState", "priceCheck", "quoteCreate", "quoteLines", "quoteSubmit", "quoteWithdraw", "quoteGet", "quoteList"] as const;
 const REVIEWED: Record<string, string> = {
   relayLocal: "v2.6 gap 2: a yes/no for this device's local relay identity, plus (8.4) whether a send is waiting and the last sync time; read from the vault; no cost, no network",
   gridTotals: "7V-3a: totals of numbers the caller already holds; returns only sums, counts, minimum and maximum of them",
@@ -268,6 +270,22 @@ test("decision 16: no Sales Rep payload contains cost or margin", async (context
     assert.deepEqual(ownerHits.map(h => h.kind).sort(), ['customer', 'product'], 'The Pricing Owner finds rows by their notes');
     for (const action of ['customerList', 'productList', 'noteSet', 'sourceRemovePreview'] as const) await assert.rejects(call(s, action, { kind: 'product', id: 'P1', text: 'x' } as never), code('FORBIDDEN'));
     payloads.scorecard=await call(s,'scorecard',{});payloads.scorecardOptIn=await call(s,'scorecardOptIn',{optIn:true});
+    // Phase 11: copy, revise a sent quote, set a validity date, the customer PDF and a price list (file contents scanned as text).
+    const { businessToday } = await import("../lib/vault/today");
+    const copied = await call(s, "quoteCopy", { id: created.id }) as { id: string }; payloads.quoteCopy = copied;
+    payloads.quoteValidity = await call(s, "quoteValidity", { id: copied.id, validUntil: businessToday() });
+    const sent = await call(s, "quoteCreate", { customerId: "C1" }) as { id: string };
+    await call(s, "quoteLines", { id: sent.id, lines: [{ productId: "P1", quantity: "2" }] }); await call(s, "quoteSubmit", { id: sent.id, reason: null });
+    payloads.quoteRevise = await call(s, "quoteRevise", { id: sent.id });
+    await call(serviceFor(c, "owner1"), "brandingSet", { input: { company: "Acme Supply", address: "1 Main St", terms: "Net 30" } });
+    payloads.brandingGet = await call(s, "brandingGet", {});
+    const pdf = await call(s, "quotePdf", { id: sent.id, locale: "en" }) as { name: string; bytes: Uint8Array };
+    payloads.quotePdf = { name: pdf.name, text: new TextDecoder().decode(pdf.bytes) };
+    assert.ok((payloads.quotePdf as { text: string }).text.includes("Net 30"), "the PDF scan must cover a real customer PDF");
+    const list = await call(s, "priceList", { customerId: "C1", format: "csv" }) as { name: string; blob: Blob; rows: number };
+    payloads.priceList = { name: list.name, rows: list.rows, text: await list.blob.text() };
+    assert.ok(list.rows > 0, "the price-list scan must cover real rows");
+    for (const action of ["brandingSet", "priceMailing"] as const) await assert.rejects(call(s, action, { input: { company: "x" }, runId: "r" } as never), code("FORBIDDEN"));
     payloads.roleList = await call(s, "roleList", {});
     payloads.checklist = await call(s, "checklist", {});
     payloads.home = await call(s, "home", {});

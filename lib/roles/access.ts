@@ -108,7 +108,7 @@ export const ACTIONS: Record<Action, { cap: Cap | null; mode: Mode }> = {
   marginWaterfall:r("cost"), marginDrill:r("cost"), marginWhale:r("cost"), marginMath:r("cost"), leaks:r("cost"), leakRows:r("cost"), leakReport:w("cost"), roi:r("cost"),
   reconcile:r("reconcile"), reconAccept:w("reconcile"), reconRebuild:w("reconcile"),
   // 7B. Cost and margin inside a quote view also need "cost" (checked in the service, not here).
-  priceCheck:r("quote"), quoteCreate:w("quote"), quoteLines:w("quote"), quoteSubmit:w("quote"), quoteWithdraw:w("quote"), quoteGet:r("quote"), quoteList:r("quote"), quoteShare:w("quote"), quoteRelaySync:w("quote"), quoteDecide:w("quoteApprove"),
+  priceCheck:r("quote"), quoteCreate:w("quote"), quoteLines:w("quote"), quoteSubmit:w("quote"), quoteWithdraw:w("quote"), quoteCopy:w("quote"), quoteRevise:w("quote"), quoteValidity:w("quote"), quotePdf:r("quote"), brandingGet:r("quote"), brandingSet:w("roles"), priceList:w("quote"), priceMailing:w("pricing"), quoteGet:r("quote"), quoteList:r("quote"), quoteShare:w("quote"), quoteRelaySync:w("quote"), quoteDecide:w("quoteApprove"),
 };
 /** The capability each command needs, read from ACTIONS. */
 export const ACTION_CAP = Object.fromEntries(Object.entries(ACTIONS).map(([action, v]) => [action, v.cap])) as Record<Action, Cap | null>;

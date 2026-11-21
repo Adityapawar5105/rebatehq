@@ -26,6 +26,7 @@ import { RecordsView } from "./RecordsView";
 import { VendorsView } from "./VendorsView";
 import { RolesView } from "./RolesView";
 import { RelayOnboarding, RelayPanel, RelaySetupLine } from './RelayPanel';
+import { QuoteBranding } from './QuoteBranding';
 import { AgentsInbox } from './AgentsInbox';
 import { AuditPackButton } from './Templates';
 import { OfflineCard, clearOfflineCopy, useOfflineWorker } from './OfflineMode';
@@ -248,6 +249,7 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
           {shown === "Settings" && client.current && <RolesView client={client.current} busy={busy} operation={operation} refresh={async () => setStatus(await client.current!.call("status", {}))}>
             {caps.includes('collaborate') && status.licence?.tier !== 'starter' && <RelaySetupLine client={client.current} userId={scope.userId} tenantId={scope.tenantId} relayEnabled={relayEnabled}/>}
           </RolesView>}
+          {shown === "Settings" && client.current && caps.includes("quote") && status.licence?.tier !== "starter" && <QuoteBranding client={client.current} busy={busy} operation={operation} canEdit={caps.includes("roles")}/>}
           {/* 8.17: used and available space as tiles in MB or GB, not byte counts. */}
           {shown === "Settings" && <Card headingId="storage-heading" title={t("shell.storage.heading")} description={t("shell.storage.summary", { saved: status.lastSaved ? fmt.dateTime(status.lastSaved) : t("common.none") })}
             actions={status.licence?.writable&&status.tier!==status.licence.tier&&caps.includes('roles')?<Button disabled={busy} onClick={()=>void operation(async()=>{setStatus(await client.current!.call('capacityUpgrade',{}));setMessage(msg("shell.storage.upgraded"));})}>{t("shell.storage.upgrade")}</Button>:undefined}>

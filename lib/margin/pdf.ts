@@ -1,9 +1,35 @@
-// A minimal PDF 1.4 writer (text, rectangles, lines) with the standard Helvetica fonts.
+// A minimal PDF 1.4 writer (text, rectangles, lines, JPEG images) with the standard Helvetica fonts.
 // Runs in the vault worker; nothing is uploaded. Streams are uncompressed ASCII, so
-// tests can read the text back. Non-ASCII characters are replaced with "?".
+// tests can read the text back. Non-ASCII characters are replaced with "?". A JPEG is
+// written hex-encoded (ASCIIHexDecode then DCTDecode), so the file stays ASCII too.
 export type Color = [number, number, number];
+export type JpegInfo = { width: number; height: number; colors: 1 | 3 };
 export class Pdf {
   private pages: string[][] = [];
+  private images: { data: Uint8Array; info: JpegInfo }[] = [];
+  /** Width, height and colour channels of a baseline or progressive JPEG; null for anything else (CMYK included). */
+  static jpegInfo(b: Uint8Array): JpegInfo | null {
+    if (b.length < 4 || b[0] !== 0xff || b[1] !== 0xd8) return null;
+    let i = 2;
+    while (i + 9 < b.length) {
+      if (b[i] !== 0xff) return null;
+      const marker = b[i + 1];
+      if (marker === 0xff) { i++; continue; }
+      if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+        const height = (b[i + 5] << 8) | b[i + 6], width = (b[i + 7] << 8) | b[i + 8], colors = b[i + 9];
+        return width > 0 && height > 0 && (colors === 1 || colors === 3) ? { width, height, colors } : null;
+      }
+      i += 2 + ((b[i + 2] << 8) | b[i + 3]);
+    }
+    return null;
+  }
+  /** Draws a JPEG with its lower-left corner at (x, y), scaled to w by h points. */
+  image(x: number, y: number, w: number, h: number, jpeg: Uint8Array) {
+    const info = Pdf.jpegInfo(jpeg); if (!info) throw new Error("Not a supported JPEG");
+    const n = this.images.push({ data: jpeg, info }) - 1;
+    this.ops.push(`q ${w.toFixed(2)} 0 0 ${h.toFixed(2)} ${x.toFixed(2)} ${y.toFixed(2)} cm /Im${n} Do Q`);
+    return this;
+  }
   readonly width = 612; readonly height = 792;
   page() { this.pages.push([]); return this; }
   private cursor: number | null = null;
@@ -66,10 +92,16 @@ export class Pdf {
     objects[3] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>";
     objects[4] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>";
     objects[5] = `<< /Title (${Pdf.esc(title)}) /Producer (RebateHQ local report) >>`;
+    const first = 6 + n * 2, hex = (d: Uint8Array) => { let s = ""; for (let i = 0; i < d.length; i++) { s += d[i].toString(16).padStart(2, "0"); if (i % 64 === 63) s += "\n"; } return s + ">"; };
+    const xobjects = this.images.length ? ` /XObject << ${this.images.map((_, k) => `/Im${k} ${first + k} 0 R`).join(" ")} >>` : "";
     this.pages.forEach((ops, i) => {
       const content = ops.join("\n");
-      objects[6 + i * 2] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${this.width} ${this.height}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${7 + i * 2} 0 R >>`;
+      objects[6 + i * 2] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${this.width} ${this.height}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >>${xobjects} >> /Contents ${7 + i * 2} 0 R >>`;
       objects[7 + i * 2] = `<< /Length ${content.length} >>\nstream\n${content}\nendstream`;
+    });
+    this.images.forEach(({ data, info }, k) => {
+      const body = hex(data);
+      objects[first + k] = `<< /Type /XObject /Subtype /Image /Width ${info.width} /Height ${info.height} /ColorSpace /${info.colors === 1 ? "DeviceGray" : "DeviceRGB"} /BitsPerComponent 8 /Filter [/ASCIIHexDecode /DCTDecode] /Length ${body.length} >>\nstream\n${body}\nendstream`;
     });
     let out = "%PDF-1.4\n"; const offsets: number[] = [];
     for (let i = 1; i < objects.length; i++) { offsets[i] = out.length; out += `${i} 0 obj\n${objects[i]}\nendobj\n`; }

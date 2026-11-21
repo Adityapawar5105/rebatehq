@@ -26,7 +26,7 @@ export type PricePoint = {
 };
 export type QuoteStatus = "draft" | "submitted" | "pending" | "approved" | "rejected";
 /** What the caller may do next with a quote (Phase 1, 20 Nov 2026). The screen shows buttons from this list only. */
-export type QuoteAction = "edit" | "submit" | "withdraw" | "decide";
+export type QuoteAction = "edit" | "submit" | "withdraw" | "decide" | "copy" | "revise" | "pdf";
 /**
  * Every allowed status move, in one place (the supplier-claims pattern, lib/rebate/supplier.ts).
  * Editing a draft or rejected quote saves it as a draft; submit goes to "submitted", or "pending" when a line is
@@ -48,6 +48,11 @@ export function allowedNext(status: QuoteStatus, mine: boolean, canApprove: bool
   if (mine && canMove(status, "draft") && status !== "pending") out.push("edit", "submit");
   if (mine && status === "pending") out.push("withdraw");
   if (!mine && canApprove && canMove(status, "approved")) out.push("decide");
+  // Phase 11: anyone who can open a quote may copy it into a new draft of their own; a sent quote is changed by revising
+  // it into a new version (author or approver), and only a sent quote prints as a customer PDF.
+  out.push("copy");
+  if ((mine || canApprove) && (status === "submitted" || status === "approved")) out.push("revise");
+  if (status === "submitted" || status === "approved") out.push("pdf");
   return out;
 }
 export type QuoteLineView = { lineNo: number; productId: string; description: string; quantity: string; unitCents: string; bookCents: string | null; source: PriceSource; startCents: string | null; targetCents: string | null; floorCents: string | null; guard: Guard; totalCents: string; costCents?: string | null; marginCents?: string | null; marginRate?: string | null };
@@ -61,6 +66,8 @@ export type QuoteView = {
   allowedNext: QuoteAction[];
   /** 8C-1 win/loss outcome, when recorded. */
   outcome: OutcomeView | null;
+  /** Phase 11: the date the quoted prices hold until (YYYY-MM-DD), whether that date has passed, and the quote this one revises. */
+  validUntil: string | null; expired: boolean; revisionOf: { id: string; number: string } | null;
   costCents?: string | null; marginCents?: string | null; marginRate?: string | null; uncostedLines?: number;
 };
 export type QuoteSummary = { id: string; number: string; customerId: string; customerName: string; status: QuoteStatus; totalCents: string; worst: Guard; updatedAt: string; createdBy: string };
@@ -81,14 +88,15 @@ export async function pricePoint(e: Engine, productId: string, customerId: strin
   if (!ID.test(productId)) bad("quote.chooseProduct");
   if (customerId !== null && !ID.test(customerId)) bad("quote.chooseCustomer");
   if (!QTY.test(quantity) || Number(quantity) <= 0) bad("quote.quantityInvalid");
-  const p = (await rows(e, `SELECT product_id, description, category, uom, list_price::VARCHAR AS list FROM products WHERE product_id=${Q(productId)}`))[0];
+  // 11.5: a scanned UPC/EAN finds its item too; an exact SKU always wins over a barcode.
+  const p = (await rows(e, `SELECT product_id, description, category, uom, list_price::VARCHAR AS list FROM products WHERE product_id=${Q(productId)} OR barcode=${Q(productId.trim())} ORDER BY (product_id=${Q(productId)}) DESC, product_id LIMIT 1`))[0];
   if (!p) bad("quote.unknownProduct", { id: productId });
   const c = customerId === null ? null : (await rows(e, `SELECT customer_id, name, tier FROM customers WHERE customer_id=${Q(customerId)}`))[0];
   if (customerId !== null && !c) bad("quote.unknownCustomer", { id: customerId });
   const tier = String(c?.tier ?? ""), cat = String(p.category ?? "");
   // Most specific valid row wins: the customer's own price, then the tier, then a category-wide price;
   // a product row beats a category row; the highest quantity break at or below the quantity; the newest start.
-  const found = (await rows(e,matrixLookup({product:Q(productId),category:Q(cat),customer:customerId===null?'NULL':Q(customerId),tier:Q(tier),quantity,date:'DATE '+Q(date)})))[0];
+  const found = (await rows(e,matrixLookup({product:Q(String(p.product_id)),category:Q(cat),customer:customerId===null?'NULL':Q(customerId),tier:Q(tier),quantity,date:'DATE '+Q(date)})))[0];
   const m:Record<string,unknown>|null=found?{...found,price:String(found.price),qb:String(found.qty_break)}:null;
   const source: PriceSource = m ? m.customer_id !== null ? "customer" : m.product_id === null ? "category" : "tier" : p.list !== null ? "list" : "none";
   const book = m ? String(m.price) : str(p.list);
@@ -109,11 +117,11 @@ export async function credit(e: Engine, customerId: string): Promise<CreditSigna
   return creditSignal({ asOf: str(r.as_of), current: BigInt(String(r.c0)), d1_30: BigInt(String(r.c1)), d31_60: BigInt(String(r.c2)), d61_90: BigInt(String(r.c3)), d90plus: BigInt(String(r.c4)), limit: r.lim === null ? null : BigInt(String(r.lim)), dso: str(r.dso) });
 }
 
-/** SQL for a new draft quote with the next number (Q-YYYY-0001, per vault and year). */
+/** SQL for a new draft quote with the next number (Q-YYYY-0001, per vault and year; revisions add -R1, -R2 and are not counted). */
 export async function createSql(e: Engine, customerId: string, userId: string, at: string) {
   if (!ID.test(customerId)) bad("quote.chooseCustomer");
   if (!(await rows(e, `SELECT 1 FROM customers WHERE customer_id=${Q(customerId)}`)).length) bad("quote.unknownCustomer", { id: customerId });
-  const year = at.slice(0, 4), n = Number((await rows(e, `SELECT count(*) AS n FROM quotes WHERE number LIKE ${Q(`Q-${year}-%`)}`))[0].n) + 1;
+  const year = at.slice(0, 4), n = Number((await rows(e, `SELECT count(*) AS n FROM quotes WHERE number LIKE ${Q(`Q-${year}-%`)} AND NOT regexp_matches(number, '-R[0-9]+$')`))[0].n) + 1;
   const id = crypto.randomUUID(), number = `Q-${year}-${String(n).padStart(4, "0")}`;
   return { id, number, sql: `INSERT INTO quotes(id,number,customer_id,status,created_by,created_at,updated_at) VALUES(${Q(id)},${Q(number)},${Q(customerId)},'draft',${Q(userId)},${Q(at)},${Q(at)});` };
 }
@@ -129,11 +137,17 @@ export async function linesSql(e: Engine, id: string, lines: LineInput[], userId
   assertMove(String(q.status), "draft", "quote.notEditable");
   if (String(q.status) === "pending") bad("quote.notEditable"); // a pending quote is withdrawn first (quoteWithdraw)
   if (String(q.created_by) !== userId) bad("quote.notYours");
+  const values = await lineValues(e, id, String(q.customer_id), lines);
+  return `DELETE FROM quote_lines WHERE quote_id=${Q(id)};${values.length ? `INSERT INTO quote_lines VALUES ${values.join(",")};` : ""}
+UPDATE quotes SET status='draft', updated_at=${Q(at)}, decided_by=NULL, decided_at=NULL, decision_note=NULL, relay_object=NULL WHERE id=${Q(id)};`; // a changed quote never inherits an approval shared for its old lines
+}
+/** quote_lines rows for a quote: each line priced and checked against today's guardrail, keeping that snapshot. */
+async function lineValues(e: Engine, id: string, customerId: string, lines: LineInput[]) {
   if (!Array.isArray(lines) || lines.length > MAX_LINES) bad("quote.tooManyLines", { max: MAX_LINES });
   const values: string[] = [];
   for (const [i, l] of lines.entries()) {
     const qty = String(l?.quantity ?? "");
-    const point = await pricePoint(e, String(l?.productId ?? ""), String(q.customer_id), qty);
+    const point = await pricePoint(e, String(l?.productId ?? ""), customerId, qty);
     const unit = l?.unitCents === undefined || l.unitCents === null || l.unitCents === "" ? point.bookCents ?? "0" : String(l.unitCents);
     if (!CENTS.test(unit)) bad("quote.priceInvalid");
     const guard: Guard = point.targetCents !== null && point.floorCents !== null ? guardStatus(BigInt(unit), BigInt(point.targetCents), BigInt(point.floorCents)) as Guard : "unset";
@@ -141,8 +155,50 @@ export async function linesSql(e: Engine, id: string, lines: LineInput[], userId
     const n = (v: string | null) => v === null ? "NULL" : v;
     values.push(`(${Q(id)},${i + 1},${Q(point.productId)},${qty},${unit},${n(point.bookCents)},${Q(point.source)},${n(point.startCents)},${n(point.targetCents)},${n(point.floorCents)},${Q(guard)},${n(cost)})`);
   }
-  return `DELETE FROM quote_lines WHERE quote_id=${Q(id)};${values.length ? `INSERT INTO quote_lines VALUES ${values.join(",")};` : ""}
-UPDATE quotes SET status='draft', updated_at=${Q(at)}, decided_by=NULL, decided_at=NULL, decision_note=NULL, relay_object=NULL WHERE id=${Q(id)};`; // a changed quote never inherits an approval shared for its old lines
+  return values;
+}
+/** The lines of an existing quote as input: same items, quantities and quoted prices. */
+async function sourceLines(e: Engine, id: string): Promise<LineInput[]> {
+  return (await rows(e, `SELECT product_id, quantity::VARCHAR AS qty, unit_price_cents::VARCHAR AS unit FROM quote_lines WHERE quote_id=${Q(id)} ORDER BY line_no`))
+    .map(r => ({ productId: String(r.product_id), quantity: String(r.qty).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, ""), unitCents: String(r.unit) }));
+}
+/**
+ * Phase 11.1: copy any quote the caller can open into a new draft of their own for the same customer. The lines keep
+ * their items, quantities and quoted prices, but are priced and checked against today's guardrails again. Nothing of
+ * the source's status, approval, reason, validity or relay link comes across.
+ */
+export async function copySql(e: Engine, id: string, userId: string, at: string) {
+  const q = await quoteRow(e, id), plan = await createSql(e, String(q.customer_id), userId, at);
+  const values = await lineValues(e, plan.id, String(q.customer_id), await sourceLines(e, id));
+  return { ...plan, sql: plan.sql + (values.length ? `INSERT INTO quote_lines VALUES ${values.join(",")};` : "") };
+}
+/**
+ * Phase 11.1: revise a submitted or approved quote as a new version. The revision is a fresh draft numbered after the
+ * original (Q-2026-0001-R1, -R2, ...) and pointing at it; it never inherits the approval, which a below-floor line must
+ * earn again when the revision is submitted. The original stays as it was.
+ */
+export async function reviseSql(e: Engine, id: string, userId: string, canApprove: boolean, at: string) {
+  const q = await quoteRow(e, id), status = String(q.status);
+  if (status !== "submitted" && status !== "approved") bad("quote.reviseSentOnly");
+  if (String(q.created_by) !== userId && !canApprove) bad("quote.notYours");
+  const base = String(q.number).replace(/-R\d+$/, "");
+  const k = Number((await rows(e, `SELECT count(*) AS n FROM quotes WHERE number LIKE ${Q(base + "-R%")}`))[0].n) + 1;
+  const newId = crypto.randomUUID(), number = `${base}-R${k}`;
+  const values = await lineValues(e, newId, String(q.customer_id), await sourceLines(e, id));
+  return { id: newId, number, sql: `INSERT INTO quotes(id,number,customer_id,status,created_by,created_at,updated_at,revision_of) VALUES(${Q(newId)},${Q(number)},${Q(String(q.customer_id))},'draft',${Q(userId)},${Q(at)},${Q(at)},${Q(id)});`
+    + (values.length ? `INSERT INTO quote_lines VALUES ${values.join(",")};` : "") };
+}
+/** Phase 11.2: the date the quoted prices hold until. Set by the author while the quote can still be edited; from today up to a year ahead, or cleared. */
+export async function validitySql(e: Engine, id: string, validUntil: string | null, userId: string, at: string, todayIs = today()) {
+  const q = await quoteRow(e, id);
+  if (String(q.status) !== "draft" && String(q.status) !== "rejected") bad("quote.notEditable");
+  if (String(q.created_by) !== userId) bad("quote.notYours");
+  if (validUntil !== null) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(validUntil) || Number.isNaN(Date.parse(validUntil + "T00:00:00Z"))) bad("quote.validityInvalid");
+    const limit = new Date(Date.parse(todayIs + "T00:00:00Z") + 366 * 86_400_000).toISOString().slice(0, 10);
+    if (validUntil < todayIs || validUntil > limit) bad("quote.validityRange", { from: todayIs, to: limit });
+  }
+  return `UPDATE quotes SET valid_until=${validUntil === null ? "NULL" : `DATE ${Q(validUntil)}`}, updated_at=${Q(at)} WHERE id=${Q(id)};`;
 }
 
 /** Submit: a line below its floor needs an exception reason and the Pricing Owner's approval; below target is a soft warning. */
@@ -219,12 +275,22 @@ FROM quote_lines l LEFT JOIN products p USING(product_id) WHERE l.quote_id=${Q(i
     lines, totalCents: sum.toString(), worst, credit: credit_, warnings,
     positionBp: targetSum > BigInt(0) ? (targeted * BigInt(10000) / targetSum).toString() : null,
     needsApproval: lines.some(l => l.guard === "red"), mine: String(q.created_by) === userId, outcome: await outcomeOf(e, id),
+    validUntil: q.valid_until === null || q.valid_until === undefined ? null : dateText(q.valid_until), expired: false,
+    revisionOf: q.revision_of ? await revisionRef(e, String(q.revision_of)) : null,
     allowedNext: allowedNext(String(q.status) as QuoteStatus, String(q.created_by) === userId, canApprove),
   };
+  out.expired = out.validUntil !== null && out.validUntil < today();
   if (withCost) { const m = costedPrice - cost; Object.assign(out, { costCents: uncosted === lines.length && lines.length ? null : cost.toString(), marginCents: costedPrice === BigInt(0) && uncosted ? null : m.toString(), marginRate: bp(rateBp(m, costedPrice)), uncostedLines: uncosted }); }
   return out;
 }
 const bp = (v: bigint | null) => v === null ? null : (Number(v) / 100).toFixed(2);
+/** A DuckDB DATE (a Date, days since 1970 or text) as YYYY-MM-DD. */
+function dateText(v: unknown): string {
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  if (typeof v === "number" || typeof v === "bigint") return new Date(Number(v) * (Number(v) > 1e11 ? 1 : 86_400_000)).toISOString().slice(0, 10);
+  return String(v).slice(0, 10);
+}
+async function revisionRef(e: Engine, id: string) { const r = (await rows(e, `SELECT number FROM quotes WHERE id=${Q(id)}`))[0]; return r ? { id, number: String(r.number) } : null; }
 
 /** Quote history. `pendingOnly` is the approval inbox; `mineOnly` limits a rep to their own quotes. */
 export async function list(e: Engine, opts: { pendingOnly?: boolean; userId: string; mineOnly: boolean }): Promise<QuoteSummary[]> {

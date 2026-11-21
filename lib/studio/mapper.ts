@@ -54,6 +54,8 @@ const SYNONYMS: Record<string, { column: string[]; unit?: string[] }> = {
   description: { column: n("description", "item description", "product description", "desc", "item name", "product name") },
   category: { column: n("category", "product category", "item category", "product group", "item group", "class", "product line") },
   uom: { column: n("uom", "unit", "unit of measure", "base uom", "sales uom") },
+  // Roadmap 11.5: an optional UPC/EAN code, so a USB barcode scanner (which types like a keyboard) finds the item.
+  barcode: { column: n("barcode", "upc", "ean", "gtin", "upc code", "ean code", "bar code") },
   current_cost: { column: n("current cost", "unit cost", "cost", "standard cost", "replacement cost", "avg cost", "average cost", "last cost") },
   list_price: { column: n("list price", "price", "unit price", "sell price", "base price", "msrp") },
   name: { column: n("name", "customer name", "company", "company name", "account name") },
