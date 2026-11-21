@@ -49,15 +49,22 @@ test('7C-3b alternatives resolve current customer matrix, rank exact per-unit po
   assert.deepEqual(await alternatives(e,'P','missing','2026-11-08'),[]);
  }finally{c.close();}
 });
-test('7C-3b cash-leak hero is the unchanged finder scoped to exact 90-day input, in CAD; full finder cache is invalidated',async()=>{
+test('7C-3b cash-leak hero is the unchanged finder scoped to exact 90-day input, in CAD; each window is cached once and the full-history result is kept (roadmap 14.1)',async()=>{
  const {c,e,line}=await fixture();try{
   const w=monitoringWindow();line('A',w.from,11000);line('B',w.priorFrom,50000);line('B',w.to,90000);c.query(REBUILD_SQL);
   const expected=await findLeaks(e,true,w);assert.equal(expected.checked.saleLines,'1');assert.equal(expected.dedupedCents,'1000');
   c.query('BEGIN');c.query(`CREATE TEMP TABLE saved_sales AS SELECT * FROM sales_lines;DELETE FROM sales_lines WHERE sale_date<DATE '${w.from}' OR sale_date>=DATE '${w.to}';${REBUILD_SQL}`);
   const standalone=await findLeaks(e,true);assert.deepEqual(standalone.findings,expected.findings);assert.equal(standalone.dedupedCents,expected.dedupedCents);c.query('ROLLBACK');
-  const s=new VaultService(()=>undefined);Object.assign(s,{engine:e,licence:{tier:'professional'},leakCache:{version:1}});
-  const v=await s.homeMonitor();assert.equal(v.currency,'CAD');assert.equal(v.leaks.dedupedCents,expected.dedupedCents);assert.equal((s as any).leakCache,null);
-  assert.equal((await findLeaks(e,true)).checked.saleLines,'3');
+  const s=new VaultService(()=>undefined);Object.assign(s,{engine:e,licence:{tier:'professional'},leakCache:null});const cache=()=>(s as any).leakCache;
+  const v=await s.homeMonitor();assert.equal(v.currency,'CAD');assert.equal(v.leaks.dedupedCents,expected.dedupedCents);
+  // Audit B-7: a second Home visit on unchanged data reuses the result instead of running the finder again.
+  assert.equal((await s.homeMonitor()).leaks,v.leaks,'Home reran the leak finder on unchanged data');
+  // Margin's full-history result is separate; its evidence rows need the finder's tables for that window.
+  const full=await (s as any).leakResult();assert.equal(full.checked.saleLines,'3');assert.equal(cache().results.size,2);
+  await s.leakRows(full.findings[0]?.id??'none');assert.equal(cache().tables,'true||','Evidence rows did not use the full-history tables');
+  assert.equal((await s.homeMonitor()).leaks,v.leaks,'Home reran the finder after Margin');assert.equal(cache().tables,'true||','Home overwrote the full-history tables');
+  assert.equal(await (s as any).leakResult(),full,'Margin lost its saved result after Home');
+  (s as any).dataVersion++;assert.notEqual((await s.homeMonitor()).leaks,v.leaks,'A data change kept the old result');assert.equal(cache().results.size,1);
  }finally{c.close();}
 });
 test('7C-3b relay sync presentation covers synced, pending, stale head, conflicting outbox, rejected content and no successful sync',()=>{
