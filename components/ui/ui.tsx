@@ -1,7 +1,7 @@
 "use client";
 // Shared UI components (chunk 7V). Every visible string is passed in by the caller (already translated with
 // t() or say()); these components hold no text of their own. Styling comes from ui.module.css and theme tokens.
-import { useEffect, useId, useRef, type ButtonHTMLAttributes, type HTMLAttributes, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, type ButtonHTMLAttributes, type HTMLAttributes, type InputHTMLAttributes, type KeyboardEvent, type ReactNode } from "react";
 import { Icon, type IconName } from "./Icon";
 import { nextTabIndex } from "./tabKeys";
 import s from "./ui.module.css";
@@ -61,6 +61,12 @@ export function Notice({ tone = "info", title, actions, children, className, ...
     <Icon name={NOTICE_ICON[tone]} size={18}/>
     <div className={s.noticeBody}>{title && <strong>{title} </strong>}{children}{actions && <div className={s.noticeActions}>{actions}</div>}</div>
   </div>;
+}
+
+/** A checkbox with its label on the same line and an optional one-line hint under it (roadmap 8.16). */
+export function Checkbox({ label, hint, className, ...rest }: { label: ReactNode; hint?: ReactNode; className?: string } & Omit<InputHTMLAttributes<HTMLInputElement>, "type"> & Record<`data-${string}`, string>) {
+  const hintId = useId();
+  return <div className={cx(s.check, className)}><label className={s.checkLabel}><input type="checkbox" aria-describedby={hint ? hintId : undefined} {...rest}/><span>{label}</span></label>{hint && <span id={hintId} className={s.fieldHint}>{hint}</span>}</div>;
 }
 
 /** A label wrapping its control, so the visible label is the accessible name. */
