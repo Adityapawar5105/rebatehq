@@ -22,3 +22,61 @@ test("audit 1.3: an import plan reviewed before another change to the vault is r
   assert.match(commit, /if \(this\.planVersion !== this\.dataVersion\) throw new VaultError\("STUDIO", msg\("studio\.planStale"\)\);/);
   assert.ok(commit.indexOf("planStale") < commit.indexOf("await this.writable("), "checked before anything is written");
 });
+
+test("roadmap 9.2: the vault status carries one phase, decided in the worker, beside the old flags", async () => {
+  const { vaultPhase } = await import("../lib/vault/protocol");
+  const base = { state: "unlocked" as const, exists: true, dirty: false, preparing: false, licence: { writable: true } };
+  assert.equal(vaultPhase({ ...base, state: "locked", exists: false }), "none");
+  assert.equal(vaultPhase({ ...base, state: "locked" }), "locked");
+  assert.equal(vaultPhase({ ...base, licence: { writable: false }, dirty: true }), "readOnly", "a read-only licence outranks unsaved changes");
+  assert.equal(vaultPhase({ ...base, dirty: true, preparing: true }), "unsaved");
+  assert.equal(vaultPhase({ ...base, preparing: true }), "preparing");
+  assert.equal(vaultPhase(base), "ready");
+  assert.equal(vaultPhase({ ...base, licence: undefined }), "ready", "no licence yet (lab) is not read-only");
+  const service = readFileSync("lib/vault/service.ts", "utf8"), app = readFileSync("components/local/VaultApp.tsx", "utf8");
+  assert.match(service, /base\.phase = vaultPhase\(base\);/, "status() sets the phase from its own facts");
+  assert.match(app, /status\.phase !== "none" && status\.phase !== "locked"/); assert.match(app, /status\?\.phase === "preparing"/);
+});
+
+test("roadmap 9.4: the engine warm-up is one value that moves snapshot, copying, copied or failed, then writable", async () => {
+  const { startWarmup, makeWritable, readyToWrite } = await import("../lib/vault/engine");
+  type E = Parameters<typeof startWarmup>[0];
+  const conn = (fail: boolean) => ({ query: async (sql: string) => { if (fail && !/ROLLBACK/.test(sql)) throw new Error("copy failed"); return { toArray: () => [{ schema_version: 21 }] }; }, close: async () => undefined });
+  const engine = (fail: boolean) => ({ warm: "snapshot", warming: null, conn: conn(false), db: { connect: async () => conn(fail), dropFile: async () => undefined } }) as unknown as E;
+  const ok = engine(false);
+  assert.equal(readyToWrite(ok), false);
+  const job = startWarmup(ok); assert.equal(ok.warm, "copying", "the copy is marked running at once");
+  assert.equal(await job, true); assert.equal(ok.warm, "copied"); assert.equal(readyToWrite(ok), true);
+  await makeWritable(ok); assert.equal(ok.warm, "writable"); assert.equal(ok.warming, null);
+  assert.equal(startWarmup(ok), null, "a writable engine starts no copy");
+  const bad = engine(true);
+  assert.equal(await startWarmup(bad), false); assert.equal(bad.warm, "failed"); assert.equal(readyToWrite(bad), false);
+  await makeWritable(bad); assert.equal(bad.warm, "writable", "after a failed background copy the first change copies on the main connection");
+  const src = readFileSync("lib/vault/engine.ts", "utf8");
+  assert.doesNotMatch(src, /warmDone|warmReady|writable: boolean/, "the four warm-up flags are gone");
+});
+
+test("roadmap 9.5: one loading/ready/failed machine for worker reads; a failure offers Retry instead of loading forever", async () => {
+  const { nextQuery, initialQuery } = await import("../components/local/queryState");
+  let s = initialQuery<number>(); assert.deepEqual(s, { status: "loading", data: null, error: "" });
+  s = nextQuery<number>(s, { type: "fail", error: "No" }); assert.deepEqual(s, { status: "failed", data: null, error: "No" });
+  s = nextQuery<number>(s, { type: "start" }); assert.equal(s.status, "loading"); assert.equal(s.error, "", "a retry clears the old error");
+  s = nextQuery<number>(s, { type: "done", data: 7 }); assert.deepEqual(s, { status: "ready", data: 7, error: "" });
+  s = nextQuery<number>(s, { type: "start" }); assert.equal(s.data, 7, "a reload keeps showing the last data");
+  s = nextQuery<number>(s, { type: "fail", error: "Again" }); assert.equal(s.data, 7, "a failed reload does not blank the panel");
+  assert.deepEqual(nextQuery<number>(s, { type: "set", data: 9 }), { status: "ready", data: 9, error: "" }, "a write's answer replaces the data");
+  const hook = readFileSync("components/local/useVaultQuery.ts", "utf8");
+  assert.match(hook, /id === seq\.current/, "an answer from an older run is ignored");
+  const basis = readFileSync("components/local/CostBasisView.tsx", "utf8");
+  assert.match(basis, /useVaultQuery\(\(\) => client\.call\("costBasis", \{\}\)/); assert.match(basis, /query\.reload/);
+});
+
+test("roadmap 9.6: a benchmark withdrawal the server recorded but the vault did not is finished locally on the next load", () => {
+  const view = readFileSync("components/local/BenchmarksView.tsx", "utf8");
+  // The marker is set after the server confirms and cleared only after the vault records it.
+  assert.match(view, /await benchWithdraw\(\); setMarker\(pendingKey\);[^]*client\.call\("benchWithdrawn", \{\}\)\); clearMarker\(pendingKey\);/);
+  // On load: an active local share plus the marker means the vault's half never happened; it runs locally, with no request.
+  assert.match(view, /if \(readMarker\(pendingKey\)\) \{ if \(s\.shares\.some\(x => !x\.withdrawnAt\)\) \{ s = await client\.call\("benchWithdrawn", \{\}\);/);
+  assert.doesNotMatch(view.slice(view.indexOf("readMarker(pendingKey))"), view.indexOf("clearMarker(pendingKey); }")), /bench(Withdraw|Consent|Share)\(/, "reconciling makes no server call");
+  assert.match(readFileSync("components/local/VaultApp.tsx", "utf8"), /pendingKey=\{`rebatehq\.bench\.withdrawPending:\$\{scope\.tenantId\}:\$\{scope\.userId\}`\}/, "one marker per workspace and user");
+});

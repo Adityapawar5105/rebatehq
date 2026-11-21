@@ -103,7 +103,8 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
     try { await work(); } catch (e) { setError(e instanceof Error && e.message ? e.message : msg("common.operationFailed")); try { setStatus(await client.current!.call("status", {})); } catch {} }
     finally { setBusy(false); setProgress(null); }
   }
-  const unlocked = status?.state === "unlocked", access = status?.access, caps = access?.caps ?? [], visible = access?.sections ?? [...sections], shown: Section = visible.includes(section) ? section : "Home";
+  // 9.2: the page reads the worker's one phase value instead of combining flags.
+  const unlocked = !!status && status.phase !== "none" && status.phase !== "locked", access = status?.access, caps = access?.caps ?? [], visible = access?.sections ?? [...sections], shown: Section = visible.includes(section) ? section : "Home";
   const navItems = sections.filter(item => !unlocked || visible.includes(item));
   useEffect(() => {
     if (!unlocked || lab) { setWaiting(0); return; }
@@ -161,7 +162,7 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
         {!supported && <Notice data-testid="browser-support-notice" tone="warn">{t("shell.browserNotice")}</Notice>}
         <p role="status" aria-live="polite" className={sh.message}>{say(message)}</p>
         {error && <Notice tone="bad" role="alert">{say(error)}</Notice>}
-        {status?.preparing && <Notice tone="info" data-testid="preparing">{t("shell.preparing")}</Notice>}
+        {status?.phase === "preparing" && <Notice tone="info" data-testid="preparing">{t("shell.preparing")}</Notice>}
         {locking && unlocked && <Notice tone="warn" role="alert" data-testid="locking-soon" actions={<Button size="sm" variant="primary" onClick={() => { setLocking(false); void client.current?.call("touch", {}).catch(() => undefined); }}>{t("shell.stayUnlocked")}</Button>}>{t("shell.lockingSoon")}</Notice>}
         {status?.recovered && <Notice tone="warn">{t("shell.recovered")}</Notice>}
         {progress && <div className={sh.progress}><label htmlFor="vault-progress">{say(progress.stage)}</label><progress id="vault-progress" value={Number(progress.done)} max={Math.max(1, Number(progress.total))}/>{progress.kind !== "save" && <Button size="sm" onClick={() => void client.current!.call("cancel", {})}>{t(progress.kind === "sim" ? "sim.cancel" : progress.kind === "check" ? "cadence.cancel" : "shell.cancelImport")}</Button>}</div>}
@@ -234,7 +235,7 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
           {shown === "Rebates & Contracts" && client.current && <RebatesView client={client.current} caps={caps} tier={status.licence?.tier} busy={busy} version={status.generation} operation={operation} refresh={async()=>setStatus(await client.current!.call("status",{}))}/>}
           {shown === "Reports" && client.current && <ReportsView client={client.current} caps={caps} tier={status.licence?.tier} busy={busy} version={`${status.lines}|${status.generation}`} operation={operation} refresh={async()=>setStatus(await client.current!.call("status",{}))}/>}
             {shown === "Reports" && caps.includes("cost") && client.current && <Card headingId="report-card-heading" title={t("shell.report.heading")} description={t("shell.report.body")}><LeakReportButton client={client.current} busy={busy || status.lines === "0"} operation={operation} setMessage={setMessage} onStatus={setStatus}/><ButtonLink variant="ghost" icon="search" href="#margin" data-testid="leak-choose-findings" onClick={() => setTimeout(() => scrollToHeading("leaks-heading"), 50)}>{t("shell.report.choose")}</ButtonLink></Card>}
-          {shown === "Reports" && caps.includes("cost") && status.licence?.tier !== "starter" && client.current && <BenchmarksView client={client.current} version={`${status.lines}|${status.generation}`} busy={busy} operation={operation}/>}
+          {shown === "Reports" && caps.includes("cost") && status.licence?.tier !== "starter" && client.current && <BenchmarksView client={client.current} version={`${status.lines}|${status.generation}`} busy={busy} operation={operation} pendingKey={`rebatehq.bench.withdrawPending:${scope.tenantId}:${scope.userId}`}/>}
           {shown === "Reports" && caps.includes("audit") && <Card headingId="audit-heading" title={t("shell.audit.heading")} description={t("shell.audit.body", { entries: Number(status.auditEntries), version: status.schemaVersion })}><Button variant="primary" icon="shield" disabled={busy} onClick={() => void operation(async () => { const result = await client.current!.call("verify", {}); if (!result.valid) throw new Error(msg("shell.audit.failed")); setMessage(msg("shell.audit.verified", { entries: Number(result.entries) })); })}>{t("shell.audit.button")}</Button> <AuditPackButton client={client.current!} busy={busy} operation={operation} setMessage={setMessage}/><p className={styles.muted}>{t("shell.audit.note")}</p><p className={styles.muted}>{t("auditpack.help")}</p></Card>}
           {shown === "Settings" && <JumpNav label={t("shell.onThisPage")} jumpLabel={name => t("shell.jumpTo", { name })} items={[
             { id: "prefs-heading", label: t("shell.prefs.heading"), icon: "palette" }, ...(caps.includes("backup") ? [{ id: "backup-heading", label: t("backup.encryptedBackupAndRestore"), icon: "download" as const }] : []),

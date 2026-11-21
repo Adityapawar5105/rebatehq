@@ -36,7 +36,7 @@ import { VaultLicence, capacitySql } from "./licence";
 import type { Action } from "./protocol";
 import * as pricing from '../pricing/rules';
 import { backupConfig, storeBackupConfig, writeBackup } from './backup';
-import { openMemory, snapshotBytes, closeMemory, makeWritable, startWarmup, type Engine } from "./engine";
+import { openMemory, snapshotBytes, closeMemory, makeWritable, readyToWrite, startWarmup, type Engine } from "./engine";
 import { VaultStorage } from "./storage";
 import { decrypt, deriveKey, type Key } from "./crypto";
 import { appendAudit, verifyAudit, GENESIS } from "./audit";
@@ -48,7 +48,7 @@ import type { ErpProfile, FieldSource } from "../studio/mapper";
 import { dismissSql, fixGroups, fixRows, fixSetSql, recheck } from "../studio/fixlater";
 import { health } from "../studio/health";
 import { PLAYGROUND_PREFIX, SAMPLE_COUNTS_SQL, generatePlayground, sampleState } from "../studio/playground";
-import { AUTO_LOCK_MS, LOCK_WARNING_MS, LEASE_WAIT_MS, VaultError, type LeaksView, type Scope, type Tier, type VaultStatus } from "./protocol";
+import { AUTO_LOCK_MS, LOCK_WARNING_MS, LEASE_WAIT_MS, VaultError, vaultPhase, type LeaksView, type Scope, type Tier, type VaultStatus } from "./protocol";
 import { REBUILD_SQL, effectiveRebuildSql, findDifferences, reconSummary, recordSql } from "../margin/aggregate";
 import { drill, math, waterfall, whale, type Dim, type Filters, type Metric } from "../margin/views";
 import { findLeaks, leakRows, scopeTotals, type LeakResult } from "../margin/leaks";
@@ -105,7 +105,8 @@ export class VaultService {
   }
   readonly licence = new VaultLicence(process.env.NEXT_PUBLIC_LICENCE_VERIFY_KEY || "");
   // Starting again on this device deletes only local files: it never needs a licence (audit B-3).
-  licenceGuard(action:Action) { if (action === "vaultReset") return; this.licence.guard(action); }
+  /** 9.3: the licence rule comes from ACTIONS (vaultReset is marked "always": a forgotten passphrase needs no licence). */
+  licenceGuard(action:Action) { this.licence.guard(action); }
   async licenceSet(envelope:import("../licence-policy").LicenceEnvelope|null,device:string,offline:boolean){try{await this.licence.set(envelope,this.identity,device,offline);}catch{/* Invalid assertions clear authority but never prevent read-only unlock/recovery. */}this.tier=this.licence.effective(this.tier);return this.status();}
   private identity!: Scope;
   storage!: VaultStorage;
@@ -276,7 +277,7 @@ export class VaultService {
     this.licence.assert();
     const engine = this.requireEngine();
     if (this.dirty) throw new VaultError("SAVE", msg("vault.saveThePendingChange"));
-    if (!engine.writable) { progress?.(engine.warming ? msg("vault.finishingPreparingTheVault") : msg("vault.preparingTheVaultFor"), "0", "1"); await makeWritable(engine); }
+    if (engine.warm !== "writable") { progress?.(engine.warm === "copying" || engine.warm === "copied" ? msg("vault.finishingPreparingTheVault") : msg("vault.preparingTheVaultFor"), "0", "1"); await makeWritable(engine); }
     return engine;
   }
   private async recipes() { return loadRecipes(this.requireEngine()); }
@@ -783,7 +784,7 @@ export class VaultService {
   async checklist() {
     const e = this.requireEngine(), { view, newly } = await setup.read(e);
     // Persist newly reached steps only when that costs nothing extra (no unsaved change, vault already writable).
-    if (this.licence.writable && newly.length && !this.dirty && (e.writable || e.warmReady)) {
+    if (this.licence.writable && newly.length && !this.dirty && readyToWrite(e)) {
       await this.write("setup.steps", { steps: newly.join(",") }, async w => { await w.conn.query(setup.saveSql(newly, "auto", new Date().toISOString())); });
       return (await setup.read(this.requireEngine())).view;
     }
@@ -967,8 +968,9 @@ export class VaultService {
     return this.status();
   }
   async status(): Promise<VaultStatus> {
-    const base: VaultStatus = { licence:this.licence.view(), state: this.engine ? "unlocked" : "locked", exists: await this.storage.exists(), dirty: this.dirty,
-      writable: !!this.engine?.writable || !!this.engine?.warmReady, preparing: !!this.engine && !this.engine.writable && !!this.engine.warming && !this.engine.warmDone, recovered: this.recovered, lines: "0", products: "0", customers: "0", auditEntries: "0", currency: "USD", schemaVersion: "0", generation: this.generation, tier: this.tier, lastSaved: this.lastSaved };
+    const base: VaultStatus = { phase: "none", licence:this.licence.view(), state: this.engine ? "unlocked" : "locked", exists: await this.storage.exists(), dirty: this.dirty,
+      writable: !!this.engine && readyToWrite(this.engine), preparing: this.engine?.warm === "copying", recovered: this.recovered, lines: "0", products: "0", customers: "0", auditEntries: "0", currency: "USD", schemaVersion: "0", generation: this.generation, tier: this.tier, lastSaved: this.lastSaved };
+    base.phase = vaultPhase(base); // 9.2: one value beside the flags, from the same facts
     if (!this.engine) return base;
     const data = (await this.engine.conn.query(`SELECT (SELECT count(*) FROM sales_lines)::VARCHAR AS lines,(SELECT count(*) FROM products)::VARCHAR AS products,(SELECT count(*) FROM customers)::VARCHAR AS customers,audit_count::VARCHAR AS entries,schema_version::VARCHAR AS version FROM vault_meta WHERE id=1`)).toArray()[0];
     // A role without cost access never has cost or margin selected: the query itself leaves them out.

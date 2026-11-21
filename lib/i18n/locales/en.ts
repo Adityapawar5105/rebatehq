@@ -2343,6 +2343,8 @@ const glossary = {
   "glossary.auditChain": "Audit chain",
   "glossary.auditChain.def": "A tamper-evident log on this device: each entry includes a hash of the one before, so a changed, missing or reordered record is detected.",
   "common.definitionSeparator": ": ",
+  "common.retry": "Retry",
+  "bench.withdrawFinished": "A withdrawal sent to the server earlier is now recorded on this device too.",
 } as const;
 
 const palette = {

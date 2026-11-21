@@ -126,3 +126,22 @@ test("a vault cannot be created without naming a Pricing Owner", async () => {
   const service = { licenceGuard:()=>undefined, guard: async () => undefined, create: async () => { throw new Error("must not run"); } } as unknown as VaultService;
   for (const ownerName of ["", "   ", undefined as unknown as string]) await assert.rejects(dispatch(service, { id: "1", action: "create", data: { passphrase: "a long passphrase", tier: "starter", ownerName } } as Request, { signal: () => new AbortController().signal, progress: () => undefined }), (e: unknown) => e instanceof VaultError && e.code === "OWNER");
 });
+
+test("roadmap 9.3: each command's licence rule sits beside its capability, and the read-only set is read from that one table", async () => {
+  const { ACTIONS, READ_ONLY_ACTIONS } = await import("../lib/roles/access");
+  const licence = await import("../lib/vault/licence");
+  const actions = Object.keys(ACTIONS) as (keyof typeof ACTIONS)[];
+  assert.deepEqual(Object.keys(ACTION_CAP).sort(), [...actions].sort(), "ACTION_CAP is read from ACTIONS");
+  for (const a of actions) {
+    assert.ok(["read", "write", "always"].includes(ACTIONS[a].mode), `${a} has no read/write decision`);
+    assert.equal(ACTION_CAP[a], ACTIONS[a].cap);
+    assert.equal(READ_ONLY_ACTIONS.has(a), ACTIONS[a].mode === "read", `${a}: the read-only set disagrees with ACTIONS`);
+  }
+  assert.equal(licence.READ_ONLY_ACTIONS, READ_ONLY_ACTIONS, "the old import path gives the same set, not a second list");
+  assert.doesNotMatch(readFileSync("lib/vault/licence.ts", "utf8"), /new Set<Action>\(\[/, "a hand-kept command list is back in licence.ts");
+  assert.deepEqual(actions.filter(a => ACTIONS[a].mode === "always"), ["vaultReset"], "only Start again runs with no licence");
+  // A lapsed licence: reads still answer, writes are refused, Start again still works.
+  const l = new licence.VaultLicence("");
+  assert.doesNotThrow(() => l.guard("leaks")); assert.doesNotThrow(() => l.guard("status")); assert.doesNotThrow(() => l.guard("vaultReset"));
+  assert.throws(() => l.guard("benchWithdrawn")); assert.throws(() => l.guard("studioCommit"));
+});

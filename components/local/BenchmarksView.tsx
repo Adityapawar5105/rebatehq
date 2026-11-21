@@ -20,11 +20,19 @@ const METRIC: Record<Metric, MessageKey> = { pocket_margin: "bench.metric.pocket
 const REASON: Record<string, MessageKey> = { ok: "bench.reason.ok", lines: "bench.reason.lines", customers: "bench.reason.customers", concentration: "bench.reason.concentration", revenue: "bench.reason.revenue" };
 const range = (lo: number) => lo >= 80 ? "80%" : `${lo}–${lo + 4}%`;
 
-export function BenchmarksView({ client, version, busy, operation }: { client: VaultClient; version: string; busy: boolean; operation: Op }) {
+/** 9.6: a per-workspace marker (no business data) that a server withdrawal still has to be recorded in this vault. */
+const readMarker = (key: string) => { try { return localStorage.getItem(key) === "yes"; } catch { return false; } };
+const setMarker = (key: string) => { try { localStorage.setItem(key, "yes"); } catch { /* storage blocked: the vault write below still runs */ } };
+const clearMarker = (key: string) => { try { localStorage.removeItem(key); } catch { /* nothing to clear */ } };
+export function BenchmarksView({ client, version, busy, operation, pendingKey }: { client: VaultClient; version: string; busy: boolean; operation: Op; /** 9.6: localStorage key, unique per workspace and user. */ pendingKey: string }) {
   const [state, setState] = useState<Results["benchState"] | null>(null), [preview, setPreview] = useState<Results["benchPreview"] | null>(null);
   const [map, setMap] = useState<Record<string, string>>({}), [consent, setConsent] = useState<ConsentView | undefined>(undefined), [agree, setAgree] = useState(false);
   const [error, setError] = useState(""), [note, setNote] = useState(""), [confirmWithdraw, setConfirmWithdraw] = useState(false);
-  useEffect(() => { let on = true; setError(""); void client.call("benchState", {}).then(async s => { if (!on) return; setState(s); setMap(Object.fromEntries(s.mapping.map(m => [m.category, m.family ?? ""]))); const p = await client.call("benchPreview", { quarter: s.quarter }); if (on) setPreview(p); }).catch(e => { if (on) setError(errorText(e)); }); return () => { on = false; }; }, [client, version]);
+  // 9.6 (audit machine 19): the server records a withdrawal before the vault does. If the vault's half failed (closed tab,
+  // lapsed licence), a marker in this browser says so, and the next load finishes it locally: no network request.
+  useEffect(() => { let on = true; setError(""); void client.call("benchState", {}).then(async loaded => { if (!on) return; let s = loaded;
+    if (readMarker(pendingKey)) { if (s.shares.some(x => !x.withdrawnAt)) { s = await client.call("benchWithdrawn", {}); if (on) setNote(msg("bench.withdrawFinished")); } clearMarker(pendingKey); }
+    if (!on) return; setState(s); setMap(Object.fromEntries(s.mapping.map(m => [m.category, m.family ?? ""]))); const p = await client.call("benchPreview", { quarter: s.quarter }); if (on) setPreview(p); }).catch(e => { if (on) setError(errorText(e)); }); return () => { on = false; }; }, [client, version, pendingKey]);
   if (error && !state) return <Notice tone="warn" role="alert">{error}</Notice>;
   if (!state || !preview) return <Skeleton/>;
   const owner = state.owner, quarter = state.quarter, shared = state.shares.find(s => s.quarter === quarter && !s.withdrawnAt), figures = state.figures.filter(f => f.quarter === quarter);
@@ -75,7 +83,7 @@ export function BenchmarksView({ client, version, busy, operation }: { client: V
           <Button variant="ghost" disabled={busy} data-testid="bench-optout" onClick={() => act(async () => { setConsent((await benchSetConsent(false)).consent); setNote(msg("bench.optedOut")); })}>{t("bench.turnOff")}</Button>
         </div>}
         {consent !== undefined && (!confirmWithdraw ? <Button variant="ghost" size="sm" disabled={busy} data-testid="bench-withdraw" onClick={() => setConfirmWithdraw(true)}>{t("bench.withdraw")}</Button>
-          : <div className={styles.row}><span>{t("bench.withdrawConfirm")}</span><Button variant="danger" size="sm" disabled={busy} data-testid="bench-withdraw-confirm" onClick={() => act(async () => { setConfirmWithdraw(false); const r = await benchWithdraw(); setConsent(r.consent); setState(await client.call("benchWithdrawn", {})); setNote(msg("bench.withdrawn", { count: fmt.int(r.deleted) })); })}>{t("bench.withdrawYes")}</Button><Button size="sm" variant="ghost" onClick={() => setConfirmWithdraw(false)}>{t("bench.cancel")}</Button></div>)}
+          : <div className={styles.row}><span>{t("bench.withdrawConfirm")}</span><Button variant="danger" size="sm" disabled={busy} data-testid="bench-withdraw-confirm" onClick={() => act(async () => { setConfirmWithdraw(false); const r = await benchWithdraw(); setMarker(pendingKey); setConsent(r.consent); setState(await client.call("benchWithdrawn", {})); clearMarker(pendingKey); setNote(msg("bench.withdrawn", { count: fmt.int(r.deleted) })); })}>{t("bench.withdrawYes")}</Button><Button size="sm" variant="ghost" onClick={() => setConfirmWithdraw(false)}>{t("bench.cancel")}</Button></div>)}
       </>}
     </Card>
     <Card title={t("bench.figuresHeading", { quarter })} description={t("bench.figuresHelp")} data-testid="bench-figures">

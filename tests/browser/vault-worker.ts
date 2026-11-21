@@ -102,7 +102,7 @@ async function integrity() {
   service.engine!.conn.query = async function(sql: string) { if (!injected && sql.startsWith("INSERT INTO products SELECT")) { injected = true; throw new Error("simulated first-change copy failure"); } return query(sql); } as typeof query;
   let copyFailed = false; try { await makeWritable(service.engine!); } catch { copyFailed = true; }
   service.engine!.conn.query = query;
-  assert(copyFailed && !service.engine!.writable && (await service.verify()).valid, "Failed first-change copy altered the readable snapshot");
+  assert(copyFailed && service.engine!.warm !== "writable" && (await service.verify()).valid, "Failed first-change copy altered the readable snapshot");
   await makeWritable(service.engine!);
   const extra = new VaultService(() => undefined, undefined, 500); await extra.init(scope);
   let blocked = false; try { await extra.unlock(secret); } catch (e) { blocked = (e as { code: string }).code === "OTHER_TAB"; }
@@ -137,7 +137,7 @@ async function firstChange(rows: number) {
   const service = new VaultService(() => undefined); await service.init(labScope);
   try {
     const before = await service.unlock(secret), unlocked = performance.now();
-    assert(before.lines === String(rows) && !service.engine!.writable && before.preparing, "First-change benchmark did not start warm-up from an untouched read-only snapshot");
+    assert(before.lines === String(rows) && service.engine!.warm !== "writable" && before.preparing, "First-change benchmark did not start warm-up from an untouched read-only snapshot");
     const readStart = performance.now(); assert((await service.status()).lines === String(rows), "Vault not readable during warm-up");
     const readDuringWarmupMs = Math.round(performance.now() - readStart);
     assert(await service.warmup() === true, "Background warm-up failed");
@@ -162,7 +162,7 @@ async function warmup() {
   const service = new VaultService(() => undefined); await service.init(scope); await service.create(secret, "starter");
   await service.studioAdd(fx.monthlyCsvs().slice(0, 2).map(fx.toFile)); await service.studioPlan(signal(), noop); await service.studioCommit(false, noop); await service.lock();
   const status = await service.unlock(secret);
-  assert(!service.engine!.writable && status.state === "unlocked", "Unlock should return before the background copy finishes");
+  assert(service.engine!.warm !== "writable" && status.state === "unlocked", "Unlock should return before the background copy finishes");
   // An import started during warm-up waits for it instead of failing.
   await service.studioAdd([fx.toFile(fx.monthlyCsvs()[2])]); await service.studioPlan(signal(), noop);
   const committed = await service.studioCommit(false, noop);

@@ -2586,6 +2586,8 @@ export const es: Catalog = {
   "glossary.auditChain": "Cadena de auditoría",
   "glossary.auditChain.def": "Un registro a prueba de manipulaciones en este dispositivo: cada entrada incluye un hash de la anterior, así que se detecta un registro modificado, faltante o reordenado.",
   "common.definitionSeparator": ": ",
+  "common.retry": "Reintentar",
+  "bench.withdrawFinished": "Un retiro enviado antes al servidor ahora también queda registrado en este dispositivo.",
   "palette.title": "Paleta de comandos",
   "palette.search": "Buscar pantallas, comandos, SKU y clientes",
   "palette.placeholder": "Escriba para filtrar pantallas y comandos, o 2 o más caracteres de un SKU o cliente",
