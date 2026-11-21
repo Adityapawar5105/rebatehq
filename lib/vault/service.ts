@@ -5,6 +5,7 @@ import {reportPdf} from '../reports/pdf';
 import * as suppliers from '../rebate/supplier';
 import * as finance from "../rebate/finance";
 import * as layouts from "../pricing/layouts";
+import * as simRuns from "../vendor/sim-runs";
 import {claimExport} from '../rebate/claim-export';
 import * as rebates from '../rebate/store';
 import {salesInput} from '../rebate/input';
@@ -522,6 +523,13 @@ export class VaultService {
   private simCurrent(){const e=this.requireEngine(),l=this.simLast;return l&&l.engine===e&&l.version===this.dataVersion?l:null;}
   async simOptions(){this.scaleTier();const e=this.requireEngine();return {...await sim.simOptions(e),last:this.simCurrent()?.result??null};}
   async simRun(scenario:unknown,signal:AbortSignal,progress:Progress){this.scaleTier();const e=this.requireEngine();this.simLast=null;const result=await sim.simulate(e,scenario,signal,progress);this.simLast={engine:e,version:this.dataVersion,result};this.touch();return result;}
+  // Roadmap 15.7: saved runs to compare. Saving keeps the last run's totals and a stamp of the data it replayed.
+  async simSaved(){this.scaleTier();return simRuns.saved(this.requireEngine());}
+  async simSave(name:unknown){this.scaleTier();const l=this.simCurrent();if(!l)throw new VaultError('SIM',msg('sim.runFirst'));const p=await simRuns.saveSql(l.engine,name,l.result,this.identity.userId,new Date().toISOString());const kept=l.engine.warm==='writable';await this.write('sim.run_saved',{id:p.id,actor:this.identity.userId},e=>e.conn.query(p.sql).then(()=>undefined));this.keepSim(l,kept);return this.simSaved();}
+  async simSavedDelete(id:unknown){this.scaleTier();const sql=await simRuns.deleteSql(this.requireEngine(),id);const l=this.simCurrent(),kept=l?.engine.warm==='writable';await this.write('sim.run_deleted',{id:String(id),actor:this.identity.userId},e=>e.conn.query(sql).then(()=>undefined));this.keepSim(l,kept);return this.simSaved();}
+  /** Saving or deleting a run changes no replayed data: the run in the temporary table stays current, as long as the
+   * engine was already writable (the first write after unlock can swap the engine and drop temporary tables). */
+  private keepSim(l:typeof this.simLast,kept:boolean){if(l&&kept&&this.simLast===l&&this.engine===l.engine)this.simLast={...l,version:this.dataVersion};}
   async simRows(dim:unknown,offset=0,grid?:unknown){this.scaleTier();const l=this.simCurrent();if(!l)throw new VaultError('SIM',msg('sim.runFirst'));return sim.simRows(l.engine,dim,offset,grid);}
 
   private packLast:{engine:Engine;version:number;data:cadence.Pack}|null=null;

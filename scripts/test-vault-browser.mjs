@@ -228,10 +228,18 @@ async function simUi(){
  await grid.getByTestId('grid-select-all').check();const total=grid.getByTestId('grid-total-margin_change');await total.waitFor();assert.equal(await total.getAttribute('data-sum'),'4900');assert.ok((await total.innerText()).includes('CA$49.00'),'Breakdown total lost its currency');
  // The run survives a tab switch while the data is unchanged.
  await page.getByTestId('vendor-tab-ppv').click();await page.getByTestId('vendor-tab-sim').click();await change.waitFor();assert.equal(await change.getAttribute('data-value'),'4900');assert.equal(await page.getByTestId('sim-pct').inputValue(),'10','The restored run lost its changes');
+ // Roadmap 15.7: save this run, run +5%, save it, and compare both side by side (+5%: margin 190.00 + 24.50 = 214.50).
+ await page.getByTestId('sim-save-name').fill('Plus 10');await page.getByTestId('sim-save-button').click();await page.getByTestId('sim-saved-run').first().waitFor();
+ await grid.locator('tbody tr').first().waitFor();
+ await page.getByTestId('sim-pct').fill('5');await page.getByTestId('sim-run').click();await page.locator('[data-testid="sim-margin-change"][data-value="2450"]').waitFor({timeout:60000});
+ await page.getByTestId('sim-save-name').fill('Plus 5');await page.getByTestId('sim-save-button').click();await page.getByTestId('sim-saved-run').nth(1).waitFor();
+ for(const run of await page.getByTestId('sim-saved-run').all())await run.getByRole('checkbox').check();
+ const compared=page.getByTestId('sim-compare-margin');await compared.waitFor();const comparedText=await compared.innerText();
+ assert.ok(comparedText.includes('CA$239.00')&&comparedText.includes('CA$214.50'),'Saved runs do not compare: '+comparedText);assert.equal(await page.getByTestId('sim-saved-stale').count(),0,'A run on unchanged data is marked stale');
  await page.setViewportSize({width:375,height:812});await page.waitForTimeout(400);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Simulator overflows a phone');await page.screenshot({path:'test-results/simulator-'+channel+'.png',fullPage:true});await page.setViewportSize({width:1280,height:800});
  await page.locator('nav a[href="#settings"]').click();await page.getByLabel('Preview as').selectOption('accountant');await page.getByTestId('preview-banner').waitFor();await page.locator('nav a[href="#vendors"]').click();await page.getByTestId('vendor-tab-review').waitFor();assert.equal(await page.getByTestId('vendor-tab-sim').count(),0,'An Accountant sees the simulator');
  await page.locator('nav a[href="#settings"]').click();await page.getByRole('button',{name:'Return to my own view'}).click();
- results.checks.simUi={currency:'CAD',marginChange:true,scenarioMargin:true,breakdownTotals:true,keptAcrossTabs:true,phone375:true,nonPricingHidden:true,privacyMarkers:true};
+ results.checks.simUi={currency:'CAD',marginChange:true,scenarioMargin:true,breakdownTotals:true,keptAcrossTabs:true,savedRunsCompared:true,phone375:true,nonPricingHidden:true,privacyMarkers:true};
  }catch(error){console.error('Simulator UI diagnostics:',JSON.stringify(await diagnose()));throw error;}finally{await context.close();context=savedContext;page=savedPage;dataPlaneActive=active;}
 }
 // 7F-2: the converters in the real Import Studio (fresh vault, under the request/console marker sensors): a fixed-width

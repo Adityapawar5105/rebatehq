@@ -66,7 +66,7 @@ export const ACTIONS: Record<Action, { cap: Cap | null; mode: Mode }> = {
   reportState:r("cost"),reportCheck:w("cost"),reportExport:w("cost"),roiV2:r("cost"),roiRows:r("cost"),roiRecord:w("reconcile"),roiVoid:w("reconcile"),scorecard:r("quote"),scorecardOptIn:w("quote"),
   vendorSheets:r("cost"),vendorReview:r("cost"),vendorReviewQuotes:r("cost"),vendorPpv:r("cost"),vendorPpvLines:r("cost"),
   // 7E-2: the historical simulator is a pricing simulation (every role with "pricing" also has "cost"); Scale only.
-  simOptions:r("pricing"),simRun:r("pricing"),simRows:r("pricing"),
+  simOptions:r("pricing"),simRun:r("pricing"),simRows:r("pricing"),simSaved:r("pricing"),simSave:w("pricing"),simSavedDelete:w("pricing"),
   // 8A: deal guidance and cross-sell are Quote Desk reads; rep-safe and scanned for decision 16 (tests/quotes.test.ts).
   quoteGuidance:r("quote"),quoteCrossSell:r("quote"),
   // v2.6 gap 2: local yes/no for the relay set-up card (reviewed for decision 16 in tests/quotes.test.ts).
