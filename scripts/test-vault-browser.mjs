@@ -1132,7 +1132,7 @@ try {
   // Phase 11 (21 Nov 2026): on the quote just submitted, the Owner sets the quote branding, downloads the customer PDF
   // (prices only), revises it into a new version, sets that version's validity date, copies it, and exports a price list.
   const quoteNumber=/Q-\d{4}-\d{4}/.exec(await page.locator('#quote-heading').innerText())?.[0];assert.ok(quoteNumber,'The open quote shows no number');
-  await page.getByRole('link',{name:'Settings',exact:true}).click();await page.getByTestId('quote-branding').waitFor();
+  await page.getByRole('link',{name:'Settings',exact:true}).click();await page.locator('[data-testid="quote-branding"][data-loaded="yes"]').waitFor();
   await page.getByTestId('branding-company').fill('Gate Supply Co');await page.getByTestId('branding-terms').fill('Net 30 gate terms');
   await page.getByTestId('branding-save').click();await page.getByRole('status').filter({hasText:'Quote branding saved.'}).waitFor();
   await page.getByRole('link',{name:'Quotes',exact:true}).click();await page.getByRole('tab',{name:'History',exact:true}).click();
