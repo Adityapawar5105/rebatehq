@@ -49,7 +49,7 @@ import { dismissSql, fixGroups, fixRows, fixSetSql, recheck } from "../studio/fi
 import { health } from "../studio/health";
 import { PLAYGROUND_PREFIX, SAMPLE_COUNTS_SQL, generatePlayground, sampleState } from "../studio/playground";
 import { AUTO_LOCK_MS, LOCK_WARNING_MS, LEASE_WAIT_MS, VaultError, vaultPhase, type LeaksView, type Scope, type Tier, type VaultStatus } from "./protocol";
-import { REBUILD_SQL, effectiveRebuildSql, findDifferences, reconSummary, recordSql } from "../margin/aggregate";
+import { REBUILD_SQL, differencesChanged, effectiveRebuildSql, findDifferences, reconSummary, recordSql } from "../margin/aggregate";
 import { drill, math, waterfall, whale, type Dim, type Filters, type Metric } from "../margin/views";
 import { findLeaks, leakRows, scopeTotals, type LeakResult } from "../margin/leaks";
 import { REMOVE_SAMPLE_SQL, ledgerSql, roiSummary } from "../margin/roi";
@@ -320,7 +320,7 @@ export class VaultService {
     const engine = await this.writable(progress);
     progress(msg("vault.loadingRowsIntoThe"), "0", "1");
     const result = await this.studio.commit(engine, acknowledge);
-    this.dirty = true; progress(msg("vault.updatingMarginTotals2"), "0", "1"); await this.derived(engine);
+    this.dirty = true; progress(msg("vault.updatingMarginTotals2"), "0", "1"); await this.derived(engine, false);
     progress(msg("vault.savingEncryptedSnapshot"), "0", "1", "save"); await this.save();
     progress(msg("vault.saved"), "1", "1", "save"); this.touch();
     return { status: await this.status(), studio: await this.studioState(), result };
@@ -343,7 +343,7 @@ export class VaultService {
   async sourceRemove(id: string) {
     const engine = await this.writable();
     const cleanup = await removeSource(engine, id);
-    this.dirty = true; await this.derived(engine); await this.save(); this.touch();
+    this.dirty = true; await this.derived(engine, false); await this.save(); this.touch();
     return { status: await this.status(), cleanup };
   }
   async fixGroups() { return fixGroups(this.requireEngine()); }
@@ -381,7 +381,7 @@ export class VaultService {
     await this.studio.plan(engine, this.tier, new AbortController().signal, progress);
     progress(msg("vault.loadingPlaygroundRows"), "0", "1");
     await this.studio.commit(engine, true);
-    this.dirty = true; progress(msg("vault.updatingMarginTotals"), "0", "1"); await this.derived(engine); await this.save(); this.touch();
+    this.dirty = true; progress(msg("vault.updatingMarginTotals"), "0", "1"); await this.derived(engine, false); await this.save(); this.touch();
     return { status: await this.status(), manifest };
   }
   async playgroundRemove() {
@@ -392,18 +392,23 @@ export class VaultService {
   }
   // ---- Margin intelligence (chunk 4D) -------------------------------------------------
   private dataVersion = 0;
-  private leakCache: { version: number; costToServe:boolean; result: LeakResult } | null = null;
-  /** After any change to sales lines: rebuild the pre-aggregate and reconcile it with the lines (same transaction). */
-  private async derived(engine: Engine) {
+  // Roadmap 14.1 (audit B-7): leak results are kept per date window for the current data version, so Home (90 days)
+  // and Margin (full history) each run the finder once and no longer throw each other's result away. The finder's
+  // temporary tables hold only the last window it ran; `tables` names that window, for the evidence rows and totals.
+  private leakCache: { engine: Engine; version: number; results: Map<string, LeakResult>; tables: string | null } | null = null;
+  /** After any change to sales lines: rebuild the pre-aggregate and reconcile it with the lines (same transaction).
+   * Roadmap 14.2 (audit B-14): an import or a file removal already rebuilt the rebate accruals inside its own
+   * transaction (where an overlapping agreement rolls the import back), so those callers pass `accruals: false`. */
+  private async derived(engine: Engine, accruals = true) {
     await engine.conn.query("BEGIN");
     try {
-      await this.financialBody(engine);
+      await this.financialBody(engine, accruals);
       await engine.conn.query("COMMIT");
     } catch (error) { await engine.conn.query("ROLLBACK").catch(() => undefined); throw error; }
     finally { this.dataVersion++; this.leakCache = null; this.dirty = true; }
   }
-  private async financialBody(engine:Engine){
-    await rebates.rebuildAccruals(engine);await engine.conn.query(await effectiveRebuildSql(engine));
+  private async financialBody(engine:Engine,accruals=true){
+    if(accruals)await rebates.rebuildAccruals(engine);await engine.conn.query(await effectiveRebuildSql(engine));
     await engine.conn.query('UPDATE vault_meta SET pricing_revision=pricing_revision+1 WHERE id=1');
     const d=await findDifferences(engine);await engine.conn.query(await recordSql(d.found,new Date().toISOString()));
   }
@@ -433,12 +438,16 @@ export class VaultService {
   async marginWhale(filters?: Filters) { return whale(this.requireEngine(), this.tier, filters); }
   async marginMath(metric: Metric, filters?: Filters, offset = 0, grid?: unknown) { return math(this.requireEngine(), metric, filters, offset, grid); }
   private async isSample(engine: Engine) { const s = await listSources(engine); return s.length > 0 && s.every(x => x.name.startsWith(PLAYGROUND_PREFIX)); }
-  private async leakResult() {
-    const engine = this.requireEngine();
-    const costToServe=this.licence.tier!=='starter';
-    if (!this.leakCache || this.leakCache.version !== this.dataVersion || this.leakCache.costToServe!==costToServe) this.leakCache = { version: this.dataVersion,costToServe,result: await findLeaks(engine,costToServe) };
-    return this.leakCache.result;
+  private async leakFor(window?: { from: string; to: string }, tables = false) {
+    const engine = this.requireEngine(), costToServe = this.licence.tier !== 'starter', key = [costToServe, window?.from ?? '', window?.to ?? ''].join('|');
+    if (!this.leakCache || this.leakCache.engine !== engine || this.leakCache.version !== this.dataVersion) this.leakCache = { engine, version: this.dataVersion, results: new Map(), tables: null };
+    const cache = this.leakCache;
+    let result = cache.results.get(key);
+    // The temporary tables name no window while the finder runs, so a run that fails part-way is never read as complete.
+    if (!result || (tables && cache.tables !== key)) { cache.tables = null; result = await findLeaks(engine, costToServe, window); cache.results.set(key, result); cache.tables = key; }
+    return result;
   }
+  private leakResult() { return this.leakFor(); }
   /** Run the leak finder and record new or changed findings in the ROI ledger (audited, saved). */
   async leaks(): Promise<LeaksView> {
     const result = await this.leakResult(), engine = this.requireEngine(), sample = await this.isSample(engine);
@@ -453,7 +462,7 @@ export class VaultService {
     }
     this.touch(); return { result, roi: await roiSummary(engine), sample, recorded: changed };
   }
-  async leakRows(id: string, offset = 0, grid?: unknown) { await this.leakResult(); return leakRows(this.requireEngine(), id, offset, 25, grid); }
+  async leakRows(id: string, offset = 0, grid?: unknown) { await this.leakFor(undefined, true); return leakRows(this.requireEngine(), id, offset, 25, grid); }
   async roi() { return roiSummary(this.requireEngine()); }
   /** Read-only, cost-gated by dispatch. Does not renew the inactivity timer or
    * write the ROI ledger. Home only requests this while the screen is mounted. */
@@ -481,7 +490,7 @@ export class VaultService {
   async reportCheck(kind:cadence.PackKind,month:string|undefined,signal:AbortSignal,progress:Progress){
     this.opsTier();const e=await this.writable(progress);this.packLast=null;
     try{const {stamp,...data}=await cadence.check(e,kind,month,signal,progress);if(signal.aborted)throw cadence.cancelled();progress(msg('vault.savingEncryptedSnapshot'),'0','1','save');await this.write('report.checked',{id:data.id,kind},engine=>engine.conn.query(stamp).then(()=>undefined));this.packLast={engine:e,version:this.dataVersion,data};return data;}
-    catch(error){if(signal.aborted)throw cadence.cancelled();if(error instanceof VaultError)throw error;throw new VaultError('REPORT',msg('cadence.failed'));}finally{this.leakCache=null;}
+    catch(error){if(signal.aborted)throw cadence.cancelled();if(error instanceof VaultError)throw error;throw new VaultError('REPORT',msg('cadence.failed'));}finally{if(this.leakCache)this.leakCache.tables=null;}
   }
   async reportExport(id:string,locale?:string){this.opsTier();const p=this.currentPack();if(!p||p.id!==id)throw new VaultError('REPORT',msg('cadence.stale'));if(!isLocale(locale))throw new VaultError('REPORT',msg('cadence.invalid'));const bytes=reportPdf(p,locale);await this.write('report.cadence_pdf',{id:p.id,kind:p.kind,locale},async()=>undefined);this.packLast={engine:this.requireEngine(),version:this.dataVersion,data:p};return {name:'rebatehq-'+p.kind+'-'+p.window.from+'.pdf',blob:new Blob([bytes as Uint8Array<ArrayBuffer>],{type:'application/pdf'})};}
   async roiV2(){return recovery.summary(this.requireEngine());}
@@ -500,10 +509,9 @@ export class VaultService {
   async homeMonitor(thresholdBp='500'){
     const e=this.requireEngine();
     try{
-      const health=await customerHealth(e,thresholdBp,undefined,500),leaks=await findLeaks(e,this.licence.tier!=='starter',health.window);
+      const health=await customerHealth(e,thresholdBp,undefined,500),leaks=await this.leakFor(health.window);
       return {health,leaks,currency:await workspaceCurrency(e),checkedAt:new Date().toISOString()};
     }catch(error){if(error instanceof VaultError)throw error;throw new VaultError('QUERY',msg('monitor.failed'));}
-    finally{this.leakCache=null;}
   }
   // ---------------------------------------------------------------- Quote Desk and Price Check (7B)
   private quoteTier() { if (this.licence.tier === "starter") throw new VaultError("LICENCE", msg("quote.needsProfessional")); }
@@ -738,6 +746,7 @@ export class VaultService {
       const known = new Set(all.findings.map(f => f.id)); if (ids.some(id => !known.has(id as string))) throw new VaultError("INPUT", msg("report.badSelection"));
       const pick = new Set(ids as string[]); chosen = all.findings.filter(f => pick.has(f.id));
     }
+    await this.leakFor(undefined, true);
     const totals = await scopeTotals(engine, chosen.map(f => f.id));
     const result = { ...all, findings: chosen, totalCents: totals.totalCents, overlapCents: totals.overlapCents, overlapLines: totals.overlapLines, dedupedCents: totals.dedupedCents };
     const evidence: Record<string, Awaited<ReturnType<typeof leakRows>>["rows"]> = {};
@@ -756,9 +765,9 @@ export class VaultService {
   /** Re-run reconciliation; open differences are replaced, accepted ones keep their status. */
   async reconcile() {
     const engine = this.requireEngine(), d = await findDifferences(engine), at = new Date().toISOString();
-    const open = Number((await engine.conn.query("SELECT count(*) AS n FROM recon_issues WHERE status='open'")).toArray()[0].n);
-    // A read-only command (audit B-6): open differences are recorded only while the licence allows writes.
-    if ((d.found.length || open) && this.licence.writable) {
+    // A read-only command (audit B-6): open differences are recorded only while the licence allows writes. Roadmap 14.5
+    // (audit L-1): and only when they changed; before, every visit with an open difference rewrote and saved the vault.
+    if (this.licence.writable && await differencesChanged(engine, d.found)) {
       const w = await this.writable();
       await w.conn.query("BEGIN");
       try { await w.conn.query(await recordSql(d.found, at)); await w.conn.query("COMMIT"); } catch (error) { await w.conn.query("ROLLBACK").catch(() => undefined); throw error; }

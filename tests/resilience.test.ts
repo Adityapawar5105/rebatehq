@@ -44,7 +44,7 @@ test("B-6: commands marked read-only do not write without a writable licence", (
   const src = readFileSync("lib/vault/service.ts", "utf8");
   const body = (name: string) => src.slice(src.indexOf(name), src.indexOf("\n  async ", src.indexOf(name) + name.length));
   assert.match(body("async leaks()"), /if \(changed && this\.licence\.writable\)/);
-  assert.match(body("async reconcile()"), /&& this\.licence\.writable\) \{/);
+  assert.match(body("async reconcile()"), /if \(this\.licence\.writable && await differencesChanged\(/);
   assert.match(body("private async seedRoles()"), /if \(!this\.licence\.writable\) return;/);
 });
 

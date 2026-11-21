@@ -18,6 +18,7 @@ import { lineFromCents } from "../../lib/margin/engine";
 import { rha } from "../../lib/margin/decimal";
 import { findLeaks, hitKinds, hitRows } from "../../lib/margin/leaks";
 import { REBUILD_SQL, findDifferences } from "../../lib/margin/aggregate";
+import { rebuildAccruals } from "../../lib/rebate/store";
 import { moneyText } from "../../lib/spike/exact";
 import { ensureParquet } from "../../lib/vault/parquet-engine";
 import { printReport, priceListPdf } from "../helpers/converter-fixtures";
@@ -553,6 +554,58 @@ async function credits() {
   return { waterfall: expect, signErrorKept: true };
 }
 /** 2M-line timing for the waterfall, drill-downs, whale curve, leak finder and reconciliation (blueprint section 5 target: under 300 ms). */
+/** Roadmap Phase 14 (21 Nov 2026), local only: the costs Phase 14 removes, at 1 million lines, in real DuckDB-Wasm.
+ * The same action runs on the code before and after, so each figure can be compared. Not part of the gate. */
+async function phase14Benchmark(rows: number) {
+  assert(rows === 1_000_000 || rows === 100_000, "benchmark scope");
+  const scope = { userId: "bench-" + crypto.randomUUID(), tenantId: "bench-" + crypto.randomUUID() };
+  const service = new VaultService(() => undefined); await service.init(scope); await service.create(secret, "scale");
+  const engine = service.engine!, source = crypto.randomUUID(), out: Record<string, number | string> = { rows: String(rows) };
+  const time = async (label: string, work: () => Promise<unknown>) => { const t = performance.now(); await work(); out[label] = Math.round(performance.now() - t); };
+  const svc = service as unknown as { derived(e: typeof engine, accruals?: boolean): Promise<void>; homeMonitor(): Promise<unknown>; leaks(): Promise<unknown>; reconcile(): Promise<unknown> };
+  try {
+    // Two years of lines ending today, so Home's 90-day window holds about an eighth of them.
+    await engine.conn.query(`BEGIN;
+INSERT INTO products(product_id, category) SELECT 'P' || (i+1), 'Cat ' || (i % 40) FROM range(100000)t(i);
+INSERT INTO customers(customer_id, tier, branch) SELECT 'C' || (i+1), 'T' || lpad(((i % 50) + 1)::VARCHAR, 2, '0'), 'North' FROM range(2000)t(i);
+INSERT INTO source_files VALUES('${source}','synthetic-benchmark.csv','sales_history',0,'2026-11-21');
+INSERT INTO import_batches(id,source_id,rows_loaded,rows_rejected,imported_at) VALUES('${crypto.randomUUID()}','${source}',${rows},0,'2026-11-21')`);
+    for (let at = 0; at < rows; at += 100_000) await engine.conn.query(`INSERT INTO sales_lines(source_id,line_id,product_id,customer_id,sale_date,quantity,list_cents,discount_cents,freight_cents,rebate_cents,cost_cents,source_row,invoice_id,line_kind)
+SELECT '${source}', i+1, 'P' || ((i % 100000)+1), 'C' || ((i*13 % 2000)+1), (DATE '${new Date().toISOString().slice(0, 10)}' - CAST((i*730)//${rows} AS INTEGER))::DATE, (i%5)+1, 10000+(i%997)*29, ((10000+(i%997)*29) * (3000 - ((i*13 % 2000) % 50) * 50)) // 10000, 100+i%599, CASE WHEN i%7=0 THEN 200 ELSE 0 END, 6000+(i%991)*23, i+2, 'INV-' || (i+1), 'sale'
+FROM range(${at},${Math.min(rows, at + 100_000)})t(i)`);
+    await engine.conn.query("COMMIT");
+    await time("seedDerivedMs", () => svc.derived(engine)); await time("saveMs", () => service.save());
+    // 14.2: five rebate programmes on the largest customers; an import's follow-up step with and without the second rebuild.
+    for (let k = 1; k <= 5; k++) await service.rebateSave({ reference: "Bench " + k, customer: "C" + k, mode: "retroactive", treatment: "replace", from: "2024-01-01", to: "2027-12-31", eligible: "", excluded: "", enabled: true, tiers: [{ from: "0", to: "", rate: "2" }] } as never);
+    await time("accrualRebuildMs", async () => { await engine.conn.query("BEGIN"); try { await rebuildAccruals(engine); await engine.conn.query("COMMIT"); } catch (e) { await engine.conn.query("ROLLBACK"); throw e; } });
+    await time("followUpAfterImportMs", () => svc.derived(engine, false)); await service.save();
+    // 14.1: Home, then Margin, then Home again, on unchanged data.
+    await time("homeFirstMs", () => svc.homeMonitor());
+    await time("homeSecondMs", () => svc.homeMonitor());
+    await time("marginLeaksAfterHomeMs", () => svc.leaks());
+    await time("homeAfterMarginMs", () => svc.homeMonitor());
+    await time("marginLeaksAgainMs", () => svc.leaks());
+    // 14.5: one open difference (the pre-aggregate is changed by one cent), then three Reconciliation visits.
+    await engine.conn.query("UPDATE agg_cpm SET list_cents=list_cents+1 WHERE rowid=(SELECT min(rowid) FROM agg_cpm)");
+    await time("reconcileFirstMs", () => svc.reconcile());
+    await time("reconcileSecondMs", () => svc.reconcile());
+    await time("reconcileThirdMs", () => svc.reconcile());
+    // 14.6 study: the worker queue makes every click wait for the whole job. Here a cheap read is sent to the engine
+    // directly while a full leak finder run is in flight, as a separate read lane would; it then waits only for the
+    // statement running at that moment. The finder's longest single statement bounds that wait.
+    (service as unknown as { leakCache: null }).leakCache = null;
+    const conn = service.engine!.conn as { query: (sql: string) => Promise<unknown> }, original = conn.query.bind(conn), spans: number[] = [];
+    conn.query = async (sql: string) => { const t = performance.now(); try { return await original(sql); } finally { spans.push(performance.now() - t); } };
+    try {
+      const t = performance.now(), finder = (service as unknown as { leakResult(): Promise<unknown> }).leakResult();
+      await new Promise(resolve => setTimeout(resolve, 200));
+      const r = performance.now(); await original("SELECT count(*) FROM agg_cpm"); out.readDuringFinderMs = Math.round(performance.now() - r);
+      await finder; out.leakFinderMs = Math.round(performance.now() - t);
+      out.finderStatements = String(spans.length); out.finderLongestStatementMs = Math.round(Math.max(0, ...spans));
+    } finally { conn.query = original; }
+    return out;
+  } finally { await service.lock().catch(() => undefined); await reset(scope); }
+}
 async function marginBenchmark(rows: number) {
   assert(rows === 2_000_000 || rows === 200_000, "benchmark scope");
   const stages: Record<string, number> = {}; let stage = "seed"; const mark = (k: string, t: number) => { stages[k] = Math.round(performance.now() - t); stage = "after " + k; };
@@ -1039,7 +1092,7 @@ self.onmessage = async event => {
       assert(!opened, "Tampered engine asset was executed");
       self.postMessage({ result: { tamperedAssetRejected: true } }); return;
     }
-    const result = action === "converters" ? await convertersFlow() : action === "reports" ? await reportsFlow() : action === "suppliers" ? await suppliersFlow() : action === "rebates" ? await rebatesFlow() : action === "monitor" ? await monitorFlow() : action === "currency" ? await currencyFlow() : action === "pricingTools" ? await pricingToolsFlow() : action === "pricingOps" ? await pricingOpsFlow() : action === "phase5aBenchmark" ? await phase5aBenchmark() : action === "phase5a" ? await phase5a() : action === "pricing" ? await pricingFlow() : action === "legacyStorage" ? await legacyStorage() : action === "pricingBenchmark" ? await pricingBenchmark() : action === "fixture" ? await fixture() : action === "v1" ? await testFixture(event.data.bytes) : action === "seed" ? await seed(event.data.rows) : action === "firstChange" ? await firstChange(event.data.rows) : action === "integrity" ? await integrity() : action === "studio" ? await studio() : action === "mapper" ? await mapper() : action === "playground" ? await playground() : action === "margin" ? await margin() : action === "marginBenchmark" ? await marginBenchmark(event.data.rows) : action === "studioBenchmark" ? await studioBenchmark(event.data.rows) : action === "warmup" ? await warmup() : action === "cipherOnly" ? await cipherOnly() : await storageStatus();
+    const result = action === "converters" ? await convertersFlow() : action === "reports" ? await reportsFlow() : action === "suppliers" ? await suppliersFlow() : action === "rebates" ? await rebatesFlow() : action === "monitor" ? await monitorFlow() : action === "currency" ? await currencyFlow() : action === "pricingTools" ? await pricingToolsFlow() : action === "pricingOps" ? await pricingOpsFlow() : action === "phase5aBenchmark" ? await phase5aBenchmark() : action === "phase5a" ? await phase5a() : action === "pricing" ? await pricingFlow() : action === "legacyStorage" ? await legacyStorage() : action === "pricingBenchmark" ? await pricingBenchmark() : action === "fixture" ? await fixture() : action === "v1" ? await testFixture(event.data.bytes) : action === "seed" ? await seed(event.data.rows) : action === "firstChange" ? await firstChange(event.data.rows) : action === "integrity" ? await integrity() : action === "studio" ? await studio() : action === "mapper" ? await mapper() : action === "playground" ? await playground() : action === "margin" ? await margin() : action === "marginBenchmark" ? await marginBenchmark(event.data.rows) : action === "phase14Benchmark" ? await phase14Benchmark(event.data.rows) : action === "studioBenchmark" ? await studioBenchmark(event.data.rows) : action === "warmup" ? await warmup() : action === "cipherOnly" ? await cipherOnly() : await storageStatus();
     self.postMessage({ result });
   } catch (e) { self.postMessage({ error: e instanceof Error ? e.message : "test worker failed" }); }
 };

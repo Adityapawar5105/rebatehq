@@ -40,7 +40,11 @@ export async function getAuthState(headers?: Headers): Promise<AuthState | null>
 }
 
 export async function getAppContext(headers?: Headers): Promise<AppContext | null> {
-  const state = await getAuthState(headers);
+  return contextFrom(await getAuthState(headers), headers);
+}
+// Roadmap 14.3 (audit X-5): a page looks the person and their memberships up once; requireAppPageContext used to
+// call getAuthState and then getAppContext, which looked them up a second time.
+async function contextFrom(state: Awaited<ReturnType<typeof getAuthState>>, headers?: Headers): Promise<AppContext | null> {
   if (!state?.memberships.length) return null;
   const cookieStore = await cookies();
   const desiredTenant = cookieStore.get("md-tenant")?.value;
@@ -60,7 +64,7 @@ export async function requireAppPageContext(): Promise<AppContext> {
   const state = await getAuthState();
   if (!state) redirect("/login");
   if (!state.memberships.length) redirect("/setup");
-  const context = await getAppContext();
+  const context = await contextFrom(state);
   if (!context) redirect("/setup");
   return context;
 }
