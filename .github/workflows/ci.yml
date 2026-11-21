@@ -19,7 +19,9 @@ jobs:
           version: 10
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          # Pinned (21 Nov 2026): CI #194 on Node 24.22.3 crashed in V8 ("jit_page allocations" check) while a passing
+          # WebAssembly test file exited. 24.22.1 is the version every local run uses. Raise it deliberately, not implicitly.
+          node-version: 24.22.1
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Reject high and critical dependency advisories
@@ -32,7 +34,16 @@ jobs:
       - run: pnpm test
       - run: pnpm build
       - name: Start local Supabase services
-        run: pnpm exec supabase start -x studio,edge-runtime,storage-api,imgproxy,logflare,vector
+        # CI #196 (21 Nov 2026): the runner's Docker failed to set up container networking. One clean stop and retry.
+        shell: bash
+        run: |
+          start() { pnpm exec supabase start -x studio,edge-runtime,storage-api,imgproxy,logflare,vector; }
+          if ! start; then
+            echo "::warning::Supabase did not start; stopping and retrying once."
+            pnpm exec supabase stop --no-backup || true
+            sleep 15
+            start
+          fi
       - name: Apply every migration to the clean local database
         env:
           PGOPTIONS: -c client_min_messages=warning
