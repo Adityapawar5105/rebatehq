@@ -167,7 +167,7 @@ The static browser prototype (`index.html` and `app.js`) was removed on 21 Novem
 - `pnpm import:prototype <file>` validates and records a dry run. Add `--commit` to commit a matching fresh dry run. Set `TENANT_ID` and `ACTOR_ID`.
 - `scripts/purge-deleted-tenants.ts` removes business data for tenants disabled for 30 days; it preserves audit rows. Review `OPERATIONS.md` before running it.
 - `supabase/migrations/` is canonical. `schema.sql` mirrors the Phase 1 migration for older tooling.
-- Vercel deploys the Next.js app. Follow [`OPERATIONS.md`](./OPERATIONS.md) for project setup, backup, restore, and retention.
+- Netlify deploys the Next.js app (see [`NETLIFY_DEPLOYMENT.md`](./NETLIFY_DEPLOYMENT.md)). Follow [`OPERATIONS.md`](./OPERATIONS.md) for project setup, backup, restore, and retention.
 
 ## Current limits and deferred work
 
