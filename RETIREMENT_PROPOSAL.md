@@ -53,7 +53,7 @@ import_job, column_mapping_template, connector_secret, connector_sync_run.
    business snapshots need an approved retention process first.
 6. Done when CI and a user-run Restore Drill pass and the migration is locked.
 
-**Wave 1 status (5 Nov 2026): done.** Chunk 6R is CI-verified in [CI #73](https://github.com/Adityapawar5105/rebatehq/actions/runs/41977200715) and [Restore Drill #18](https://github.com/Adityapawar5105/rebatehq/actions/runs/41979671868) on `8a34e06`; its migration is locked. 22 tables dropped (the 21 above plus `plan_feature`, which nothing read). The `quote`/`quote_line` foreign keys to customer, product and uom were dropped so the wave-2 rows could stay; the legacy quote API routes were retired with wave 1 because they priced quotes from the dropped tables. See [CHUNK_6R_VERIFICATION.md](./CHUNK_6R_VERIFICATION.md) and blueprint section 22, item 18.
+**Wave 1 status (5 Nov 2026): done.** Chunk 6R is CI-verified in [CI #73](https://github.com/Adityapawar5105/rebatehq/actions/runs/41977200715) and [Restore Drill #18](https://github.com/Adityapawar5105/rebatehq/actions/runs/41979671868) on `8a34e06`; its migration is locked. 22 tables dropped (the 21 above plus `plan_feature`, which nothing read). The `quote`/`quote_line` foreign keys to customer, product and uom were dropped so the wave-2 rows could stay; the legacy quote API routes were retired with wave 1 because they priced quotes from the dropped tables. See [docs/evidence/CHUNK_6R_VERIFICATION.md](docs/evidence/CHUNK_6R_VERIFICATION.md) and blueprint section 22, item 18.
 
 ## Wave 2 — chunk 8R (after 7A, 7B, 7D and 8B)
 
@@ -63,6 +63,6 @@ rebate_tier, rebate_entry, supplier_credit (7D), alert (8B), and fx_rate (once a
 local FX table exists or is confirmed unnecessary). Same precondition, review
 and verification steps as wave 1.
 
-**Wave 2 status (13 Nov 2026): done.** CI-verified in [CI #150](https://github.com/Adityapawar5105/rebatehq/actions/runs/43453893489) and [Restore Drill #21](https://github.com/Adityapawar5105/rebatehq/actions/runs/43467938552); the migration is locked. Chunk 8R drops all 12 tables in `20261113120000_chunk8r_retire_wave2.sql`, which is now locked. Every table now has a CI-verified local equivalent, so "no local equivalent yet" no longer holds. `fx_rate` goes because the vault has kept per-workspace exchange rates since 7C-3a. The server keeps 13 control-plane tables. See [CHUNK_8R_VERIFICATION.md](./CHUNK_8R_VERIFICATION.md) and blueprint section 22, item 29.
+**Wave 2 status (13 Nov 2026): done.** CI-verified in [CI #150](https://github.com/Adityapawar5105/rebatehq/actions/runs/43453893489) and [Restore Drill #21](https://github.com/Adityapawar5105/rebatehq/actions/runs/43467938552); the migration is locked. Chunk 8R drops all 12 tables in `20261113120000_chunk8r_retire_wave2.sql`, which is now locked. Every table now has a CI-verified local equivalent, so "no local equivalent yet" no longer holds. `fx_rate` goes because the vault has kept per-workspace exchange rates since 7C-3a. The server keeps 13 control-plane tables. See [docs/evidence/CHUNK_8R_VERIFICATION.md](docs/evidence/CHUNK_8R_VERIFICATION.md) and blueprint section 22, item 29.
 
 No 6A work is included in this document.

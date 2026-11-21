@@ -11,7 +11,7 @@ Windows 11 build 10.0.26200. Chrome 156.0.8078.80; Edge 156.0.4314.58.
    generation-pointer JSON may exist. No plaintext database/WAL/CSV is present.
 2. `storage.estimate()` was compared with recursive `File.size` totals after
    100k-row imports and after seeded 1M/2M snapshots. Figures are in the browser
-   evidence linked from `CHUNK_4B_VERIFICATION.md`. In these runs the estimate
+   evidence linked from `docs/evidence/CHUNK_4B_VERIFICATION.md`. In these runs the estimate
    was only a few kilobytes above named file sizes, rather than gigabytes.
 3. In a fresh browser context, a dedicated worker used a **real** OPFS sync
    access handle for a synthetic eight-MiB zero-filled file. It wrote, flushed,

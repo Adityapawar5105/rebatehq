@@ -12,7 +12,7 @@ This runbook restores the application-owned logical database contents to a **dis
 
 ## Chunk 2B verification status — verified
 
-The locked pricing/rebate migration and local-target restore are **verified in [MarginDesk CI #29](https://github.com/Adityapawar5105/rebatehq/actions/runs/40729384500) and [MarginDesk Restore Drill #11](https://github.com/Adityapawar5105/rebatehq/actions/runs/40730343531), 2026-10-28, commit `13cea5a`**. At that Chunk 2B milestone, the minimum was **33 tenant tables**, with **88 fresh / 91 restore-mode checks**, planned = ran and unchanged counts after two suite runs. The dump, all ACL checkpoints, strict ACL/metadata/per-tenant count comparisons, sentinel and runtime-role checks passed. Restore-only platform cleanup preserves dump grants; historical migrations are not replayed. Hosted-target restore and managed backup/PITR remain **unverified**. See [the verification record](./CHUNK_2B_VERIFICATION.md).
+The locked pricing/rebate migration and local-target restore are **verified in [MarginDesk CI #29](https://github.com/Adityapawar5105/rebatehq/actions/runs/40729384500) and [MarginDesk Restore Drill #11](https://github.com/Adityapawar5105/rebatehq/actions/runs/40730343531), 2026-10-28, commit `13cea5a`**. At that Chunk 2B milestone, the minimum was **33 tenant tables**, with **88 fresh / 91 restore-mode checks**, planned = ran and unchanged counts after two suite runs. The dump, all ACL checkpoints, strict ACL/metadata/per-tenant count comparisons, sentinel and runtime-role checks passed. Restore-only platform cleanup preserves dump grants; historical migrations are not replayed. Hosted-target restore and managed backup/PITR remain **unverified**. See [the verification record](docs/evidence/CHUNK_2B_VERIFICATION.md).
 
 ## Hosted-mode prerequisites
 
@@ -98,7 +98,7 @@ The job summary for Restore Drill #13 reports PASS for the new column inventory 
 
 CI #39 also verified the separate real-Postgres 10,000-row benchmark: `commitImport` **11,605 ms**, `undoImport` **3,442 ms**, PostgreSQL **17.11**, **`margindesk_app`**. Parsing, setup, network and durable COMMIT/WAL flush are excluded; **this is not a serverless latency guarantee** and is not a restore duration.
 
-**Unverified:** authenticated Next.js behavior, the deployed Supabase app, hosted-target restore, serverless time limits, recurring schedule execution (needs an operator-configured runner), live email and SFTP ingestion, and browser UI beyond the local harness. Managed backup/PITR and pre-backup journal undo after real restore also remain unverified. Evidence and local results are in [CHUNK_3C_VERIFICATION.md](./CHUNK_3C_VERIFICATION.md).
+**Unverified:** authenticated Next.js behavior, the deployed Supabase app, hosted-target restore, serverless time limits, recurring schedule execution (needs an operator-configured runner), live email and SFTP ingestion, and browser UI beyond the local harness. Managed backup/PITR and pre-backup journal undo after real restore also remain unverified. Evidence and local results are in [docs/evidence/CHUNK_3C_VERIFICATION.md](docs/evidence/CHUNK_3C_VERIFICATION.md).
 
 ## 5B restore additions — unverified until the next manual drill
 

@@ -3,7 +3,7 @@
 Written 6 November 2026, after 7B (CI #89, #90, #91 green); updated 7 November 2026 after 7V (CI #95, #96 green). This file is the starting point for whoever builds
 the next chunk. It holds what a new session needs without the earlier chat history.
 
-**Current status (13 November 2026): 8R done ([CI #150](https://github.com/Adityapawar5105/rebatehq/actions/runs/43453893489); [Restore Drill #21](https://github.com/Adityapawar5105/rebatehq/actions/runs/43467938552); migration locked).** Server: 13 control-plane tables; pgTAP 136/139; 14 locked migrations (the 14 Nov 2026 operator subscriptions migration locked after CI #160 and Restore Drill #22), 0 pending. Local v21 / 61 tables. Every chunk except 9A is done; 9A waits for the user's explicit prompt. See CHUNK_8R_VERIFICATION.md.
+**Current status (13 November 2026): 8R done ([CI #150](https://github.com/Adityapawar5105/rebatehq/actions/runs/43453893489); [Restore Drill #21](https://github.com/Adityapawar5105/rebatehq/actions/runs/43467938552); migration locked).** Server: 13 control-plane tables; pgTAP 136/139; 14 locked migrations (the 14 Nov 2026 operator subscriptions migration locked after CI #160 and Restore Drill #22), 0 pending. Local v21 / 61 tables. Every chunk except 9A is done; 9A waits for the user's explicit prompt. See docs/evidence/CHUNK_8R_VERIFICATION.md.
 
 ## How to use this file
 1. Work **one chunk per session**, in the order below. Paste **Block A (shared context)** first, then that
@@ -48,8 +48,8 @@ Read before doing anything, in this order:
 2. BLUEPRINT.md (v2.6 governs; section 22 lists every change) and BLUEPRINT_EXECUTION_PLAN.md (chunk order and preamble).
 3. ARCHITECTURE_TRANSITION.md, MIGRATION_RULES.md, ASSUMPTIONS.md, RETIREMENT_PROPOSAL.md (for 8R).
 4. CODEX_HANDOFF.md Block B (pitfalls) — every item there caused a real failure before.
-5. The latest verification records: CHUNK_7V_VERIFICATION.md (UI components and layout rules), CHUNK_7B_VERIFICATION.md,
-   CHUNK_7U_VERIFICATION.md, CHUNK_7A_VERIFICATION.md.
+5. The latest verification records: docs/evidence/CHUNK_7V_VERIFICATION.md (UI components and layout rules), docs/evidence/CHUNK_7B_VERIFICATION.md,
+   docs/evidence/CHUNK_7U_VERIFICATION.md, docs/evidence/CHUNK_7A_VERIFICATION.md.
 
 Where things stand: chunks 4.0 through 7F, 7V and 8A-8D are CI-verified (local vault v21, 61 tables; 25 public tenant tables; 12 locked migrations); Phase 2 is complete except mobile (9A, on hold).
 
@@ -316,7 +316,7 @@ Tests and checks:
   the pseudo-locale walk and the 375px checks.
 - Add a gate check: no horizontal page overflow on any section at 1366 and 375 wide, in light and dark.
 - Save "after" screenshots under docs/ui/after/ for the unlock screen and Home in light and dark, desktop and
-  phone width, and put them side by side with "before" in CHUNK_7V_VERIFICATION.md.
+  phone width, and put them side by side with "before" in docs/evidence/CHUNK_7V_VERIFICATION.md.
 
 Stop after 7V-1. In the summary, ask the user to review the screenshots and approve the direction before 7V-2.
 ```
@@ -325,7 +325,7 @@ Stop after 7V-1. In the summary, ask the user to review the screenshots and appr
 
 ```
 [Block A]
-Chunk 7V-2. Precondition: the user approved the 7V-1 look (quote their approval in CHUNK_7V_VERIFICATION.md). UI
+Chunk 7V-2. Precondition: the user approved the 7V-1 look (quote their approval in docs/evidence/CHUNK_7V_VERIFICATION.md). UI
 only, as in 7V-1.
 
 Move every remaining screen onto the components/ui components and the new shell, keeping behaviour, numbers,
@@ -348,7 +348,7 @@ permissions and test ids:
 
 Checks: all tests, the browser gate in Chrome and Edge (pseudo-locale walk, 375px, no overflow in any section,
 light and dark), and the privacy gate in CI. Add after-screenshots of every section to
-CHUNK_7V_VERIFICATION.md. Report anything the user should review.
+docs/evidence/CHUNK_7V_VERIFICATION.md. Report anything the user should review.
 ```
 
 ## 3. Prompt 7C — Pricing ops
@@ -401,7 +401,7 @@ Tests: unit tests for:
 - landed-check diffs;
 - the new leak types.
 Extend the browser gate with a 7C UI flow and add the new sections to the pseudo walk. Write
-CHUNK_7C_VERIFICATION.md with a "Done when" table and the unverified list.
+docs/evidence/CHUNK_7C_VERIFICATION.md with a "Done when" table and the unverified list.
 ```
 
 ## 3a. Prompt 7C-3a — v2.4: multi-currency and Firefox
@@ -440,7 +440,7 @@ Scope:
 Data: bump the vault schema (workspace currency setting; per-batch currency and rate) per Block B.
 Tests: exact conversion and rounding, golden cases unchanged at USD, a non-USD import round trip, the
 currency-change rule, the formatting of every amount type, and the Firefox gate. Write
-CHUNK_7C3_VERIFICATION.md (part a), with a "Done when" table and the unverified list.
+docs/evidence/CHUNK_7C3_VERIFICATION.md (part a), with a "Done when" table and the unverified list.
 ```
 
 ## 3b. Prompt 7C-3b — v2.4: health alerts, competitor alternatives, sync status, cash-leak hero
@@ -476,7 +476,7 @@ existing formatters. Never hard-code "$" or USD. Browser assertions check the cu
 Tests: alert thresholds and window boundaries on fixtures, alternatives ranking and tie-breaks, sync-status
 states, the hero figure equal to the leak finder's 90-day total (also in a non-USD workspace), the decision 16
 scan, and the browser gate (Home cards, competitor alternatives, relay status, pseudo walk, 375px) on Chrome and
-Edge locally, with Firefox covered by its CI gate. Add part b to CHUNK_7C3_VERIFICATION.md.
+Edge locally, with Firefox covered by its CI gate. Add part b to docs/evidence/CHUNK_7C3_VERIFICATION.md.
 ```
 
 ## 3c. Prompt 7V-3 — v2.5: grid filter/sort, selection totals, row notes
@@ -488,7 +488,7 @@ is CI-verified. 7D-2 has not started and is not part of this chunk. No Supabase 
 
 Size: two parts, each committed, pushed and green in CI before the next: 7V-3a = items 1-2 (grid standard),
 7V-3b = item 3 (row notes). Stop after 7V-3a and report; the user starts 7V-3b in a new session with Block A and
-this same prompt, saying "continue with 7V-3b". Record both parts in CHUNK_7V3_VERIFICATION.md.
+this same prompt, saying "continue with 7V-3b". Record both parts in docs/evidence/CHUNK_7V3_VERIFICATION.md.
 
 Starting point (checked 8 November 2026): components/ui DataTable is only a styled <table> wrapper, and screens
 build their own tables (CleanupView, CostBasisView, ImportStudio, MarginView, PricingView, QuotesView, RolesView,
@@ -496,7 +496,7 @@ the rebate screens from 7D-1 and others). Some grids hold every row; others page
 
 Scope:
 1. Column header sort and filter, built once into the shared components/ui table, then applied to every data grid.
-   - First write an inventory in CHUNK_7V3_VERIFICATION.md: every table in the local app (components/local and
+   - First write an inventory in docs/evidence/CHUNK_7V3_VERIFICATION.md: every table in the local app (components/local and
      what it renders), each marked "data grid" (a list of records) or "not a grid" (a fixed show-the-math
      breakdown, key/value summary or legend) with the reason. Every data grid must meet the standard; legacy
      /legacy pages and server account pages are out of scope.
@@ -554,7 +554,7 @@ Size: this chunk is large. Work in two parts, each committed, pushed and green i
 rebate_programs, rebate_tiers and rebate_accruals); 7D-2 = items 2, 3 and 5 (supplier claim tracker, Purchases
 import role, rebate progress, supplier claim generator; a second schema bump with supplier_claims and purchases).
 Stop after 7D-1 and report; the user starts 7D-2 in a new session with Block A and this same prompt, saying
-"continue with 7D-2". Record both parts in CHUNK_7D_VERIFICATION.md (part 1, part 2).
+"continue with 7D-2". Record both parts in docs/evidence/CHUNK_7D_VERIFICATION.md (part 1, part 2).
 7D-1 is done (CI #114) and 7V-3 is done (CI #118, #120; local vault v15). 7D-2's new grids (supplier claims,
 purchases, supplier progress) use the shared grid standard (components/ui/DataGrid, worker grids via
 lib/grid/sql.ts gridPage), and its schema bump is v16 (upgradeSql(15)). Products now have a notes column: list
@@ -594,7 +594,7 @@ Tests:
 - claim status rules;
 - the claim export (exact amounts, currency, formula-injection-safe cells);
 - the browser gate flow and the pseudo walk.
-Write CHUNK_7D_VERIFICATION.md. Note for 8R: after 7D the legacy rebate tables are retired in wave 2; don't drop
+Write docs/evidence/CHUNK_7D_VERIFICATION.md. Note for 8R: after 7D the legacy rebate tables are retired in wave 2; don't drop
 them here.
 ```
 
@@ -609,7 +609,7 @@ components/local/VendorsView.tsx (Vendors section, tabs #vendors and #vendors-pp
 Size: two parts, each committed, pushed and green in CI before the next: 7E-1 = items 1 and 2 (vendor price
 review, purchase price variance), 7E-2 = item 3 (historical scenario simulator). Stop after 7E-1 and report; the
 user starts 7E-2 in a new session with Block A and this same prompt, saying "continue with 7E-2". Record both
-parts in CHUNK_7E_VERIFICATION.md (part 1, part 2).
+parts in docs/evidence/CHUNK_7E_VERIFICATION.md (part 1, part 2).
 
 Standards from 7C-3, 7V-3 and 7D (Block B has the pitfalls):
 - Every list of records is a components/ui/DataGrid that meets the grid standard; paged lists are worker grids
@@ -641,7 +641,7 @@ Gate the simulator on the Scale licence in the worker, not only in the UI. Reps:
 - the simulator's exact totals against the engine on the playground data;
 - the tier gate;
 - the browser gate flow.
-Write CHUNK_7E_VERIFICATION.md.
+Write docs/evidence/CHUNK_7E_VERIFICATION.md.
 ```
 
 ## 6. Prompt 7F — Reporting and reach
@@ -656,7 +656,7 @@ components/local/ReportsView.tsx. For 7F-2, a further schema bump goes to v18 (u
 Size: two parts, each committed, pushed and green in CI before the next: 7F-1 = items 1-4 (Review Pack, weekly
 digest, ROI v2, rep compliance scorecard), 7F-2 = items 5-6 (folder re-import, Phase 2 converters). Stop after
 7F-1 and report; the user starts 7F-2 in a new session with Block A and this same prompt, saying "continue with
-7F-2". Record both parts in CHUNK_7F_VERIFICATION.md (part 1, part 2).
+7F-2". Record both parts in docs/evidence/CHUNK_7F_VERIFICATION.md (part 1, part 2).
 
 Standards from 7C-3, 7V-3, 7D and 7E (Block B has the pitfalls):
 - Every list of records is a components/ui/DataGrid that meets the grid standard; paged lists are worker grids
@@ -700,7 +700,7 @@ Tests:
 - the scorecard payload scan (no cost or margin);
 - each converter on fixtures, including malformed ones;
 - the folder re-import permission flow (as far as automation allows; say what is unverified).
-Write CHUNK_7F_VERIFICATION.md. This completes blueprint Phase 2 except mobile.
+Write docs/evidence/CHUNK_7F_VERIFICATION.md. This completes blueprint Phase 2 except mobile.
 v2.4: the weekly digest includes the customer health alerts built in 7C-3b (same "runs while the app is open" note).
 ```
 
@@ -730,7 +730,7 @@ Pre-8A fixes first (blueprint v2.6, section 22 item 28):
    sales_lines in the worker, with minimum-support thresholds documented in ASSUMPTIONS.md.
 
 Deterministic: no external model and no network. Tests: the guidance reasons, the basket metrics on fixtures, the
-decision 16 scan for every rep-visible output, and the browser flow. Write CHUNK_8A_VERIFICATION.md.
+decision 16 scan for every rep-visible output, and the browser flow. Write docs/evidence/CHUNK_8A_VERIFICATION.md.
 ```
 
 ## 8. Prompt 8B — Margin Drain agents, cost index triggers, dead stock
@@ -766,7 +766,7 @@ Tests:
 - the trigger rule math (exact cents);
 - the dead-stock floor;
 - if a migration is added: pgTAP, the RLS tests and the privacy gate (the feed holds no customer data).
-Write CHUNK_8B_VERIFICATION.md. This is a precondition for 8R (the legacy alert table).
+Write docs/evidence/CHUNK_8B_VERIFICATION.md. This is a precondition for 8R (the legacy alert table).
 v2.4 additions: the dead-stock optimiser takes user-entered carrying costs (cost of capital %, storage cost per
 unit per month), shows the capital tied up per SKU in cash terms, and suggests substitute SKUs. Margin Drain agents
 build on the 7C-3b customer health alerts rather than duplicating them.
@@ -799,7 +799,7 @@ Tests:
 - a service-worker cache scan proving no business data is cached;
 - audit pack verification;
 - the template content.
-Write CHUNK_8C_VERIFICATION.md.
+Write docs/evidence/CHUNK_8C_VERIFICATION.md.
 v2.4 addition: a Safari desktop verification spike (OPFS persistence, DuckDB-Wasm threading, COOP/COEP). Record
 the results; do not claim or advertise Safari desktop support unless the spike passes.
 ```
@@ -833,7 +833,7 @@ After approval:
 - The privacy gate is extended to prove that nothing is sent without consent and that only the approved
   aggregate shape is ever sent.
 
-Write CHUNK_8D_VERIFICATION.md.
+Write docs/evidence/CHUNK_8D_VERIFICATION.md.
 ```
 
 ## 11. Prompt 8R — Legacy table retirement, wave 2
@@ -842,7 +842,7 @@ Write CHUNK_8D_VERIFICATION.md.
 [Block A]
 Chunk 8R. Preconditions: 7A, 7B, 7D and 8B are CI-verified (all are; 8D is too: CI #146, Restore Drill #20, 12 locked
 migrations, 25 public tenant tables). Follow RETIREMENT_PROPOSAL.md "Wave 2" and repeat
-exactly how 6R worked (read CHUNK_6R_VERIFICATION.md and migration 20261105120000_chunk6r_retire_wave1.sql).
+exactly how 6R worked (read docs/evidence/CHUNK_6R_VERIFICATION.md and migration 20261105120000_chunk6r_retire_wave1.sql).
 
 The tables: quote, quote_line, quote_share_link, approval, approval_rule, rebate_agreement, rebate_progress,
 rebate_tier, rebate_entry, supplier_credit, alert, and fx_rate (only once a local FX table exists or it is
@@ -859,14 +859,14 @@ Steps:
    tables untouched.
 4. Keep the migration pending until CI and the drill both pass, then lock it in the close-out.
 
-Write CHUNK_8R_VERIFICATION.md. After 8R, every chunk except 9A is done. 9A waits for the user's explicit prompt.
+Write docs/evidence/CHUNK_8R_VERIFICATION.md. After 8R, every chunk except 9A is done. 9A waits for the user's explicit prompt.
 ```
 
 
 ## Chunk 7C-1 implementation handoff (7 November 2026; CI-verified)
 
 Items 1–5 are CI-verified in [CI #100](https://github.com/Adityapawar5105/rebatehq/actions/runs/42284900986) on `aecfa32`;
-see CHUNK_7C_VERIFICATION.md. The local vault is
+see docs/evidence/CHUNK_7C_VERIFICATION.md. The local vault is
 v11 (37 tables), including price_changesets and price_changeset_rows. Part 2 is
 not started. No Supabase migration or migrations.lock change.
 
@@ -891,7 +891,7 @@ Additional Block B pitfalls found:
 
 ## Chunk 7C-2 implementation handoff (8 November 2026)
 
-CI-verified in [CI #104](https://github.com/Adityapawar5105/rebatehq/actions/runs/42406059786) on `05ff468`; CHUNK_7C2_VERIFICATION.md records 249 unit tests, 43
+CI-verified in [CI #104](https://github.com/Adityapawar5105/rebatehq/actions/runs/42406059786) on `05ff468`; docs/evidence/CHUNK_7C2_VERIFICATION.md records 249 unit tests, 43
 authenticated vault checks and 11 real-authenticated local-Supabase relay checks. New worker commands are all denied to Sales Reps. Local v12 adds
 five tables (42 total), no Supabase change. See ASSUMPTIONS.md for Basic/full
 grid limits, saved-rule slider semantics, cost-to-serve grouping and explicit

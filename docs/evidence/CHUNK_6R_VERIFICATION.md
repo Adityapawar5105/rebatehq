@@ -1,6 +1,6 @@
 # Chunk 6R verification — legacy table retirement, wave 1
 
-5 November 2026. **6R is complete and CI-verified:** RebateHQ [CI #73](https://github.com/Adityapawar5105/rebatehq/actions/runs/41977200715) and [Restore Drill #18](https://github.com/Adityapawar5105/rebatehq/actions/runs/41979671868) (local target) passed on `8a34e06`. The migration is now **locked** in `migrations.lock` (10 applied, 0 pending). Plan: [RETIREMENT_PROPOSAL.md](./RETIREMENT_PROPOSAL.md) (approved 5 Nov 2026; blueprint section 22, items 15 and 18).
+5 November 2026. **6R is complete and CI-verified:** RebateHQ [CI #73](https://github.com/Adityapawar5105/rebatehq/actions/runs/41977200715) and [Restore Drill #18](https://github.com/Adityapawar5105/rebatehq/actions/runs/41979671868) (local target) passed on `8a34e06`. The migration is now **locked** in `migrations.lock` (10 applied, 0 pending). Plan: [RETIREMENT_PROPOSAL.md](../../RETIREMENT_PROPOSAL.md) (approved 5 Nov 2026; blueprint section 22, items 15 and 18).
 
 ## Precondition
 

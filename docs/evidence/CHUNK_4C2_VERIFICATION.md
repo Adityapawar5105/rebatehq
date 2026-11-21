@@ -1,6 +1,6 @@
 # Chunk 4C-2 — ERP mapper, resilient parser, Fix Later, health score, Playground
 
-**4 Nov 2026. CI-verified in [MarginDesk CI #51](https://github.com/Adityapawar5105/rebatehq/actions/runs/41783684531) on commit `a9ca8f7` (9m 31s)**, including the required authenticated privacy gate. The gate now drives the mapping confirmation and a Fix Later bulk fix through the UI. CI #50 on the work-in-progress commit `f1397bf` failed in that gate; the cause and fix are below. Measurements are local. Built on 4C-1 (CI #48, `ea4e5b6`). Real-file results: [REAL_FILE_RESULTS.md](./REAL_FILE_RESULTS.md).
+**4 Nov 2026. CI-verified in [MarginDesk CI #51](https://github.com/Adityapawar5105/rebatehq/actions/runs/41783684531) on commit `a9ca8f7` (9m 31s)**, including the required authenticated privacy gate. The gate now drives the mapping confirmation and a Fix Later bulk fix through the UI. CI #50 on the work-in-progress commit `f1397bf` failed in that gate; the cause and fix are below. Measurements are local. Built on 4C-1 (CI #48, `ea4e5b6`). Real-file results: [REAL_FILE_RESULTS.md](../../REAL_FILE_RESULTS.md).
 
 ## What was built
 

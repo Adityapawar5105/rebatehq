@@ -8,7 +8,7 @@ No high or critical vulnerability was identified in the reviewed paths. That is
 not a claim that none exists. See the findings and external review gates below.
 6B is **CI-verified** in [CI #75](https://github.com/Adityapawar5105/rebatehq/actions/runs/41989796464) on `ade310e`, 5 November 2026: 194 unit tests,
 113 fresh pgTAP checks twice and 36 named authenticated privacy checks.
-See [CHUNK_6B_VERIFICATION.md](./CHUNK_6B_VERIFICATION.md).
+See [docs/evidence/CHUNK_6B_VERIFICATION.md](docs/evidence/CHUNK_6B_VERIFICATION.md).
 
 ## Assets and trust boundaries
 
@@ -57,7 +57,7 @@ Evidence: `tests/studio.test.ts`, `tests/pilot-*.test.ts`, `tests/vault.test.ts`
 `tests/licence*.test.ts`, `tests/control-plane.test.ts`,
 `tests/http-boundary.test.js`, `supabase/tests/*.sql`, and
 `scripts/test-vault-browser.mjs` / `tests/browser/vault-worker.ts`.
-The relay row describes 7A implementation, not passing CI or independent-review evidence. See CHUNK_7A_VERIFICATION.md.
+The relay row describes 7A implementation, not passing CI or independent-review evidence. See docs/evidence/CHUNK_7A_VERIFICATION.md.
 
 ## Control review
 

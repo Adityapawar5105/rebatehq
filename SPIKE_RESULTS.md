@@ -255,7 +255,7 @@ products; Professional stays 100k/1M and Starter 20k/200k. The 2M startup target
 still misses after whole-browser restart. These are local pilot guardrails,
 not changes to the blueprint or shipping guarantees. The complete methodology,
 earlier failed eager-copy measurements, local tests, pending authenticated CI
-gate and remaining limits are in [CHUNK_4B_VERIFICATION.md](./CHUNK_4B_VERIFICATION.md).
+gate and remaining limits are in [docs/evidence/CHUNK_4B_VERIFICATION.md](docs/evidence/CHUNK_4B_VERIFICATION.md).
 
 The new ciphertext-only storage path estimates close to named file sizes, but
 the historical 4A discrepancy remains **unresolved/unverified**. See

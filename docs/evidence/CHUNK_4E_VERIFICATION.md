@@ -66,7 +66,7 @@ Full Chrome, Edge and Chromium each passed **25 named harness checks**,
 including the pricing/backup UI and private-marker sensor. The complete unit
 suite passed **163 tests (67 JS + 96 TS)**, with no failures/skips. Typecheck,
 final production build, schema/service-role scan and migration freeze passed.
-Sanitized local evidence: [pricing-4e-2026-11-04.json](./vault-evidence/pricing-4e-2026-11-04.json).
+Sanitized local evidence: [pricing-4e-2026-11-04.json](../../vault-evidence/pricing-4e-2026-11-04.json).
 
 ## Measurements (local, not CI)
 
