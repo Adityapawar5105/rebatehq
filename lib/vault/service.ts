@@ -320,7 +320,7 @@ export class VaultService {
     const engine = await this.writable(progress);
     progress(msg("vault.loadingRowsIntoThe"), "0", "1");
     const result = await this.studio.commit(engine, acknowledge);
-    this.dirty = true; progress(msg("vault.updatingMarginTotals2"), "0", "1"); await this.derived(engine);
+    this.dirty = true; progress(msg("vault.updatingMarginTotals2"), "0", "1"); await this.derived(engine, false);
     progress(msg("vault.savingEncryptedSnapshot"), "0", "1", "save"); await this.save();
     progress(msg("vault.saved"), "1", "1", "save"); this.touch();
     return { status: await this.status(), studio: await this.studioState(), result };
@@ -343,7 +343,7 @@ export class VaultService {
   async sourceRemove(id: string) {
     const engine = await this.writable();
     const cleanup = await removeSource(engine, id);
-    this.dirty = true; await this.derived(engine); await this.save(); this.touch();
+    this.dirty = true; await this.derived(engine, false); await this.save(); this.touch();
     return { status: await this.status(), cleanup };
   }
   async fixGroups() { return fixGroups(this.requireEngine()); }
@@ -381,7 +381,7 @@ export class VaultService {
     await this.studio.plan(engine, this.tier, new AbortController().signal, progress);
     progress(msg("vault.loadingPlaygroundRows"), "0", "1");
     await this.studio.commit(engine, true);
-    this.dirty = true; progress(msg("vault.updatingMarginTotals"), "0", "1"); await this.derived(engine); await this.save(); this.touch();
+    this.dirty = true; progress(msg("vault.updatingMarginTotals"), "0", "1"); await this.derived(engine, false); await this.save(); this.touch();
     return { status: await this.status(), manifest };
   }
   async playgroundRemove() {
@@ -396,17 +396,19 @@ export class VaultService {
   // and Margin (full history) each run the finder once and no longer throw each other's result away. The finder's
   // temporary tables hold only the last window it ran; `tables` names that window, for the evidence rows and totals.
   private leakCache: { engine: Engine; version: number; results: Map<string, LeakResult>; tables: string | null } | null = null;
-  /** After any change to sales lines: rebuild the pre-aggregate and reconcile it with the lines (same transaction). */
-  private async derived(engine: Engine) {
+  /** After any change to sales lines: rebuild the pre-aggregate and reconcile it with the lines (same transaction).
+   * Roadmap 14.2 (audit B-14): an import or a file removal already rebuilt the rebate accruals inside its own
+   * transaction (where an overlapping agreement rolls the import back), so those callers pass `accruals: false`. */
+  private async derived(engine: Engine, accruals = true) {
     await engine.conn.query("BEGIN");
     try {
-      await this.financialBody(engine);
+      await this.financialBody(engine, accruals);
       await engine.conn.query("COMMIT");
     } catch (error) { await engine.conn.query("ROLLBACK").catch(() => undefined); throw error; }
     finally { this.dataVersion++; this.leakCache = null; this.dirty = true; }
   }
-  private async financialBody(engine:Engine){
-    await rebates.rebuildAccruals(engine);await engine.conn.query(await effectiveRebuildSql(engine));
+  private async financialBody(engine:Engine,accruals=true){
+    if(accruals)await rebates.rebuildAccruals(engine);await engine.conn.query(await effectiveRebuildSql(engine));
     await engine.conn.query('UPDATE vault_meta SET pricing_revision=pricing_revision+1 WHERE id=1');
     const d=await findDifferences(engine);await engine.conn.query(await recordSql(d.found,new Date().toISOString()));
   }
