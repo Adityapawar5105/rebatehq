@@ -200,7 +200,7 @@ test("7B Quote Desk and Price Check need Professional", async () => {
 // reviewed (it cannot carry cost). Adding a rep-reachable command fails this test until it is classified.
 const SCANNED = ["quoteOutcome","winLoss","quoteGuidance","quoteCrossSell","scorecard","scorecardOptIn","rebateProgress","status", "home", "checklist", "search", "roleList", "pricingState", "priceCheck", "quoteCreate", "quoteLines", "quoteSubmit", "quoteWithdraw", "quoteGet", "quoteList"] as const;
 const REVIEWED: Record<string, string> = {
-  relayLocal: "v2.6 gap 2: a yes/no for this device's local relay identity, read from the vault; no cost, no network",
+  relayLocal: "v2.6 gap 2: a yes/no for this device's local relay identity, plus (8.4) whether a send is waiting and the last sync time; read from the vault; no cost, no network",
   gridTotals: "7V-3a: totals of numbers the caller already holds; returns only sums, counts, minimum and maximum of them",
   init: "vault bootstrap state", create: "creates an empty vault",
   vaultReset: "Phase 5: deletes this device's vault files while locked; returns status (scanned)", passphraseChange: "Phase 5: re-encrypts the caller's own vault; returns status (scanned)", unlock: "returns status (scanned)", lock: "returns status", touch: "idle timer", cancel: "cancels a job", save: "returns status",

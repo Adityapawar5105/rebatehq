@@ -25,7 +25,7 @@ import { CostBasisView } from "./CostBasisView";
 import { RecordsView } from "./RecordsView";
 import { VendorsView } from "./VendorsView";
 import { RolesView } from "./RolesView";
-import { RelayPanel } from './RelayPanel';
+import { RelayOnboarding, RelayPanel, RelaySetupLine } from './RelayPanel';
 import { AgentsInbox } from './AgentsInbox';
 import { AuditPackButton } from './Templates';
 import { OfflineCard, clearOfflineCopy, useOfflineWorker } from './OfflineMode';
@@ -203,7 +203,8 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
             {status.sample === "only" && visible.includes("Data Hub") && <ButtonLink size="sm" variant="primary" icon="upload" href="#data-hub">{t("shell.sample.import")}</ButtonLink>}
             <Button size="sm" variant="ghost" disabled={busy} onClick={() => void operation(async () => { const out = await client.current!.call("playgroundRemove", {}); setStatus(out.status); setMessage(msg("studio.removedPlaygroundFilesAnd", { count: Number(out.removed) })); })}>{t("shell.sample.remove")}</Button>
           </> : undefined}>{t(status.sample === "only" ? "shell.sample.only" : "shell.sample.mixed")}</Notice>}
-          {shown === "Home" && client.current && <HomeView sample={status.sample} client={client.current} userId={scope.userId} version={`${status.lines}|${status.generation}|${access?.role}`} busy={busy} operation={operation} refresh={async () => setStatus(await client.current!.call("status", {}))} onHome={onHome}/>}
+          {shown === "Home" && client.current && <HomeView sample={status.sample} client={client.current} userId={scope.userId} version={`${status.lines}|${status.generation}|${access?.role}`} busy={busy} operation={operation} refresh={async () => setStatus(await client.current!.call("status", {}))} onHome={onHome}
+            afterWork={caps.includes('collaborate') && status.licence?.tier !== 'starter' ? <RelayOnboarding client={client.current} userId={scope.userId} tenantId={scope.tenantId} relayEnabled={relayEnabled}/> : null}/>}
           {shown === "Home" && client.current && caps.includes("cost") && status.licence?.tier !== "starter" && <AgentsInbox client={client.current} version={`${status.lines}|${status.generation}`} canPrice={caps.includes("pricing")} busy={busy} operation={operation}/>}
           {shown === "Home" && client.current && caps.includes('collaborate') && status.licence?.tier!=='starter' && <RelayPanel client={client.current} userId={scope.userId} tenantId={scope.tenantId} relayEnabled={relayEnabled} onChange={async()=>setStatus(await client.current!.call('status',{}))}/>}
           {shown === "Data Hub" && client.current && <>
@@ -244,6 +245,7 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
           {shown === "Settings" && client.current && caps.includes("backup") && <BackupView client={client.current} busy={busy} operation={operation} unlocked onStatus={setStatus}/>}
           {shown === "Settings" && client.current && <PassphraseCard client={client.current} busy={busy} operation={operation} onStatus={setStatus} setMessage={setMessage}/>}
           {shown === "Settings" && client.current && <RolesView client={client.current} busy={busy} operation={operation} refresh={async () => setStatus(await client.current!.call("status", {}))}/>}
+          {shown === "Settings" && client.current && caps.includes('collaborate') && status.licence?.tier !== 'starter' && <RelaySetupLine client={client.current} userId={scope.userId} tenantId={scope.tenantId} relayEnabled={relayEnabled}/>}
           {shown === "Settings" && <section className={styles.card} aria-labelledby="storage-heading"><h2 id="storage-heading">{t("shell.storage.heading")}</h2>{status.licence?.writable&&status.tier!==status.licence.tier&&caps.includes('roles')&&<button disabled={busy} onClick={()=>void operation(async()=>{setStatus(await client.current!.call('capacityUpgrade',{}));setMessage(msg("shell.storage.upgraded"));})}>{t("shell.storage.upgrade")}</button>}<p>{t("shell.storage.summary", { saved: status.lastSaved ? fmt.dateTime(status.lastSaved) : t("common.none") })}</p><p>{t("shell.storage.persistence", { persistence: storage ? t(storage.persistent ? "shell.storage.granted" : "shell.storage.notGranted") : t("common.unknown"), usage: storage?.usage ? fmt.int(storage.usage) : t("common.unknown"), quota: storage?.quota ? fmt.int(storage.quota) : t("common.unknown"), bytes: storage?.namedOpfsBytes ? fmt.int(storage.namedOpfsBytes) : t("common.unknown") })}</p><button className={styles.primary} onClick={() => void operation(async () => { await navigator.storage.persist(); setStorage(await client.current!.call("storage", {})); setMessage(msg("shell.storage.refreshed")); })}>{t("shell.storage.request")}</button><p className={styles.muted}>{t("shell.storage.note")}</p>{!lab && <p><a href="/account/users">{t("shell.storage.team")}</a>{t("common.listSeparator")}<a href="/account/workspace">{t("shell.storage.workspace")}</a></p>}</section>}
           {shown === "Settings" && <GlossaryCard/>}
           {shown === "Settings" && <OfflineCard licenceUntil={status.licence?.offline && status.licence.until ? new Date(Number(status.licence.until)).toISOString() : null}/>}

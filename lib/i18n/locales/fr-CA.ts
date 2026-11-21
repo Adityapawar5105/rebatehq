@@ -52,4 +52,5 @@ export const frCA: Partial<Catalog> = {
   "vendor.openQuotes": "Soumissions ouvertes",
   "quotes.discard.body": "Les quantités et les prix saisis sur cette soumission ne sont pas enregistrés.",
   "quotes.discard.yes": "Abandonner et commencer une nouvelle soumission",
+  "relay.onboard.notShared": "Les prix, les coûts et les factures ne sont jamais envoyés. Seuls le numéro de la soumission, son total et vos commentaires le sont.",
 };
