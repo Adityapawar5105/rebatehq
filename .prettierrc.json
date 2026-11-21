@@ -1,0 +1,9 @@
+{
+  "$comment": "Roadmap 13.8 (decision D14): format a file when you change it; do not reformat untouched files. Migrations and locked files are never reformatted (see .prettierignore).",
+  "printWidth": 140,
+  "semi": true,
+  "singleQuote": false,
+  "trailingComma": "all",
+  "arrowParens": "avoid",
+  "endOfLine": "lf"
+}
