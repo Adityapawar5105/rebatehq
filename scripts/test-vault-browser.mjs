@@ -472,8 +472,13 @@ async function phase8Ui(){
   // The account page is control plane (licence and devices), so the business-data request sensor is off for it.
   dataPlaneActive=false;await page.goto(base+'/account/licence');await page.getByRole('navigation',{name:'Account',exact:true}).waitFor();
   await page.getByRole('button',{name:'Sign out',exact:true}).waitFor();assert.equal(await page.getByRole('link',{name:'Licence, seats and devices',exact:true}).getAttribute('aria-current'),'page','The account page is not marked current in the vault sidebar');
-  await page.setViewportSize({width:375,height:812});const fits=await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1);await page.setViewportSize({width:1280,height:900});
-  assert.ok(fits,'The account page overflows a 375px phone screen');accountShell='vault-frame';
+  // Measure only after the device list has loaded (CI #191 passed because it measured the loading text; PR #17's run
+  // measured the loaded table and failed), and after the narrow layout has painted. A failure names what is too wide.
+  await page.getByText('Devices are control metadata.',{exact:false}).waitFor({timeout:30000});
+  await page.setViewportSize({width:375,height:812});await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+  const wide=await page.evaluate(()=>{const limit=innerWidth+1;if(document.documentElement.scrollWidth<=limit)return '';const out=[];for(const el of document.querySelectorAll('body *')){const r=el.getBoundingClientRect();if(!(r.right>limit&&r.width>0))continue;let clipped=false;for(let p=el.parentElement;p&&p!==document.body;p=p.parentElement)if(/auto|scroll|hidden|clip/.test(getComputedStyle(p).overflowX)){clipped=true;break;}if(!clipped)out.push(el.tagName.toLowerCase()+(el.className&&typeof el.className==='string'?'.'+el.className.split(' ')[0]:'')+' right='+Math.round(r.right));if(out.length>=5)break;}return 'scrollWidth='+document.documentElement.scrollWidth+' '+out.join('; ');});
+  await page.setViewportSize({width:1280,height:900});
+  assert.equal(wide,'','The account page overflows a 375px phone screen');accountShell='vault-frame';
  }
  results.checks.phase8Ui={scannedPdfBesideDropZone:true,noTopBanner:true,storageSizes:true,accountShell};
  }catch(error){console.error('Phase 8 UI diagnostics:',JSON.stringify(await diagnose()));throw error;}finally{await context.close();context=savedContext;page=savedPage;dataPlaneActive=active;}
