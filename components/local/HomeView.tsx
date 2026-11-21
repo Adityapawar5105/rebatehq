@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { nextTabIndex } from "@/components/ui/tabKeys";
 import type { VaultClient } from "@/lib/vault/client";
 import type { HomeData } from "@/lib/vault/protocol";
 import type { QuoteSummary } from "@/lib/quotes/quotes";
@@ -48,7 +49,7 @@ function WorkTabs({ drafts, action }: { drafts: WorkItem[]; action: WorkItem[] }
   const [tab, setTab] = useState<"drafts" | "action">(drafts.length || !action.length ? "drafts" : "action");
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
   const tabs = [{ id: "drafts" as const, label: t("home.tab.drafts"), items: drafts }, { id: "action" as const, label: t("home.tab.action"), items: action }];
-  const keys = (e: KeyboardEvent<HTMLButtonElement>, i: number) => { if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return; e.preventDefault(); const next = (i + (e.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length; setTab(tabs[next].id); refs.current[next]?.focus(); };
+  const keys = (e: KeyboardEvent<HTMLButtonElement>, i: number) => { const next = nextTabIndex(e.key, i, tabs.length); if (next === null) return; e.preventDefault(); setTab(tabs[next].id); refs.current[next]?.focus(); };
   // Undated rows (Fix Later, reconciliation, uncosted) are standing work, not old work: they sit under "Open items".
   const items = tabs.find(x => x.id === tab)!.items, today = items.filter(i => isToday(i.at)), earlier = items.filter(i => i.at && !isToday(i.at)), open = items.filter(i => !i.at);
   const list = (rows: WorkItem[]) => <ul className={hs.list}>{rows.map(i => <li key={i.id}><a href={i.href} className={hs.item} data-testid="home-work-item" onClick={() => { if (i.anchor) scrollToHeading(i.anchor); }}>
@@ -103,7 +104,7 @@ export function CreateNew({ items }: { items: { href: string; label: string; ico
 /** Home: a greeting (in the page header), the work that is yours or waits on you, the numbers your role may see, and the ROI tracker.
  * The 7-day setup checklist was removed from Home on 14 Nov 2026, and the greeting + work tabs layout replaced the role card
  * on 15 Nov 2026, both at the user's request (blueprint section 22). */
-export function HomeView({ client, userId, version, busy, operation, refresh, onHome, sample }: { client: VaultClient; userId: string; version: string; busy: boolean; operation: (f: () => Promise<void>) => Promise<void>; refresh: () => Promise<void>; onHome?: (home: HomeData) => void; sample?: SampleState }) {
+export function HomeView({ client, userId, version, busy, operation, refresh, onHome, sample, afterWork }: { client: VaultClient; userId: string; version: string; busy: boolean; operation: (f: () => Promise<void>) => Promise<void>; refresh: () => Promise<void>; onHome?: (home: HomeData) => void; sample?: SampleState; /** 8.5: shown directly under the work tabs (the sharing set-up card). */ afterWork?: ReactNode }) {
   const [home, setHome] = useState<HomeData | null>(null), [owner, setOwner] = useState(""), [note, setNote] = useState("");
   const [work, setWork] = useState<{ drafts: WorkItem[]; action: WorkItem[] } | null>(null);
   const load = async () => setHome(await client.call("home", {}));
@@ -136,6 +137,7 @@ export function HomeView({ client, userId, version, busy, operation, refresh, on
     </Notice>}
     {sample === "empty" && has("data") && dataHub && <StartCard busy={busy} onPlayground={() => void operation(async () => { await client.call("playgroundLoad", {}); await refresh(); })}/>}
     {work ? <WorkTabs key={version} drafts={work.drafts} action={work.action}/> : <Card aria-busy="true"><Skeleton lines={3}/></Card>}
+    {afterWork}
     {has('cost')&&<HomeMonitor client={client} version={version} sample={sample}/>}
     <Card headingId="role-view-heading" title={t("home.whatMattersForYour")} data-testid="role-view">
       <Grid min={190}>

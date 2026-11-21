@@ -42,9 +42,11 @@ export type FileView = {
   /** 7F-2: column layout of a text file or PDF; raw lines of a fixed-width file for the boundary ruler. */
   layout: { mode: "delimited" | "fixed" | "pdf"; boundaries: number[]; raw: string[] } | null;
   range: { from: string | null; to: string | null };
+  /** 8.6: pages of a PDF with no text layer (scanned), left out of the import; 0 for every other file. */
+  skippedPages: number;
 };
 export type FileReport = { id: string; name: string; role: Role; rowsRead: string; rowsLoaded: string; rowsRejected: string; rowsSkipped: string; issueCount: string; issues: StudioIssue[]; dateRange: { from: string; to: string } | null; fx: {sourceCurrency:string;workspaceCurrency:string;fxRate:string}; cleaned: { field: string; note: string; count: string }[] };
-export type BatchReport = { rebateTerms?:boolean; files: FileReport[]; warnings: string[]; loaded: string; rejected: string; capOk: boolean; capMessage: string | null; replaces: string | null };
+export type BatchReport = { rebateTerms?:boolean; /** 8.6: a PDF in the batch had scanned pages; their rows are not imported. */ skippedPages?: boolean; files: FileReport[]; warnings: string[]; loaded: string; rejected: string; capOk: boolean; capMessage: string | null; replaces: string | null };
 export type StudioState = { files: FileView[]; report: BatchReport | null; recipes: { id: string; name: string; role: Role | null }[] };
 export type SourceView = { id: string; name: string; role: string; importedAt: string; rowsLoaded: string; rowsRejected: string; issues: string; sourceCurrency: string; workspaceCurrency: string; fxRate: string; headerFx: string };
 /** What a progress step is (audit B-12): "save" writes the encrypted snapshot and offers no Cancel; "sim" and "check"
@@ -204,7 +206,7 @@ export class Studio {
         entry.grid = kind === "json" ? jsonGrid(text) : xmlGrid(text);
       }
     } catch (error) {
-      if (error instanceof StudioError) throw new StudioError(`${file.name}: ${error.message}`);
+      if (error instanceof StudioError) throw new StudioError(`${file.name}: ${error.message}`, error.code);
       throw new StudioError(msg("import.theFileCouldNot", { name: file.name, kind: kind.toUpperCase() }));
     }
     this.detect(entry);
@@ -409,7 +411,7 @@ export class Studio {
       replaces: entry.replaces, fixedLayout: !!entry.grid?.keyed, textFormat: TEXT.includes(entry.kind),
       layout: entry.positioned ? { mode: "pdf", boundaries: entry.settings.boundaries ?? [], raw: [] }
         : TEXT.includes(entry.kind) ? { mode: entry.settings.layout ?? "delimited", boundaries: entry.settings.boundaries ?? [], raw: entry.settings.layout === "fixed" ? entry.text.split(/\r\n|\n|\r/).slice(0, 24).map(l => l.slice(0, 240)) : [] } : null,
-      range: entry.range,
+      range: entry.range, skippedPages: entry.blankPages.length,
       columnLabels: Array.from({ length: Math.min(30, Math.max(0, ...rows.slice(start, start + 22).map(r => r.length))) }, (_, i) => letter(i)),
     };
   }
@@ -602,7 +604,7 @@ export class Studio {
         warnings.push(msg("import.looksIdenticalToA", { name: String(r.name), value: String(r.imported_at).slice(0, 10) }));
       const usage = await capUsage(engine, roles, replaces), cap = CAPS[tier];
       const capOk = fitsLicenceCapacity(tier,usage.products,usage.lines);
-      this.report = { rebateTerms:roles.has("rebate_agreement"),files: reports.sort((a, b) => load.findIndex(e => e.id === a.id) - load.findIndex(e => e.id === b.id)), warnings, loaded: loaded.toString(), rejected: rejected.toString(), capOk,
+      this.report = { rebateTerms:roles.has("rebate_agreement"),skippedPages:load.some(e => e.blankPages.length > 0),files: reports.sort((a, b) => load.findIndex(e => e.id === a.id) - load.findIndex(e => e.id === b.id)), warnings, loaded: loaded.toString(), rejected: rejected.toString(), capOk,
         capMessage: capOk ? null : msg("import.thisImportExceedsYour", { tier: tierRef(tier), lines: cap.lines, products: cap.products, lines2: usage.lines.toString(), products2: usage.products.toString() }), replaces };
       this.staged = { files, stats, entries: load, replaces, roles };
       return this.report;

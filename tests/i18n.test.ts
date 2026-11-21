@@ -174,3 +174,13 @@ test("7U: numbers, money, percentages and dates use Intl in every language and s
   assert.equal(date("fr-CA", "2025-03-01"), "1 mars 2025");
   assert.equal(date("es", "2025-03-01"), "1 mar 2025");
 });
+
+test("8.17: storage sizes read in kB, MB or GB with the locale's unit names, never as byte counts", async () => {
+  const { bytes } = await import("../lib/i18n/core");
+  assert.equal(bytes("en", 123456789), "123 MB");
+  assert.equal(bytes("en", 5300), "5.3 kB");
+  assert.match(bytes("fr", 2.5e9), /^2,5\s?Go$/);
+  assert.match(bytes("fr-CA", 42e6), /^42\s?Mo$/);
+  assert.match(bytes("es", 1.2e9), /^1[.,]2\s?GB$/, "Latin-American Spanish uses the locale separator");
+  assert.equal(bytes("en", -1), "0 kB");
+});

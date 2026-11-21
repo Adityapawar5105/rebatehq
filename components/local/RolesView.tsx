@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { VaultClient } from "@/lib/vault/client";
 import type { RoleList } from "@/lib/vault/protocol";
 import { ROLES, type RoleId } from "@/lib/roles/access";
@@ -7,7 +7,7 @@ import { fmt, msg, say, t } from "@/lib/i18n";
 import styles from "./vault.module.css";
 import { DataGrid } from "@/components/ui/DataGrid";
 /** Team roles. The worker enforces them: a role without cost access never receives cost values. */
-export function RolesView({ client, busy, operation, refresh }: { client: VaultClient; busy: boolean; operation: (f: () => Promise<void>) => Promise<void>; refresh: () => Promise<void> }) {
+export function RolesView({ client, busy, operation, refresh, children }: { client: VaultClient; busy: boolean; operation: (f: () => Promise<void>) => Promise<void>; refresh: () => Promise<void>; /** 8.5: the sharing set-up line sits inside this card. */ children?: ReactNode }) {
   const [list, setList] = useState<RoleList | null>(null), [note, setNote] = useState(""), [form, setForm] = useState<{ userId: string; name: string; role: RoleId }>({ userId: "", name: "", role: "sales_rep" });
   useEffect(() => { let on = true; void client.call("roleList", {}).then(l => { if (on) setList(l); }).catch(() => { if (on) setNote(msg("roles.couldNotLoadRoles")); }); return () => { on = false; }; }, [client]);
   if (!list) return <section className={styles.card} aria-busy="true"><h2>{t("roles.teamAndRoles2")}</h2><p role="status">{say(note) || t("roles.loadingRoles")}</p></section>;
@@ -38,5 +38,6 @@ export function RolesView({ client, busy, operation, refresh }: { client: VaultC
     <h3>{t("roles.previewAnotherRole")}</h3>
     <p className={styles.small}>{t("roles.seeTheAppAs")}</p>
     <label>{t("roles.previewAs")}<select value={list.you.viewAs ?? ""} disabled={busy} onChange={e => run(() => client.call("rolePreview", { role: (e.target.value || null) as RoleId | null }), msg(e.target.value ? "roles.previewingThatRole" : "roles.backToYourOwn"))}><option value="">{t("roles.myOwnRole")}</option>{ROLES.map(r => <option key={r.id} value={r.id}>{say(r.label)}</option>)}</select></label>
+    {children}
   </section>;
 }

@@ -83,6 +83,11 @@ export function currency(locale: Locale, cents: string | bigint, code = "USD"): 
   return memo(`c|${locale}|${code}`, () => new Intl.NumberFormat(INTL_TAG[locale], { style: "currency", currency: code, minimumFractionDigits: 2, maximumFractionDigits: 2 })).format(text as unknown as number);
 }
 export const integer = (locale: Locale, value: string | number | bigint) => decimal(locale, String(value), 0);
+/** A storage size in kB, MB or GB with the locale's unit names (French "Mo", "Go"); roadmap 8.17. Decimal units (1 MB = 1,000,000 bytes). */
+export function bytes(locale: Locale, value: number): string {
+  const n = Math.max(0, value), [unit, size] = n >= 1e9 ? ["gigabyte", 1e9] as const : n >= 1e6 ? ["megabyte", 1e6] as const : ["kilobyte", 1e3] as const, v = n / size;
+  return memo(`b|${locale}|${unit}|${v < 10 ? 1 : 0}`, () => new Intl.NumberFormat(INTL_TAG[locale], { style: "unit", unit, unitDisplay: "short", maximumFractionDigits: v < 10 ? 1 : 0 })).format(v);
+}
 /** "12.34%" (the worker's rate text) or a plain number of percent, in the locale's percent style. "n/a" stays a message. */
 export function percent(locale: Locale, value: string | number): string {
   const text = String(value).trim().replace(/%$/, "");
