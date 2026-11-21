@@ -107,6 +107,8 @@ async function diagnose() {
   try { diagnostics.locks = await page.evaluate(async () => { const q = await navigator.locks.query(); return { held: q.held.map(l => l.mode), pending: q.pending.map(l => l.mode) }; }); } catch { diagnostics.locks = "unavailable"; }
   return diagnostics;
 }
+/** Resolves to the promise's value, or to undefined after `ms`: for browser calls that have no timeout of their own. */
+function within(promise, ms) { return Promise.race([promise, new Promise(resolve => setTimeout(() => resolve(undefined), ms))]); }
 async function worker(action, data = {}, deadline = 180000) {
   console.log("Worker gate: "+action);
   return page.evaluate(({ action, data, deadline }) => new Promise((resolve, reject) => {
@@ -844,8 +846,10 @@ try {
   results.checks.cipherOnly = await worker("cipherOnly");
   // A killed renderer cannot complete a pagehide save. Success must already be durable.
   if(channel === 'firefox') await page.evaluate(() => { for(const worker of window.__vaultWorkers)worker.terminate(); });
-  else { const cdp = await context.newCDPSession(page); await Promise.race([cdp.send('Page.crash').catch(() => undefined), new Promise(resolve => setTimeout(resolve,3000))]); }
-  await page.close().catch(() => undefined);
+  // CI #197 (21 Nov 2026) hung here for 20 minutes: Playwright's close of a crashed renderer has no time limit.
+  // Every step of the kill is bounded, so a stuck close cannot stall the gate.
+  else { const cdp = await within(context.newCDPSession(page), 10000); if (cdp) await within(cdp.send('Page.crash').catch(() => undefined), 3000); }
+  await within(page.close().catch(() => undefined), 15000);
   page = await openPage(); await page.goto(base + route); await ready(); await unlock(); assert.equal(await page.getByTestId("line-count").getAttribute("data-value"), "100016"); results.checks.killedTabRecovery = true;
   await page.getByRole("button", { name: "Lock vault", exact: true }).click(); await ready();
   await page.getByLabel("Vault passphrase").fill("deliberately-wrong-passphrase"); await page.getByRole("button", { name: "Unlock vault", exact: true }).click(); await page.getByRole("alert").filter({ hasText: /Wrong passphrase/ }).waitFor(); results.checks.wrongPassphrase = true;
