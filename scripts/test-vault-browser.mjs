@@ -313,7 +313,7 @@ async function guidanceUi(){
    s(5,a,g2,'2026-10-03',1,'105.00','X2'),s(6,b,g2,'2026-10-03',1,'5.00','X2'),s(7,a,g3,'2026-10-04',1,'106.00','X3'),s(8,b,g3,'2026-10-04',1,'5.00','X3'),
    s(9,c,g2,'2026-10-05',1,'1.00','Y1'),s(10,c,g3,'2026-10-06',1,'1.00','Y2')].join('\n')+'\n')}],'10');
  await page.locator('nav a[href="#pricing"]').click();for(const [label,value]of Object.entries({'Customer tier':'T1','Product category':'Valves','Start price (cents)':'12000','Target price (cents)':'10000','Floor price (cents)':'8000'}))await page.getByLabel(label,{exact:true}).fill(value);await page.getByRole('button',{name:'Save guardrails',exact:true}).click();await page.getByRole('status').filter({hasText:'Guardrails saved.'}).waitFor();
- const quoteFor=async()=>{await page.locator('nav a[href="#quotes"]').click();await page.getByRole('button',{name:'Quote',exact:true}).click();await page.getByTestId('quote-customer').fill(g1);await page.getByTestId('quote-customer').press('Enter');await page.getByTestId('add-sku').fill(a);await page.getByTestId('add-sku').press('Enter');await page.getByTestId('quote-total').filter({hasText:'$110.00'}).waitFor();};
+ const quoteFor=async()=>{await page.locator('nav a[href="#quotes"]').click();await page.getByRole('tab',{name:'Quote',exact:true}).click();await page.getByTestId('quote-customer').fill(g1);await page.getByTestId('quote-customer').press('Enter');await page.getByTestId('add-sku').fill(a);await page.getByTestId('add-sku').press('Enter');await page.getByTestId('quote-total').filter({hasText:'$110.00'}).waitFor();};
  await quoteFor();
  const guide=page.getByTestId('guidance-1');await guide.waitFor({timeout:60000});
  assert.equal(await guide.getAttribute('data-suggested'),'9700');assert.equal(await guide.getAttribute('data-basis'),'history');
@@ -449,6 +449,33 @@ async function activationUi(){
  results.checks.activationUi={startCard:true,playgroundOneClickLeak:true,sampleBannerEverySection:true,sampleBadge:true,appOpenCaveat:true,removeSample:true,mappingSummary:true,afterImportNotice:true};
  }catch(error){console.error('Activation UI diagnostics:',JSON.stringify(await diagnose()));throw error;}finally{await context.close();context=savedContext;page=savedPage;dataPlaneActive=active;}
 }
+// Phase 8 (21 Nov 2026), in a fresh vault: a fully scanned PDF is reported beside the drop zone (no red banner at the
+// top), Settings > Storage shows sizes rather than byte counts, and (signed in) an account page uses the vault's frame.
+async function phase8Ui(){
+ const {scannedPdf}=await converterFixtures();
+ const savedContext=context,savedPage=page,active=dataPlaneActive;
+ context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-phase8-')),browserOptions);await configureContext();page=await openPage();
+ try{
+ dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic phase 8 owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).first().waitFor({timeout:120000});dataPlaneActive=true;
+ await page.locator('nav a[href="#data-hub"]').click();
+ await page.getByTestId('studio-files').setInputFiles([{name:'scanned-report.pdf',mimeType:'application/pdf',buffer:Buffer.from(scannedPdf())}]);
+ const scanned=page.getByTestId('scanned-pdf');await scanned.filter({hasText:'scanned-report.pdf is a scanned PDF'}).waitFor({timeout:60000});
+ assert.ok((await scanned.innerText()).includes('fixed-width converter'),'The scanned-PDF message does not name the alternatives');
+ assert.equal(await page.locator('#local-content > [role="alert"]').count(),0,'A scanned PDF still raised the red banner at the top of the page');
+ await scanned.getByRole('button',{name:'Remove this file',exact:true}).click();await scanned.waitFor({state:'detached'});
+ await page.getByRole('link',{name:'Settings',exact:true}).click();const used=page.getByTestId('storage-used');await used.waitFor();
+ await until(async()=>!/^\d[\d,.\s]*$/.test((await used.innerText()).trim()),'Settings > Storage still shows a bare byte count',30000);
+ let accountShell='not-signed-in';
+ if(auth){
+  // The account page is control plane (licence and devices), so the business-data request sensor is off for it.
+  dataPlaneActive=false;await page.goto(base+'/account/licence');await page.getByRole('navigation',{name:'Account',exact:true}).waitFor();
+  await page.getByRole('button',{name:'Sign out',exact:true}).waitFor();assert.equal(await page.getByRole('link',{name:'Licence, seats and devices',exact:true}).getAttribute('aria-current'),'page','The account page is not marked current in the vault sidebar');
+  await page.setViewportSize({width:375,height:812});const fits=await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1);await page.setViewportSize({width:1280,height:900});
+  assert.ok(fits,'The account page overflows a 375px phone screen');accountShell='vault-frame';
+ }
+ results.checks.phase8Ui={scannedPdfBesideDropZone:true,noTopBanner:true,storageSizes:true,accountShell};
+ }catch(error){console.error('Phase 8 UI diagnostics:',JSON.stringify(await diagnose()));throw error;}finally{await context.close();context=savedContext;page=savedPage;dataPlaneActive=active;}
+}
 // Recovery (audit B-3, 20 Nov 2026), in a fresh vault: change the passphrase, then the old one opens nothing and the new
 // one opens the vault; then "Forgot your passphrase?" deletes this device's vault after the workspace name is typed,
 // and the empty-vault screen (create or restore) is back.
@@ -486,12 +513,12 @@ async function winLossUi(){
   {name:'winloss-customers.csv',mimeType:'text/csv',buffer:Buffer.from('customer_id,name,tier\n'+customer+',Synthetic,T1\n')},
   {name:'winloss-sales.csv',mimeType:'text/csv',buffer:Buffer.from('line_id,product_id,customer_id,sale_date,quantity,list_amount,discount_amount,freight_amount,rebate_amount,cost_amount,invoice_id\n1,'+sku+','+customer+','+day+',1,120.00,0,0,0,70.00,WL1\n')},
   {name:'vendor-costs.csv',mimeType:'text/csv',buffer:Buffer.from('vendor,product_id,cost,effective_date\nVendor A,'+sku+',70.00,'+day+'\nVendor B,'+sku+',65.00,'+day+'\n')}],'1');
- await page.locator('nav a[href="#quotes"]').click();await page.getByRole('button',{name:'Quote',exact:true}).click();await page.getByTestId('quote-customer').fill(customer);await page.getByTestId('quote-customer').press('Enter');
+ await page.locator('nav a[href="#quotes"]').click();await page.getByRole('tab',{name:'Quote',exact:true}).click();await page.getByTestId('quote-customer').fill(customer);await page.getByTestId('quote-customer').press('Enter');
  await page.getByTestId('add-sku').fill(sku);await page.getByTestId('add-sku').press('Enter');await page.getByTestId('quote-total').filter({hasText:'$120.00'}).waitFor();
  await page.getByRole('button',{name:'Submit quote',exact:true}).click();await page.locator('[data-testid="quote"][data-status="submitted"]').waitFor({timeout:60000});
  const panel=page.getByTestId('quote-outcome');await panel.waitFor();await page.getByTestId('outcome-select').selectOption('lost');await page.getByTestId('outcome-reason').selectOption('competitor');await page.getByTestId('outcome-competitor').fill('Rival '+marker);await page.getByTestId('outcome-note').fill('Lost on price '+marker);
  await page.getByTestId('outcome-save').click();await page.locator('[data-testid="quote-outcome"][data-outcome="lost"]').waitFor({timeout:60000});
- await page.getByRole('button',{name:'Win/loss',exact:true}).click();await page.getByTestId('winloss-report').waitFor();
+ await page.getByRole('tab',{name:'Win/loss',exact:true}).click();await page.getByTestId('winloss-report').waitFor();
  await page.locator('[data-testid="winloss-lost-value"][data-value="12000"]').waitFor({timeout:60000});assert.equal(await page.getByTestId('winloss-lost-margin').getAttribute('data-value'),'5000');assert.equal(await page.getByTestId('winloss-lost').innerText(),'1');
  await page.getByTestId('winloss-grid').locator('tbody tr[data-key="competitor"]').waitFor();
  await page.setViewportSize({width:375,height:812});await page.waitForTimeout(300);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Win/loss overflows a phone');await page.screenshot({path:'test-results/winloss-'+channel+'.png',fullPage:true});await page.setViewportSize({width:1280,height:800});
@@ -506,7 +533,7 @@ async function winLossUi(){
  assert.ok(sheet.startsWith('%PDF-1.4')&&sheet.includes('Negotiation sheet: Vendor A')&&sheet.includes('$65.00'),'The negotiation sheet lost its content');
  // A Sales Rep: their own outcome and value, never margin; no audit pack.
  await page.locator('nav a[href="#settings"]').click();await page.getByLabel('Preview as').selectOption('sales_rep');await page.getByTestId('preview-banner').waitFor();
- await page.locator('nav a[href="#quotes"]').click();await page.getByRole('button',{name:'Win/loss',exact:true}).click();await page.locator('[data-testid="winloss-lost-value"][data-value="12000"]').waitFor({timeout:60000});
+ await page.locator('nav a[href="#quotes"]').click();await page.getByRole('tab',{name:'Win/loss',exact:true}).click();await page.locator('[data-testid="winloss-lost-value"][data-value="12000"]').waitFor({timeout:60000});
  assert.equal(await page.getByTestId('winloss-lost-margin').count(),0,'A Sales Rep sees lost margin');
  await page.locator('nav a[href="#reports"]').click();await page.waitForTimeout(500);assert.equal(await page.getByTestId('audit-pack').count(),0,'A Sales Rep can download the audit pack');
  await page.getByTestId('preview-banner').getByRole('button',{name:'Return to my own view'}).click();await page.getByTestId('preview-banner').waitFor({state:'detached'});
@@ -631,7 +658,7 @@ async function reportsUi(){
  for(const [locale,title]of [['en','Monthly Pricing Review Pack'],['es','Paquete mensual de revisión de precios'],['fr','Dossier mensuel de revue des prix']]){await page.getByTestId('language').first().selectOption(locale);const text=await pdfText();assert.ok(text.includes(title),'PDF language differs from the user language');assert.ok(text.includes('CAD'),'PDF omitted the workspace currency');}
  await page.getByTestId('language').first().selectOption('en');await page.getByTestId('cadence-kind').selectOption('weekly');await page.getByTestId('cadence-check').click();await page.getByTestId('cadence-prepare').waitFor();assert.ok((await pack.innerText()).includes('Customers flagged'));const weekly=await pdfText();assert.ok(weekly.includes('Weekly digest')&&weekly.includes('app is open'),'Weekly digest omitted its honest execution limit');
  await page.locator('nav a[href="#pricing"]').click();for(const [label,value]of Object.entries({'Customer tier':'T','Product category':'Valves','Start price (cents)':'12000','Target price (cents)':'10000','Floor price (cents)':'8000'}))await page.getByLabel(label,{exact:true}).fill(value);await page.getByRole('button',{name:'Save guardrails',exact:true}).click();await page.getByRole('status').filter({hasText:'Guardrails saved.'}).waitFor();
- await page.locator('nav a[href="#quotes"]').click();await page.getByRole('button',{name:'Quote',exact:true}).click();await page.getByTestId('quote-customer').fill(customer);await page.getByTestId('quote-customer').press('Enter');await page.getByTestId('add-sku').fill(sku);await page.getByTestId('add-sku').press('Enter');await page.getByTestId('quote-total').filter({hasText:'CA$120.00'}).waitFor();await page.getByRole('button',{name:'Submit quote',exact:true}).click();
+ await page.locator('nav a[href="#quotes"]').click();await page.getByRole('tab',{name:'Quote',exact:true}).click();await page.getByTestId('quote-customer').fill(customer);await page.getByTestId('quote-customer').press('Enter');await page.getByTestId('add-sku').fill(sku);await page.getByTestId('add-sku').press('Enter');await page.getByTestId('quote-total').filter({hasText:'CA$120.00'}).waitFor();await page.getByRole('button',{name:'Submit quote',exact:true}).click();
  await page.locator('nav a[href="#reports"]').click();await page.getByRole('link',{name:'Team compliance',exact:true}).click();await page.getByTestId('scorecard-from').fill('2026-11-01');await page.getByTestId('scorecard-to').fill('2026-12-31');await page.getByTestId('scorecard').getByRole('button',{name:'Check now',exact:true}).click();await page.getByTestId('scorecard-points').filter({hasText:/^2$/}).waitFor();const grid=page.getByTestId('scorecard-grid');await grid.getByTestId('grid-select-all').check();const total=grid.getByTestId('grid-total-protectedPoints');await total.waitFor();assert.equal(await total.getAttribute('data-sum'),'2');
  await page.locator('nav a[href="#settings"]').click();await page.getByLabel('Preview as').selectOption('sales_rep');await page.getByTestId('preview-banner').waitFor();await page.locator('nav a[href="#reports"]').click();await page.getByTestId('scorecard').waitFor();assert.equal(await page.getByRole('link',{name:'Review packs',exact:true}).count(),0);assert.equal(await page.getByRole('link',{name:'Recovery tracker',exact:true}).count(),0);assert.equal(await page.getByTestId('scorecard-view').inputValue(),'team');
  await page.getByTestId('scorecard-consent').check();await page.getByTestId('scorecard-view').locator('option[value=mine]').waitFor({state:'attached'});await page.getByTestId('scorecard-view').selectOption('mine');await page.getByTestId('scorecard-points').filter({hasText:/^2$/}).waitFor();await page.getByTestId('scorecard-consent').uncheck();await until(async()=>await page.getByTestId('scorecard-view').inputValue()==='team','Opt-out did not return to team aggregate');
@@ -1058,10 +1085,19 @@ try {
   await page.getByTestId('check-sku').fill(priceSku);await page.getByTestId('check-customer').fill('E-CUSTOMER');await page.getByTestId('check-customer').press('Enter');
   const checked=page.getByTestId('price-check-result');await checked.waitFor();assert.equal(await checked.getAttribute('data-zone'),'yellow','Price Check zone for a price below target');
   await page.getByRole('meter',{name:'Price position for '+priceSku}).first().waitFor();await page.getByTestId('credit-signal').getByText('Credit: unknown').waitFor();
-  await page.getByRole('button',{name:'Quote',exact:true}).click();await page.getByTestId('quote-customer').fill('E-CUSTOMER');await page.getByTestId('quote-customer').press('Enter');
+  // Phase 8 (21 Nov 2026): the plain answer leads Price Check, and the quote tabs move with the arrow keys.
+  await page.getByTestId('price-check-result').getByTestId('quote-answer').filter({hasText:'Below target: allowed, will be flagged'}).waitFor();
+  await page.getByRole('tab',{name:'Price Check',exact:true}).focus();await page.keyboard.press('ArrowRight');
+  assert.equal(await page.getByRole('tab',{name:'Quote',exact:true}).getAttribute('aria-selected'),'true','ArrowRight did not move to the next quote tab');
+  await page.getByTestId('quote-customer').fill('E-CUSTOMER');await page.getByTestId('quote-customer').press('Enter');
   await page.getByTestId('quote').waitFor();await page.getByTestId('add-sku').fill(priceSku);await page.getByTestId('add-sku').press('Enter');
   await page.getByTestId('price-1').waitFor();await page.getByTestId('price-1').fill('90.00');await page.getByRole('button',{name:'Update prices',exact:true}).click();
   await page.locator('[data-testid="quote"] tr[data-zone="red"]').waitFor();await page.getByText('A line is below its floor price.',{exact:false}).waitFor();
+  await page.getByTestId('quote').getByTestId('quote-answer').filter({hasText:'Below floor: needs approval'}).waitFor();
+  // 8.14: no thermometer draws in the lines until the row's Price position is opened.
+  assert.equal(await page.locator('[data-testid="quote-lines"] [role="meter"]:visible').count(),0,'A quote line draws its thermometer before it is opened');
+  await page.getByTestId('line-position-1').locator('summary').click();await page.getByTestId('line-position-1').getByRole('meter').waitFor();
+  await page.getByTestId('line-position-1').getByTestId('thermo-gap').filter({hasText:'below floor'}).waitFor();
   assert.ok(await page.getByRole('button',{name:'Request exception',exact:true}).isDisabled(),'An exception can be requested without a reason');
   await page.getByTestId('exception-reason').fill('Competitor match');await page.getByRole('button',{name:'Request exception',exact:true}).click();
   await page.locator('[data-testid="quote"][data-status="pending"]').waitFor();await page.getByTestId('quote-margin').waitFor();
@@ -1069,7 +1105,7 @@ try {
   const fits=await page.getByTestId('quote').evaluate(el=>el.scrollWidth<=el.clientWidth+1&&el.getBoundingClientRect().right<=window.innerWidth+1);
   await page.setViewportSize({width:1280,height:900});assert.ok(fits,'The quote overflows a 375px phone screen');
   await page.getByRole('link',{name:'Settings',exact:true}).click();await page.getByLabel('Preview as').selectOption('sales_rep');await page.getByTestId('preview-banner').waitFor();
-  await page.getByRole('link',{name:'Quotes',exact:true}).click();await page.getByRole('button',{name:'History',exact:true}).click();
+  await page.getByRole('link',{name:'Quotes',exact:true}).click();await page.getByRole('tab',{name:'History',exact:true}).click();
   await page.getByRole('heading',{name:'Quote history',exact:true}).waitFor();await page.getByRole('table',{name:'Quote history',exact:true}).locator('tbody').getByRole('button').first().click();
   await page.locator('[data-testid="quote"][data-status="pending"]').waitFor();
   assert.equal(await page.getByTestId('quote-margin').count(),0,'The Sales Rep preview shows quote margin');
@@ -1079,16 +1115,20 @@ try {
   results.checks.quotesUi={priceCheckOnEnter:true,thermometer:true,exceptionNeedsReason:true,ownerSeesMargin:true,repPreviewHidesMargin:true,phoneWidth:true};
   // Phase 1 (20 Nov 2026): the author withdraws the stuck exception, types a new price and submits it without
   // pressing "Update prices" first; the typed price is what gets submitted. With sharing off, the quote says so.
-  await page.getByRole('link',{name:'Quotes',exact:true}).click();await page.getByRole('button',{name:'History',exact:true}).click();
+  await page.getByRole('link',{name:'Quotes',exact:true}).click();await page.getByRole('tab',{name:'History',exact:true}).click();
   await page.getByRole('table',{name:'Quote history',exact:true}).locator('tbody').getByRole('button').first().click();
   await page.locator('[data-testid="quote"][data-status="pending"]').waitFor();
   assert.equal(await page.getByRole('button',{name:'Send to the encrypted team inbox',exact:true}).count()+await page.getByTestId('quote-sharing-off').count(),1,'A pending quote shows neither a working share button nor the sharing-off note');
   await page.getByTestId('quote-withdraw').click();await page.locator('[data-testid="quote"][data-status="draft"]').waitFor();
   await page.getByTestId('price-1').fill('500.00');await page.getByTestId('quote-unsaved').waitFor();
+  // 8.13: New quote asks before dropping typed line changes; Keep editing keeps them.
+  await page.getByTestId('quote-new-another').click();await page.getByTestId('quote-discard-confirm').waitFor();
+  await page.getByTestId('quote-discard-confirm').getByRole('button',{name:'Keep editing',exact:true}).click();
+  assert.equal(await page.getByTestId('price-1').inputValue(),'500.00','Keep editing lost the typed price');
   await page.getByTestId('quote-submit').click();await page.locator('[data-testid="quote"][data-status="submitted"]').waitFor();
   await page.getByTestId('quote-total').filter({hasText:'$500.00'}).waitFor();
   assert.equal(await page.getByTestId('price-1').count(),0,'A submitted quote is still editable');
-  results.checks.quoteFlowUi={withdrawPending:true,typedPriceSubmitted:true,shareOrNotice:true};
+  results.checks.quoteFlowUi={withdrawPending:true,typedPriceSubmitted:true,shareOrNotice:true,answerFirst:true,tabArrowKeys:true,lineThermometerOnOpen:true,discardConfirm:true};
 
   // 7V: no section overflows horizontally at desktop or phone width, in light or dark; the phone menu opens
   // the navigation drawer and closes it again.
@@ -1206,7 +1246,7 @@ try {
   }
   await monitorUi();
   await rebatesUi();
-  await suppliersUi(); await vendorsUi(); await simUi(); await reportsUi(); await convertersUi(); await guidanceUi(); await agentsUi(); await deadStockUi(); await activationUi(); await passphraseUi(); await winLossUi(); await benchUi(); if (channel !== 'firefox') await offlineUi();
+  await suppliersUi(); await vendorsUi(); await simUi(); await reportsUi(); await convertersUi(); await guidanceUi(); await agentsUi(); await deadStockUi(); await activationUi(); await passphraseUi(); await phase8Ui(); await winLossUi(); await benchUi(); if (channel !== 'firefox') await offlineUi();
   await recoveryUi();
   if(auth){
     const device=await page.evaluate(()=>{const key=Object.keys(localStorage).find(k=>k.startsWith('rebatehq-device-v1:'));return localStorage.getItem(key);});assert.ok(device);

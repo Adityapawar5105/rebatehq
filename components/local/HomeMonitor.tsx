@@ -38,6 +38,7 @@ export function HomeMonitor({client,version,sample}:{client:VaultClient;version:
   <div className={ui.actionRow}><Button disabled={busy} onClick={()=>setMath('leak')}>{t('monitor.showMath')}</Button><ButtonLink variant="ghost" href="#margin" icon="chart">{t('home.openMargin')}</ButtonLink></div></>}
  </Card>
  <Card title={t('monitor.health')} description={t('monitor.homeHealthHelp')} data-testid="home-health" aria-busy={busy}>
+  {error&&<Notice tone="warn" role="alert" data-testid="home-health-error">{error}</Notice>}
   {!view?!error&&<Skeleton/>:view&&<><StatTile wide icon="users" tone={flagged==='0'?'ok':'warn'} label={t('monitor.summaryAlerted')} value={fmt.int(flagged)} valueProps={{'data-testid':'home-health-count'}} hint={flagged==='0'?t('monitor.noAlerts'):t('monitor.homeHealthHint')}/>{checked('home-health-checked')}
   <div className={ui.actionRow}><ButtonLink variant="primary" href="#margin-health" icon="users">{t('monitor.openHealth')}</ButtonLink></div></>}
  </Card>

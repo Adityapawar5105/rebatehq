@@ -19,3 +19,5 @@ export function priceListPdf(rows: string[][]) {
     [...tablePage([PRICE_HEAD, ...rows.slice(half)], xs), [50, 40, "Printed 2026-02-01"], [480, 40, "Page 2 of 2"]],
   ]);
 }
+/** Roadmap 8.6: a PDF whose two pages carry no text layer at all (a scan). */
+export function scannedPdf() { return makePdf([[], []]); }

@@ -70,11 +70,15 @@ import {minorUnits} from '../spike/exact';
 import { msg } from "../i18n/core";
 import { businessToday } from "./today";
 export class VaultService {
-  /** v2.6 gap 2: whether this device already has a relay identity, read from the vault only (no network request). */
+  /** v2.6 gap 2: whether this device already has a relay identity, read from the vault only (no network request).
+   *  Roadmap 8.4: also whether a send is waiting and when the inbox last synced, so the sharing card can show its status
+   *  without opening the inbox. A conflict needs the server's head, so only the opened inbox can report one. */
   async relayLocal(){
     const deviceId=this.licence.claims?.device??'',rows=(await this.requireEngine().conn.query('SELECT payload FROM relay_state WHERE id=1')).toArray();
-    let identity=false;try{const state=rows.length?JSON.parse(String(rows[0].payload)) as RelayState:null;identity=!!state?.identity&&state.identity.device.deviceId===deviceId;}catch{identity=false;}
-    return {identity};
+    let identity=false,pending=false,lastSyncedAt:string|null=null;
+    try{const state=rows.length?JSON.parse(String(rows[0].payload)) as RelayState:null;identity=!!state?.identity&&state.identity.device.deviceId===deviceId;
+      if(identity){pending=!!state!.pending||!!state!.pendingEpoch;lastSyncedAt=typeof state!.lastSyncedAt==='string'?state!.lastSyncedAt:null;}}catch{identity=false;}
+    return {identity,pending,lastSyncedAt};
   }
   async relay(request:Extract<import('./protocol').Request,{action:`relay${string}`}>,signal:AbortSignal){
     this.licence.assert();if(this.licence.tier==='starter')throw new VaultError('LICENCE',msg("vault.workspaceSharingRequiresProfessional"));

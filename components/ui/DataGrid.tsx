@@ -159,7 +159,8 @@ export function DataGrid<R>({ label, columns, rows, rowKey, remote, footer, sele
       {filtered && <button type="button" className={s.chip} onClick={() => setQuery({ ...query, filters: [] })}>{t("grid.clearFilters")}</button>}
       {count > 0 && <button type="button" className={s.chip} onClick={() => { setAll(false); setPicked(new Set()); }}>{t("grid.clearSelection")}</button>}
     </div>
-    <div className={cx(s.tableWrap, tall && s.tall, className)} role="region" aria-label={label} tabIndex={0}>
+    {/* 8.18: every grid scrolls inside a bounded box, so its sticky header stays visible (short grids never reach the limit). */}
+    <div className={cx(s.tableWrap, s.tall, className)} data-tall={tall ? "yes" : undefined} role="region" aria-label={label} tabIndex={0}>
       <table className={s.table} aria-label={label} aria-describedby={count ? statusId : undefined}>
         {caption && <caption>{caption}</caption>}
         <thead><tr>

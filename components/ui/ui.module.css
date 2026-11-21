@@ -79,7 +79,7 @@
 .table th,.table td{white-space:nowrap}
 .table caption{caption-side:top;text-align:left;padding:var(--space-3) var(--space-4);font-weight:650;color:var(--heading)}
 .table th,.table td{padding:var(--space-2) var(--space-4);border-bottom:1px solid var(--border-subtle);text-align:left;vertical-align:top}
-.table th{position:sticky;top:0;background:var(--surface-2);font-size:var(--fs-xs);font-weight:650;color:var(--text-muted);letter-spacing:.02em}
+.table th{position:sticky;top:0;z-index:1;background:var(--surface-2);font-size:var(--fs-xs);font-weight:650;color:var(--text-muted);letter-spacing:.02em}
 .table tbody tr:last-child td{border-bottom:0}
 .table tbody tr:hover{background:var(--surface-2)}
 /* Long tables scroll inside their card; the header stays visible. */
@@ -103,6 +103,8 @@
 .tab{display:inline-flex;align-items:center;gap:var(--space-2);min-height:40px;padding:0 var(--space-3);border:0;border-bottom:2px solid transparent;background:none;color:var(--text-muted);font:inherit;font-size:var(--fs-sm);font-weight:600;cursor:pointer;white-space:nowrap;text-decoration:none}
 .tab[aria-current=page],.tab[aria-selected=true]{color:var(--link);border-bottom-color:var(--accent)}
 .tab:hover{color:var(--text)}
+.tab:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+.tabCount{display:inline-flex;align-items:center;justify-content:center;min-width:20px;padding:0 6px;border-radius:999px;background:var(--surface-2);color:var(--text-muted);font-size:var(--fs-xs);font-weight:600}
 
 /* Steps list */
 .steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
@@ -210,3 +212,4 @@
 @media(max-width:600px){.grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--space-3)}.stat[data-wide]{grid-column:1/-1}.statValue{font-size:min(var(--fs-xl),calc((100cqi - 8px) / (var(--len,8) * .62)))}.card{padding:var(--space-4);border-radius:var(--radius-md)}.pageHeader h1{font-size:var(--fs-2xl)}.step{grid-template-columns:28px minmax(0,1fr)}.stepActions{grid-column:2;justify-content:flex-start}.stat{padding:var(--space-3) var(--space-4)}}
 @media (forced-colors:active){.btn,.card,.stat,.badge,.notice,.tableWrap,.stepMark,.meterTrack{border:1px solid CanvasText}.meterFill{background:Highlight;forced-color-adjust:none}}
 @media(max-width:600px){.grid.cardRow{grid-template-columns:1fr}.actionRow .btn{white-space:normal}}
+.check{display:flex;flex-direction:column;gap:2px;margin:var(--space-2) 0}.checkLabel{display:inline-flex;align-items:center;gap:var(--space-2);font-weight:600;cursor:pointer}.checkLabel input{width:18px;height:18px;margin:0;flex:none}

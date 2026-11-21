@@ -66,6 +66,7 @@ export const fmt = {
   dateTime: (iso: string | null | undefined) => core.dateTime(current, iso),
   month: (key: string) => core.month(current, key),
   list: (items: string[]) => core.list(current, items),
+  bytes: (value: number) => core.bytes(current, value),
 };
 /** An error from the worker or the network, in the current language. */
 export function errorText(error: unknown): string {

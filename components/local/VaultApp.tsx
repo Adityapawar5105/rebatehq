@@ -8,7 +8,7 @@ import type { Scope, StorageStatus, Tier, VaultStatus } from "@/lib/vault/protoc
 import { fmt, msg, say, t, useLocale, setWorkspaceCurrency, type MessageKey } from "@/lib/i18n";
 import { Preferences } from "@/components/Preferences";
 import { Icon, type IconName } from "@/components/ui/Icon";
-import { Button, ButtonLink, Card, Field, JumpNav, Notice, PageHeader } from "@/components/ui/ui";
+import { Button, ButtonLink, Card, Field, Grid, JumpNav, Notice, PageHeader, StatTile } from "@/components/ui/ui";
 import { GridTotalsProvider } from "@/components/ui/DataGrid";
 import type { GridType } from "@/lib/grid/core";
 import ui from "@/components/ui/ui.module.css";
@@ -25,7 +25,7 @@ import { CostBasisView } from "./CostBasisView";
 import { RecordsView } from "./RecordsView";
 import { VendorsView } from "./VendorsView";
 import { RolesView } from "./RolesView";
-import { RelayPanel } from './RelayPanel';
+import { RelayOnboarding, RelayPanel, RelaySetupLine } from './RelayPanel';
 import { AgentsInbox } from './AgentsInbox';
 import { AuditPackButton } from './Templates';
 import { OfflineCard, clearOfflineCopy, useOfflineWorker } from './OfflineMode';
@@ -203,7 +203,8 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
             {status.sample === "only" && visible.includes("Data Hub") && <ButtonLink size="sm" variant="primary" icon="upload" href="#data-hub">{t("shell.sample.import")}</ButtonLink>}
             <Button size="sm" variant="ghost" disabled={busy} onClick={() => void operation(async () => { const out = await client.current!.call("playgroundRemove", {}); setStatus(out.status); setMessage(msg("studio.removedPlaygroundFilesAnd", { count: Number(out.removed) })); })}>{t("shell.sample.remove")}</Button>
           </> : undefined}>{t(status.sample === "only" ? "shell.sample.only" : "shell.sample.mixed")}</Notice>}
-          {shown === "Home" && client.current && <HomeView sample={status.sample} client={client.current} userId={scope.userId} version={`${status.lines}|${status.generation}|${access?.role}`} busy={busy} operation={operation} refresh={async () => setStatus(await client.current!.call("status", {}))} onHome={onHome}/>}
+          {shown === "Home" && client.current && <HomeView sample={status.sample} client={client.current} userId={scope.userId} version={`${status.lines}|${status.generation}|${access?.role}`} busy={busy} operation={operation} refresh={async () => setStatus(await client.current!.call("status", {}))} onHome={onHome}
+            afterWork={caps.includes('collaborate') && status.licence?.tier !== 'starter' ? <RelayOnboarding client={client.current} userId={scope.userId} tenantId={scope.tenantId} relayEnabled={relayEnabled}/> : null}/>}
           {shown === "Home" && client.current && caps.includes("cost") && status.licence?.tier !== "starter" && <AgentsInbox client={client.current} version={`${status.lines}|${status.generation}`} canPrice={caps.includes("pricing")} busy={busy} operation={operation}/>}
           {shown === "Home" && client.current && caps.includes('collaborate') && status.licence?.tier!=='starter' && <RelayPanel client={client.current} userId={scope.userId} tenantId={scope.tenantId} relayEnabled={relayEnabled} onChange={async()=>setStatus(await client.current!.call('status',{}))}/>}
           {shown === "Data Hub" && client.current && <>
@@ -243,8 +244,19 @@ export function VaultApp({ scope, email, workspace, lab = false, legacyEnabled =
           {shown === "Settings" && client.current && <CurrencySettings client={client.current} status={status} busy={busy} operation={operation} onStatus={setStatus}/>}
           {shown === "Settings" && client.current && caps.includes("backup") && <BackupView client={client.current} busy={busy} operation={operation} unlocked onStatus={setStatus}/>}
           {shown === "Settings" && client.current && <PassphraseCard client={client.current} busy={busy} operation={operation} onStatus={setStatus} setMessage={setMessage}/>}
-          {shown === "Settings" && client.current && <RolesView client={client.current} busy={busy} operation={operation} refresh={async () => setStatus(await client.current!.call("status", {}))}/>}
-          {shown === "Settings" && <section className={styles.card} aria-labelledby="storage-heading"><h2 id="storage-heading">{t("shell.storage.heading")}</h2>{status.licence?.writable&&status.tier!==status.licence.tier&&caps.includes('roles')&&<button disabled={busy} onClick={()=>void operation(async()=>{setStatus(await client.current!.call('capacityUpgrade',{}));setMessage(msg("shell.storage.upgraded"));})}>{t("shell.storage.upgrade")}</button>}<p>{t("shell.storage.summary", { saved: status.lastSaved ? fmt.dateTime(status.lastSaved) : t("common.none") })}</p><p>{t("shell.storage.persistence", { persistence: storage ? t(storage.persistent ? "shell.storage.granted" : "shell.storage.notGranted") : t("common.unknown"), usage: storage?.usage ? fmt.int(storage.usage) : t("common.unknown"), quota: storage?.quota ? fmt.int(storage.quota) : t("common.unknown"), bytes: storage?.namedOpfsBytes ? fmt.int(storage.namedOpfsBytes) : t("common.unknown") })}</p><button className={styles.primary} onClick={() => void operation(async () => { await navigator.storage.persist(); setStorage(await client.current!.call("storage", {})); setMessage(msg("shell.storage.refreshed")); })}>{t("shell.storage.request")}</button><p className={styles.muted}>{t("shell.storage.note")}</p>{!lab && <p><a href="/account/users">{t("shell.storage.team")}</a>{t("common.listSeparator")}<a href="/account/workspace">{t("shell.storage.workspace")}</a></p>}</section>}
+          {shown === "Settings" && client.current && <RolesView client={client.current} busy={busy} operation={operation} refresh={async () => setStatus(await client.current!.call("status", {}))}>
+            {caps.includes('collaborate') && status.licence?.tier !== 'starter' && <RelaySetupLine client={client.current} userId={scope.userId} tenantId={scope.tenantId} relayEnabled={relayEnabled}/>}
+          </RolesView>}
+          {/* 8.17: used and available space as tiles in MB or GB, not byte counts. */}
+          {shown === "Settings" && <Card headingId="storage-heading" title={t("shell.storage.heading")} description={t("shell.storage.summary", { saved: status.lastSaved ? fmt.dateTime(status.lastSaved) : t("common.none") })}
+            actions={status.licence?.writable&&status.tier!==status.licence.tier&&caps.includes('roles')?<Button disabled={busy} onClick={()=>void operation(async()=>{setStatus(await client.current!.call('capacityUpgrade',{}));setMessage(msg("shell.storage.upgraded"));})}>{t("shell.storage.upgrade")}</Button>:undefined}>
+            <Grid min={180} data-testid="storage-tiles">
+              <StatTile icon="database" label={t("shell.storage.used")} value={storage?.usage ? fmt.bytes(Number(storage.usage)) : t("common.unknown")} valueProps={{ "data-testid": "storage-used" }} hint={storage?.namedOpfsBytes ? t("shell.storage.vaultFiles", { size: fmt.bytes(Number(storage.namedOpfsBytes)) }) : undefined}/>
+              <StatTile icon="download" label={t("shell.storage.available")} value={storage?.quota ? fmt.bytes(Math.max(0, Number(storage.quota) - Number(storage.usage ?? 0))) : t("common.unknown")} valueProps={{ "data-testid": "storage-available" }} hint={storage?.quota ? t("shell.storage.ofQuota", { size: fmt.bytes(Number(storage.quota)) }) : undefined}/>
+              <StatTile icon="shield" tone={storage?.persistent ? "ok" : "warn"} label={t("shell.storage.persistenceLabel")} value={storage ? t(storage.persistent ? "shell.storage.granted" : "shell.storage.notGranted") : t("common.unknown")} valueProps={{ "data-testid": "storage-persistence" }}/>
+            </Grid>
+            <Button variant="primary" onClick={() => void operation(async () => { await navigator.storage.persist(); setStorage(await client.current!.call("storage", {})); setMessage(msg("shell.storage.refreshed")); })}>{t("shell.storage.request")}</Button>
+            <p className={styles.muted}>{t("shell.storage.note")}</p>{!lab && <p><a href="/account/users">{t("shell.storage.team")}</a>{t("common.listSeparator")}<a href="/account/workspace">{t("shell.storage.workspace")}</a></p>}</Card>}
           {shown === "Settings" && <GlossaryCard/>}
           {shown === "Settings" && <OfflineCard licenceUntil={status.licence?.offline && status.licence.until ? new Date(Number(status.licence.until)).toISOString() : null}/>}
         </>}

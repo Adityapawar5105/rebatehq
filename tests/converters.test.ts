@@ -227,9 +227,15 @@ test("v2.6 gap 4: a partly scanned PDF keeps its text pages and names the pages 
   const studio = new Studio(); await studio.add([new File([pdf as BlobPart], "mixed.pdf")], []);
   const view = studio.state([]).files[0];
   assert.ok(view.notices.some(n => n.startsWith("Page 2 has no text (probably a scanned page) and was left out")), view.notices.join(" / "));
+  assert.equal(view.skippedPages, 1, "8.6: the batch row shows how many pages were skipped");
   assert.deepEqual((await cleanRows(studio, view.id)).rows, [PRICE_HEAD, ["P-1", "Valve", "1.00", "2.00"], ["P-2", "Pipe", "3.00", "4.00"]]);
   const many = await pdfLines(makePdf([tablePage([PRICE_HEAD, ["P-1", "Valve", "1.00", "2.00"]], XS), [], []]));
   assert.deepEqual(many.empty, [2, 3]);
   const scan = new Studio();
   await assert.rejects(scan.add([new File([makePdf([[], []]) as BlobPart], "scan.pdf")], []), (e: unknown) => e instanceof StudioError && /fixed-width converter/.test(e.message) && /CSV/.test(e.message) && /does not use OCR/.test(e.message));
+  // 8.6: the error keeps its code through the file-name prefix, so the page can show it beside the drop zone.
+  await assert.rejects(scan.add([new File([makePdf([[]]) as BlobPart], "scan.pdf")], []), (e: unknown) => e instanceof StudioError && e.code === "SCANNED_PDF" && e.message.startsWith("scan.pdf: "));
+  await assert.rejects(scan.add([new File(["%PDF-1.4\nnot really a pdf"], "broken.pdf")], []), (e: unknown) => e instanceof StudioError && e.code === "STUDIO");
+  const text = new Studio(); await text.add([new File([REPORT], "report.prn")], []);
+  assert.equal(text.state([]).files[0].skippedPages, 0, "only a PDF can have skipped pages");
 });

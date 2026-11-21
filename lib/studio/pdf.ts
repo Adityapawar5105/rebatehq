@@ -60,7 +60,7 @@ export async function pdfLines(bytes: Uint8Array, signal?: AbortSignal): Promise
       if (lines.length === before) empty.push(p); // a page with no text layer (a scanned page): reported, never silently dropped
       if (lines.length > MAX_SHEET_ROWS) throw new StudioError(msg("pdf.tooManyLines", { max: MAX_SHEET_ROWS }));
     }
-    if (!lines.length) throw new StudioError(msg("pdf.noText"));
+    if (!lines.length) throw new StudioError(msg("pdf.noText"), "SCANNED_PDF");
     return { lines, pages: doc.numPages, empty };
   } finally { await task.destroy().catch(() => undefined); }
 }
