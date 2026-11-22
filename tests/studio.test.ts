@@ -134,6 +134,12 @@ test("XLSM macros are ignored with a notice; unsafe paths, entities and encrypte
   xxe.file("xl/sharedStrings.xml", '<?xml version="1.0"?><!DOCTYPE x [<!ENTITY a "b">]><sst/>');
   await assert.rejects(checkZip(await xxe.generateAsync({ type: "uint8array", compression: "DEFLATE" }), "xlsx"), /DOCTYPE or entity/);
   await assert.rejects(checkZip(new Uint8Array([1, 2, 3, 4]), "xlsx"), /not a valid/);
+  // Phase 16 audit: a local header whose sizes disagree with the central directory is refused.
+  const lying = new Uint8Array(await (await JSZip.loadAsync(fx.salesXlsx().bytes)).generateAsync({ type: "uint8array", compression: "DEFLATE" }));
+  assert.ok((await checkZip(lying, "xlsx")).length >= 0, "an untouched workbook passes");
+  const at = new DataView(lying.buffer).getUint32(0, true) === 0x04034b50 ? 0 : -1; assert.equal(at, 0);
+  new DataView(lying.buffer).setUint32(22, new DataView(lying.buffer).getUint32(22, true) + 4096, true);
+  await assert.rejects(checkZip(lying, "xlsx"), /entry/);
 });
 test("merged cells fill from their top-left value", () => {
   const ws = XLSX.utils.aoa_to_sheet([["Group", null, "Other"], ["a", "b", "c"]]);
