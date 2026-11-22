@@ -16,6 +16,7 @@ import { READ_ONLY_ACTIONS } from '../lib/vault/licence';
 import { ROLE_IDS } from '../lib/vault/schema';
 import { VaultService } from '../lib/vault/service';
 import { dispatch } from '../lib/vault/dispatch';
+import * as rebates from '../lib/rebate/store';
 
 async function vault(extra = '') {
   const c = await duckdbConnection();
@@ -100,6 +101,18 @@ test('7E-2 hand-checked replay: rounding, credits, unknown cost, precedence, bre
   } finally { c.close(); }
 });
 
+test('Phase 16 audit: the actual figures include customer rebate programmes, as on the Margin screens', async () => {
+  const { c, e } = await vault(HAND);
+  try {
+    // An additional 2% programme for C1 on 2026 sales: line 1 (net 896) accrues 18 on top of its booked 0.
+    const p = await rebates.saveSql(e, { reference: 'C1-2026', customer: 'C1', mode: 'retroactive', treatment: 'additional', from: '2026-01-01', to: '2026-12-31', eligible: '', excluded: '', enabled: true, tiers: [{ from: '0', to: '', rate: '2' }] }, 'actor');
+    c.query(p.sql); await rebates.rebuildAccruals(e);
+    const margin = rows(c, "SELECT sum(rebate_cents)::VARCHAR AS r FROM rebate_sales WHERE sale_date >= DATE '2026-01-01' AND sale_date < DATE '2026-03-01'")[0].r;
+    const r = await simulate(e, { from: '2026-01', to: '2026-02', changes: [ch('price', 'all', '', '0')] }, never, quiet);
+    assert.equal(r.actual.rebate, String(margin), 'the simulator left the programme accrual out of the actual rebate');
+    assert.equal(r.actual.rebate, '218');
+  } finally { c.close(); }
+});
 test('7E-2 cancel stops between months and leaves no partial run; the 2M-line guardrail refuses before any work', async () => {
   const { c, e } = await vault(HAND);
   try {

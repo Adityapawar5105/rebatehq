@@ -33,7 +33,20 @@ jobs:
       - name: Verify applied migration hashes
         run: pnpm check:migrations-lock
       - run: pnpm typecheck
-      - run: pnpm test
+      - name: Unit tests (one rerun only after the known V8 exit crash)
+        # CI #194 (Node 24.22.3) and PR #22 (Node 24.22.1, 22 Nov 2026): V8 aborts while a test process that used
+        # WebAssembly exits ("jit_page_->allocations_.erase"), after every test in it has passed. Pinning Node did not
+        # stop it. The suite is rerun once only when that signature is present and no assertion failed; any real
+        # failure still fails the job, and the crash stays visible as a warning.
+        shell: bash
+        run: |
+          set +e
+          pnpm test 2>&1 | tee test-output.log; code=${PIPESTATUS[0]}
+          if [ "$code" != 0 ] && grep -q "jit_page_->allocations_.erase" test-output.log && ! grep -qE "AssertionError|not ok [0-9]" test-output.log; then
+            echo "::warning::V8 crashed while a test process exited after its tests passed; rerunning the unit tests once."
+            pnpm test; code=$?
+          fi
+          exit $code
       - run: pnpm build
   chromium:
     name: database tests and Chromium privacy and relay gates

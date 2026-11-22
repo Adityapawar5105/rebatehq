@@ -42,6 +42,10 @@ export async function checkZip(bytes: Uint8Array, kind: Kind) {
     if (names.has(name) || name.startsWith("/") || name.includes("\\") || name.split("/").some(x => x === "..")) throw new StudioError(msg("sheet.theWorkbookContainsUnsafe"));
     names.add(name);
     if (size > 256 * 1024 * 1024 || (total += size) > 512 * 1024 * 1024 || (size > 1_000_000 && size / Math.max(1, packed) > 200)) throw new StudioError(msg("sheet.theWorkbookExpandsBeyond"));
+    // Phase 16 audit: the limits above use the central directory's sizes. A local header that carries its own sizes
+    // (no data descriptor) must agree, or a crafted file could declare small sizes here and expand further when read.
+    if (local + 30 > end || v.getUint32(local, true) !== 0x04034b50) throw new StudioError(msg("sheet.invalidWorkbookZipEntry"));
+    if (!(flags & 8) && (v.getUint32(local + 18, true) !== packed || v.getUint32(local + 22, true) !== size)) throw new StudioError(msg("sheet.invalidWorkbookZipEntry"));
     if (/vbaProject|\/macros?\//i.test(name)) notices.add(msg("sheet.macrosArePresentThey2"));
     if (/externalLinks?\//i.test(name)) notices.add(msg("sheet.linksToOtherWorkbooks"));
     if (/embeddings\/|activeX\//i.test(name)) notices.add(msg("sheet.embeddedObjectsAndControls"));

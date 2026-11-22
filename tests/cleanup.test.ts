@@ -2,10 +2,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { duckdbConnection, rows as q } from "./helpers/duckdb-node";
-import { schemaSql, tablesFor } from "../lib/vault/schema";
+import { schemaSql, tablesFor, TABLES, SCHEMA_VERSION } from "../lib/vault/schema";
 import { REBUILD_SQL } from "../lib/margin/aggregate";
 import { plan, scan, undoPlan, history } from "../lib/cleanup/item-master";
 import { canonicalUnit, convertQuantity } from "../lib/cleanup/uom";
+import { removeChildrenSql } from "../lib/studio/load";
 import type { Engine } from "../lib/vault/engine";
 const LINE = (id: number, product: string, cost: string, qty = 1) => `('s',${id},'${product}','C','2025-01-0${id}',${qty},1000,100,0,0,${cost},${id + 1})`;
 async function vault() {
@@ -102,6 +103,30 @@ test("merge fills empty fields of the kept product from the duplicates and undo 
     const kept = q(c, "SELECT description, category, current_cost, list_price FROM products WHERE product_id='ab-100'")[0];
     assert.deepEqual(kept, { description: "Brass valve 1in", category: "Valves", current_cost: "555", list_price: null });
     const u = await undo(c, e, p.fixId); assert.equal(u.skipped, 0); assert.equal(snapshot(c), before);
+  } finally { c.close(); }
+});
+test("Phase 16 audit: a merge moves a duplicate's barcode to the kept item, and undo puts every barcode back", async () => {
+  const { c, e } = await vault();
+  try {
+    c.query("ALTER TABLE products ADD COLUMN barcode VARCHAR"); // vault v22
+    c.query("UPDATE products SET barcode='012345678905' WHERE product_id='AB-100 '; UPDATE products SET barcode='036000291452' WHERE product_id='AB-100'");
+    const barcodes = () => JSON.stringify(q(c, "SELECT product_id, barcode FROM products WHERE barcode IS NOT NULL ORDER BY product_id"));
+    const before = barcodes();
+    const p = await run(c, e, "merge_duplicates", "AB100");
+    const kept = q(c, "SELECT barcode FROM products WHERE product_id='ab-100'")[0].barcode;
+    assert.ok(["012345678905", "036000291452"].includes(String(kept)), "the kept item has no barcode after the merge");
+    const u = await undo(c, e, p.fixId); assert.equal(u.skipped, 0); assert.equal(barcodes(), before, "undo lost a barcode");
+  } finally { c.close(); }
+});
+test("Phase 16 audit: removing an item file clears the barcodes it supplied, like its other fields", async () => {
+  const c = await duckdbConnection();
+  for (const table of [...TABLES].reverse()) c.query(`DROP TABLE IF EXISTS ${table}`);
+  c.query("DROP VIEW IF EXISTS rebate_sales"); c.query(schemaSql(SCHEMA_VERSION));
+  try {
+    c.query("INSERT INTO source_files VALUES('m','items.csv','item_master',1,'x'); INSERT INTO products(product_id,description,source_id,source_row,barcode) VALUES('ab-100','Brass valve','m',2,'012345678905')");
+    assert.ok(!removeChildrenSql("m").includes("barcode"), "older vaults have no barcode column");
+    c.query(`BEGIN; ${removeChildrenSql("m", false, false, false, false, true)} COMMIT`);
+    assert.deepEqual(q(c, "SELECT description, barcode, source_id FROM products WHERE product_id='ab-100'")[0], { description: "", barcode: null, source_id: null });
   } finally { c.close(); }
 });
 test("undo restores only cells still holding the fix's value and reports what it left alone", async () => {

@@ -6,7 +6,7 @@
 
 | PR | What | CI `verify` | Commit |
 |---|---|---|---|
-| PR_NUMBER | 15.1, 15.3, 15.6, 15.7; local vault v23 | CI_RUN | CI_SHA |
+| #21 | 15.1, 15.3, 15.6, 15.7; local vault v23 | [CI #211](https://github.com/Adityapawar5105/rebatehq/actions/runs/44957298531) **failed** before any test: the runner's Docker could not set up container networking for Supabase twice. The start step now restarts Docker between retries. Then [CI #212](https://github.com/Adityapawar5105/rebatehq/actions/runs/44958799532) passed | `1130f0a` |
 
 ## What was built
 
