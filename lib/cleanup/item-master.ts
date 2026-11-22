@@ -11,7 +11,11 @@ import { CANONICAL_UNITS, canonicalUnit } from "./uom";
 import { msg } from "../i18n/core";
 import { NOTE_LIMIT, noteLength } from "../notes/notes";
 /** Vaults from schema v15 on have row notes; older fixtures and journals do not. */
-const hasNotes = async (e: Engine) => Number((await rows(e, "SELECT count(*) AS n FROM information_schema.columns WHERE table_name='products' AND column_name='notes'"))[0].n) > 0;
+const hasColumn = async (e: Engine, column: string) => Number((await rows(e, `SELECT count(*) AS n FROM information_schema.columns WHERE table_name='products' AND column_name='${column}'`))[0].n) > 0;
+const hasNotes = (e: Engine) => hasColumn(e, "notes");
+// Phase 16 audit (22 Nov 2026): the v22 barcode was neither moved to the kept item nor journalled, so a merge lost a
+// duplicate's barcode for good (a counter scanner then missed the item) and undo could not bring it back.
+const hasBarcode = (e: Engine) => hasColumn(e, "barcode");
 export type FixKind = "merge_duplicates" | "normalize_uom" | "set_category";
 export const MAX_MERGE_LINES = 250_000;
 const GROUP_LIMIT = 100, MEMBER_LIMIT = 5000;
@@ -114,11 +118,12 @@ UPDATE products SET category = ${Q(category)} WHERE ${where}; ${BUMP}` };
   if (moved > MAX_MERGE_LINES) return bad(msg("itemfix.thisMergeWouldMove", { moved, maxmergelines: MAX_MERGE_LINES }));
   const vendor = Number((await rows(e, `SELECT count(*) AS n FROM vendor_costs WHERE product_id IN (${list})`))[0].n), price = Number((await rows(e, `SELECT count(*) AS n FROM price_matrix WHERE product_id IN (${list})`))[0].n);
   // Fill the canonical product's empty fields from the duplicates (largest first), keeping what it already has.
-  const have = (await rows(e, `SELECT description, category, current_cost::VARCHAR AS current_cost, list_price::VARCHAR AS list_price FROM products WHERE product_id = ${canonQ}`))[0];
-  const donors = await rows(e, `SELECT product_id, description, category, current_cost::VARCHAR AS current_cost, list_price::VARCHAR AS list_price FROM products WHERE product_id IN (${list})`);
+  const withBarcode = await hasBarcode(e), barcodeCol = withBarcode ? ", barcode" : "";
+  const have = (await rows(e, `SELECT description, category, current_cost::VARCHAR AS current_cost, list_price::VARCHAR AS list_price${barcodeCol} FROM products WHERE product_id = ${canonQ}`))[0];
+  const donors = await rows(e, `SELECT product_id, description, category, current_cost::VARCHAR AS current_cost, list_price::VARCHAR AS list_price${barcodeCol} FROM products WHERE product_id IN (${list})`);
   const order = new Map(group.members.map(m => [m.product, BigInt(m.lines)])), sorted = donors.sort((a, b) => Number(order.get(b.product_id)! - order.get(a.product_id)!) || (a.product_id < b.product_id ? -1 : 1));
   const fills: Array<{ col: string; before: string | null; after: string; sql: string }> = [];
-  for (const col of ["description", "category", "current_cost", "list_price"]) {
+  for (const col of ["description", "category", "current_cost", "list_price", ...(withBarcode ? ["barcode"] : [])]) {
     const empty = have[col] === null || have[col] === "", donor = sorted.find(d => d[col] !== null && d[col] !== "");
     if (empty && donor) fills.push({ col, before: have[col] === null ? null : String(have[col]), after: String(donor[col]), sql: col === "current_cost" || col === "list_price" ? `${col} = ${donor[col]}` : `${col} = ${Q(donor[col])}` });
   }
@@ -135,7 +140,7 @@ UPDATE products SET category = ${Q(category)} WHERE ${where}; ${BUMP}` };
       fills.push({ col: "notes", before: own === null ? null : String(own), after: combined, sql: `notes = ${Q(combined)}` });
     }
   }
-  const PCOLS = ["description", "category", "uom", "current_cost", "list_price", "source_id", "source_row", ...(withNotes ? ["notes"] : [])];
+  const PCOLS = ["description", "category", "uom", "current_cost", "list_price", "source_id", "source_row", ...(withNotes ? ["notes"] : []), ...(withBarcode ? ["barcode"] : [])];
   const parts = [
     ...PCOLS.map(c => `SELECT 1 AS o, 'products' AS t, product_id AS k1, CAST(NULL AS VARCHAR) AS k2, '${c}' AS c, CAST(${c} AS VARCHAR) AS b, CAST(NULL AS VARCHAR) AS a FROM products WHERE product_id IN (${list})`),
     `SELECT 1, 'products', product_id, CAST(NULL AS VARCHAR), '*row', product_id, CAST(NULL AS VARCHAR) FROM products WHERE product_id IN (${list})`,
@@ -180,9 +185,9 @@ export async function undoPlan(e: Engine, fixId: string, actor: string, at: stri
   const field = (c: string) => `max(CASE WHEN col = '${c}' THEN before_value END)`;
   const fillSql = fillCols.map(col => { const num = col === "current_cost" || col === "list_price", cast = (x: string) => num ? `CAST(${x} AS BIGINT)` : x;
     return `UPDATE products SET ${col} = ${cast("j.before_value")} FROM cleanup_changes j WHERE j.fix_id = ${id} AND j.tbl = 'products' AND j.col = '${col}' AND j.key1 = products.product_id AND j.after_value IS NOT NULL AND products.${col} = ${cast("j.after_value")};`; }).join("\n");
-  const withNotes = await hasNotes(e);
-  return { kind, summary: String(fix.summary), restored, skipped: Math.max(0, Number(fix.cells) - restored), sql: `INSERT INTO products(product_id,description,category,uom,current_cost,list_price,source_id,source_row${withNotes ? ",notes" : ""})
-SELECT key1, coalesce(${field("description")}, ''), coalesce(${field("category")}, ''), coalesce(${field("uom")}, 'EA'), CAST(${field("current_cost")} AS BIGINT), CAST(${field("list_price")} AS BIGINT), ${field("source_id")}, CAST(${field("source_row")} AS BIGINT)${withNotes ? `, ${field("notes")}` : ""}
+  const withNotes = await hasNotes(e), withBarcode = await hasBarcode(e);
+  return { kind, summary: String(fix.summary), restored, skipped: Math.max(0, Number(fix.cells) - restored), sql: `INSERT INTO products(product_id,description,category,uom,current_cost,list_price,source_id,source_row${withNotes ? ",notes" : ""}${withBarcode ? ",barcode" : ""})
+SELECT key1, coalesce(${field("description")}, ''), coalesce(${field("category")}, ''), coalesce(${field("uom")}, 'EA'), CAST(${field("current_cost")} AS BIGINT), CAST(${field("list_price")} AS BIGINT), ${field("source_id")}, CAST(${field("source_row")} AS BIGINT)${withNotes ? `, ${field("notes")}` : ""}${withBarcode ? `, ${field("barcode")}` : ""}
 FROM cleanup_changes WHERE fix_id = ${id} AND tbl = 'products' AND key1 IN (SELECT key1 FROM cleanup_changes WHERE fix_id = ${id} AND col = '*row') AND key1 NOT IN (SELECT product_id FROM products) GROUP BY key1;
 ${fillSql}
 DROP TABLE IF EXISTS md_cleanup_lines;

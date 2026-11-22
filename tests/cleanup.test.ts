@@ -104,6 +104,19 @@ test("merge fills empty fields of the kept product from the duplicates and undo 
     const u = await undo(c, e, p.fixId); assert.equal(u.skipped, 0); assert.equal(snapshot(c), before);
   } finally { c.close(); }
 });
+test("Phase 16 audit: a merge moves a duplicate's barcode to the kept item, and undo puts every barcode back", async () => {
+  const { c, e } = await vault();
+  try {
+    c.query("ALTER TABLE products ADD COLUMN barcode VARCHAR"); // vault v22
+    c.query("UPDATE products SET barcode='012345678905' WHERE product_id='AB-100 '; UPDATE products SET barcode='036000291452' WHERE product_id='AB-100'");
+    const barcodes = () => JSON.stringify(q(c, "SELECT product_id, barcode FROM products WHERE barcode IS NOT NULL ORDER BY product_id"));
+    const before = barcodes();
+    const p = await run(c, e, "merge_duplicates", "AB100");
+    const kept = q(c, "SELECT barcode FROM products WHERE product_id='ab-100'")[0].barcode;
+    assert.ok(["012345678905", "036000291452"].includes(String(kept)), "the kept item has no barcode after the merge");
+    const u = await undo(c, e, p.fixId); assert.equal(u.skipped, 0); assert.equal(barcodes(), before, "undo lost a barcode");
+  } finally { c.close(); }
+});
 test("undo restores only cells still holding the fix's value and reports what it left alone", async () => {
   const { c, e } = await vault();
   try {
