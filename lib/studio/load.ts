@@ -262,7 +262,8 @@ const CUSTOMER_RESET = "name='',tier='',branch='',region='',payment_terms='',sou
  * cannot delete a parent row in the transaction that deleted its children, so the
  * source row and now-unused products/customers go in step 2 (finishRemoval).
  */
-export function removeChildrenSql(source: string,rebates=false,purchases=false,costIndex=false,inventory=false) {
+/** Phase 16 audit: `barcode` (vault v22) is cleared with the other fields the removed item file supplied. */
+export function removeChildrenSql(source: string,rebates=false,purchases=false,costIndex=false,inventory=false,barcode=false) {
   const s = sqlText(source);
   return `CREATE TEMP TABLE IF NOT EXISTS studio_affected(kind VARCHAR, id VARCHAR);
 ${costIndex?`DELETE FROM cost_index_points WHERE source_id=${s};`:''}
@@ -272,7 +273,7 @@ INSERT INTO studio_affected SELECT DISTINCT 'p', product_id FROM sales_lines WHE
  UNION SELECT DISTINCT 'c', customer_id FROM sales_lines WHERE source_id=${s} UNION SELECT 'c', customer_id FROM customers WHERE source_id=${s} UNION SELECT 'c', customer_id FROM credit_profiles WHERE source_id=${s};
 ${rebates?`DELETE FROM rebate_accruals WHERE source_id=${s} OR program_id IN(SELECT id FROM rebate_programs WHERE source_id=${s});DELETE FROM rebate_tiers WHERE program_id IN(SELECT id FROM rebate_programs WHERE source_id=${s});DELETE FROM rebate_programs WHERE source_id=${s};`:''}
 DELETE FROM sales_lines WHERE source_id=${s}; DELETE FROM vendor_costs WHERE source_id=${s}; DELETE FROM price_matrix WHERE source_id=${s}; DELETE FROM credit_profiles WHERE source_id=${s}; DELETE FROM source_kinds WHERE source_id=${s};
-UPDATE products SET ${PRODUCT_RESET} WHERE source_id=${s}; UPDATE customers SET ${CUSTOMER_RESET} WHERE source_id=${s};
+UPDATE products SET ${PRODUCT_RESET}${barcode?",barcode=NULL":""} WHERE source_id=${s}; UPDATE customers SET ${CUSTOMER_RESET} WHERE source_id=${s};
 DELETE FROM import_issues WHERE source_id=${s}; DELETE FROM import_batches WHERE source_id=${s}; DELETE FROM rejected_rows WHERE source_id=${s};`;
 }
 export function finishRemovalSql(source: string,purchases=false) {

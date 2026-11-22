@@ -625,7 +625,7 @@ export class Studio {
     const messages = kept.flatMap(f => CODES(f.role).map(code => `(${f.ord},${sqlText(code)},${sqlText(issueColumn(code, f))},${sqlText(issueMessage(code, f.settings))})`)).join(",");
     await engine.conn.query("BEGIN");
     try {
-      if (staged.replaces) await engine.conn.query(removeChildrenSql(staged.replaces,await hasRebates(engine),await hasSupplier(engine),await hasCostIndex(engine),await hasInventory(engine)));
+      if (staged.replaces) await engine.conn.query(removeChildrenSql(staged.replaces,await hasRebates(engine),await hasSupplier(engine),await hasCostIndex(engine),await hasInventory(engine),await hasBarcode(engine)));
       await engine.conn.query(`CREATE TEMP TABLE studio_files AS SELECT * FROM (VALUES ${values}) v(file_ord, source_id, name);
 CREATE TEMP TABLE studio_messages AS SELECT * FROM (VALUES ${messages}) v(file_ord, code, column_name, message)`);
       for (const [i, f] of kept.entries()) {
@@ -657,6 +657,7 @@ INSERT INTO import_batches(id,source_id,rows_loaded,rows_rejected,imported_at,co
 }
 /** Remove one imported file and exactly its rows (two transactions; see finishRemovalSql). */
 /** 8B-1: cost index points exist from vault v18. */
+async function hasBarcode(engine: Engine) { return (await engine.conn.query("SELECT count(*)::VARCHAR n FROM information_schema.columns WHERE table_name='products' AND column_name='barcode'")).toArray()[0].n === "1"; }
 async function hasInventory(engine: Engine) { return (await engine.conn.query("SELECT count(*)::VARCHAR n FROM information_schema.tables WHERE table_catalog=current_database() AND table_name='inventory_levels'")).toArray()[0].n === "1"; }
 async function hasCostIndex(engine: Engine) { return (await engine.conn.query("SELECT count(*)::VARCHAR n FROM information_schema.tables WHERE table_catalog=current_database() AND table_name='cost_index_points'")).toArray()[0].n === "1"; }
 export async function removeSource(engine: Engine, source: string) {
@@ -664,7 +665,7 @@ export async function removeSource(engine: Engine, source: string) {
   if (!row) throw new StudioError(msg("import.thatFileIsNo"));
   await engine.conn.query("BEGIN");
   try {
-    await engine.conn.query(removeChildrenSql(source,await hasRebates(engine),await hasSupplier(engine),await hasCostIndex(engine),await hasInventory(engine)));
+    await engine.conn.query(removeChildrenSql(source,await hasRebates(engine),await hasSupplier(engine),await hasCostIndex(engine),await hasInventory(engine),await hasBarcode(engine)));
     await rebuildAccruals(engine);
     await appendAudit(engine, "import.removed", { source_id: source, ...(!["rebate_agreement","purchases"].includes(String(row.role))?{file_name:String(row.name)}:{}) });
     await engine.conn.query("COMMIT");
