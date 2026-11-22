@@ -454,7 +454,7 @@ Run each with the preamble and the same "Done when / close-out" pattern. The ord
 |---|---|---|
 | Week of 9 Nov | Decide the first 2–3 ERPs (blueprint open Q1). Best guess for 50–300 employee distributors: Epicor P21, Infor SX.e/CSD, NetSuite | Narrows mapper work in 4C-2 |
 | By 4C-2 (~end Nov) | Get **one** anonymised real sales-history + item-master export | Blueprint §2 gap; mapper and cleanup depend on it |
-| Dec | 10 conversations; test $299/$599/$999 (blueprint §14) | Validates pricing before charging |
+| Dec | 10 conversations; test $499/$999/$1,999 (blueprint §14) | Validates pricing before charging |
 | By 6A (early Jan) | 3–5 real files and 1–2 pilot candidates for the free Margin Leak Audit | 6A cannot finish without them |
 | Before 7A | Ask pilots whether Quote Desk or rebates matters more | Re-orders Phase 2 by evidence |
 
