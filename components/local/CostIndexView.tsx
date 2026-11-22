@@ -77,7 +77,7 @@ export function CostIndexView({ client, version, canPrice, canImport, busy, oper
     </Card>
     {selected && <Card title={t("index.skusFor", { name: skus?.trigger.name ?? "" })} description={t("index.skusHelp")} data-testid="index-skus" actions={<Button size="sm" icon="close" onClick={() => setSelected("")}>{t("common.close")}</Button>}>
       {!skus ? <Skeleton/> : <DataGrid label={t("index.skusFor", { name: skus.trigger.name })} testId="index-skus-grid" rows={skus.rows} rowKey={r => r.product_id}
-        remote={{ query: gq, onQuery: q => { setGq(q); void client.call("indexSkus", { id: selected, offset: 0, grid: q }).then(setSkus); }, meta: skus.grid, fetch: g => client.call("indexSkus", { id: selected, offset: 0, grid: g }).then(v => v.grid) }} columns={[
+        remote={{ query: gq, onQuery: q => { setGq(q); const id = selected; void client.call("indexSkus", { id, offset: 0, grid: q }).then(v => { if (v.trigger.id === id) setSkus(v); }).catch(e => setError(errorText(e))); }, meta: skus.grid, fetch: g => client.call("indexSkus", { id: selected, offset: 0, grid: g }).then(v => v.grid) }} columns={[
         { id: "product_id", name: t("vendor.sku"), value: r => r.product_id, cell: r => <span className={styles.wrap} translate="no">{r.product_id}{r.description ? ` · ${r.description}` : ""}</span> },
         { id: "category", name: t("vendor.category"), value: r => r.category, cell: r => <span translate="no">{r.category}</span> },
         { id: "current_cost", name: t("index.currentCost"), type: "money", num: true, value: r => r.current_cost },
