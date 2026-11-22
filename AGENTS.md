@@ -243,3 +243,15 @@ Phase 12 (payments) and the mobile app (15.5) are excluded by the user's instruc
 - **15.7:** saved simulator runs, compared side by side.
 
 Local vault **v23 / 65 tables** (`claim_payments`, `export_layouts`, `sim_runs`); no Supabase migration. See `docs/evidence/ROADMAP_PHASE_15_VERIFICATION.md`. Not built: 15.2 and 15.8 need a design first, and 15.4 needs the operator's OAuth credentials.
+
+**Roadmap Phase 16: the second audit pass (22 November 2026; built by Claude Code).**
+- **Areas read:** the areas the first audit left out (leak rules, cleanup and undo, vendor review and the simulator, the PDF and report builders, converters, relay crypto, screen states, catalogs, scripts).
+- **Fixed, each with a test:**
+  - an item merge lost duplicates' barcodes, and undo could not restore them;
+  - removing an item file left its barcodes;
+  - the simulator's actual figures left out customer rebate programmes;
+  - a workbook could declare smaller sizes in its central directory than in its local headers;
+  - the cost-index SKU grid had no error handling.
+- **Corrected:** the documentation that called the suspended tenant purge active. The purge itself was not switched back on.
+
+See `docs/evidence/SECOND_AUDIT_PASS.md`. The independent security review (R02, D16) is still owed before card payments.
