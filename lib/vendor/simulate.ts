@@ -27,6 +27,7 @@ export type SimScope = typeof SIM_SCOPES[number];
 export type SimChange = { kind: SimKind; scope: SimScope; value: string; pct: string };
 export type SimInput = { from: string; to: string; changes: SimChange[] };
 import type { ProgressKind } from "../studio/studio";
+import { salesInput } from "../rebate/input";
 export type Progress = (stage: string, done: string, total: string, kind?: ProgressKind) => void;
 /** Most specific first: a product change beats a customer change, which beats a category change, which beats "all". */
 const PRECEDENCE: SimScope[] = ["product", "customer", "category", "all"];
@@ -93,6 +94,9 @@ export async function simulate(e: Engine, input: unknown, signal: AbortSignal, p
   const count = Number((await rows(e, `SELECT count(*)::VARCHAR AS n FROM sales_lines WHERE sale_date >= ${start} AND sale_date < ${end}`))[0].n);
   if (!count) throw new VaultError("SIM", msg("sim.noLines"));
   if (count > SIM_MAX_LINES) throw new VaultError("SIM", msg("sim.tooMany", { lines: count, max: SIM_MAX_LINES }));
+  // Phase 16 audit: the same input as the Margin screens and the leak finder, so customer rebate programmes are in the
+  // actual figures (rebate_sales adds or replaces the booked rebate); sales_lines alone left them out.
+  const lineSource = await salesInput(e);
   const pb = bpSql(s.changes, "price"), cb = bpSql(s.changes, "cost");
   await e.conn.query(CREATE);
   let done = false;
@@ -103,7 +107,7 @@ export async function simulate(e: Engine, input: unknown, signal: AbortSignal, p
       const m = `DATE ${Q(s.months[i] + "-01")}`;
       await e.conn.query(`INSERT INTO ${SIM_TABLE}
 WITH x AS (SELECT l.product_id, l.customer_id, l.list_cents, l.discount_cents, l.rebate_cents, l.freight_cents, l.cost_cents, ${pb} AS pb, ${cb} AS cb
- FROM sales_lines l LEFT JOIN products p ON p.product_id = l.product_id WHERE l.sale_date >= ${m} AND l.sale_date < ${m} + INTERVAL 1 MONTH),
+ FROM ${lineSource} l LEFT JOIN products p ON p.product_id = l.product_id WHERE l.sale_date >= ${m} AND l.sale_date < ${m} + INTERVAL 1 MONTH),
 y AS (SELECT *, ${scaled("list_cents", "pb")} AS sl, ${scaled("discount_cents", "pb")} AS sd, ${scaled("rebate_cents", "pb")} AS sr,
  CASE WHEN cost_cents IS NULL THEN NULL ELSE ${scaled("cost_cents", "cb")} END AS sc FROM x)
 SELECT product_id, customer_id, ${m}, count(*), count(*) FILTER (WHERE pb <> 0 OR (cb <> 0 AND cost_cents IS NOT NULL)), count(cost_cents),
