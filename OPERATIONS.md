@@ -51,7 +51,7 @@ Server settings live in the hosting provider's environment, never in git. `.env.
 | New computer or browser | Sign in there; the Owner approves the device under Account › Licence, seats and devices (a "devices waiting" badge shows on Settings). Then restore a backup |
 | Lost or stolen device | The Owner revokes it under Account › Licence, seats and devices. If sharing is set up, an administrator rotates the workspace key so the device cannot read new items |
 | Licence offline or read-only | A server error keeps the saved licence inside its offline allowance; only a refusal or bad signature makes the vault read-only. Check the licence and device rows (operator view below) |
-| Customer leaves | The Owner uses Account › Workspace › Disable workspace. `scripts/purge-deleted-tenants.ts` removes control-plane rows of workspaces disabled for 30 days and keeps the audit rows. Vault data on their devices is theirs to delete |
+| Customer leaves | The Owner uses Account › Workspace › Disable workspace. The workspace's control-plane rows stay until removed: `scripts/purge-deleted-tenants.ts` is **suspended** (it stops at its first line). Before it is switched back on, a pgTAP test must prove that deleting a tenant cascades to its control-plane rows and keeps the audit rows, and the Restore Drill must pass with it (Phase 16 audit, 22 Nov 2026). Vault data on their devices is theirs to delete |
 
 ## Incidents and secrets
 
