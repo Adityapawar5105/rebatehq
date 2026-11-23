@@ -493,7 +493,9 @@ async function phase8Ui(){
  let accountShell='not-signed-in';
  if(auth){
   // The account page is control plane (licence and devices), so the business-data request sensor is off for it.
-  dataPlaneActive=false;await page.goto(base+'/account/licence');await page.getByRole('navigation',{name:'Account',exact:true}).waitFor();
+  dataPlaneActive=false;await page.goto(base+'/account/licence');
+  // One sidebar (23 Nov 2026, A1): the account pages sit under Settings in the main navigation, next to its own pages.
+  const mainNav=page.getByRole('navigation',{name:'Main navigation',exact:true});await mainNav.getByRole('link',{name:'Security and storage',exact:true}).waitFor();
   await page.getByRole('button',{name:'Sign out',exact:true}).waitFor();assert.equal(await page.getByRole('link',{name:'Licence, seats and devices',exact:true}).getAttribute('aria-current'),'page','The account page is not marked current in the vault sidebar');
   // Measure only after the device list has loaded (CI #191 passed because it measured the loading text; PR #17's run
   // measured the loaded table and failed), and after the narrow layout has painted. A failure names what is too wide.

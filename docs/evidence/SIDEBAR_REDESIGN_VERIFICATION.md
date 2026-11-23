@@ -46,6 +46,13 @@
   - The overflow sweep covers the five new pages at 1366 px and 375 px.
 - The flyout hover bridge (CSS only) was added after that gate run.
 
+## CI
+
+- [CI #218](https://github.com/Adityapawar5105/rebatehq/actions/runs/45222849197) on `c1fb076` (PR #24) failed in the authenticated Chromium privacy gate, which the local lab run does not reach.
+  - Unit tests, audit, build and the Firefox lab gate passed.
+  - Cause: `phase8Ui` waited for a navigation landmark named "Account" on `/account/licence`. The one-sidebar change (A1) removed that second landmark, and the account links now sit under Settings in "Main navigation".
+  - Fix: the step now finds the Settings pages in the main navigation. It still checks that "Licence, seats and devices" is the current link.
+
 ## Still to verify
 
 - CI on the pull request (Chromium and Firefox gates, relay, pgTAP).
