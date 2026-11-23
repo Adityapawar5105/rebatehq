@@ -13,7 +13,8 @@ import styles from "./vault.module.css";
 import { DataGrid } from "@/components/ui/DataGrid";
 import { OutcomePanel, WinLossReport } from "./WinLoss";
 import { Lookup } from "./Lookup";
-import { Badge, Button, Card, Field, Notice, Tabs, tabPanelProps, type Tone } from "@/components/ui/ui";
+import { Badge, Button, Card, Field, Notice, type Tone } from "@/components/ui/ui";
+import { markSubPage, pageOfHash } from "./subtabs";
 import { Icon } from "@/components/ui/Icon";
 
 type Op = (f: () => Promise<void>) => Promise<void>;
@@ -114,11 +115,19 @@ export function QuotesView({ client, userId, caps, tier, busy, operation, relayE
       const m = /^#quotes-open-(.+)$/.exec(location.hash), tabHash = /^#quotes-(check|new|inbox|history|winloss)$/.exec(location.hash), fill = /^#quotes-check-(product|customer)-(.+)$/.exec(location.hash);
       if (m) open(decodeURIComponent(m[1]));
       else if (fill) { const v = decodeURIComponent(fill[2]); setCheck(c => fill[1] === "product" ? { ...c, productId: v } : { ...c, customerId: v }); setTab("check"); }
-      else if (tabHash && tabs.includes(tabHash[1] as Tab)) setTab(tabHash[1] as Tab);
+      else if (tabHash && tabs.includes(tabHash[1] as Tab)) { setNote(""); setTab(tabHash[1] as Tab); }
+      else if (location.hash === "#quotes") { setNote(""); setTab("check"); } // the sidebar's Quotes link opens the first page
     };
     read(); window.addEventListener("hashchange", read); return () => window.removeEventListener("hashchange", read);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // The page list is in the sidebar (23 Nov 2026): when this view moves itself (an opened quote shows on the Quote page),
+  // the address bar follows so the sidebar and breadcrumb mark the right page.
+  useEffect(() => {
+    const now = location.hash.slice(1);
+    if (now.startsWith("quotes") && pageOfHash(now, tabs.map(x => ({ hash: "quotes-" + x }))) !== "quotes-" + tab) markSubPage("quotes-" + tab);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
   const [check, setCheck] = useState({ productId: "", customerId: "", quantity: "1" }), [point, setPoint] = useState<PricePoint | null>(null);
   const [customer, setCustomer] = useState(""), [quote, setQuote] = useState<QuoteView | null>(null), [lines, setLines] = useState<{ productId: string; quantity: string; price: string }[]>([]);
   const [add, setAdd] = useState({ productId: "", quantity: "1" }), [reason, setReason] = useState(""), [decisionNote, setDecisionNote] = useState("");
@@ -165,8 +174,7 @@ export function QuotesView({ client, userId, caps, tier, busy, operation, relayE
   const reset = () => { setConfirmNew(false); setQuote(null); setLines([]); setReason(""); setDecisionNote(""); };
   return <>
     <p role="status">{say(note)}</p>
-    <Tabs label={t("quotes.tabsLabel")} idPrefix="quotes" active={tab} onChange={x => { setNote(""); setTab(x); }} tabs={tabs.map(x => ({ id: x, label: t(TAB[x]) }))}/>
-    <div {...tabPanelProps("quotes", tab)}>
+    <div>
 
     {tab === "check" && <Card title={t("quotes.check.heading")} headingId="price-check-heading" description={t("quotes.check.body")}>
       <form className={styles.quoteForm} onSubmit={e => { e.preventDefault(); void operation(async () => { setPoint(await client.call("priceCheck", { productId: check.productId.trim(), customerId: check.customerId.trim() || null, quantity: check.quantity.trim() || "1" })); }); }}>

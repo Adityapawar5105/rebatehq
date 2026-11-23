@@ -18,7 +18,7 @@ export function ReportsView(p:Props){
  const [tab,setTab]=useState('review');const cost=p.caps.includes('cost'),quote=p.caps.includes('quote');
  useEffect(()=>{const change=()=>{const id=location.hash.replace('#reports-','').split('-')[0];setTab(['review','roi','scorecard'].includes(id)?id:'review');};change();window.addEventListener('hashchange',change);return()=>window.removeEventListener('hashchange',change);},[]);
  const tabs=[...(cost?[{id:'review',label:t('cadence.reviewTab'),href:'#reports-review'},{id:'roi',label:t('cadence.roiTab'),href:'#reports-roi'}]:[]),...(quote?[{id:'scorecard',label:t('cadence.scoreTab'),href:'#reports-scorecard'}]:[])];if(!tabs.length)return null;const active=tabs.some(i=>i.id===tab)?tab:tabs[0].id;
- return <><SectionTabs label={t('shell.section.reports')} current={active} items={tabs} onSelect={setTab}/>{active==='review'?<PackView {...p}/>:active==='roi'?<RoiView {...p}/>:<ScoreView {...p}/>}</>;
+ return <>{active==='review'?<PackView {...p}/>:active==='roi'?<RoiView {...p}/>:<ScoreView {...p}/>}</>;
 }
 function PackView({client,tier,busy,version,operation,refresh}:Props){
  const [state,setState]=useState<Results['reportState']>(),[kind,setKind]=useState<PackKind>('monthly'),[month,setMonth]=useState(''),[failed,setFailed]=useState(false),[file,setFile]=useState<{id:string;url:string;name:string}>();

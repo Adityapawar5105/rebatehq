@@ -45,7 +45,7 @@ const RECON_LEVEL: Record<ReconSummary["open"][number]["level"], MessageKey> = {
 const PLANTED: Record<string, MessageKey> = { L1: "studio.planted.L1", L2: "studio.planted.L2", L3: "studio.planted.L3", L4: "studio.planted.L4", L5: "studio.planted.L5" };
 const statusText = (f: FileView) => f.loadable ? t("studio.readyToLoad") : f.role && !f.missing.length ? t("studio.convertOnly") : t("studio.needsAttention");
 
-export function ImportStudio({ client, status, caps = [], busy, operation, onStatus, setMessage }: Props) {
+export function ImportStudio({ part = "import", client, status, caps = [], busy, operation, onStatus, setMessage }: Props & { part?: "import" | "fix" }) {
   const [studio, setStudio] = useState<StudioState | null>(null), [sources, setSources] = useState<SourceView[]>([]);
   const [open, setOpen] = useState<string | null>(null), [ack, setAck] = useState(false), [over, setOver] = useState(false);
   const [recipeName, setRecipeName] = useState(""), [removing, setRemoving] = useState<string | null>(null), [losing, setLosing] = useState<{ products: string; customers: string } | null>(null);
@@ -92,10 +92,15 @@ export function ImportStudio({ client, status, caps = [], busy, operation, onSta
   const files = studio?.files ?? [], report = studio?.report ?? null, current = files.find(f => f.id === open) ?? null;
   const canCommit = !!report && report.loaded !== "0" && report.capOk && ((report.rejected === "0" && !report.rebateTerms && !report.skippedPages) || ack);
   return <>
+    {part === "fix" ? <>
+      <FixLater {...shared} onSources={refreshSources}/>
+      <Reconciliation {...shared}/>
+      <HealthCard {...shared}/>
+    </> : <>
     {after && <Notice tone="ok" data-testid="after-import" actions={caps.includes("cost") ? <>
       <ButtonLink size="sm" variant="primary" icon="coins" href="#home">{t("studio.after.seeLeak")}</ButtonLink>
       <ButtonLink size="sm" variant="ghost" icon="chart" href="#margin">{t("home.openMargin")}</ButtonLink>
-    </> : <UiButton size="sm" onClick={() => scrollToHeading("fix-heading")}>{t("studio.after.reviewFix")}</UiButton>}>
+    </> : <UiButton size="sm" onClick={() => { location.hash = "data-hub-fix"; scrollToHeading("fix-heading"); }}>{t("studio.after.reviewFix")}</UiButton>}>
       {t(after.rejected === "0" ? "studio.after.imported" : "studio.after.importedFix", { loaded: fmt.int(after.loaded), rejected: fmt.int(after.rejected) })}
     </Notice>}
     <Card headingId="studio-heading" title={t("studio.importStudio")}>
@@ -174,9 +179,6 @@ export function ImportStudio({ client, status, caps = [], busy, operation, onSta
         setMessage(msg("studio.imported", { rows: fmt.int(out.result.loaded), count: Number(out.result.files) }) + (out.result.cleanup ? "" : " " + msg("studio.cleanupHarmless")));
       })}>{t("studio.confirmAndImportLocally")}</UiButton>
     </Card>}
-    <FixLater {...shared} onSources={refreshSources}/>
-    <Reconciliation {...shared}/>
-    <HealthCard {...shared}/>
     <Playground {...shared} sources={sources} onSources={refreshSources}/>
     <Card headingId="sources-heading" title={t("studio.importedFiles")}>
       {!sources.length ? <p className={styles.muted}>{t("studio.noFilesImportedYet")}</p> : <DataGrid label={t("studio.importedFiles")} testId="studio-sources" rows={sources} rowKey={s => s.id} columns={[
@@ -195,6 +197,7 @@ export function ImportStudio({ client, status, caps = [], busy, operation, onSta
           </div> },
       ]}/>}
     </Card>
+  </>}
   </>;
 }
 type Patch = { erp?: ErpProfile; field?: { name: string; source: FieldSource }; confirmed?: boolean; range?: { from: string | null; to: string | null } };

@@ -2,7 +2,6 @@
 import {CompetitorLog,ServiceOrders} from './PricingTools';
 import {RebateReconciliation} from "./RebatesView";
 import {MarginBridge} from "./PricingOps";
-import {SectionTabs} from "@/components/ui/ui";
 import {CustomerHealthView} from "./HomeMonitor";
 
 // Margin section (chunk 4D): waterfall, drill-down, whale curve, leaks, ROI and the
@@ -233,7 +232,6 @@ export function MarginView(props:Shared){
  const [tab,setTab]=useState('waterfall');
  const canBridge=props.status.licence?.tier==='professional'||props.status.licence?.tier==='scale',shown=canBridge||tab==='health'?tab:'waterfall';
  useEffect(()=>{const read=()=>setTab(['#margin-bridge','#margin-competitors','#margin-service','#margin-health'].includes(location.hash)?location.hash.slice(8):'waterfall');read();window.addEventListener('hashchange',read);return()=>window.removeEventListener('hashchange',read);},[]);
- const items=[{id:'waterfall',label:t('margin.waterfall'),href:'#margin-waterfall'},{id:'health',label:t('monitor.healthTab'),href:'#margin-health',testId:'ops-tab-health'},...(canBridge?[{id:'bridge',label:t('ops.bridge'),href:'#margin-bridge',testId:'ops-tab-margin-bridge'},{id:'competitors',label:t('pc2.competitors'),href:'#margin-competitors',testId:'ops-tab-competitors'},{id:'service',label:t('pc2.service'),href:'#margin-service',testId:'ops-tab-service'}]:[])];
  const version=`${props.status.lines}|${props.status.generation}`;
- return <><SectionTabs label={t('margin.views')} current={shown} onSelect={setTab} items={items}/> {shown==='health'?<CustomerHealthView client={props.client} version={version}/>:shown==='competitors'?<CompetitorLog client={props.client} canEdit={!!props.status.access?.caps.includes('pricing')}/>:shown==='service'?<ServiceOrders client={props.client} canEdit={!!props.status.access?.caps.includes('pricing')}/>:shown==='bridge'?<MarginBridge client={props.client}/>:<WaterfallView {...props}/>}</>;
+ return <> {shown==='health'?<CustomerHealthView client={props.client} version={version}/>:shown==='competitors'?<CompetitorLog client={props.client} canEdit={!!props.status.access?.caps.includes('pricing')}/>:shown==='service'?<ServiceOrders client={props.client} canEdit={!!props.status.access?.caps.includes('pricing')}/>:shown==='bridge'?<MarginBridge client={props.client}/>:<WaterfallView {...props}/>}</>;
 }
