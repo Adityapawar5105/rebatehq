@@ -842,7 +842,7 @@ try {
   results.measurements.import100kMs = Math.round(performance.now() - start);
   const tasks = await page.evaluate(() => window.__vaultLongTasks); results.measurements.maxImportLongTaskMs = Math.max(0, ...tasks); assert.ok(results.measurements.maxImportLongTaskMs <= 200, "Import blocked main thread for over 200 ms");
   await page.getByRole("link", { name: "Reports", exact: true }).click(); await page.getByRole("button", { name: "Verify audit chain" }).click(); await page.getByRole("status").filter({ hasText: /Audit chain verified/ }).waitFor();
-  await page.getByRole("link", { name: "Margin", exact: true }).click(); await page.getByRole("heading", { name: "Margin waterfall" }).waitFor(); await page.getByTestId("wf-margin").waitFor();
+  await page.getByRole("link", { name: "Margin", exact: true }).click(); await page.locator("#waterfall-heading").waitFor(); await page.getByTestId("wf-margin").waitFor();
   await page.getByRole("link", { name: "Data Hub", exact: true }).click();
   const capPath = path.resolve("test-results", "synthetic-over-cap.csv"); await writeFile(capPath, csv(100001, 200001));
   await review([capPath]);
@@ -1018,7 +1018,7 @@ try {
     'pricing-sales.csv':header+'9000001,'+priceSku+',E-CUSTOMER,2025-03-01,1,100.00,10.00,1.00,0.00,66.00\n'
   };const pricePaths=[];for(const [name,body]of Object.entries(files4E)){const file=path.resolve('test-results',name);await writeFile(file,body);pricePaths.push(file);}
   const oldCount=BigInt(await page.getByTestId('line-count').getAttribute('data-value'));await importFiles(pricePaths,String(oldCount+BigInt(1)));
-  await page.getByRole('link',{name:'Settings',exact:true}).click();
+  await openSub('settings-security');
   await page.evaluate(()=>{window.showDirectoryPicker=async()=>await(await navigator.storage.getDirectory()).getDirectoryHandle('privacy-backup-seam',{create:true});});
   await page.getByRole('button',{name:'Choose backup folder',exact:true}).click();await page.getByRole('status').filter({hasText:'Encrypted folder backup written.'}).waitFor();
   await page.getByRole('link',{name:'Pricing',exact:true}).click();await page.getByLabel('Pricing Owner name',{exact:true}).fill('Synthetic Pricing Owner');
@@ -1104,7 +1104,7 @@ try {
   await itemGrid.getByTestId('note-input').fill('x'.repeat(1001));await itemGrid.getByText('1,001 of 1,000 characters',{exact:true}).waitFor();assert.ok(await itemGrid.getByTestId('note-save').isDisabled(),'A note over 1,000 characters can be saved');
   const itemNote='Fragile '+marker+' <b>plain text</b> =SUM(A1)';await itemGrid.getByTestId('note-input').fill(itemNote);await itemGrid.getByTestId('note-save').click();await itemGrid.getByTestId('note-text').filter({hasText:itemNote}).waitFor();
   assert.equal(await itemGrid.locator('[data-testid="note-text"] b').count(),0,'A note was rendered as HTML');
-  await page.getByRole('link',{name:'Home',exact:true}).click();await page.getByRole('link',{name:'Data Hub',exact:true}).click();await page.getByTestId('customer-grid').waitFor({timeout:60000});
+  await page.getByRole('link',{name:'Home',exact:true}).click();await openSub('data-hub-records');await page.getByTestId('customer-grid').waitFor({timeout:60000});
   await pickOnly(page.getByTestId('customer-grid'),'notes',marker);await page.getByTestId('customer-grid').getByTestId('note-text').filter({hasText:customerNote}).waitFor();
   await page.keyboard.press('Control+k');await page.getByTestId('command-palette').waitFor();await page.getByTestId('command-palette').getByRole('combobox').fill(marker);
   await page.getByRole('option',{name:/E-CUSTOMER/}).waitFor({timeout:15000});await page.keyboard.press('Escape');await page.getByTestId('command-palette').waitFor({state:'hidden'});
@@ -1315,7 +1315,7 @@ try {
     const device=await page.evaluate(()=>{const key=Object.keys(localStorage).find(k=>k.startsWith('rebatehq-device-v1:'));return localStorage.getItem(key);});assert.ok(device);
     const revoked=await context.request.post(base+'/api/licence/devices',{data:{id:device,status:'revoked'}});assert.equal(revoked.status(),200);
     await page.reload();await ready();await page.getByTestId('licence-status').filter({hasText:'Read-only'}).waitFor();await unlock();
-    await page.getByRole('link',{name:'Settings',exact:true}).click();const backup=page.waitForEvent('download');await page.getByRole('button',{name:'Download encrypted backup',exact:true}).click();assert.ok((await readFile(await(await backup).path())).subarray(0,8).toString()==='MDVAULT1');
+    await openSub('settings-security');const backup=page.waitForEvent('download');await page.getByRole('button',{name:'Download encrypted backup',exact:true}).click();assert.ok((await readFile(await(await backup).path())).subarray(0,8).toString()==='MDVAULT1');
     results.checks.revokedReadOnlyRecovery=true;
   }
   await page.setViewportSize({ width: 390, height: 844 });

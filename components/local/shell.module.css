@@ -36,6 +36,8 @@
   .frame[data-nav=collapsed] .navGroup{position:relative}
   .frame[data-nav=collapsed] .chevron{display:none}
   .frame[data-nav=collapsed] .subnav{display:none;position:absolute;left:calc(100% + 10px);top:0;z-index:40;margin:0;padding:var(--space-2);min-width:232px;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);box-shadow:var(--shadow-2)}
+  /* An invisible strip over the gap, so the pointer can cross from the icon to the flyout without closing it. */
+  .frame[data-nav=collapsed] .subnav::before{content:"";position:absolute;top:0;bottom:0;left:-12px;width:12px}
   .frame[data-nav=collapsed] .navGroup:hover .subnav,.frame[data-nav=collapsed] .navGroup:focus-within .subnav{display:flex}
   .frame[data-nav=collapsed] .subnavTitle{display:block;padding:var(--space-1) var(--space-3) var(--space-2);font-weight:600;color:var(--heading);font-size:var(--fs-sm)}
   .frame[data-nav=collapsed] .subLink[aria-current=page]::before{display:none}
