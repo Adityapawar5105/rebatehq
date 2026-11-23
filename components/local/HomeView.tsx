@@ -37,9 +37,9 @@ function workLists(home: HomeData, quotes: QuoteSummary[], runs: Run[], userId: 
   if (opens("Pricing")) for (const r of runs) action.push({ id: "run:" + r.id, icon: "tag", title: r.rule ? t("home.work.preview", { rule: r.rule }) : t("home.work.previewUnnamed"), subtitle: t("home.work.previewRows", { count: Number(r.affected) }), // Only the named Pricing Owner approves price changes; everyone else sees that the preview is waiting on them.
     badge: t(approver ? "home.badge.toApprove" : "home.badge.awaiting"), tone: approver ? "warn" : "info", href: "#pricing-rules", at: r.at || null });
   if (opens("Data Hub")) {
-    if (home.openFixLater && home.openFixLater !== "0") action.push({ id: "fix", icon: "inbox", title: t("home.rejectedRowsInFix"), subtitle: t("home.work.rows", { count: Number(home.openFixLater) }), badge: t("home.badge.toFix"), tone: "warn", href: "#data-hub", anchor: "fix-heading", at: null });
-    if (home.openRecon && home.openRecon !== "0") action.push({ id: "recon", icon: "report", title: t("home.openReconciliationDifferences"), subtitle: t("home.work.open", { count: Number(home.openRecon) }), badge: t("home.badge.review"), tone: "info", href: "#data-hub", anchor: "recon-heading", at: null });
-    if (home.margin && home.margin.uncostedLines !== "0") action.push({ id: "uncosted", icon: "alert", title: t("home.linesWithoutCost"), subtitle: t("home.work.rows", { count: Number(home.margin.uncostedLines) }), badge: t("home.badge.toFix"), tone: "warn", href: "#data-hub", anchor: "basis-heading", at: null });
+    if (home.openFixLater && home.openFixLater !== "0") action.push({ id: "fix", icon: "inbox", title: t("home.rejectedRowsInFix"), subtitle: t("home.work.rows", { count: Number(home.openFixLater) }), badge: t("home.badge.toFix"), tone: "warn", href: "#data-hub-fix", anchor: "fix-heading", at: null });
+    if (home.openRecon && home.openRecon !== "0") action.push({ id: "recon", icon: "report", title: t("home.openReconciliationDifferences"), subtitle: t("home.work.open", { count: Number(home.openRecon) }), badge: t("home.badge.review"), tone: "info", href: "#data-hub-fix", anchor: "recon-heading", at: null });
+    if (home.margin && home.margin.uncostedLines !== "0") action.push({ id: "uncosted", icon: "alert", title: t("home.linesWithoutCost"), subtitle: t("home.work.rows", { count: Number(home.margin.uncostedLines) }), badge: t("home.badge.toFix"), tone: "warn", href: "#data-hub-cleanup", anchor: "basis-heading", at: null });
   }
   return { drafts: drafts.sort(newest), action: action.sort(newest) };
 }
@@ -142,7 +142,7 @@ export function HomeView({ client, userId, version, busy, operation, refresh, on
     <Card headingId="role-view-heading" title={t("home.whatMattersForYour")} data-testid="role-view">
       <Grid min={190}>
         {home.margin && <>
-          <StatTile wide icon="coins" label={<Term id="netPocket">{t("home.netPocket")}</Term>} value={money(home.margin.netPocket)}/>
+          <StatTile wide icon="coins" label={<Term id="netPocket">{t("home.netPocket")}</Term>} value={money(home.margin.netPocket)} hint={t("home.periodLines", { count: Number(home.margin.lines) })}/>
           <StatTile wide icon="trend" tone="ok" label={<Term id="pocketMargin">{t("home.pocketMargin")}</Term>} value={money(home.margin.margin)} hint={fmt.percent(home.margin.rate)} valueProps={{ "data-testid": "home-margin" }}/>
           {!dataHub && <StatTile icon="alert" tone={home.margin.uncostedLines === "0" ? undefined : "warn"} label={t("home.linesWithoutCost")} value={fmt.int(home.margin.uncostedLines)}/>}
         </>}

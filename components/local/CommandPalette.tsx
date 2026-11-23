@@ -35,7 +35,8 @@ const isHit = (id: string) => id.startsWith("product:") || id.startsWith("custom
 /** Opens a sub-tab by its hash (re-firing it when already there, since a tab button may have moved off it) or scrolls to a section heading. */
 function openSubTab(s: SubTab, go: (s: Section) => void) {
   if (s.hash) { if (location.hash === "#" + s.hash) window.dispatchEvent(new HashChangeEvent("hashchange")); else location.hash = s.hash; return; }
-  go(s.section);
+  // A heading lives on one sub-page (23 Nov 2026): open that page, then scroll to it.
+  if (s.page && location.hash !== "#" + s.page) location.hash = s.page; else go(s.section);
   const anchor = s.anchor ?? "";
   setTimeout(() => scrollToHeading(anchor), 50);
 }

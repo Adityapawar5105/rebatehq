@@ -8,7 +8,10 @@ import type { Scope, StorageStatus, Tier, VaultStatus } from "@/lib/vault/protoc
 import { fmt, msg, say, t, useLocale, setWorkspaceCurrency, type MessageKey } from "@/lib/i18n";
 import { Preferences } from "@/components/Preferences";
 import { Icon, type IconName } from "@/components/ui/Icon";
-import { Button, ButtonLink, Card, Field, Grid, JumpNav, Notice, PageHeader, StatTile } from "@/components/ui/ui";
+import { Button, ButtonLink, Card, Field, Grid, Notice, PageHeader, StatTile } from "@/components/ui/ui";
+import { SideNav, type SideNavItem } from "./SideNav";
+import { SECTION_HASH, SUBPAGE_EVENT, pageOfHash, sectionOfHash, sectionPages } from "./subtabs";
+import type { AccountLink } from "@/lib/account-nav";
 import { GridTotalsProvider } from "@/components/ui/DataGrid";
 import type { GridType } from "@/lib/grid/core";
 import ui from "@/components/ui/ui.module.css";
@@ -48,12 +51,14 @@ const SECTION_DESC: Record<Section, MessageKey> = { Home: "shell.desc.home", "Da
 const SECTION_ICON: Record<Section, IconName> = { Home: "home", "Data Hub": "database", Margin: "chart", Pricing: "tag", Quotes: "quote", "Rebates & Contracts": "coins", Vendors: "users", Reports: "report", Settings: "settings" };
 export const sectionHash = (s: Section) => s === "Rebates & Contracts" ? "rebates" : s.toLowerCase().replace(" ", "-");
 const NAV_KEY = "rebatehq.nav";
-export function VaultApp({ scope, email, workspace, lab = false, relayEnabled = false }: { scope: Scope; email: string; workspace: string; lab?: boolean; relayEnabled?: boolean }) {
+export function VaultApp({ scope, email, workspace, lab = false, relayEnabled = false, account = [] }: { scope: Scope; email: string; workspace: string; lab?: boolean; relayEnabled?: boolean; account?: AccountLink[] }) {
   useLocale(); // re-render every screen when the language changes
   const client = useRef<VaultClient | null>(null);
   // Every grid totals its selected rows through the worker (DuckDB), never in the page.
   const gridTotals = useCallback((types: GridType[], values: (string | null)[][]) => { if (!client.current) return Promise.reject(new Error("locked")); return client.current.call("gridTotals", { types, values }); }, []);
   const [status, setStatus] = useState<VaultStatus | null>(null), [section, setSection] = useState<Section>("Home");
+  // The address bar's hash picks the sub-page shown under a section (23 Nov 2026); views read the same hash.
+  const [hash, setHash] = useState("");
   useOfflineWorker(); // 8C-2: offline copy of the app shell (production builds only)
   // Status and error text are kept as message references, so a language switch re-renders them.
   useEffect(() => { setWorkspaceCurrency(status?.state === "unlocked" ? status.currency : "USD"); }, [status?.state, status?.currency]);
@@ -102,9 +107,11 @@ export function VaultApp({ scope, email, workspace, lab = false, relayEnabled = 
     const leaving = () => { void c.call("lock", {}).catch(() => undefined); };
     // Reading counts as activity too: the mouse wheel and scrolling (audit B-8).
     window.addEventListener("pointerdown", touch); window.addEventListener("keydown", touch); window.addEventListener("wheel", touch, { passive: true }); window.addEventListener("scroll", touch, { passive: true, capture: true }); window.addEventListener("pagehide", leaving);
-    const hash = () => { const raw = location.hash.slice(1); const value=raw.startsWith('pricing-')?'pricing':raw.startsWith('quotes-')?'quotes':raw.startsWith('margin-')?'margin':raw.startsWith('rebates-')?'rebates':raw.startsWith('vendors-')?'vendors':raw.startsWith('reports-')?'reports':raw; const match = sections.find(s => sectionHash(s) === value); if (match) setSection(match); setError(""); };
-    hash(); window.addEventListener("hashchange", hash);
-    return () => { active = false; clearTimeout(startTimer); window.removeEventListener("pointerdown", touch); window.removeEventListener("keydown", touch); window.removeEventListener("wheel", touch); window.removeEventListener("scroll", touch, { capture: true }); window.removeEventListener("pagehide", leaving); window.removeEventListener("hashchange", hash); c.close(); client.current = null; };
+    const hash = () => { const raw = location.hash.slice(1); setHash(raw); const match = sectionOfHash(raw); if (match) setSection(match); setError(""); };
+    // A view that changes its own sub-page (an opened quote) rewrites the hash without a hashchange event.
+    const subpage = () => setHash(location.hash.slice(1));
+    hash(); window.addEventListener("hashchange", hash); window.addEventListener(SUBPAGE_EVENT, subpage);
+    return () => { active = false; clearTimeout(startTimer); window.removeEventListener("pointerdown", touch); window.removeEventListener("keydown", touch); window.removeEventListener("wheel", touch); window.removeEventListener("scroll", touch, { capture: true }); window.removeEventListener("pagehide", leaving); window.removeEventListener("hashchange", hash); window.removeEventListener(SUBPAGE_EVENT, subpage); c.close(); client.current = null; };
   }, [scope.userId, scope.tenantId]);
   async function operation(work: () => Promise<void>) {
     setBusy(true); setError(""); setProgress(null);
@@ -114,6 +121,16 @@ export function VaultApp({ scope, email, workspace, lab = false, relayEnabled = 
   // 9.2: the page reads the worker's one phase value instead of combining flags.
   const unlocked = !!status && status.phase !== "none" && status.phase !== "locked", access = status?.access, caps = access?.caps ?? [], visible = access?.sections ?? [...sections], shown: Section = visible.includes(section) ? section : "Home";
   const navItems = sections.filter(item => !unlocked || visible.includes(item));
+  // Sub-pages per section (23 Nov 2026): the same role and tier rules as each view; Settings also lists the account pages.
+  const navCtx = { caps, tier: status?.licence?.tier };
+  const pagesOf = (s: Section) => [
+    ...sectionPages(s, navCtx).map(p => ({ href: "#" + p.hash, hash: p.hash, label: t(p.label), testId: p.testId })),
+    ...(s === "Settings" && !lab ? account.map(a => ({ href: a.href, hash: "", label: t(a.label), testId: undefined })) : []),
+  ];
+  const pages = pagesOf(shown), page = pageOfHash(hash, pages.filter(p => p.hash)) ?? "", pageInfo = pages.length > 1 ? pages.find(p => p.hash === page) : undefined;
+  const sideItems: SideNavItem[] = navItems.map(item => ({ href: `#${SECTION_HASH[item]}`, label: t(SECTION_LABEL[item]), icon: SECTION_ICON[item], current: shown === item,
+    children: pagesOf(item).map(p => ({ href: p.href, label: p.label, testId: p.testId, current: shown === item && !!p.hash && p.hash === page })) }));
+  const navigate = (href: string) => { const s = href.startsWith("#") ? sectionOfHash(href) : null; if (s) setSection(s); setDrawer(false); };
   useEffect(() => {
     if (!unlocked || lab) { setWaiting(0); return; }
     let on = true;
@@ -134,9 +151,7 @@ export function VaultApp({ scope, email, workspace, lab = false, relayEnabled = 
     {/* Until the vault is unlocked only the unlock card shows: no navigation, search or business screens (16 Nov 2026). */}
     {!locked && <aside className={sh.sidebar} id="app-sidebar" aria-label={t("shell.sidebar")}>
       <a href="/home" className={sh.brand}><span className={sh.mark} aria-hidden="true">{t("shell.brandMark")}</span><span className={sh.label}>{t("app.name")}</span></a>
-      <nav aria-label={t("shell.mainNav")} className={sh.nav}>
-        {navItems.map(item => <a key={item} href={`#${sectionHash(item)}`} className={sh.navLink} aria-current={shown === item ? "page" : undefined} title={collapsed ? t(SECTION_LABEL[item]) : undefined} onClick={() => { setSection(item); setDrawer(false); }}><Icon name={SECTION_ICON[item]}/><span className={sh.label}>{t(SECTION_LABEL[item])}</span></a>)}
-      </nav>
+      <SideNav label={t("shell.mainNav")} items={sideItems} collapsed={collapsed} onNavigate={navigate}/>
       <div className={sh.sideFoot}>
         <div className={sh.workspace}><strong translate="no">{workspace}</strong><span translate="no">{email}</span></div>
         <button type="button" className={sh.collapse} aria-pressed={collapsed} onClick={toggleNav}><Icon name="sidebar"/><span className={sh.label}>{t(collapsed ? "shell.expandNav" : "shell.collapseNav")}</span></button>
@@ -147,6 +162,20 @@ export function VaultApp({ scope, email, workspace, lab = false, relayEnabled = 
       {!locked && <header className={sh.topbar}>
         <button type="button" className={sh.menuButton} aria-label={t("shell.menu")} aria-expanded={drawer} aria-controls="app-sidebar" onClick={() => setDrawer(true)}><Icon name="menu"/></button>
         <button type="button" className={sh.search} aria-label={t("shell.paletteButton")} aria-keyshortcuts="Control+K Meta+K" onClick={() => window.dispatchEvent(new CustomEvent(OPEN_PALETTE_EVENT))}><Icon name="search" size={16}/><span className={sh.searchText}>{t("shell.searchLabel")}</span><kbd className={sh.kbd}>{t("shell.paletteShortcut")}</kbd></button>
+        {/* V2 (23 Nov 2026): the vault summary is a chip in the top bar; the other counts open from it. The licence line stays
+            visible, so a read-only licence is never hidden behind a click. */}
+        {unlocked && status && <div className={sh.status}>
+          <details className={sh.vaultInfo}>
+            <summary title={t("shell.summaryLabel")}><Icon name="database" size={15}/><span data-testid="line-count" data-value={status.lines}>{fmt.int(status.lines)}</span><span>{t("shell.stat.lines")}</span></summary>
+            <dl className={sh.summary} aria-label={t("shell.summaryLabel")}>
+              <div><dt>{t("shell.stat.products")}</dt><dd>{fmt.int(status.products)}</dd></div>
+              <div><dt>{t("shell.stat.customers")}</dt><dd>{fmt.int(status.customers)}</dd></div>
+              <div><dt>{t("shell.stat.generation")}</dt><dd>{fmt.int(status.generation)}</dd></div>
+            </dl>
+          </details>
+          {licenceLine}
+          {waiting > 0 && <a href="/account/licence" data-testid="devices-waiting"><Badge tone="warn" icon="key">{t("shell.devicesWaiting", { count: waiting })}</Badge></a>}
+        </div>}
         <div className={sh.tools}>
           <Preferences pseudo={lab} className={sh.prefs}/>
           {signOut}
@@ -165,13 +194,18 @@ export function VaultApp({ scope, email, workspace, lab = false, relayEnabled = 
             ...(caps.includes("data") && visible.includes("Data Hub") ? [{ href: "#data-hub", label: t("home.create.import"), icon: "upload" as const }] : []),
             ...(caps.includes("pricing") && visible.includes("Pricing") ? [{ href: "#pricing-rules", label: t("home.create.rule"), icon: "tag" as const }] : []),
           ]}/><Button icon="lock" disabled={busy} onClick={lock}>{t("shell.lock")}</Button></div>}/>}
-        {unlocked && shown !== "Home" && <PageHeader eyebrow={t("shell.eyebrow")} title={t(SECTION_LABEL[shown])} description={t(SECTION_DESC[shown])} actions={<Button icon="lock" disabled={busy} onClick={lock}>{t("shell.lock")}</Button>}/>}
-        {!supported && <Notice data-testid="browser-support-notice" tone="warn">{t("shell.browserNotice")}</Notice>}
+        {/* V1 (23 Nov 2026): "Section › Page" over the page's own name, in place of the row of tabs. */}
+        {unlocked && shown !== "Home" && <PageHeader eyebrow={pageInfo ? <span className={sh.crumb} data-testid="breadcrumb">{t(SECTION_LABEL[shown])}<Icon name="chevronRight" size={12}/>{pageInfo.label}</span> : undefined}
+          title={pageInfo ? pageInfo.label : t(SECTION_LABEL[shown])} description={t(SECTION_DESC[shown])} actions={<Button icon="lock" disabled={busy} onClick={lock}>{t("shell.lock")}</Button>}/>}
         <p role="status" aria-live="polite" className={sh.message}>{say(message)}</p>
-        {error && <Notice tone="bad" role="alert">{say(error)}</Notice>}
-        {status?.phase === "preparing" && <Notice tone="info" data-testid="preparing">{t("shell.preparing")}</Notice>}
-        {locking && unlocked && <Notice tone="warn" role="alert" data-testid="locking-soon" actions={<Button size="sm" variant="primary" onClick={() => { setLocking(false); void client.current?.call("touch", {}).catch(() => undefined); }}>{t("shell.stayUnlocked")}</Button>}>{t("shell.lockingSoon")}</Notice>}
-        {status?.recovered && <Notice tone="warn">{t("shell.recovered")}</Notice>}
+        {/* V7 (23 Nov 2026): notices stack as one group under the header, each keeping its own action. */}
+        <div className={sh.notices}>
+          {!supported && <Notice data-testid="browser-support-notice" tone="warn">{t("shell.browserNotice")}</Notice>}
+          {error && <Notice tone="bad" role="alert">{say(error)}</Notice>}
+          {status?.phase === "preparing" && <Notice tone="info" data-testid="preparing">{t("shell.preparing")}</Notice>}
+          {locking && unlocked && <Notice tone="warn" role="alert" data-testid="locking-soon" actions={<Button size="sm" variant="primary" onClick={() => { setLocking(false); void client.current?.call("touch", {}).catch(() => undefined); }}>{t("shell.stayUnlocked")}</Button>}>{t("shell.lockingSoon")}</Notice>}
+          {status?.recovered && <Notice tone="warn">{t("shell.recovered")}</Notice>}
+        </div>
         {progress && <div className={sh.progress}><label htmlFor="vault-progress">{say(progress.stage)}</label><progress id="vault-progress" value={Number(progress.done)} max={Math.max(1, Number(progress.total))}/>{progress.kind !== "save" && <Button size="sm" onClick={() => void client.current!.call("cancel", {})}>{t(progress.kind === "sim" ? "sim.cancel" : progress.kind === "check" ? "cadence.cancel" : "shell.cancelImport")}</Button>}</div>}
         {dead ? <section className={ui.card} role="alert" data-testid="worker-failed"><h2>{t("shell.workerFailed.title")}</h2><p>{t("shell.workerFailed.body")}</p><Button variant="primary" onClick={() => location.reload()}>{t("shell.workerFailed.reload")}</Button></section>
           : !status ? <section className={ui.card} aria-busy="true">{t("shell.startingWorker")}</section> : !unlocked ? <div className={sh.auth}>
@@ -194,40 +228,27 @@ export function VaultApp({ scope, email, workspace, lab = false, relayEnabled = 
           {/* Restoring only works into an empty vault, so the restore card is offered only before a vault exists. */}
           {client.current && !status.exists && <div className={sh.authSide}><BackupView client={client.current} busy={busy} operation={operation} unlocked={false} onStatus={setStatus}/></div>}
         </div> : <>
-          {access?.viewAs && <Notice tone="warn" role="status" data-testid="preview-banner" actions={<Button size="sm" disabled={busy} onClick={() => void operation(async () => { await client.current!.call("rolePreview", { role: null }); setStatus(await client.current!.call("status", {})); })}>{t("shell.returnView")}</Button>}>{t("shell.previewBanner", { role: say(access.roleLabel) })}</Notice>}
-          {status.dirty && <Notice tone="bad" actions={<Button size="sm" onClick={() => void operation(async () => { setStatus(await client.current!.call("save", {})); setMessage(msg("shell.saved")); })}>{t("shell.retrySave")}</Button>}>{t("shell.unsaved")}</Notice>}
-          <div className={sh.statusBar}>
-            <dl className={sh.summary} aria-label={t("shell.summaryLabel")}>
-              <div><dt>{t("shell.stat.lines")}</dt><dd data-testid="line-count" data-value={status.lines}>{fmt.int(status.lines)}</dd></div>
-              <div><dt>{t("shell.stat.products")}</dt><dd>{fmt.int(status.products)}</dd></div>
-              <div><dt>{t("shell.stat.customers")}</dt><dd>{fmt.int(status.customers)}</dd></div>
-              <div><dt>{t("shell.stat.generation")}</dt><dd>{fmt.int(status.generation)}</dd></div>
-            </dl>
-            {licenceLine}
-            {waiting > 0 && <a href="/account/licence" data-testid="devices-waiting"><Badge tone="warn" icon="key">{t("shell.devicesWaiting", { count: waiting })}</Badge></a>}
+          <div className={sh.notices}>
+            {access?.viewAs && <Notice tone="warn" role="status" data-testid="preview-banner" actions={<Button size="sm" disabled={busy} onClick={() => void operation(async () => { await client.current!.call("rolePreview", { role: null }); setStatus(await client.current!.call("status", {})); })}>{t("shell.returnView")}</Button>}>{t("shell.previewBanner", { role: say(access.roleLabel) })}</Notice>}
+            {status.dirty && <Notice tone="bad" actions={<Button size="sm" onClick={() => void operation(async () => { setStatus(await client.current!.call("save", {})); setMessage(msg("shell.saved")); })}>{t("shell.retrySave")}</Button>}>{t("shell.unsaved")}</Notice>}
+            {/* First-run activation (20 Nov 2026): while the Playground's sample files are loaded, every section says so. */}
+            {(status.sample === "only" || status.sample === "mixed") && <Notice tone="info" data-testid="sample-banner" actions={caps.includes("data") ? <>
+              {status.sample === "only" && visible.includes("Data Hub") && <ButtonLink size="sm" variant="primary" icon="upload" href="#data-hub">{t("shell.sample.import")}</ButtonLink>}
+              <Button size="sm" variant="ghost" disabled={busy} onClick={() => void operation(async () => { const out = await client.current!.call("playgroundRemove", {}); setStatus(out.status); setMessage(msg("studio.removedPlaygroundFilesAnd", { count: Number(out.removed) })); })}>{t("shell.sample.remove")}</Button>
+            </> : undefined}>{t(status.sample === "only" ? "shell.sample.only" : "shell.sample.mixed")}</Notice>}
           </div>
-          {/* First-run activation (20 Nov 2026): while the Playground's sample files are loaded, every section says so. */}
-          {(status.sample === "only" || status.sample === "mixed") && <Notice tone="info" data-testid="sample-banner" actions={caps.includes("data") ? <>
-            {status.sample === "only" && visible.includes("Data Hub") && <ButtonLink size="sm" variant="primary" icon="upload" href="#data-hub">{t("shell.sample.import")}</ButtonLink>}
-            <Button size="sm" variant="ghost" disabled={busy} onClick={() => void operation(async () => { const out = await client.current!.call("playgroundRemove", {}); setStatus(out.status); setMessage(msg("studio.removedPlaygroundFilesAnd", { count: Number(out.removed) })); })}>{t("shell.sample.remove")}</Button>
-          </> : undefined}>{t(status.sample === "only" ? "shell.sample.only" : "shell.sample.mixed")}</Notice>}
           {shown === "Home" && client.current && <HomeView sample={status.sample} client={client.current} userId={scope.userId} version={`${status.lines}|${status.generation}|${access?.role}`} busy={busy} operation={operation} refresh={async () => setStatus(await client.current!.call("status", {}))} onHome={onHome}
             afterWork={caps.includes('collaborate') && status.licence?.tier !== 'starter' ? <RelayOnboarding client={client.current} userId={scope.userId} tenantId={scope.tenantId} relayEnabled={relayEnabled}/> : null}/>}
           {shown === "Home" && client.current && caps.includes("cost") && status.licence?.tier !== "starter" && <AgentsInbox client={client.current} version={`${status.lines}|${status.generation}`} canPrice={caps.includes("pricing")} busy={busy} operation={operation}/>}
           {shown === "Home" && client.current && caps.includes('collaborate') && status.licence?.tier!=='starter' && <RelayPanel client={client.current} userId={scope.userId} tenantId={scope.tenantId} relayEnabled={relayEnabled} onChange={async()=>setStatus(await client.current!.call('status',{}))}/>}
-          {shown === "Data Hub" && client.current && <>
-            <JumpNav label={t("shell.onThisPage")} jumpLabel={name => t("shell.jumpTo", { name })} items={[
-              { id: "studio-heading", label: t("studio.importStudio"), icon: "upload" }, { id: "fix-heading", label: t("studio.fixLater"), icon: "inbox" },
-              { id: "recon-heading", label: t("studio.reconciliation"), icon: "report" }, { id: "health-heading", label: t("studio.dataHealth"), icon: "checkCircle" },
-              ...(status.sample !== "none" ? [{ id: "playground-heading", label: t("studio.playground"), icon: "sparkle" as const }] : []),
-              { id: "sources-heading", label: t("studio.importedFiles"), icon: "database" }, { id: "cleanup-heading", label: t("cleanup.itemMasterCleanup"), icon: "sparkle" },
-              ...(caps.includes("cost") ? [{ id: "basis-heading", label: t("basis.costBasis"), icon: "coins" as const }] : []),
-              ...(caps.includes("data") ? [{ id: "customers-heading", label: t("notes.customers"), icon: "users" as const }, { id: "items-heading", label: t("notes.items"), icon: "tag" as const }] : []),
-            ]}/>
-            <ImportStudio client={client.current} status={status} caps={caps} busy={busy} operation={operation} onStatus={setStatus} setMessage={setMessage}/>
+          {/* D1 (23 Nov 2026): Data Hub's sections are split over four sub-pages picked in the sidebar. */}
+          {shown === "Data Hub" && client.current && (page === "data-hub-import" || page === "data-hub-fix") && <ImportStudio part={page === "data-hub-fix" ? "fix" : "import"} client={client.current} status={status} caps={caps} busy={busy} operation={operation} onStatus={setStatus} setMessage={setMessage}/>}
+          {shown === "Data Hub" && client.current && page === "data-hub-cleanup" && <>
             <CleanupView client={client.current} version={`${status.lines}|${status.generation}`} busy={busy} operation={operation} onStatus={setStatus} setMessage={setMessage}/>
             {caps.includes("cost") && <CostBasisView client={client.current} version={`${status.lines}|${status.generation}`} busy={busy} operation={operation} canChoose={caps.includes("data")}/>}
-            {caps.includes("data") && <RecordsView client={client.current} version={`${status.lines}|${status.generation}`}/>}
+          </>}
+          {shown === "Data Hub" && client.current && page === "data-hub-records" && caps.includes("data") && <RecordsView client={client.current} version={`${status.lines}|${status.generation}`}/>}
+          {shown === "Data Hub" && page === "data-hub-import" && <>
             <details className={styles.card}><summary>{t("shell.columns.summary")}</summary>
               <p className={styles.small}><strong>{t("shell.columns.salesLabel")}</strong> <span translate="no">{t("shell.columns.sales")}</span></p>
               <p className={styles.small}><strong>{t("shell.columns.itemsLabel")}</strong> <span translate="no">{t("shell.columns.items")}</span> <strong>{t("shell.columns.customersLabel")}</strong> <span translate="no">{t("shell.columns.customers")}</span></p>
@@ -244,20 +265,17 @@ export function VaultApp({ scope, email, workspace, lab = false, relayEnabled = 
             {shown === "Reports" && caps.includes("cost") && client.current && <Card headingId="report-card-heading" title={t("shell.report.heading")} description={t("shell.report.body")}><LeakReportButton client={client.current} busy={busy || status.lines === "0"} operation={operation} setMessage={setMessage} onStatus={setStatus}/><ButtonLink variant="ghost" icon="search" href="#margin" data-testid="leak-choose-findings" onClick={() => setTimeout(() => scrollToHeading("leaks-heading"), 50)}>{t("shell.report.choose")}</ButtonLink></Card>}
           {shown === "Reports" && caps.includes("cost") && status.licence?.tier !== "starter" && client.current && <BenchmarksView client={client.current} version={`${status.lines}|${status.generation}`} busy={busy} operation={operation} pendingKey={`rebatehq.bench.withdrawPending:${scope.tenantId}:${scope.userId}`}/>}
           {shown === "Reports" && caps.includes("audit") && <Card headingId="audit-heading" title={t("shell.audit.heading")} description={t("shell.audit.body", { entries: Number(status.auditEntries), version: status.schemaVersion })}><Button variant="primary" icon="shield" disabled={busy} onClick={() => void operation(async () => { const result = await client.current!.call("verify", {}); if (!result.valid) throw new Error(msg("shell.audit.failed")); setMessage(msg("shell.audit.verified", { entries: Number(result.entries) })); })}>{t("shell.audit.button")}</Button> <AuditPackButton client={client.current!} busy={busy} operation={operation} setMessage={setMessage}/><p className={styles.muted}>{t("shell.audit.note")}</p><p className={styles.muted}>{t("auditpack.help")}</p></Card>}
-          {shown === "Settings" && <JumpNav label={t("shell.onThisPage")} jumpLabel={name => t("shell.jumpTo", { name })} items={[
-            { id: "prefs-heading", label: t("shell.prefs.heading"), icon: "palette" }, ...(caps.includes("backup") ? [{ id: "backup-heading", label: t("backup.encryptedBackupAndRestore"), icon: "download" as const }] : []),
-            { id: "passphrase-heading", label: t("passphrase.heading"), icon: "key" }, { id: "roles-heading", label: t("roles.teamAndRoles"), icon: "users" }, { id: "storage-heading", label: t("shell.storage.heading"), icon: "database" }, { id: "offline-heading", label: t("offline.heading"), icon: "download" },
-          ]}/>}
-          {shown === "Settings" && <Card headingId="prefs-heading" title={t("shell.prefs.heading")} description={t("shell.prefs.body")}><Preferences pseudo={lab} className={styles.row}/><p>{t("fx.moneyNote", {code:status.currency})}</p></Card>}
-          {shown === "Settings" && client.current && <CurrencySettings client={client.current} status={status} busy={busy} operation={operation} onStatus={setStatus}/>}
-          {shown === "Settings" && client.current && caps.includes("backup") && <BackupView client={client.current} busy={busy} operation={operation} unlocked onStatus={setStatus}/>}
-          {shown === "Settings" && client.current && <PassphraseCard client={client.current} busy={busy} operation={operation} onStatus={setStatus} setMessage={setMessage}/>}
-          {shown === "Settings" && client.current && <RolesView client={client.current} busy={busy} operation={operation} refresh={async () => setStatus(await client.current!.call("status", {}))}>
+          {/* D2 (23 Nov 2026): Settings is three sub-pages (general, security and storage, team); account pages follow in the sidebar. */}
+          {shown === "Settings" && page === "settings-general" && <Card headingId="prefs-heading" title={t("shell.prefs.heading")} description={t("shell.prefs.body")}><Preferences pseudo={lab} className={styles.row}/><p>{t("fx.moneyNote", {code:status.currency})}</p></Card>}
+          {shown === "Settings" && page === "settings-general" && client.current && <CurrencySettings client={client.current} status={status} busy={busy} operation={operation} onStatus={setStatus}/>}
+          {shown === "Settings" && page === "settings-security" && client.current && caps.includes("backup") && <BackupView client={client.current} busy={busy} operation={operation} unlocked onStatus={setStatus}/>}
+          {shown === "Settings" && page === "settings-security" && client.current && <PassphraseCard client={client.current} busy={busy} operation={operation} onStatus={setStatus} setMessage={setMessage}/>}
+          {shown === "Settings" && page === "settings-team" && client.current && <RolesView client={client.current} busy={busy} operation={operation} refresh={async () => setStatus(await client.current!.call("status", {}))}>
             {caps.includes('collaborate') && status.licence?.tier !== 'starter' && <RelaySetupLine client={client.current} userId={scope.userId} tenantId={scope.tenantId} relayEnabled={relayEnabled}/>}
           </RolesView>}
-          {shown === "Settings" && client.current && caps.includes("quote") && status.licence?.tier !== "starter" && <QuoteBranding client={client.current} busy={busy} operation={operation} canEdit={caps.includes("roles")}/>}
+          {shown === "Settings" && page === "settings-general" && client.current && caps.includes("quote") && status.licence?.tier !== "starter" && <QuoteBranding client={client.current} busy={busy} operation={operation} canEdit={caps.includes("roles")}/>}
           {/* 8.17: used and available space as tiles in MB or GB, not byte counts. */}
-          {shown === "Settings" && <Card headingId="storage-heading" title={t("shell.storage.heading")} description={t("shell.storage.summary", { saved: status.lastSaved ? fmt.dateTime(status.lastSaved) : t("common.none") })}
+          {shown === "Settings" && page === "settings-security" && <Card headingId="storage-heading" title={t("shell.storage.heading")} description={t("shell.storage.summary", { saved: status.lastSaved ? fmt.dateTime(status.lastSaved) : t("common.none") })}
             actions={status.licence?.writable&&status.tier!==status.licence.tier&&caps.includes('roles')?<Button disabled={busy} onClick={()=>void operation(async()=>{setStatus(await client.current!.call('capacityUpgrade',{}));setMessage(msg("shell.storage.upgraded"));})}>{t("shell.storage.upgrade")}</Button>:undefined}>
             <Grid min={180} data-testid="storage-tiles">
               <StatTile icon="database" label={t("shell.storage.used")} value={storage?.usage ? fmt.bytes(Number(storage.usage)) : t("common.unknown")} valueProps={{ "data-testid": "storage-used" }} hint={storage?.namedOpfsBytes ? t("shell.storage.vaultFiles", { size: fmt.bytes(Number(storage.namedOpfsBytes)) }) : undefined}/>
@@ -266,8 +284,8 @@ export function VaultApp({ scope, email, workspace, lab = false, relayEnabled = 
             </Grid>
             <Button variant="primary" onClick={() => void operation(async () => { await navigator.storage.persist(); setStorage(await client.current!.call("storage", {})); setMessage(msg("shell.storage.refreshed")); })}>{t("shell.storage.request")}</Button>
             <p className={styles.muted}>{t("shell.storage.note")}</p>{!lab && <p><a href="/account/users">{t("shell.storage.team")}</a>{t("common.listSeparator")}<a href="/account/workspace">{t("shell.storage.workspace")}</a></p>}</Card>}
-          {shown === "Settings" && <GlossaryCard/>}
-          {shown === "Settings" && <OfflineCard licenceUntil={status.licence?.offline && status.licence.until ? new Date(Number(status.licence.until)).toISOString() : null}/>}
+          {shown === "Settings" && page === "settings-general" && <GlossaryCard/>}
+          {shown === "Settings" && page === "settings-security" && <OfflineCard licenceUntil={status.licence?.offline && status.licence.until ? new Date(Number(status.licence.until)).toISOString() : null}/>}
         </>}
       </main>
     </div>

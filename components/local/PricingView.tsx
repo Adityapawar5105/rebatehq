@@ -1,6 +1,6 @@
 "use client";
 import {PriceGrid,LandedCheck,WhatIfSlider,ScopeText} from './PricingTools';
-import {Badge,Button,Card,Field,Notice,SectionTabs} from "@/components/ui/ui";
+import {Badge,Button,Card,Field,Notice} from "@/components/ui/ui";
 import {PricingOperations,type OpsTab} from "./PricingOps";
 import {ExportLayoutEditor,useExportLayouts} from "./ExportLayouts";
 
@@ -64,7 +64,6 @@ function PricingRulesView({client,userId,caps,busy,operation,refresh,initialPrev
 export function PricingView(props:Parameters<typeof PricingRulesView>[0]){
  const [tab,setTab]=useState<'rules'|'grid'|'landed'|OpsTab>('rules'),[draft,setDraft]=useState<Preview|null>(null);
  const canOps=props.caps.includes('pricing')&&(props.tier==='professional'||props.tier==='scale'),shown=tab==='grid'&&props.caps.includes('pricing')?'grid':canOps?tab:'rules';
- const tabs=[{id:'rules',label:t('ops.rules'),href:'#pricing'},...(props.caps.includes('pricing')?[{id:'grid',label:t('pc2.grid'),href:'#pricing'}]:[]),...(canOps?([{id:'landed',label:t('pc2.landed'),href:'#pricing'},{id:'planner',label:t('ops.planner'),href:'#pricing'},{id:'versions',label:t('ops.versions'),href:'#pricing'},{id:'exceptions',label:t('ops.exceptions'),href:'#pricing'},{id:'expiry',label:t('ops.expiry'),href:'#pricing'}]):[])];
  useEffect(()=>{const read=()=>{const id=location.hash.replace('#pricing-','');setTab(['grid','landed','planner','versions','exceptions','expiry'].includes(id)?id as typeof tab:'rules');};read();window.addEventListener('hashchange',read);return()=>window.removeEventListener('hashchange',read);},[]);
- return <><SectionTabs items={tabs.map(v=>({...v,href:'#pricing-'+v.id,testId:'ops-tab-'+v.id}))} current={shown} label={t('ops.rules')} onSelect={id=>setTab(id as typeof tab)}/>{shown==='grid'?<PriceGrid client={props.client} onReview={p=>{setDraft(p);setTab('rules');location.hash='pricing-rules';}}/>:shown==='landed'?<LandedCheck client={props.client}/>:shown==='rules'?<PricingRulesView {...props} initialPreview={draft}/>:<PricingOperations client={props.client} tab={shown} busy={props.busy} operation={props.operation} refresh={props.refresh} onReview={p=>{setDraft(p);setTab('rules');location.hash='pricing-rules';}}/>}</>;
+ return <>{shown==='grid'?<PriceGrid client={props.client} onReview={p=>{setDraft(p);setTab('rules');location.hash='pricing-rules';}}/>:shown==='landed'?<LandedCheck client={props.client}/>:shown==='rules'?<PricingRulesView {...props} initialPreview={draft}/>:<PricingOperations client={props.client} tab={shown} busy={props.busy} operation={props.operation} refresh={props.refresh} onReview={p=>{setDraft(p);setTab('rules');location.hash='pricing-rules';}}/>}</>;
 }
