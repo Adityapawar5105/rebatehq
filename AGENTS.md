@@ -261,5 +261,5 @@ See `docs/evidence/SECOND_AUDIT_PASS.md`. The independent security review (R02, 
 - **D1, D2, A1:** Data Hub is four pages and Settings three; the account pages sit under Settings in one sidebar, from the server role (`lib/account-nav.ts`).
 - **V1–V4, V6–V9:** breadcrumb header, line count and licence line in the top bar, sentence-case labels, Net pocket names its lines, 34/30 px rows, one notice group, weights 400/500/600, short transitions.
 - Not built (the user's "maybe"): N2, N3, R1, V5. No schema, migration or worker change.
-- **CI: pending.**
+- **It passed CI** in [CI #219](https://github.com/Adityapawar5105/rebatehq/actions/runs/45226298972) on `588abb6` (PR #24): unit tests, audit and build, the authenticated Chromium privacy and relay gates, the Firefox lab gate and `verify`. The first run, CI #218, failed because the gate still looked for the removed "Account" navigation on the account pages. Not merged: the owner reviews the real app first. See docs/evidence/SIDEBAR_REDESIGN_VERIFICATION.md.
 

@@ -52,9 +52,13 @@
   - Unit tests, audit, build and the Firefox lab gate passed.
   - Cause: `phase8Ui` waited for a navigation landmark named "Account" on `/account/licence`. The one-sidebar change (A1) removed that second landmark, and the account links now sit under Settings in "Main navigation".
   - Fix: the step now finds the Settings pages in the main navigation. It still checks that "Licence, seats and devices" is the current link.
+- [CI #219](https://github.com/Adityapawar5105/rebatehq/actions/runs/45226298972) on `588abb6` **passed** all four jobs:
+  - unit tests, audit and build;
+  - database tests with the authenticated Chromium privacy and relay gates;
+  - the Firefox lab gate;
+  - `verify`.
 
 ## Still to verify
 
-- CI on the pull request (Chromium and Firefox gates, relay, pgTAP).
 - Hosted staging is not checked.
 - Native-language review of the new Spanish and French labels is not done.
