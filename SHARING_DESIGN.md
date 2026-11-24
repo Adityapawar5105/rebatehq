@@ -63,8 +63,8 @@ The **Cost** column marks a pack that contains cost or can reveal it.
 
 | Pack id | Contents (vault tables) | Cost |
 |---|---|---|
-| `items` | `products` without `current_cost`: SKU, description, category, unit, list price, barcode, notes | no |
-| `customers` | `customers`: ID, name, tier, branch, region, payment terms, notes | no |
+| `items` | `products` without `current_cost`: SKU, description, category, unit, list price, barcode (row notes stay on the device that wrote them) | no |
+| `customers` | `customers`: ID, name, tier, branch, region, payment terms (notes stay local) | no |
 | `book` | `price_matrix` rows with no customer (book prices by product, category, tier and quantity break) | no |
 | `contracts` | `price_matrix` rows for one customer (contract prices) | no |
 | `guards` | `price_guardrails`: start, target and floor per tier and category, **except** floors flagged "based on cost" | no |
@@ -82,7 +82,8 @@ The **Cost** column marks a pack that contains cost or can reveal it.
   - A unit test classifies every column of every source table as carried, held back or cost.
   - A new column fails that test until someone classifies it.
 - **Runtime scan.**
-  - Before encryption, every pack without cost passes the decision 16 scanner in the publishing worker: no field named or typed as cost or margin, and no value equal to a cost value.
+  - Before encryption, and again before a received pack is applied, every pack passes a scan in the worker: its columns are exactly its allow-list, a pack without cost has no column named like cost or margin, and every value has its declared type.
+  - Value-level checks (a planted cost value must not appear anywhere in a copy without cost) run in the unit tests (`tests/sharing.test.ts`). A runtime value check would be unreliable, because a real price can equal some other item's cost by chance.
   - A failed scan stops the publish.
 - **New guardrail flag.**
   - Guardrails gain `floor_from_cost` (vault v24).
@@ -190,7 +191,7 @@ The vault takes each person's role from this table instead of setting it separat
 
 **Vault v24** adds:
 - `shared_books`: one row per publisher and pack, with the version, manifest hash, publisher, published and received times, how it arrived (`file` or `relay`) and its row count;
-- `shared_rows_log`: the last applied manifest per pack, used for "what changed";
+- `shared_changes`: the price changes the last copy of each pack made (at most 2,000 per pack), used for "what changed";
 - `price_guardrails.floor_from_cost`.
 
 The same tables serve the hand-off file (S1) and the relay (S3), so S1 carries forward unchanged.
@@ -263,12 +264,14 @@ A new migration, `chunk_sharing_relay`, ships in **S2**, so the user's Restore D
 
 | Release | What | Server change | Depends on |
 |---|---|---|---|
-| **S1** | Encrypted hand-off file: export a pack selection for a colleague, protected by a one-time 6-word code shown once; import it into the governed tables (section 6); vault **v24**; the `floor_from_cost` flag | none | nothing |
+| **S1** | Encrypted hand-off file: export a pack selection for a colleague, protected by a one-time code of six groups of four characters (120 random bits) shown once; import it into the governed tables (section 6); vault **v24**; the `floor_from_cost` flag | none | nothing |
 | **S2** | The role table and pack keys in the protocol (epoch format 2), the signed grid, invite and approve a device and its keys, rotation on role change or removal, the recovery kit prompt, **plus the one migration** | the migration | Restore Drill before lock |
 | **S3** | Publish and receive packs through Storage; Settings › Sharing grid with presets ("Recommended", "Open team", "Strict", reset), Preview as… and a change summary; read-only governed screens; what changed; roll back | none (uses S2's migration) | S2 locked |
 | **S4** | Live: Realtime doorbell, small deltas, the sync status dot, the 60-second polling fallback, privacy gates for the WebSocket and downloads | none | S3 |
 | **S5** | Threads, tasks, inbox, activity feed, content-free email notices (off until a sender exists), who's viewing (off) | none | S4; an email sender for notices |
 | **S6** | Chosen by pilot demand: shared PDFs, saved views, published results (D17), branch scoping, guest access, co-editing drafts | per item | D17 for published results |
+
+**The cost lock in S1.** Until S2, each person is the Owner of their own vault, so a receiving vault's role says little. In S1 the lock therefore rests on the exporting side: a file made for a role without cost contains no cost pack. Import also refuses a cost pack when the local role lacks cost, and refuses a file whose packs do not fit the role it was made for.
 
 **Tiers (decision D6):** Professional and Scale, the recommended option; the relay already allows only these tiers on the server (`relay_allowed`). Starter is single-user. The hand-off file follows the same rule.
 

@@ -263,3 +263,11 @@ See `docs/evidence/SECOND_AUDIT_PASS.md`. The independent security review (R02, 
 - Not built (the user's "maybe"): N2, N3, R1, V5. No schema, migration or worker change.
 - **It passed CI** in [CI #219](https://github.com/Adityapawar5105/rebatehq/actions/runs/45226298972) on `588abb6` (PR #24): unit tests, audit and build, the authenticated Chromium privacy and relay gates, the Firefox lab gate and `verify`. The first run, CI #218, failed because the gate still looked for the removed "Account" navigation on the account pages. Not merged: the owner reviews the real app first. See docs/evidence/SIDEBAR_REDESIGN_VERIFICATION.md.
 
+
+**Team sharing S1: the encrypted hand-off file (24 Nov 2026; built by Claude Code; blueprint section 22, item 38).**
+- Owners and Pricing Owners export a pack selection for a colleague in a chosen role. The packs are items, customers, book prices, contract prices, guardrails, cost and floors based on cost.
+- The file is encrypted with a one-time code of six groups. Cost packs are locked for roles without `cost` (D18).
+- Anyone on Professional or Scale imports it into the governed tables, tagged `shared:<pack>`. Same-key rows are replaced and local notes are kept.
+- Guardrails gain `floor_from_cost`: such a floor travels only in the cost pack.
+- Local vault **v24 / 67 tables**; no Supabase migration. See docs/evidence/SHARING_S1_VERIFICATION.md.
+- **Next:** S2 (the role table, pack keys, rotation and the one sharing migration).
