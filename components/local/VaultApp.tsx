@@ -29,6 +29,7 @@ import { RecordsView } from "./RecordsView";
 import { VendorsView } from "./VendorsView";
 import { RolesView } from "./RolesView";
 import { ShareHandoff } from "./ShareHandoff";
+import { ShareGrid } from "./ShareGrid";
 import { RelayOnboarding, RelayPanel, RelaySetupLine } from './RelayPanel';
 import { QuoteBranding } from './QuoteBranding';
 import { AgentsInbox } from './AgentsInbox';
@@ -275,6 +276,7 @@ export function VaultApp({ scope, email, workspace, lab = false, relayEnabled = 
             {caps.includes('collaborate') && status.licence?.tier !== 'starter' && <RelaySetupLine client={client.current} userId={scope.userId} tenantId={scope.tenantId} relayEnabled={relayEnabled}/>}
           </RolesView>}
           {shown === "Settings" && page === "settings-team" && client.current && status.licence?.tier !== "starter" && <ShareHandoff client={client.current} busy={busy} operation={operation} refresh={async () => setStatus(await client.current!.call("status", {}))}/>}
+          {shown === "Settings" && page === "settings-team" && client.current && caps.includes("collaborate") && caps.includes("roles") && status.licence?.tier !== "starter" && <ShareGrid client={client.current} busy={busy} operation={operation}/>}
           {shown === "Settings" && page === "settings-general" && client.current && caps.includes("quote") && status.licence?.tier !== "starter" && <QuoteBranding client={client.current} busy={busy} operation={operation} canEdit={caps.includes("roles")}/>}
           {/* 8.17: used and available space as tiles in MB or GB, not byte counts. */}
           {shown === "Settings" && page === "settings-security" && <Card headingId="storage-heading" title={t("shell.storage.heading")} description={t("shell.storage.summary", { saved: status.lastSaved ? fmt.dateTime(status.lastSaved) : t("common.none") })}

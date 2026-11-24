@@ -70,11 +70,18 @@ try{
  await manager.getByRole('tab',{name:'Share a reference',exact:true}).click();await manager.getByLabel('Shared title').fill(marker+'-small');await manager.getByLabel('Local reference').fill(marker+'-small-ref');await manager.getByLabel('Amount',{exact:true}).fill('5000.00');await click(manager,'Share encrypted reference');await manager.getByRole('button',{name:marker+'-small',exact:true}).click();assert.equal(await manager.getByLabel('Second-level manager').count(),0);await manager.getByLabel('Pricing Owner approver').selectOption(actors[0].userId);await click(manager,'Request approval');await syncAndSelect(owner,marker+'-small');await click(owner,'Approve level 1');await owner.getByRole('status').filter({hasText:'Approval: approved.'}).waitFor();checks.oneLevelBoundary=true;
  // Reload must recover keys, history and verification heads from encrypted OPFS.
  await close(owner);await owner.reload();await owner.getByLabel('Vault passphrase').fill(secret);await owner.getByRole('button',{name:'Unlock vault',exact:true}).click();await owner.getByRole('button',{name:'Lock vault',exact:true}).waitFor();await open(owner);await syncAndSelect(owner,marker);assert.ok((await owner.getByTestId('relay-object').innerText()).includes(marker+'-comment'));checks.reloadEncryptedKeys=true;
+ // Team sharing S3a: the Owner's grid screen shows the cost lock, previews a change, then saves and discards a draft.
+ await close(owner);await owner.evaluate(()=>{location.hash='settings-team';});await owner.getByTestId('share-grid').waitFor();
+ assert.equal(await owner.getByTestId('share-grid-lock-sales_rep-cost').count(),1,'The cost lock is missing for Sales Reps');
+ await owner.getByTestId('share-grid-sales_rep-contracts').uncheck();await owner.getByTestId('share-grid-changes').filter({hasText:'will stop receiving'}).waitFor();
+ await owner.getByTestId('share-grid-save').click();await owner.getByTestId('share-grid-draft').waitFor();
+ await owner.getByRole('button',{name:'Discard draft',exact:true}).click();await owner.getByTestId('share-grid-draft').waitFor({state:'detached'});
+ await owner.evaluate(()=>{location.hash='home';});checks.sharingGridUi=true;
  result.serverRows=await scanRelayDatabase(db,actors[0].tenantId,markers,[...RELAY_7A_TABLES,'relay_pack_wrap']);checks.everyRelayColumnScanned=true;
  // An injected leak must trip the same scanner, including binary and base64.
  for(const value of [{ciphertext:Buffer.from(marker)}, {content:Buffer.from(marker).toString('base64')}])assert.throws(()=>assertNoRelayPlaintext(value,markers),/Private fixture content/);checks.scannerNegativeControls=true;
  for(let i=0;i<inspections.length;i++)await inspections[i];assert.deepEqual(failures,[]);checks.requestsHeadersBodiesConsole=true;
- assert.equal(Object.keys(checks).length,13,'Relay privacy check count changed; update the gate record');
+ assert.equal(Object.keys(checks).length,14,'Relay privacy check count changed; update the gate record');
  console.log('Relay browser/privacy gate: '+Object.keys(checks).length+' checks passed ('+channel+', '+(auth?'real authenticated local Supabase':'local PGlite transport; auth unverified')+').');
  await writeFile('test-results/vault-relay-'+channel+(auth?'-auth':'')+'.json',JSON.stringify(result,null,2)+'\n');
 }catch(e){

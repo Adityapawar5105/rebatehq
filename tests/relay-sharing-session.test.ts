@@ -69,7 +69,7 @@ function service(c: Awaited<ReturnType<typeof duckdbConnection>>, userId: string
   return s as unknown as Pick<VaultService, "access" | "pricingState"> & { mirrorGrid(session: { grid(): Grid | null }, view: Partial<RelayView>): Promise<void>; gridBuilder(): Promise<(u: string[], p: Grid | null) => Grid> };
 }
 
-test("S2b role mirror: a rep's own vault takes its role from the signed grid and loses cost; an Owner's vault is never overwritten", async () => {
+test("S2b role mirror: a rep's own vault takes its role from the signed grid and loses cost; an Owner's vault follows it too when no draft is pending", async () => {
   const c = await vault();
   try {
     // The rep created this vault, so it made them its Owner and named Pricing Owner.
@@ -98,9 +98,69 @@ test("S2b role mirror: a rep's own vault takes its role from the signed grid and
     assert.deepEqual(g.people.map(p => [p.userId, p.role]), [["boss", "owner"], ["new", "sales_rep"], ["sam", "sales_manager"]], "anyone without a role here is a Sales Rep");
     assert.equal(g.namedOwner, "boss");
     await boss.mirrorGrid({ grid: () => ({ ...g, people: g.people.map(p => ({ ...p, role: p.userId === "sam" ? "sales_rep" : p.role })) }) }, { devices: [] });
-    assert.deepEqual(q(d, "SELECT user_id,role FROM role_assignments ORDER BY user_id"), [{ user_id: "boss", role: "owner" }, { user_id: "sam", role: "sales_manager" }], "the Owner's vault is the grid's source");
+    // S3a: with no draft pending, an Owner's vault follows the signed grid too (a second Owner device stays in step).
+    assert.deepEqual(q(d, "SELECT user_id,role FROM role_assignments ORDER BY user_id"), [{ user_id: "boss", role: "owner" }, { user_id: "new", role: "sales_rep" }, { user_id: "sam", role: "sales_rep" }]);
     // A Pricing Owner rotating keeps the previous grid: only an Owner changes it.
     const po = service(d, "sam"), prev: Grid = { ...g, people: g.people.map(p => p.userId === "sam" ? { ...p, role: "pricing_owner" } : p) };
     assert.equal((await po.gridBuilder())(["boss", "new", "sam"], prev), prev);
+  } finally { d.close(); }
+});
+
+test("S3a grid source: a second Owner device signs the last signed grid (not its own empty roles); Owner edits become a draft; the grid screen enforces the locks", async () => {
+  const { generateIdentity, newEpoch } = await import("../lib/relay/crypto");
+  const { ZERO_HASH } = await import("../lib/relay/protocol");
+  const [boss, sam, raj] = await Promise.all(["boss", "sam", "raj"].map(() => generateIdentity("00000000-0000-4000-8000-00000000000a", crypto.randomUUID(), crypto.randomUUID())));
+  const roster = [{ ...boss.device, role: "owner" as const }, { ...sam.device, role: "manager" as const }, { ...raj.device, role: "rep" as const }].sort((a, b) => a.deviceId < b.deviceId ? -1 : 1);
+  const signed: Grid = { v: "1", namedOwner: boss.device.userId, people: [{ userId: boss.device.userId, role: "owner" as RoleId, extras: [] }, { userId: sam.device.userId, role: "sales_manager" as RoleId, extras: [] }, { userId: raj.device.userId, role: "sales_rep" as RoleId, extras: ["documents"] }].sort((a, b) => a.userId < b.userId ? -1 : 1) as Grid["people"], ticks: ticks() };
+  const { epoch, key } = await newEpoch(boss, roster, null, { sequence: "0", hash: ZERO_HASH }, signed);
+  const c = await vault();
+  try {
+    // The Owner's second device: a fresh vault that knows only its own Owner role.
+    c.query(`INSERT INTO role_assignments VALUES('${boss.device.userId}','Boss','owner','x','2025-01-01')`);
+    c.query(`INSERT INTO relay_state VALUES(1,'${JSON.stringify({ ...emptyRelay(), epochs: [{ epoch, key }] }).replace(/'/g, "''")}')`);
+    const second = service(c, boss.device.userId), users = signed.people.map(p => p.userId);
+    const built = (await second.gridBuilder())(users, signed);
+    assert.deepEqual(built.people, signed.people, "the second device keeps every signed role and extra");
+    assert.equal(built.namedOwner, signed.namedOwner);
+    // A new person on the roster joins as a Sales Rep; a person who left drops out.
+    const newcomer = crypto.randomUUID(), b2 = (await second.gridBuilder())([...users.filter(u => u !== raj.device.userId), newcomer].sort(), signed);
+    assert.equal(b2.people.find(p => p.userId === newcomer)?.role, "sales_rep"); assert.ok(!b2.people.some(p => p.userId === raj.device.userId));
+    // An Owner's Team and roles edit becomes a draft that the builder signs; the mirror waits while it is pending.
+    await (second as unknown as { roleSet(u: string, n: string, r: RoleId): Promise<unknown> }).roleSet(raj.device.userId, "Raj", "sales_manager");
+    const state = await (second as unknown as { shareGrid(): Promise<{ draft: Grid | null; canSign: boolean }> }).shareGrid();
+    assert.equal(state.canSign, true); assert.equal(state.draft?.people.find(p => p.userId === raj.device.userId)?.role, "sales_manager");
+    assert.equal((await second.gridBuilder())(users, signed).people.find(p => p.userId === raj.device.userId)?.role, "sales_manager");
+    const before = q(c, "SELECT count(*)::VARCHAR n FROM role_assignments")[0].n;
+    await second.mirrorGrid({ grid: () => signed }, { devices: [] });
+    assert.equal(q(c, "SELECT count(*)::VARCHAR n FROM role_assignments")[0].n, before, "no mirror over a pending draft");
+    // The grid screen refuses a cost tick for Sales Reps, and a changed team.
+    const save = (g: Grid) => (second as unknown as { shareGridSave(g: unknown): Promise<unknown> }).shareGridSave(g);
+    await assert.rejects(save({ ...signed, ticks: signed.ticks.map(([r, p]) => [r, r === "sales_rep" ? [...p, "cost"] : p]) as Grid["ticks"] }), /cannot be saved/);
+    await assert.rejects(save({ ...signed, people: signed.people.slice(1) }), /cannot be saved/);
+    await save({ ...signed, ticks: signed.ticks.map(([r, p]) => [r, r === "sales_rep" ? p.filter(x => x !== "contracts") : p]) as Grid["ticks"] });
+    // Security review: another Owner signs a newer grid; this draft (edited from the older one) is stale and never signed.
+    const newer: Grid = { ...signed, people: signed.people.map(p => p.userId === raj.device.userId ? { ...p, extras: [] } : p) };
+    const next = await newEpoch(boss, roster, epoch, { sequence: "0", hash: ZERO_HASH }, newer);
+    const stored = JSON.parse(q(c, "SELECT payload FROM relay_state")[0].payload!);
+    stored.epochs = [{ epoch, key }, { epoch: next.epoch, key: next.key }];
+    c.query(`UPDATE relay_state SET payload='${JSON.stringify(stored).replace(/'/g, "''")}'`);
+    assert.equal((await (second as unknown as { shareGrid(): Promise<{ stale: boolean }> }).shareGrid()).stale, true);
+    await assert.rejects((async () => (await second.gridBuilder())(users, newer))(), /newer grid/, "a stale draft is refused at rotation");
+    await second.mirrorGrid({ grid: () => newer }, { devices: [] });
+    assert.equal(q(c, "SELECT count(*)::VARCHAR n FROM role_assignments")[0].n, "3", "the signed grid is mirrored despite a stale draft");
+    await (second as unknown as { shareGridDiscard(): Promise<unknown> }).shareGridDiscard();
+    assert.equal((await (second as unknown as { shareGrid(): Promise<{ draft: Grid | null }> }).shareGrid()).draft, null);
+    // Without a draft, the Owner's vault mirrors the signed grid too.
+    await second.mirrorGrid({ grid: () => signed }, { devices: [] });
+    assert.equal(q(c, "SELECT count(*)::VARCHAR n FROM role_assignments")[0].n, "3");
+  } finally { c.close(); }
+  // Someone who is not an Owner under the grid cannot change it.
+  const d = await vault();
+  try {
+    d.query(`INSERT INTO role_assignments VALUES('${sam.device.userId}','Sam','owner','x','2025-01-01')`);
+    d.query(`INSERT INTO relay_state VALUES(1,'${JSON.stringify({ ...emptyRelay(), epochs: [{ epoch, key }] }).replace(/'/g, "''")}')`);
+    const notOwner = service(d, sam.device.userId) as unknown as { shareGridSave(g: unknown): Promise<unknown>; shareGrid(): Promise<{ canSign: boolean }> };
+    assert.equal((await notOwner.shareGrid()).canSign, false);
+    await assert.rejects(notOwner.shareGridSave(signed), /Only an Owner/);
   } finally { d.close(); }
 });
