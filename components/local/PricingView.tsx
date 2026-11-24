@@ -1,6 +1,6 @@
 "use client";
 import {PriceGrid,LandedCheck,WhatIfSlider,ScopeText} from './PricingTools';
-import {Badge,Button,Card,Field,Notice} from "@/components/ui/ui";
+import {Badge,Button,Card,Checkbox,Field,Notice} from "@/components/ui/ui";
 import {PricingOperations,type OpsTab} from "./PricingOps";
 import {ExportLayoutEditor,useExportLayouts} from "./ExportLayouts";
 
@@ -22,7 +22,7 @@ const RULE_FIELD:Record<'name'|'category'|'vendor'|'threshold'|'increase',Messag
 const RUN_STATUS:Record<string,MessageKey>={preview:"pricing.status.preview",approved:"pricing.status.approved",exported:"pricing.status.exported"};
 const runStatus=(s:string)=>s in RUN_STATUS?t(RUN_STATUS[s]):s;
 function PricingRulesView({client,userId,caps,busy,operation,refresh,initialPreview,tier}:{client:VaultClient;userId:string;caps:Cap[];busy:boolean;operation:(f:()=>Promise<void>)=>Promise<void>;refresh:()=>Promise<void>;initialPreview?:Preview|null;tier?:import("@/lib/vault/protocol").Tier}){
- const [state,setState]=useState<Results['pricingState']|null>(null),[owner,setOwner]=useState(''),[g,setG]=useState({tier:'T01',category:'Valves',start:'15000',target:'10000',floor:'5000'});
+ const [state,setState]=useState<Results['pricingState']|null>(null),[owner,setOwner]=useState(''),[g,setG]=useState({tier:'T01',category:'Valves',start:'15000',target:'10000',floor:'5000',protectedFloor:false});
  const [rule,setRule]=useState({name:t("pricing.passThroughSupplierCost") as string,category:'Valves',vendor:'SteelWorks',threshold:'5',increase:'4.5'}),[needsSave,setNeedsSave]=useState(false),[ruleId,setRuleId]=useState(''),[p,setP]=useState<Preview|null>(initialPreview??null),[pq,setPq]=useState<GridQuery>({}),[profile,setProfile]=useState<string>('generic'),[format,setFormat]=useState<'csv'|'xlsx'>('csv'),[note,setNote]=useState('');
  useEffect(()=>{setPq({});},[p?.id]);
  // Roadmap 15.6: the workspace's own layouts sit beside the six built-in ones as "custom:<id>".
@@ -35,8 +35,9 @@ function PricingRulesView({client,userId,caps,busy,operation,refresh,initialPrev
  {caps.includes('roles')&&<><Field label={t("pricing.pricingOwnerName")}><input value={owner} onChange={e=>setOwner(e.target.value)} maxLength={160}/></Field><Button disabled={busy||!owner} onClick={()=>run(async()=>{await client.call('pricingOwner',{name:owner,userId,backupDays:7});setNote(msg("pricing.pricingOwnerSaved"));})}>{t("pricing.nameMeAsPricing")}</Button></>}</Card>
  <Card title={caps.includes('pricing')?t("pricing.priceGuardrails"):t("pricing.priceFloors")} description={t("pricing.unitPricesInCents")}>
  {caps.includes('pricing')&&<div className={styles.grid}>{(['tier','category','start','target','floor'] as const).map(k=><Field key={k} label={t(GUARD_FIELD[k])}><input value={g[k]} onChange={e=>setG({...g,[k]:e.target.value})}/></Field>)}</div>}
+ {caps.includes('pricing')&&<Checkbox label={t("pricing.protectedFloor")} hint={t("pricing.protectedFloorHint")} checked={g.protectedFloor} onChange={e=>setG({...g,protectedFloor:e.target.checked})} data-testid="guard-protected-floor"/>}
  {caps.includes('pricing')&&<Button disabled={busy} onClick={()=>run(async()=>{await client.call('guardSet',{input:g});setNote(msg("pricing.guardrailsSaved"));})}>{t("pricing.saveGuardrails")}</Button>}
- {!!state?.guards.length&&<ul className={styles.guardList}>{state.guards.map(x=><li key={x.tier+'|'+x.category}>{t("pricing.guardLine", { tier: x.tier, category: x.category, start: money(x.start), target: money(x.target), floor: money(x.floor) })}</li>)}</ul>}</Card>
+ {!!state?.guards.length&&<ul className={styles.guardList}>{state.guards.map(x=><li key={x.tier+'|'+x.category}>{t("pricing.guardLine", { tier: x.tier, category: x.category, start: money(x.start), target: money(x.target), floor: money(x.floor) })}{caps.includes('cost')&&x.protectedFloor?' '+t("pricing.protectedMark"):''}</li>)}</ul>}</Card>
  {caps.includes('pricing')&&<Card title={t("pricing.costRisePriceChange")} description={t("pricing.ifASupplierS")}>
  <div className={styles.grid}>{(['name','category','vendor','threshold','increase'] as const).map(k=><Field key={k} label={t(RULE_FIELD[k])}><input value={rule[k]} onChange={e=>{setNeedsSave(true);setRule({...rule,[k]:e.target.value});}}/></Field>)}</div>
  <Button disabled={busy} onClick={()=>run(async()=>{const saved=await client.call('ruleSave',{input:{...rule,...(ruleId?{id:ruleId}:{})}});setRuleId(saved.id);setNeedsSave(false);setP(null);setNote(msg("pricing.ruleVersionSaved"));})}>{t("pricing.saveRuleVersion")}</Button>

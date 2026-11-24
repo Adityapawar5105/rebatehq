@@ -1,5 +1,5 @@
 import { msg } from "../i18n/core";
-export const SCHEMA_VERSION = 23;
+export const SCHEMA_VERSION = 24;
 const V1_TABLES = ["vault_meta", "products", "customers", "price_matrix", "price_guardrails", "source_files", "import_batches", "sales_lines", "vendor_costs", "cost_basis_settings", "rules", "rule_runs", "price_versions", "roi_ledger", "audit_log", "import_issues", "converter_recipes"] as const;
 const V4_TABLES = [...V1_TABLES, "rejected_rows"] as const;
 const V5_TABLES = [...V4_TABLES, "agg_cpm", "agg_cm", "agg_p", "recon_issues"] as const;
@@ -17,9 +17,10 @@ const V19_TABLES = [...V18_TABLES,"inventory_levels","dead_stock_settings"] as c
 const V20_TABLES = [...V19_TABLES,"quote_outcomes"] as const;
 const V21_TABLES = [...V20_TABLES,"bench_family_map","bench_shares","bench_figures"] as const;
 const V22_TABLES = [...V21_TABLES,"quote_branding"] as const;
-export const TABLES = [...V22_TABLES,"claim_payments","export_layouts","sim_runs"] as const;
+const V23_TABLES = [...V22_TABLES,"claim_payments","export_layouts","sim_runs"] as const;
+export const TABLES = [...V23_TABLES,"shared_books","shared_changes"] as const;
 /** Tables that exist at a schema version (in creation order, so copy-on-write inserts parents first). */
-export function tablesFor(version: number): readonly string[] { return version >= 23 ? TABLES : version >= 22 ? V22_TABLES : version >= 21 ? V21_TABLES : version >= 20 ? V20_TABLES : version >= 19 ? V19_TABLES : version >= 18 ? V18_TABLES : version >= 17 ? V17_TABLES : version >= 16 ? V16_TABLES : version >= 14 ? V15_TABLES : version >= 12 ? V12_TABLES : version >= 11 ? V11_TABLES : version >= 10 ? V10_TABLES : version >= 9 ? V9_TABLES : version >= 7 ? V7_TABLES : version >= 6 ? V6_TABLES : version >= 5 ? V5_TABLES : version >= 4 ? V4_TABLES : V1_TABLES; }
+export function tablesFor(version: number): readonly string[] { return version >= 24 ? TABLES : version >= 23 ? V23_TABLES : version >= 22 ? V22_TABLES : version >= 21 ? V21_TABLES : version >= 20 ? V20_TABLES : version >= 19 ? V19_TABLES : version >= 18 ? V18_TABLES : version >= 17 ? V17_TABLES : version >= 16 ? V16_TABLES : version >= 14 ? V15_TABLES : version >= 12 ? V12_TABLES : version >= 11 ? V11_TABLES : version >= 10 ? V10_TABLES : version >= 9 ? V9_TABLES : version >= 7 ? V7_TABLES : version >= 6 ? V6_TABLES : version >= 5 ? V5_TABLES : version >= 4 ? V4_TABLES : V1_TABLES; }
 // These are local DuckDB migrations, not Supabase migrations. V1 stays frozen
 // so the committed encrypted compatibility fixture exercises a real upgrade.
 export const V1_SQL = `
@@ -225,7 +226,18 @@ export const V23_SQL = `CREATE TABLE claim_payments(id VARCHAR PRIMARY KEY,claim
 CREATE INDEX claim_payment_claim ON claim_payments(claim_id);
 CREATE TABLE export_layouts(id VARCHAR PRIMARY KEY,name VARCHAR NOT NULL UNIQUE CHECK(length(name) BETWEEN 1 AND 60),layout_json VARCHAR NOT NULL CHECK(length(layout_json)<=8000),updated_by VARCHAR NOT NULL,updated_at VARCHAR NOT NULL);
 CREATE TABLE sim_runs(id VARCHAR PRIMARY KEY,name VARCHAR NOT NULL CHECK(length(name) BETWEEN 1 AND 80),result_json VARCHAR NOT NULL CHECK(length(result_json)<=20000),data_stamp VARCHAR NOT NULL,created_by VARCHAR NOT NULL,created_at VARCHAR NOT NULL);`;
-const STEPS = [V1_SQL, V2_SQL, V3_SQL, V4_SQL, V5_SQL, V6_SQL, V7_SQL, V8_SQL, V9_SQL, V10_SQL, V11_SQL, V12_SQL, V13_SQL,V14_SQL,V15_SQL,V16_SQL,V17_SQL,V18_SQL,V19_SQL,V20_SQL,V21_SQL,V22_SQL,V23_SQL];
+// Team sharing S1 (24 Nov 2026; blueprint section 22, item 38; SHARING_DESIGN.md): one row per data pack received from a
+// colleague (hand-off file now, the relay later) and the price changes its last copy made; a guardrail floor can be flagged
+// as based on cost, so it travels only to people who can see cost. DuckDB will not alter a table that has an index, so
+// the guardrail index is rebuilt around the new column, under a new name because a migration runs in one transaction and
+// DuckDB cannot re-create a dropped index name inside it; existing floors are not based on cost.
+export const V24_SQL = `DROP INDEX guardrail_tier_category;
+ALTER TABLE price_guardrails ADD COLUMN floor_from_cost BOOLEAN DEFAULT false;
+UPDATE price_guardrails SET floor_from_cost=false;
+CREATE UNIQUE INDEX guardrail_tier_category_v24 ON price_guardrails(tier,category);
+CREATE TABLE shared_books(pack VARCHAR PRIMARY KEY,version VARCHAR NOT NULL,publisher_id VARCHAR NOT NULL,publisher_name VARCHAR NOT NULL,published_at VARCHAR NOT NULL,received_at VARCHAR NOT NULL,via VARCHAR NOT NULL CHECK(via IN ('file','relay')),rows BIGINT NOT NULL CHECK(rows>=0),content_hash VARCHAR NOT NULL,recipient_role VARCHAR);
+CREATE TABLE shared_changes(pack VARCHAR NOT NULL,seq INTEGER NOT NULL,key VARCHAR NOT NULL,before_value VARCHAR,after_value VARCHAR,PRIMARY KEY(pack,seq));`;
+const STEPS = [V1_SQL, V2_SQL, V3_SQL, V4_SQL, V5_SQL, V6_SQL, V7_SQL, V8_SQL, V9_SQL, V10_SQL, V11_SQL, V12_SQL, V13_SQL,V14_SQL,V15_SQL,V16_SQL,V17_SQL,V18_SQL,V19_SQL,V20_SQL,V21_SQL,V22_SQL,V23_SQL,V24_SQL];
 function checkVersion(version: number) {
   if (!Number.isInteger(version) || version < 1 || version > SCHEMA_VERSION) throw new Error(msg("vault.schema.unsupportedVaultSchemaVersion"));
 }

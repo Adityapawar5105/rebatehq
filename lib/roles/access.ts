@@ -26,9 +26,11 @@ export const isRole = (value: unknown): value is RoleId => typeof value === "str
  * margin need "cost" as well, so a Sales Rep quotes without ever receiving cost (decision 16).
  * quoteApprove (7B): decide a below-floor quote exception (Sales Manager, Pricing Owner, Owner / CFO). It is
  * separate from "approve", which approves price changes and belongs to the named Pricing Owner only.
+ * share (team sharing, blueprint item 38): publish data packs to colleagues (Owner, Pricing Owner and the named Pricing
+ * Owner). Receiving needs only "view"; a pack with cost is still refused for a role without "cost" (decision D18).
  */
-export type Cap = "view" | "guards" | "cost" | "data" | "pricing" | "approve" | "export" | "reconcile" | "audit" | "roles" | "backup" | "collaborate" | "quote" | "quoteApprove" | "rebates" | "rebateManage";
-export const CAPS_ALL: Cap[] = ["view", "guards", "cost", "data", "pricing", "approve", "export", "reconcile", "audit", "roles", "backup", "collaborate", "quote", "quoteApprove", "rebates", "rebateManage"];
+export type Cap = "view" | "guards" | "cost" | "data" | "pricing" | "approve" | "export" | "reconcile" | "audit" | "roles" | "backup" | "collaborate" | "quote" | "quoteApprove" | "rebates" | "rebateManage" | "share";
+export const CAPS_ALL: Cap[] = ["view", "guards", "cost", "data", "pricing", "approve", "export", "reconcile", "audit", "roles", "backup", "collaborate", "quote", "quoteApprove", "rebates", "rebateManage", "share"];
 const PRICING_OWNER: Cap[] = CAPS_ALL;
 const BASE: Cap[] = ["view", "guards", "collaborate","rebates"];
 const BY_ROLE: Record<RoleId, Cap[]> = {
@@ -71,6 +73,9 @@ export const ACTIONS: Record<Action, { cap: Cap | null; mode: Mode }> = {
   quoteGuidance:r("quote"),quoteCrossSell:r("quote"),
   // v2.6 gap 2: local yes/no for the relay set-up card (reviewed for decision 16 in tests/quotes.test.ts).
   relayLocal:r("collaborate"),
+  // Team sharing S1: the hand-off file. Export is a publisher's; anyone with a vault may open and import one (cost packs
+  // are refused in the worker for a role without "cost").
+  shareState:r("view"),shareCounts:r("share"),shareExport:w("share"),shareImportPreview:r("view"),shareImport:w("view"),
   // 8B-1: Margin Drain inbox and cost index triggers read cost; saving settings and triggers is a pricing decision.
   agentState:r("cost"),agentRows:r("cost"),agentRun:w("cost"),agentMark:w("cost"),agentSettingsSave:w("pricing"),indexState:r("cost"),indexSkus:r("cost"),indexTriggerSave:w("pricing"),indexTriggerDelete:w("pricing"),deadState:r("cost"),benchState:r("cost"),benchPreview:r("cost"),benchMapSave:w("cost"),benchShared:w("cost"),benchFiguresSave:w("cost"),benchWithdrawn:w("cost"),deadRows:r("cost"),deadSettingsSave:w("pricing"),deadDraft:w("pricing"),
   // 7F-2: folder re-import is an import (Import Studio, every tier).
