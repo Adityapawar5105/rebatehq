@@ -185,3 +185,24 @@ entry may be appended under MIGRATION_RULES.md; it stays pending until green CI
 and a **user-run** Restore Drill both prove it. Do not dispatch that drill on the
 user's behalf or lock the migration early. Independent review, hosted operation
 and customer/pilot validation remain unverified. No later chunk starts here.
+
+## Later change: team sharing (24 November 2026)
+
+Team sharing (`SHARING_DESIGN.md`, blueprint section 22 item 38) changes this design in four places. They take effect with the sharing migration in release S2. Until then, everything above stays as built.
+
+- **Epoch format 2.**
+  - An epoch also carries the signed role table and sharing grid.
+  - It carries one wrapped key per data pack, for the devices ticked for that pack.
+  - Format 1 epochs stay valid and are read as before.
+  - The sentence above that the workspace key "is not a way to hide costs from another keyholder" stays true of the workspace key. Cost is hidden by pack keys, which a role without the `cost` capability never receives.
+- **Bulk data leaves the event table.**
+  - Encrypted price-book chunks go to a private Supabase Storage bucket.
+  - A `pack` event carries only the signed manifest.
+  - The 16 KiB message cap stays.
+- **Caps become rolling.**
+  - Events older than the latest snapshot of every pack can be compacted, keeping the hash-chain head and a signed checkpoint.
+  - The 10,000-event and 16 MiB limits stop being lifetime limits.
+  - Storage is capped per workspace by tier.
+- **A live signal.**
+  - A content-free Realtime broadcast ("event n") goes out on a private channel per pack.
+  - Polling the same-origin route every 60 seconds is the fallback.
