@@ -30,7 +30,7 @@ export function raised(cents: bigint, bp: bigint) { return rha(cents * (BigInt(1
 export const rows = async (e: Engine, sql: string): Promise<Record<string, any>[]> => (await e.conn.query(sql)).toArray().map(r => Object.fromEntries(Object.entries(r)));
 export async function pricingState(e: Engine) {
   const settings = (await rows(e, "SELECT * FROM pricing_settings WHERE id=1"))[0];
-  return { owner: settings ? { id: String(settings.owner_id), name: String(settings.owner_name), backupDays: Number(settings.backup_days) } : null,
+  return { owner: settings && String(settings.owner_id) !== '' ? { id: String(settings.owner_id), name: String(settings.owner_name), backupDays: Number(settings.backup_days) } : null,
     guards: (await rows(e, 'SELECT tier,category,start::VARCHAR AS start,target::VARCHAR AS target,floor::VARCHAR AS floor,coalesce(floor_from_cost,false) AS fc FROM price_guardrails WHERE tier IS NOT NULL ORDER BY tier,category')).map(r => ({ tier: String(r.tier), category: String(r.category), start: String(r.start), target: String(r.target), floor: String(r.floor), protectedFloor: r.fc === true }) as GuardInput),
     rules: await rows(e, "SELECT r.id,r.name,r.definition,max(v.version)::INTEGER AS version FROM rules r JOIN rule_revisions v ON v.rule_id=r.id WHERE r.id NOT LIKE 'ops-%' AND r.id NOT LIKE 'grid-%' GROUP BY r.id,r.name,r.definition ORDER BY r.name"),
     runs: await rows(e, "SELECT id,rule_id,status,affected_rows::VARCHAR AS affected,run_date FROM rule_runs ORDER BY run_date DESC LIMIT 50") };

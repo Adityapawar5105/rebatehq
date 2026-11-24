@@ -49,6 +49,14 @@ try{
  for(const box of await deviceChecks.all())await box.check();await click(owner,'Start workspace sharing');
  for(const page of [manager,rep]){await close(page);await open(page);await page.getByLabel('Verified administrator fingerprint').fill(pin);await click(page,'Verify and join sharing');}
  checks.verifiedFingerprintJoin=true;
+ // Team sharing S2b: "Start workspace sharing" signs a format 2 grid. The Owner device holds every pack key; the rep's
+ // device (a Sales Rep under the grid: no role in the Owner's vault) holds none with cost, in the UI and in the database.
+ for(const page of pages)await page.getByTestId('relay-packs').waitFor();
+ const ownerPacks=await owner.getByTestId('relay-packs').innerText(),repPacks=await rep.getByTestId('relay-packs').innerText(),costNames=/Item cost|Floors based on cost|Supplier terms|Rules, previews|Competitor|Published results/;
+ assert.ok(ownerPacks.includes('Item cost and cost basis'),'The Owner device lacks the cost pack');assert.ok(repPacks.includes('Book prices')&&!costNames.test(repPacks),'A rep device holds a cost pack key');
+ const repCost=(await db.query("SELECT count(*)::integer AS n FROM public.relay_pack_wrap WHERE recipient_device=$1::uuid AND pack IN ('cost','cost_floors','supplier','rules','competitors','results')",[actors[2].deviceId])).rows[0].n;
+ assert.equal(repCost,0,'The server holds a cost pack wrap for the rep device');await owner.getByTestId('relay-recovery-kit').waitFor();
+ checks.packKeysByRole=true;
  for(const page of pages){await page.getByTestId('relay-sync-status').filter({hasText:'Synced'}).waitFor();assert.ok((await page.getByTestId('relay-sync-status').innerText()).includes('Last synced:'));}checks.syncIndicator=true;
  await rep.getByRole('tab',{name:'Share a reference',exact:true}).click();await rep.getByLabel('Reference type').selectOption('quote');await rep.getByLabel('Shared title').fill(marker);await rep.getByLabel('Local reference').fill(marker+'-reference');await rep.getByLabel('Amount',{exact:true}).fill(amount);await click(rep,'Share encrypted reference');
  await rep.getByRole('button',{name:marker,exact:true}).click();await rep.getByLabel('Pricing Owner approver').selectOption(actors[0].userId);await rep.getByLabel('Second-level manager').selectOption(actors[1].userId);await click(rep,'Request approval');
@@ -62,11 +70,11 @@ try{
  await manager.getByRole('tab',{name:'Share a reference',exact:true}).click();await manager.getByLabel('Shared title').fill(marker+'-small');await manager.getByLabel('Local reference').fill(marker+'-small-ref');await manager.getByLabel('Amount',{exact:true}).fill('5000.00');await click(manager,'Share encrypted reference');await manager.getByRole('button',{name:marker+'-small',exact:true}).click();assert.equal(await manager.getByLabel('Second-level manager').count(),0);await manager.getByLabel('Pricing Owner approver').selectOption(actors[0].userId);await click(manager,'Request approval');await syncAndSelect(owner,marker+'-small');await click(owner,'Approve level 1');await owner.getByRole('status').filter({hasText:'Approval: approved.'}).waitFor();checks.oneLevelBoundary=true;
  // Reload must recover keys, history and verification heads from encrypted OPFS.
  await close(owner);await owner.reload();await owner.getByLabel('Vault passphrase').fill(secret);await owner.getByRole('button',{name:'Unlock vault',exact:true}).click();await owner.getByRole('button',{name:'Lock vault',exact:true}).waitFor();await open(owner);await syncAndSelect(owner,marker);assert.ok((await owner.getByTestId('relay-object').innerText()).includes(marker+'-comment'));checks.reloadEncryptedKeys=true;
- result.serverRows=await scanRelayDatabase(db,actors[0].tenantId,markers,RELAY_7A_TABLES);checks.everyRelayColumnScanned=true;
+ result.serverRows=await scanRelayDatabase(db,actors[0].tenantId,markers,[...RELAY_7A_TABLES,'relay_pack_wrap']);checks.everyRelayColumnScanned=true;
  // An injected leak must trip the same scanner, including binary and base64.
  for(const value of [{ciphertext:Buffer.from(marker)}, {content:Buffer.from(marker).toString('base64')}])assert.throws(()=>assertNoRelayPlaintext(value,markers),/Private fixture content/);checks.scannerNegativeControls=true;
  for(let i=0;i<inspections.length;i++)await inspections[i];assert.deepEqual(failures,[]);checks.requestsHeadersBodiesConsole=true;
- assert.equal(Object.keys(checks).length,12,'Relay privacy check count changed; update the gate record');
+ assert.equal(Object.keys(checks).length,13,'Relay privacy check count changed; update the gate record');
  console.log('Relay browser/privacy gate: '+Object.keys(checks).length+' checks passed ('+channel+', '+(auth?'real authenticated local Supabase':'local PGlite transport; auth unverified')+').');
  await writeFile('test-results/vault-relay-'+channel+(auth?'-auth':'')+'.json',JSON.stringify(result,null,2)+'\n');
 }catch(e){

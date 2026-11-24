@@ -3174,6 +3174,15 @@ const auth3 = {
 } as const;
 // Team sharing S1 (blueprint section 22, item 38): the encrypted hand-off file and the protected-floor flag.
 const share = {
+  "share.pack.supplier": "Supplier terms, rebates and claims",
+  "share.pack.rules": "Rules, previews and run history",
+  "share.pack.competitors": "Competitor observations",
+  "share.pack.documents": "Shared PDFs",
+  "share.pack.results": "Published results",
+  "relay.packsHeld": "This device holds keys for: {packs}.",
+  "relay.packsNone": "This device holds no data pack keys yet.",
+  "relay.recoveryTitle": "Keep a recovery kit",
+  "relay.recoveryBody": "Only one device holds the Owner's sharing keys. Approve a second Owner device or keep an encrypted backup of this vault: if this device is lost, nobody can add people or change who sees what, and there is no server recovery.",
   "share.heading": "Share with a colleague",
   "share.body": "Send approved prices, guardrails, items and customers to a colleague as an encrypted file. Live sharing through the workspace comes later; until then, send a new file when prices change.",
   "share.starter": "Sharing with colleagues is part of Professional and Scale.",

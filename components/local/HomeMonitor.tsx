@@ -21,7 +21,8 @@ const SIGNAL={margin:'monitor.signal.margin',orders:'monitor.signal.orders',both
 const signalOf=(a:CustomerAlert):keyof typeof SIGNAL=>a.marginDrop&&a.frequencyDrop?'both':a.marginDrop?'margin':'orders';
 function useMonitor(client:VaultClient,version:string,thresholdBp:string,tick:number){
  const [view,setView]=useState<View|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(true);
- useEffect(()=>{let active=true;setBusy(true);setError('');void client.call('homeMonitor',{thresholdBp}).then(v=>{if(active)setView(v);}).catch(()=>{if(active)setError(t('monitor.failed'));}).finally(()=>{if(active)setBusy(false);});return()=>{active=false;};},[client,version,thresholdBp,tick]);
+ useEffect(()=>{let active=true;setBusy(true);setError('');void client.call('homeMonitor',{thresholdBp}).then(v=>{if(active)setView(v);}).catch(e=>{if(!active)return;// Team sharing S2b: a role that just lost cost (a joined rep) is refused; the card hides instead of reporting a failure.
+if((e as {code?:string})?.code==='FORBIDDEN'){setView(null);return;}setError(t('monitor.failed'));}).finally(()=>{if(active)setBusy(false);});return()=>{active=false;};},[client,version,thresholdBp,tick]);
  return {view,error,busy,setError};
 }
 /** Home: the 90-day cash leak and how many customers need attention, with links to the detail. */

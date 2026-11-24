@@ -67,7 +67,7 @@ import type { Access, CleanupApplied, CleanupMergedAll, CleanupUndone, HomeData,
 import { isLocale, plainText } from "../i18n/core";
 import * as quotes from "../quotes/quotes";
 import * as documents from "../quotes/documents";
-import {RelaySession,emptyRelay,type RelayState} from '../relay/session';
+import {RelaySession,emptyRelay,type RelayState,type RelayView} from '../relay/session';
 import {relayHttp} from '../relay/http';
 import {RelayError} from '../relay/protocol';
 import {minorUnits} from '../spike/exact';
@@ -77,6 +77,8 @@ import * as sharing from "../sharing/packs";
 import { newCode, openHandoff, packHash, sealHandoff, type Payload } from "../sharing/handoff";
 import { ROLE_IDS } from "./schema";
 import { capsFor } from "../roles/access";
+import { RECOMMENDED } from "../sharing/catalog";
+import type { Grid } from "../relay/protocol";
 export class VaultService {
   /** v2.6 gap 2: whether this device already has a relay identity, read from the vault only (no network request).
    *  Roadmap 8.4: also whether a send is waiting and when the inbox last synced, so the sharing card can show its status
@@ -174,9 +176,48 @@ export class VaultService {
     const session=new RelaySession({...this.identity,deviceId},state,relayHttp(deviceId,signal),async(value,stage)=>{
       await this.write('relay.'+stage,{actor:this.identity.userId},async e=>{await e.conn.query(`INSERT INTO relay_state VALUES(1,${sqlText(JSON.stringify(value))}) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload`);});
     },signal);
+    const result=await this.relayAction(session,request);
+    await this.mirrorGrid(session,result as RelayView);
+    return result;
+  }
+  /** Team sharing S2b: the grid an Owner or Pricing Owner signs, built from this vault's Team and roles. Anyone without a
+   *  role here is a Sales Rep (least privilege, as in accessFor); the ticks are the "Recommended" preset until the
+   *  Settings › Sharing grid (S3). Only an Owner changes the grid, so anyone else rotates with the previous grid unchanged. */
+  private async gridBuilder(){
+    const e=this.requireEngine(),me=this.identity.userId;
+    const roles=new Map((await e.conn.query('SELECT user_id,role FROM role_assignments')).toArray().map(r=>[String(r.user_id),String(r.role)]));
+    const named=(await e.conn.query('SELECT owner_id FROM pricing_settings WHERE id=1')).toArray()[0]?.owner_id;
+    return (users:string[],previous:Grid|null):Grid=>{
+      if(previous&&previous.people.find(p=>p.userId===me)?.role!=='owner')return previous;
+      const role=(u:string)=>{const r=roles.get(u)??(roles.size===0&&u===me?'owner':'sales_rep');return isRole(r)?r:'sales_rep';};
+      return {v:'1',namedOwner:typeof named==='string'&&users.includes(named)?named:null,people:users.map(u=>({userId:u,role:role(u),extras:[]})),ticks:ROLE_IDS.map(r=>[r,[...RECOMMENDED[r]]]) as Grid['ticks']};
+    };
+  }
+  /**
+   * Team sharing S2b: on a device whose person is not a grid Owner, the signed role table becomes this vault's Team and
+   * roles, and the grid's named Pricing Owner its Pricing Owner. A rep's own vault therefore stops treating them as its
+   * Owner once they join, and loses cost (decision 16). An Owner's vault is the grid's source and is never overwritten.
+   */
+  private async mirrorGrid(session:RelaySession,view:RelayView|undefined){
+    const grid=session.grid();if(!grid||!view)return;
+    const me=grid.people.find(p=>p.userId===this.identity.userId);if(!me||me.role==='owner')return;
+    const e=this.requireEngine(),labels=new Map<string,string>((view.devices??[]).map((d:{userId:string;label:string})=>[d.userId,d.label]));
+    const current=(await e.conn.query('SELECT user_id,display_name,role FROM role_assignments ORDER BY user_id')).toArray().map(r=>[String(r.user_id),String(r.role)].join('|')).join(',');
+    const wanted=[...grid.people].sort((a,b)=>a.userId<b.userId?-1:1).map(p=>[p.userId,p.role].join('|')).join(',');
+    const owner=(await e.conn.query('SELECT owner_id FROM pricing_settings WHERE id=1')).toArray()[0]?.owner_id??null;
+    if(current===wanted&&(owner??'')===(grid.namedOwner??''))return;
+    const names=new Map((await e.conn.query('SELECT user_id,display_name FROM role_assignments')).toArray().map(r=>[String(r.user_id),String(r.display_name)]));
+    const at=new Date().toISOString(),name=(u:string)=>(names.get(u)??labels.get(u)??u).slice(0,160)||u;
+    await this.write('roles.mirrored_from_grid',{actor:this.identity.userId,people:String(grid.people.length)},async w=>{
+      await w.conn.query(`DELETE FROM role_assignments;INSERT INTO role_assignments VALUES ${grid.people.map(p=>`(${sqlText(p.userId)},${sqlText(name(p.userId))},${sqlText(p.role)},'relay',${sqlText(at)})`).join(',')};`);
+      await w.conn.query(grid.namedOwner?`INSERT INTO pricing_settings VALUES(1,${sqlText(grid.namedOwner)},${sqlText(name(grid.namedOwner))},7) ON CONFLICT(id) DO UPDATE SET owner_id=excluded.owner_id,owner_name=excluded.owner_name`:`UPDATE pricing_settings SET owner_id='',owner_name='' WHERE id=1`);
+    });
+    this.accessCache=null;
+  }
+  private async relayAction(session:RelaySession,request:Extract<import('./protocol').Request,{action:`relay${string}`}>){
     switch(request.action){
       case 'relayView':return session.view();case 'relayRegister':return session.register();case 'relayJoin':return session.join(request.data.fingerprint);
-      case 'relayRotate':return session.rotate(request.data.confirmations);case 'relaySync':return session.sync();
+      case 'relayRotate':return session.rotate(request.data.confirmations,await this.gridBuilder());case 'relaySync':return session.sync();
       case 'relayShare':{const {amount,...input}=request.data.input;const currency=await workspaceCurrency(this.requireEngine());if(input.currency!==currency)throw new VaultError('CURRENCY',msg('fx.current',{code:currency}));let amountMinor:string;try{amountMinor=minorUnits(amount).toString();}catch{throw new RelayError('CONTENT',msg("vault.enterANonNegative"));}return session.share({...input,amountMinor});}
       case 'relayRequest':return session.request(request.data.id,request.data.approvers);case 'relayDecide':return session.decide(request.data.id,request.data.decision);
       case 'relayComment':return session.comment(request.data.id,request.data.text,request.data.mentions);case 'relayRetry':return session.retry();case 'relayDiscard':return session.discard();
