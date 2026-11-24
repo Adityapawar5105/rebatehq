@@ -12,6 +12,7 @@
 - **Team and roles edits become the draft.** A change made by a grid Owner in Team and roles becomes a draft edit. Anyone else's local edit is overwritten by the next signed grid.
 - **Every vault follows the signed grid.** With no draft pending, every vault, an Owner's included, mirrors the signed role table. A second Owner device stays in step.
 - **After signing.** A successful rotation clears the draft.
+- **Stale drafts (security review).** Each draft records the signed grid it was edited from. If another Owner signs a newer grid first, the draft is stale: rotation refuses it, the screen asks for it to be reviewed and saved again, and the newer signed grid is mirrored meanwhile. This stops an old draft from undoing a newer change, such as giving cost back to someone it was just removed from.
 
 ## The Sharing grid
 
@@ -45,6 +46,7 @@ Settings › Team and roles › **Who receives what**, for people with the Team 
   - The grid screen refuses cost ticked for Sales Reps, and a changed team; a valid draft saves and discards.
   - Without a draft, the Owner's vault mirrors.
   - Someone who is not a grid Owner cannot save.
+  - A draft made before another Owner signed a newer grid is reported stale and refused at rotation, and the newer grid is still mirrored.
 - **The changed rule:** the S2b role-mirror test now expects an Owner vault to follow the signed grid when no draft is pending.
 
 **Relay browser gate:** new check `sharingGridUi` (14 checks). On the Owner device it checks:

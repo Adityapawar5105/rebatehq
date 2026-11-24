@@ -41,7 +41,7 @@ export function ShareGrid({ client, busy, operation }: { client: VaultClient; bu
   return <Card headingId="share-grid-heading" title={t("share.grid.heading")} description={t("share.grid.body")} data-testid="share-grid">
     <p role="status">{say(note)}</p>
     {!state.canSign && <Notice tone="info">{t("share.grid.readOnly")}</Notice>}
-    {state.draft && <Notice tone="warn" data-testid="share-grid-draft">{t("share.grid.draftPending")}</Notice>}
+    {state.draft && (state.stale ? <Notice tone="bad" data-testid="share-grid-stale">{t("share.grid.stale")}</Notice> : <Notice tone="warn" data-testid="share-grid-draft">{t("share.grid.draftPending")}</Notice>)}
     {state.canSign && <p><span className={styles.muted}>{t("share.grid.presets")}: </span>
       <Button size="sm" disabled={!edit} onClick={() => preset("recommended")}>{t("share.grid.recommended")}</Button>{" "}
       <Button size="sm" disabled={!edit} onClick={() => preset("open")}>{t("share.grid.open")}</Button>{" "}

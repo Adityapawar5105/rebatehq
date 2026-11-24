@@ -138,6 +138,16 @@ test("S3a grid source: a second Owner device signs the last signed grid (not its
     await assert.rejects(save({ ...signed, ticks: signed.ticks.map(([r, p]) => [r, r === "sales_rep" ? [...p, "cost"] : p]) as Grid["ticks"] }), /cannot be saved/);
     await assert.rejects(save({ ...signed, people: signed.people.slice(1) }), /cannot be saved/);
     await save({ ...signed, ticks: signed.ticks.map(([r, p]) => [r, r === "sales_rep" ? p.filter(x => x !== "contracts") : p]) as Grid["ticks"] });
+    // Security review: another Owner signs a newer grid; this draft (edited from the older one) is stale and never signed.
+    const newer: Grid = { ...signed, people: signed.people.map(p => p.userId === raj.device.userId ? { ...p, extras: [] } : p) };
+    const next = await newEpoch(boss, roster, epoch, { sequence: "0", hash: ZERO_HASH }, newer);
+    const stored = JSON.parse(q(c, "SELECT payload FROM relay_state")[0].payload!);
+    stored.epochs = [{ epoch, key }, { epoch: next.epoch, key: next.key }];
+    c.query(`UPDATE relay_state SET payload='${JSON.stringify(stored).replace(/'/g, "''")}'`);
+    assert.equal((await (second as unknown as { shareGrid(): Promise<{ stale: boolean }> }).shareGrid()).stale, true);
+    await assert.rejects((async () => (await second.gridBuilder())(users, newer))(), /newer grid/, "a stale draft is refused at rotation");
+    await second.mirrorGrid({ grid: () => newer }, { devices: [] });
+    assert.equal(q(c, "SELECT count(*)::VARCHAR n FROM role_assignments")[0].n, "3", "the signed grid is mirrored despite a stale draft");
     await (second as unknown as { shareGridDiscard(): Promise<unknown> }).shareGridDiscard();
     assert.equal((await (second as unknown as { shareGrid(): Promise<{ draft: Grid | null }> }).shareGrid()).draft, null);
     // Without a draft, the Owner's vault mirrors the signed grid too.

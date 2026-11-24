@@ -3295,4 +3295,5 @@ export const es: Catalog = {
   "share.grid.notStarted": "Inicie el uso compartido antes de cambiar quién recibe qué.",
   "share.grid.ownerOnly": "Solo un propietario de la tabla firmada puede cambiar quién recibe qué.",
   "share.grid.invalid": "Esta tabla no se puede guardar: da costos a un rol que no puede verlos, no tiene propietario o cambia quién forma parte del equipo.",
+  "share.grid.stale": "Otro propietario firmó una tabla más reciente después de crear este borrador. Revise el borrador frente a la tabla firmada y guárdelo de nuevo, o descártelo, antes de rotar las claves.",
 };

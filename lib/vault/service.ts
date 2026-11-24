@@ -79,7 +79,7 @@ import { ROLE_IDS } from "./schema";
 import { capsFor } from "../roles/access";
 import { RECOMMENDED } from "../sharing/catalog";
 import { GridSchema, type Grid } from "../relay/protocol";
-import { checkGrid } from "../relay/crypto";
+import { checkGrid, gridBody } from "../relay/crypto";
 export class VaultService {
   /** v2.6 gap 2: whether this device already has a relay identity, read from the vault only (no network request).
    *  Roadmap 8.4: also whether a send is waiting and when the inbox last synced, so the sharing card can show its status
@@ -185,7 +185,7 @@ export class VaultService {
    *  role here is a Sales Rep (least privilege, as in accessFor); the ticks are the "Recommended" preset until the
    *  Settings › Sharing grid (S3). Only an Owner changes the grid, so anyone else rotates with the previous grid unchanged. */
   private async gridBuilder(){
-    const e=this.requireEngine(),me=this.identity.userId,draft=(await this.relayStateRead()).gridDraft??null;
+    const e=this.requireEngine(),me=this.identity.userId,state=await this.relayStateRead(),draft=state.gridDraft??null,draftBase=state.gridDraftBase??null;
     const roles=new Map((await e.conn.query('SELECT user_id,role FROM role_assignments')).toArray().map(r=>[String(r.user_id),String(r.role)]));
     const named=(await e.conn.query('SELECT owner_id FROM pricing_settings WHERE id=1')).toArray()[0]?.owner_id;
     return (users:string[],previous:Grid|null):Grid=>{
@@ -193,6 +193,8 @@ export class VaultService {
       // S3a (advisor review of S2b): once a grid is signed, it is the base. An Owner on a second device, or a second Owner,
       // signs the same grid plus this device's draft edits; people new to the roster are Sales Reps until an Owner says
       // otherwise; people who left the roster drop out. Local Team and roles only seed the very first grid.
+      // A draft edited from an older signed grid could undo another Owner's newer change: refuse it until reviewed again.
+      if(draft&&previous&&draftBase!==this.signedHash(previous))throw new VaultError('SHARE',msg('share.grid.stale'));
       const base=draft??previous;
       if(base)return {v:'1',namedOwner:base.namedOwner&&users.includes(base.namedOwner)?base.namedOwner:null,
         people:users.map(u=>base.people.find(p=>p.userId===u)??{userId:u,role:'sales_rep' as const,extras:[]}),ticks:base.ticks};
@@ -207,7 +209,7 @@ export class VaultService {
    */
   private async mirrorGrid(session:RelaySession,view:RelayView|undefined){
     const grid=session.grid();if(!grid||!view)return;
-    const me=grid.people.find(p=>p.userId===this.identity.userId);if(!me||(await this.relayStateRead()).gridDraft)return;
+    const pending=await this.relayStateRead(),me=grid.people.find(p=>p.userId===this.identity.userId);if(!me||(pending.gridDraft&&!this.draftStale(pending)))return;
     const e=this.requireEngine(),labels=new Map<string,string>((view.devices??[]).map((d:{userId:string;label:string})=>[d.userId,d.label]));
     const current=(await e.conn.query('SELECT user_id,display_name,role FROM role_assignments ORDER BY user_id')).toArray().map(r=>[String(r.user_id),String(r.role)].join('|')).join(',');
     const wanted=[...grid.people].sort((a,b)=>a.userId<b.userId?-1:1).map(p=>[p.userId,p.role].join('|')).join(',');
@@ -224,14 +226,18 @@ export class VaultService {
   // ---- Team sharing S3a: the signed grid, the Owner's draft, and the Settings › Sharing grid ----
   private async relayStateRead():Promise<RelayState>{const rows=(await this.requireEngine().conn.query('SELECT payload FROM relay_state WHERE id=1')).toArray();return rows.length?JSON.parse(String(rows[0].payload)):emptyRelay();}
   private signedGrid(state:RelayState):Grid|null{const e=state.epochs.at(-1)?.epoch;return e?.v==='2'?e.grid:null;}
+  /** A stable fingerprint of a signed grid, to tie a draft to the grid it was edited from. */
+  private signedHash(grid:Grid){return JSON.stringify(gridBody(grid));}
+  private draftStale(state:RelayState){const signed=this.signedGrid(state);return !!state.gridDraft&&!!signed&&state.gridDraftBase!==this.signedHash(signed);}
   private async gridDraftSet(draft:Grid|null,action:string){
     const state=await this.relayStateRead();if(!draft&&!state.gridDraft)return;
-    if(draft)state.gridDraft=draft;else delete state.gridDraft;
+    if(draft){const signed=this.signedGrid(state);state.gridDraft=draft;if(signed)state.gridDraftBase=this.signedHash(signed);}
+    else{delete state.gridDraft;delete state.gridDraftBase;}
     await this.write(action,{actor:this.identity.userId},async w=>{await w.conn.query(`INSERT INTO relay_state VALUES(1,${sqlText(JSON.stringify(state))}) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload`);});
   }
   /** A Team and roles change on a vault that has a signed grid becomes part of the draft signed at the next rotation. */
   private async gridDraftPerson(userId:string,role:RoleId){
-    const state=await this.relayStateRead(),signed=this.signedGrid(state),base=state.gridDraft??signed;
+    const state=await this.relayStateRead(),signed=this.signedGrid(state),base=(this.draftStale(state)?null:state.gridDraft)??signed;
     // Only a grid Owner drafts: anyone else's local edit is overwritten by the next signed grid they receive.
     if(!base||!signed?.people.some(p=>p.userId===this.identity.userId&&p.role==="owner"))return;
     const people=[...base.people.filter(p=>p.userId!==userId),{userId,role,extras:base.people.find(p=>p.userId===userId)?.extras??[]}].sort((a,b)=>a.userId<b.userId?-1:a.userId>b.userId?1:0);
@@ -241,7 +247,7 @@ export class VaultService {
     const state=await this.relayStateRead(),signed=this.signedGrid(state),draft=state.gridDraft??null,e=this.requireEngine();
     const names=new Map((await e.conn.query('SELECT user_id,display_name FROM role_assignments')).toArray().map(r=>[String(r.user_id),String(r.display_name)]));
     const grid=draft??signed;
-    return {signed,draft,joined:state.epochs.length>0,canSign:!!signed&&signed.people.some(p=>p.userId===this.identity.userId&&p.role==='owner'),
+    return {signed,draft,stale:this.draftStale(state),joined:state.epochs.length>0,canSign:!!signed&&signed.people.some(p=>p.userId===this.identity.userId&&p.role==='owner'),
       people:(grid?.people??[]).map(p=>({userId:p.userId,name:names.get(p.userId)??p.userId,you:p.userId===this.identity.userId}))};
   }
   async shareGridSave(grid:unknown){

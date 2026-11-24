@@ -3174,6 +3174,7 @@ const auth3 = {
 } as const;
 // Team sharing S1 (blueprint section 22, item 38): the encrypted hand-off file and the protected-floor flag.
 const share = {
+  "share.grid.stale": "Another Owner signed a newer grid after this draft was made. Review the draft against the signed grid and save it again, or discard it, before rotating keys.",
   "share.grid.heading": "Who receives what",
   "share.grid.body": "Each tick shares one kind of data with everyone in that role, from the next key rotation. Cost never goes to a Sales Rep or Admin / IT: to give someone cost and margins, make them a Sales Manager in Team and roles.",
   "share.grid.notJoined": "Start workspace sharing first (Home › Shared inbox). This grid appears once an Owner has signed the first one.",

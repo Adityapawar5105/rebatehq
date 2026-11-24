@@ -3295,4 +3295,5 @@ export const fr: Catalog = {
   "share.grid.notStarted": "Lancez le partage avant de changer qui reçoit quoi.",
   "share.grid.ownerOnly": "Seul un propriétaire de la grille signée peut changer qui reçoit quoi.",
   "share.grid.invalid": "Cette grille ne peut pas être enregistrée : elle donne des coûts à un rôle qui ne peut pas les voir, n’a pas de propriétaire ou change qui fait partie de l’équipe.",
+  "share.grid.stale": "Un autre propriétaire a signé une grille plus récente après la création de ce brouillon. Revoyez le brouillon par rapport à la grille signée et enregistrez-le de nouveau, ou abandonnez-le, avant de faire tourner les clés.",
 };
