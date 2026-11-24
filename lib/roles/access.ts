@@ -76,6 +76,9 @@ export const ACTIONS: Record<Action, { cap: Cap | null; mode: Mode }> = {
   // Team sharing S1: the hand-off file. Export is a publisher's; anyone with a vault may open and import one (cost packs
   // are refused in the worker for a role without "cost").
   shareState:r("view"),shareCounts:r("share"),shareExport:w("share"),shareImportPreview:r("view"),shareImport:w("view"),
+  // S3a: the sharing grid (roles and pack ticks only, never business data). Editing it needs the Team and roles capability;
+  // the worker also requires the caller to be an Owner under the signed grid.
+  shareGrid:r("roles"),shareGridSave:w("roles"),shareGridDiscard:w("roles"),
   // 8B-1: Margin Drain inbox and cost index triggers read cost; saving settings and triggers is a pricing decision.
   agentState:r("cost"),agentRows:r("cost"),agentRun:w("cost"),agentMark:w("cost"),agentSettingsSave:w("pricing"),indexState:r("cost"),indexSkus:r("cost"),indexTriggerSave:w("pricing"),indexTriggerDelete:w("pricing"),deadState:r("cost"),benchState:r("cost"),benchPreview:r("cost"),benchMapSave:w("cost"),benchShared:w("cost"),benchFiguresSave:w("cost"),benchWithdrawn:w("cost"),deadRows:r("cost"),deadSettingsSave:w("pricing"),deadDraft:w("pricing"),
   // 7F-2: folder re-import is an import (Import Studio, every tier).

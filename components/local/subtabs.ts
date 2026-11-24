@@ -90,6 +90,7 @@ export const SUBTABS: readonly SubTab[] = [
   { id: "roles", section: "Settings", label: "roles.teamAndRoles", anchor: "roles-heading", page: "settings-team" },
   // Team sharing S1: the encrypted hand-off file (Professional and Scale; the worker checks the tier and role)
   { id: "share", section: "Settings", label: "share.heading", anchor: "share-heading", page: "settings-team", show: notStarter },
+  { id: "share-grid", section: "Settings", label: "share.grid.heading", anchor: "share-grid-heading", page: "settings-team", show: c => notStarter(c) && c.caps.includes("roles") },
 ];
 
 /** Palette search: every word typed must appear in the item's text, so "purchase receipts" and "pricing grid" both match. */

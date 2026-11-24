@@ -198,6 +198,7 @@ export type Commands = {
   quoteGuidance: { id: string }; quoteCrossSell: { id: string }; relayLocal: Record<string, never>;
   shareState: Record<string, never>; shareCounts: Record<string, never>; shareExport: { packs: string[]; role: RoleId; name: string };
   shareImportPreview: { file: Blob; code: string }; shareImport: { file: Blob; code: string };
+  shareGrid: Record<string, never>; shareGridSave: { grid: import("../relay/protocol").Grid }; shareGridDiscard: Record<string, never>;
   quoteOutcome: { id: string; input: import("../quotes/winloss").OutcomeInput }; winLoss: import("../quotes/winloss").ReportInput; auditPack: { locale: import("../i18n/core").Locale };
   templateVendors: Record<string, never>; negotiationSheet: { vendor: string; locale: import("../i18n/core").Locale }; rebateAgreement: { id: string; locale: import("../i18n/core").Locale };
   agentState: Record<string, never>; agentRows: { offset?: number; grid?: GridQuery }; agentRun: Record<string, never>; agentMark: { key: string; status: "new" | "read" | "dismissed" };
@@ -229,7 +230,7 @@ export type Results = {
   vendorPpv:Awaited<ReturnType<VaultService["vendorPpv"]>>;
   vendorPpvLines:Awaited<ReturnType<VaultService["vendorPpvLines"]>>;
   simOptions:Awaited<ReturnType<VaultService["simOptions"]>>;
-  relayLocal:Awaited<ReturnType<VaultService["relayLocal"]>>; shareState:Awaited<ReturnType<VaultService["shareState"]>>; shareCounts:Awaited<ReturnType<VaultService["shareCounts"]>>; shareExport:Awaited<ReturnType<VaultService["shareExport"]>>; shareImportPreview:Awaited<ReturnType<VaultService["shareImportPreview"]>>; shareImport:Awaited<ReturnType<VaultService["shareImport"]>>; quoteOutcome:Awaited<ReturnType<VaultService["quoteOutcome"]>>; winLoss:Awaited<ReturnType<VaultService["winLoss"]>>; auditPack:Awaited<ReturnType<VaultService["auditPack"]>>;
+  relayLocal:Awaited<ReturnType<VaultService["relayLocal"]>>; shareState:Awaited<ReturnType<VaultService["shareState"]>>; shareCounts:Awaited<ReturnType<VaultService["shareCounts"]>>; shareExport:Awaited<ReturnType<VaultService["shareExport"]>>; shareImportPreview:Awaited<ReturnType<VaultService["shareImportPreview"]>>; shareImport:Awaited<ReturnType<VaultService["shareImport"]>>; shareGrid:Awaited<ReturnType<VaultService["shareGrid"]>>; shareGridSave:Awaited<ReturnType<VaultService["shareGridSave"]>>; shareGridDiscard:Awaited<ReturnType<VaultService["shareGridDiscard"]>>; quoteOutcome:Awaited<ReturnType<VaultService["quoteOutcome"]>>; winLoss:Awaited<ReturnType<VaultService["winLoss"]>>; auditPack:Awaited<ReturnType<VaultService["auditPack"]>>;
   templateVendors:Awaited<ReturnType<VaultService["templateVendors"]>>; negotiationSheet:Awaited<ReturnType<VaultService["negotiationSheet"]>>; rebateAgreement:Awaited<ReturnType<VaultService["rebateAgreement"]>>;
   agentState:Awaited<ReturnType<VaultService["agentState"]>>; agentRows:Awaited<ReturnType<VaultService["agentRows"]>>; agentRun:Awaited<ReturnType<VaultService["agentRun"]>>; agentMark:Awaited<ReturnType<VaultService["agentMark"]>>;
   agentSettingsSave:Awaited<ReturnType<VaultService["agentSettingsSave"]>>; indexState:Awaited<ReturnType<VaultService["indexState"]>>; indexSkus:Awaited<ReturnType<VaultService["indexSkus"]>>;

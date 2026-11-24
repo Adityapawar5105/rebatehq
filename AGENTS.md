@@ -285,3 +285,9 @@ See `docs/evidence/SECOND_AUDIT_PASS.md`. The independent security review (R02, 
 - Owners with one device see a recovery-kit prompt.
 - The relay gate proves that the rep device holds no cost pack key.
 - No migration. See docs/evidence/SHARING_S2B_VERIFICATION.md.
+
+**Team sharing S3a: the signed grid as the source, and the Sharing grid screen (25 Nov 2026; built by Claude Code).**
+- Rotations sign the last signed grid plus this device's Owner draft (new people join as Sales Reps), so a second Owner device no longer demotes everyone.
+- With no draft pending, every vault, an Owner's included, mirrors the signed role table.
+- Settings › Team and roles › Who receives what: pack-by-role ticks with cost locks, presets, per-person extras, Preview as, and what changes.
+- No migration. See docs/evidence/SHARING_S3A_VERIFICATION.md.

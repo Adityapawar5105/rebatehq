@@ -34,6 +34,9 @@ export async function dispatch(service: VaultService, request: Request, hooks: H
     case "shareExport":return service.shareExport(request.data.packs,request.data.role,request.data.name);
     case "shareImportPreview":return service.shareImportPreview(request.data.file,request.data.code);
     case "shareImport":return service.shareImport(request.data.file,request.data.code);
+    case "shareGrid":return service.shareGrid();
+    case "shareGridSave":return service.shareGridSave(request.data.grid);
+    case "shareGridDiscard":return service.shareGridDiscard();
     case "agentState":return service.agentState();
     case "agentRows":return service.agentRows(request.data.offset,request.data.grid);
     case "agentRun":return service.agentRun(hooks.signal(),progress);

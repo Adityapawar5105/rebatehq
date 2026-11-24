@@ -5,7 +5,9 @@ import {fold,ensureOperation,type Applied,type Shared} from './state';
 import type {RelayTransport} from './http';
 import { msg } from "../i18n/core";
 import {syncStatus} from './sync-status';
-export type RelayState={version:'1';lastSyncedAt?:string;identity:Identity|null;retired:Identity[];epochs:{epoch:Epoch;key:string;packs?:Record<string,string>}[];start:{sequence:string;hash:string};head:{sequence:string;hash:string};entries:Applied[];pending:RelayEvent|null;pendingEpoch:{epoch:Epoch;key:string}|null};
+export type RelayState={version:'1';lastSyncedAt?:string;identity:Identity|null;retired:Identity[];epochs:{epoch:Epoch;key:string;packs?:Record<string,string>}[];start:{sequence:string;hash:string};head:{sequence:string;hash:string};entries:Applied[];pending:RelayEvent|null;pendingEpoch:{epoch:Epoch;key:string}|null;
+ /** Team sharing S3a: grid edits an Owner made on this device, signed at the next rotation (never sent before). */
+ gridDraft?:Grid};
 export type RelayView={sync:{status:'synced'|'pending'|'conflict';lastSyncedAt:string|null};registered:boolean;joined:boolean;deviceId:string;fingerprint:string;role:string;devices:{deviceId:string;userId:string;label:string;role:string;fingerprint:string}[];head:{sequence:string;hash:string;epoch:string};administratorFingerprint:string;canStart:boolean;rotationRequired:boolean;pending:boolean;objects:Shared[];rejected:string[];packs:string[];grid:{namedOwner:string|null;people:{userId:string;role:string}[]}|null;ownerDevices:number};
 export function emptyRelay():RelayState{return {version:'1',identity:null,retired:[],epochs:[],start:{sequence:'0',hash:ZERO_HASH},head:{sequence:'0',hash:ZERO_HASH},entries:[],pending:null,pendingEpoch:null};}
 export class RelaySession{
