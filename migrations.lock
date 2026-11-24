@@ -42,8 +42,12 @@
     "20261113120000_chunk8r_retire_wave2.sql",
     "20261114120000_operator_subscriptions.sql"
   ],
-  "pendingOrder": [],
-  "pendingMigrations": {},
+  "pendingOrder": [
+    "20261125120000_sharing_s2_packs.sql"
+  ],
+  "pendingMigrations": {
+    "20261125120000_sharing_s2_packs.sql": "e43c788ec32246b4f99a4fa9b55324ded2f6e67e4b22ce925a94599123124ff8"
+  },
   "appliedMigrationEvidence": {
     "202610250001_revoke_platform_public_privileges.sql": {
       "date": "2026-10-26",

@@ -12,5 +12,5 @@ test('authenticated relay gate is mandatory, real Auth is retained and the produ
  const workflow=fs.readFileSync('.github/workflows/ci.yml','utf8'),script=fs.readFileSync('scripts/test-relay-browser.mjs','utf8'),route=fs.readFileSync('app/api/relay/route.ts','utf8');
  assert.match(workflow,/Required authenticated local-vault privacy gate[\s\S]*RELAY_ENABLED: "true"[\s\S]*node scripts\/test-relay-browser.mjs --auth --browser=chromium/);
  assert.match(script,/signInLocal\(context,page,base/);assert.match(script,/scanRelayDatabase/);assert.match(script,/r\.allHeaders/);assert.match(script,/r\.postDataBuffer/);assert.match(script,/m\.args/);assert.match(script,/length,12/);
- assert.match(route,/process\.env\.RELAY_ENABLED!=='true'/);assert.match(route,/getAppContext\(request\.headers\)/);assert.match(route,/readJsonLimited\(request,96\*1024\)/);
+ assert.match(route,/process\.env\.RELAY_ENABLED!=='true'/);assert.match(route,/getAppContext\(request\.headers\)/);assert.match(route,/readJsonLimited\(request,1024\*1024\)/); // S2: a format 2 epoch carries one key per pack per device
 });

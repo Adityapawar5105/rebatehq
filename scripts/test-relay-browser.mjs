@@ -5,7 +5,7 @@ import {build} from 'esbuild';
 import {chromium} from '@playwright/test';
 import pg from 'pg';
 import {signInLocal,localUrl,localDatabaseUrl} from './vault-test-auth.mjs';
-import {assertNoRelayPlaintext,scanRelayDatabase} from './relay-privacy-scan.mjs';
+import {assertNoRelayPlaintext,scanRelayDatabase,RELAY_7A_TABLES} from './relay-privacy-scan.mjs';
 const auth=process.argv.includes('--auth'),channel=process.argv.find(v=>v.startsWith('--browser='))?.split('=')[1]??'chrome';
 const base=process.env.VAULT_TEST_URL??'http://localhost:3100',route=auth?'/home':'/lab/vault';
 localUrl(base,'Relay browser app');
@@ -62,7 +62,7 @@ try{
  await manager.getByRole('tab',{name:'Share a reference',exact:true}).click();await manager.getByLabel('Shared title').fill(marker+'-small');await manager.getByLabel('Local reference').fill(marker+'-small-ref');await manager.getByLabel('Amount',{exact:true}).fill('5000.00');await click(manager,'Share encrypted reference');await manager.getByRole('button',{name:marker+'-small',exact:true}).click();assert.equal(await manager.getByLabel('Second-level manager').count(),0);await manager.getByLabel('Pricing Owner approver').selectOption(actors[0].userId);await click(manager,'Request approval');await syncAndSelect(owner,marker+'-small');await click(owner,'Approve level 1');await owner.getByRole('status').filter({hasText:'Approval: approved.'}).waitFor();checks.oneLevelBoundary=true;
  // Reload must recover keys, history and verification heads from encrypted OPFS.
  await close(owner);await owner.reload();await owner.getByLabel('Vault passphrase').fill(secret);await owner.getByRole('button',{name:'Unlock vault',exact:true}).click();await owner.getByRole('button',{name:'Lock vault',exact:true}).waitFor();await open(owner);await syncAndSelect(owner,marker);assert.ok((await owner.getByTestId('relay-object').innerText()).includes(marker+'-comment'));checks.reloadEncryptedKeys=true;
- result.serverRows=await scanRelayDatabase(db,actors[0].tenantId,markers);checks.everyRelayColumnScanned=true;
+ result.serverRows=await scanRelayDatabase(db,actors[0].tenantId,markers,RELAY_7A_TABLES);checks.everyRelayColumnScanned=true;
  // An injected leak must trip the same scanner, including binary and base64.
  for(const value of [{ciphertext:Buffer.from(marker)}, {content:Buffer.from(marker).toString('base64')}])assert.throws(()=>assertNoRelayPlaintext(value,markers),/Private fixture content/);checks.scannerNegativeControls=true;
  for(let i=0;i<inspections.length;i++)await inspections[i];assert.deepEqual(failures,[]);checks.requestsHeadersBodiesConsole=true;

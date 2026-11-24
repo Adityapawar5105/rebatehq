@@ -13,6 +13,6 @@ test('every new authenticated browser fixture and server privacy scan SQL statem
   for(let i=0;i<2;i++)await seedPrivacyLicence(db,tenant,users[i],users[i]+'@example.invalid',{...(i?{tenantId:tenant,role:'manager'}:{}),deviceId:devices[i]});
   const {rows}=await db.query('SELECT status FROM licence_device WHERE tenant_id=$1::uuid ORDER BY id',[tenant]);assert.equal(rows.length,2);assert.ok(rows.every((r:any)=>r.status==='active'));
   await seedRestoreRelay(db,tenant,users[0],devices[0]);
-  assert.deepEqual(await scanRelayDatabase(db,tenant,['SHOULD-NEVER-EXIST-HERE']),{relay_device_key:1,relay_epoch:1,relay_key_wrap:1,relay_event:1});await db.exec('ROLLBACK');
+  assert.deepEqual(await scanRelayDatabase(db,tenant,['SHOULD-NEVER-EXIST-HERE']),{relay_device_key:1,relay_epoch:1,relay_key_wrap:1,relay_event:1,relay_pack_wrap:12,relay_pack_version:1});await db.exec('ROLLBACK');
  }finally{await db.close();}
 });

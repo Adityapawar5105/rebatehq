@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-export const RELAY_TABLES=Object.freeze(['relay_device_key','relay_epoch','relay_key_wrap','relay_event']);
+export const RELAY_TABLES=Object.freeze(['relay_device_key','relay_epoch','relay_key_wrap','relay_event','relay_pack_wrap','relay_pack_version']);
 // Fail with a location, never echo the fixture or database content into logs.
 export function assertNoRelayPlaintext(value,markers,location='relay'){
  const visit=(item,at)=>{
@@ -17,11 +17,13 @@ export function assertNoRelayPlaintext(value,markers,location='relay'){
  };
  visit(value,location);
 }
-export async function scanRelayDatabase(db,tenantId,markers){
+export const RELAY_7A_TABLES=Object.freeze(['relay_device_key','relay_epoch','relay_key_wrap','relay_event']);
+/** required: tables that must hold rows for this tenant (every relay table is still scanned and listed). */
+export async function scanRelayDatabase(db,tenantId,markers,required=RELAY_TABLES){
  const inventory=(await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename LIKE 'relay_%' ORDER BY tablename")).rows.map(r=>r.tablename);
  assert.deepEqual(inventory,[...RELAY_TABLES].sort(),'Every relay table must participate in the privacy scan');
  const counts={};
- for(const table of RELAY_TABLES){const rows=(await db.query('SELECT * FROM public.'+table+' WHERE tenant_id=$1::uuid',[tenantId])).rows;assert.ok(rows.length>0,'Privacy scan would be vacuous for '+table);counts[table]=rows.length;assertNoRelayPlaintext(rows,markers,'database.'+table);}
+ for(const table of RELAY_TABLES){const rows=(await db.query('SELECT * FROM public.'+table+' WHERE tenant_id=$1::uuid',[tenantId])).rows;assert.ok(rows.length>0||!required.includes(table),'Privacy scan would be vacuous for '+table);counts[table]=rows.length;assertNoRelayPlaintext(rows,markers,'database.'+table);}
  const audit=(await db.query("SELECT * FROM public.audit_log WHERE tenant_id=$1::uuid AND entity_type LIKE 'relay_%'",[tenantId])).rows;
  assert.ok(audit.length>0,'Relay audit coverage cannot be empty');assertNoRelayPlaintext(audit,markers,'database.audit_log');return counts;
 }

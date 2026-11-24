@@ -211,9 +211,20 @@ The same tables serve the hand-off file (S1) and the relay (S3), so S1 carries f
 
 **Roll back:** re-publishing an earlier version makes it a new, higher version, so versions only ever go up.
 
-## 7. Server changes: one migration
+## 7. Server changes: three migrations
 
-A new migration, `chunk_sharing_relay`, ships in **S2**, so the user's Restore Drill can run before S3 builds on it. It follows `MIGRATION_RULES.md`: CI, then the user-run Restore Drill, then the lock. It changes the following.
+**Revised 24 Nov 2026 (S2a).** The first version of this section planned one migration. Storage and Realtime policies run as `authenticated`, without the app's request context, and nothing exercises them until S3 and S4; once locked, they could not be fixed. So the server changes ship in three migrations, each with the release that exercises it, and each follows `MIGRATION_RULES.md` (CI, then a user-run Restore Drill, then the lock):
+
+1. **S2: `20261125120000_sharing_s2_packs.sql`.**
+   - The grid on `relay_epoch`.
+   - `relay_pack_wrap` and `relay_pack_version`; a pack version holds only a signed manifest, encrypted under the pack key.
+   - Pack versions readable only by holders of the pack.
+   - Grid roles checked against membership.
+   - Larger limits and quotas, including a byte cap.
+2. **S3:** `relay_blobs` (metadata only) and the Storage bucket and its policies.
+3. **S4:** the Realtime policies.
+
+Together they change the following.
 
 **Relay tables:**
 - `relay_epoch` gains a signed `grid` (canonical JSON, at most 64 KiB) and a format version. Version 1 epochs stay valid.
@@ -232,13 +243,13 @@ A new migration, `chunk_sharing_relay`, ships in **S2**, so the user's Restore D
 - the audit trigger;
 - pgTAP fixtures.
 
-**Storage:**
+**Storage (S3 migration):**
 - a private bucket, `relay-packs`;
 - policies on `storage.objects` that call a new SECURITY DEFINER helper, which checks the tenant folder, an active membership with a Professional or Scale licence, an active device and a wrap for the pack;
 - no GRANT or REVOKE on the managed `storage` schema;
 - CI's local Supabase starts `storage-api`.
 
-**Realtime:**
+**Realtime (S4 migration):**
 - `realtime.messages` policies allow a private channel `pack:<tenant>:<pack>` to be joined only by a device holding that pack's wrap in the latest epoch;
 - public channel access stays off.
 

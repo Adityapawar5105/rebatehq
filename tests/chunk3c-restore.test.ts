@@ -34,7 +34,7 @@ test("Restore inventory hashes the licence rows and the location sentinel; colum
   await db.query("BEGIN");const rows=await seedRestoreData(db);await db.query("COMMIT");
   assert.equal((await db.query("SELECT name FROM public.licence_location WHERE id=$1",[rows.location])).rows[0].name,"RESTORE-SENTINEL");
   const tableNames=(await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")).rows.map((r:any)=>r.tablename);
-  assert.equal(tableNames.length,13); // 8R drops the 12 wave-2 tables
+  assert.equal(tableNames.length,15); // 8R drops the 12 wave-2 tables; team sharing S2 adds relay_pack_wrap and relay_pack_version
   const columns=(await db.query(applicationColumnsSql,[tableNames])).rows;
   assert.equal(assertApplicationColumnsEqual(columns,structuredClone(columns)),true);
   assert.throws(()=>assertApplicationColumnsEqual(columns,columns.filter((c:any)=>c.column_name!=="erp_profile")),/licence_location.erp_profile/);
@@ -52,7 +52,7 @@ test("Restore inventory hashes the licence rows and the location sentinel; colum
   const relayEvidence=(await db.query(relayEvidenceSql)).rows;
   assert.equal(assertRelayEvidenceEqual(relayEvidence,structuredClone(relayEvidence)),true);
   await db.exec('BEGIN');await db.query("UPDATE public.relay_event SET ciphertext=decode(repeat('00',32),'hex'),ciphertext_bytes=32 WHERE id=$1::uuid",[rows.relay.event]);
-  assert.throws(()=>assertRelayEvidenceEqual(relayEvidence,[]),/four tables/);
+  assert.throws(()=>assertRelayEvidenceEqual(relayEvidence,[]),/six tables/);
   assert.throws(()=>assertRelayEvidenceEqual(relayEvidence,relayEvidence.map((r:any)=>({...r,content_hash:'changed'}))),/content hashes differ/);
   assert.notDeepEqual((await db.query(relayEvidenceSql)).rows,relayEvidence);await db.exec('ROLLBACK');
   const baseline=await tenantCounts(db);

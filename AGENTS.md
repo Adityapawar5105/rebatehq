@@ -270,4 +270,10 @@ See `docs/evidence/SECOND_AUDIT_PASS.md`. The independent security review (R02, 
 - Anyone on Professional or Scale imports it into the governed tables, tagged `shared:<pack>`. Same-key rows are replaced and local notes are kept.
 - Guardrails gain `floor_from_cost`: such a floor travels only in the cost pack.
 - Local vault **v24 / 67 tables**; no Supabase migration. See docs/evidence/SHARING_S1_VERIFICATION.md.
-- **Next:** S2 (the role table, pack keys, rotation and the one sharing migration).
+- S1 merged as PR #26 after CI on `7462849`.
+
+**Team sharing S2a: pack keys, the signed grid and the sharing migration (24 Nov 2026; built by Claude Code).**
+- Epoch format 2 carries the Owner-signed grid (one role table plus pack ticks) and one wrapped key per data pack. Verifiers refuse cost for a role without cost, wraps that do not match the grid, non-publisher signers, grid edits by non-Owners, roles that do not match membership, and downgrades.
+- Pack versions are a signed chain per pack. Only a person whose device holds the pack can select its rows.
+- Migration `20261125120000_sharing_s2_packs.sql` is **pending** until CI and a **user-run Restore Drill** pass. pgTAP plans 149 checks fresh and 152 in restore mode.
+- Not reachable from the app until S2b. See docs/evidence/SHARING_S2A_VERIFICATION.md.
