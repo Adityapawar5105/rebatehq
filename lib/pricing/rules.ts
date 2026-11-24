@@ -14,7 +14,8 @@ import { msg } from "../i18n/core";
 import { businessDate, businessToday } from "../vault/today";
 
 export type RuleInput = { id?: string; name: string; category: string; vendor: string; threshold: string; increase: string };
-export type GuardInput = { tier: string; category: string; start: string; target: string; floor: string };
+/** protectedFloor (team sharing, vault v24): the floor is cost plus a margin, so it is shared only with people who can see cost. */
+export type GuardInput = { tier: string; category: string; start: string; target: string; floor: string; protectedFloor?: boolean };
 export type PriceRow = { product: string; tier: string; rowKey?:string; scope?:{customer:string|null;tier:string;quantity:string;from:string|null;to:string|null;kind:string}; before: string; after: string; cost: string | null; quantity: string; impact: string; guard: string; beforeMargin: string | null; afterMargin: string | null };
 export type Preview = { id: string; count: string; impact: string; red: string; rows: PriceRow[]; offset: number; explanation: string; status: string; ms: number; grid?: GridMeta };
 /** Grid columns (7V-3a) of every change preview, SQL or in memory. */
@@ -30,7 +31,7 @@ export const rows = async (e: Engine, sql: string): Promise<Record<string, any>[
 export async function pricingState(e: Engine) {
   const settings = (await rows(e, "SELECT * FROM pricing_settings WHERE id=1"))[0];
   return { owner: settings ? { id: String(settings.owner_id), name: String(settings.owner_name), backupDays: Number(settings.backup_days) } : null,
-    guards: (await rows(e, 'SELECT tier,category,start::VARCHAR AS start,target::VARCHAR AS target,floor::VARCHAR AS floor FROM price_guardrails WHERE tier IS NOT NULL ORDER BY tier,category')).map(r => r as GuardInput),
+    guards: (await rows(e, 'SELECT tier,category,start::VARCHAR AS start,target::VARCHAR AS target,floor::VARCHAR AS floor,coalesce(floor_from_cost,false) AS fc FROM price_guardrails WHERE tier IS NOT NULL ORDER BY tier,category')).map(r => ({ tier: String(r.tier), category: String(r.category), start: String(r.start), target: String(r.target), floor: String(r.floor), protectedFloor: r.fc === true }) as GuardInput),
     rules: await rows(e, "SELECT r.id,r.name,r.definition,max(v.version)::INTEGER AS version FROM rules r JOIN rule_revisions v ON v.rule_id=r.id WHERE r.id NOT LIKE 'ops-%' AND r.id NOT LIKE 'grid-%' GROUP BY r.id,r.name,r.definition ORDER BY r.name"),
     runs: await rows(e, "SELECT id,rule_id,status,affected_rows::VARCHAR AS affected,run_date FROM rule_runs ORDER BY run_date DESC LIMIT 50") };
 }
@@ -39,7 +40,7 @@ export function guardSql(g: GuardInput) {
   const tier = label(g.tier), category = label(g.category);
   if (![g.start,g.target,g.floor].every(v => /^(0|[1-9]\d{0,12})$/.test(v))) return bad(msg("rules.guardrailAmountsMustBe"));
   if (BigInt(g.floor) > BigInt(g.target) || BigInt(g.target) > BigInt(g.start)) return bad(msg("rules.floorMustBeAt"));
-  return `DELETE FROM price_guardrails WHERE tier=${Q(tier)} AND category=${Q(category)}; INSERT INTO price_guardrails(id,scope,start,target,floor,tier,category) VALUES(${Q(crypto.randomUUID())},'unit_price',${g.start},${g.target},${g.floor},${Q(tier)},${Q(category)}); UPDATE vault_meta SET pricing_revision=pricing_revision+1 WHERE id=1;`;
+  return `DELETE FROM price_guardrails WHERE tier=${Q(tier)} AND category=${Q(category)}; INSERT INTO price_guardrails(id,scope,start,target,floor,tier,category,floor_from_cost) VALUES(${Q(crypto.randomUUID())},'unit_price',${g.start},${g.target},${g.floor},${Q(tier)},${Q(category)},${g.protectedFloor === true}); UPDATE vault_meta SET pricing_revision=pricing_revision+1 WHERE id=1;`;
 }
 export async function ruleSql(e: Engine, input: RuleInput) {
   const r = { name: label(input.name), category: label(input.category), vendor: label(input.vendor), threshold: String(rate(input.threshold)), increase: String(rate(input.increase)) };

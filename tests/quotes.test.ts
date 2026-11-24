@@ -202,6 +202,9 @@ test("7B Quote Desk and Price Check need Professional", async () => {
 // reviewed (it cannot carry cost). Adding a rep-reachable command fails this test until it is classified.
 const SCANNED = ["quoteCopy","quoteRevise","quoteValidity","quotePdf","brandingGet","priceList","quoteOutcome","winLoss","quoteGuidance","quoteCrossSell","scorecard","scorecardOptIn","rebateProgress","status", "home", "checklist", "search", "roleList", "pricingState", "priceCheck", "quoteCreate", "quoteLines", "quoteSubmit", "quoteWithdraw", "quoteGet", "quoteList"] as const;
 const REVIEWED: Record<string, string> = {
+  shareState: "team sharing S1: packs this device received (cost packs hidden from a role without cost) and price changes of packs without cost; scanned in tests/sharing.test.ts",
+  shareImportPreview: "team sharing S1: who made a file and its pack row counts; a file with cost is refused for a role without cost (tests/sharing.test.ts)",
+  shareImport: "team sharing S1: applies a sales copy; returns shareState; scanned in tests/sharing.test.ts",
   relayLocal: "v2.6 gap 2: a yes/no for this device's local relay identity, plus (8.4) whether a send is waiting and the last sync time; read from the vault; no cost, no network",
   gridTotals: "7V-3a: totals of numbers the caller already holds; returns only sums, counts, minimum and maximum of them",
   init: "vault bootstrap state", create: "creates an empty vault",

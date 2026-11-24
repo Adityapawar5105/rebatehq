@@ -73,10 +73,91 @@ import {RelayError} from '../relay/protocol';
 import {minorUnits} from '../spike/exact';
 import { msg } from "../i18n/core";
 import { businessToday } from "./today";
+import * as sharing from "../sharing/packs";
+import { newCode, openHandoff, packHash, sealHandoff, type Payload } from "../sharing/handoff";
+import { ROLE_IDS } from "./schema";
+import { capsFor } from "../roles/access";
 export class VaultService {
   /** v2.6 gap 2: whether this device already has a relay identity, read from the vault only (no network request).
    *  Roadmap 8.4: also whether a send is waiting and when the inbox last synced, so the sharing card can show its status
    *  without opening the inbox. A conflict needs the server's head, so only the opened inbox can report one. */
+  // ---- Team sharing S1: the encrypted hand-off file (SHARING_DESIGN.md; blueprint section 22, item 38) ----------
+  private shareTier(){if(this.licence.tier==='starter')throw new VaultError('LICENCE',msg('share.err.tier'));}
+  /** What this device has received, the price changes its last copy made, and what this person may do. */
+  async shareState(){
+    const e=this.requireEngine(),a=await this.access(),cost=a.caps.includes('cost');
+    const known=(p:string):p is sharing.PackId=>(sharing.PACK_IDS as readonly string[]).includes(p);
+    const books=(await e.conn.query('SELECT pack,version,publisher_name,published_at,received_at,via,rows::VARCHAR AS rows FROM shared_books ORDER BY pack')).toArray()
+      .map(r=>({pack:String(r.pack),version:String(r.version),publisher:String(r.publisher_name),publishedAt:String(r.published_at),receivedAt:String(r.received_at),via:String(r.via),rows:String(r.rows)}))
+      .filter(b=>known(b.pack)&&(cost||!sharing.PACKS[b.pack].cost));
+    const changes=(await e.conn.query('SELECT pack,key,before_value,after_value FROM shared_changes ORDER BY pack,seq LIMIT 200')).toArray()
+      .map(r=>({pack:String(r.pack),key:String(r.key),before:r.before_value===null?null:String(r.before_value),after:r.after_value===null?null:String(r.after_value)}))
+      .filter(c=>known(c.pack)&&!sharing.PACKS[c.pack].cost);
+    return {books,changes,tier:this.licence.tier,canExport:a.caps.includes('share')&&this.licence.tier!=='starter',
+      roles:ROLE_IDS.map(role=>({role,locked:!capsFor(role,false).includes('cost')}))};
+  }
+  /** Rows in each pack on this (publishing) device, for the export screen. */
+  async shareCounts(){
+    this.shareTier();const e=this.requireEngine(),out:{pack:sharing.PackId;locked:boolean;rows:string}[]=[];
+    for(const p of sharing.PACK_IDS){let n=0;for(const part of sharing.PACKS[p].parts)n+=Number((await e.conn.query(`SELECT count(*) AS n FROM ${part.table} WHERE ${part.where}`)).toArray()[0].n);out.push({pack:p,locked:sharing.PACKS[p].cost,rows:String(n)});}
+    return out;
+  }
+  /** Export a pack selection for a colleague in the given role. The one-time code is returned once and never stored. */
+  async shareExport(packs:string[],role:RoleId,name:string){
+    this.shareTier();const chosen=sharing.selection(packs);
+    if(!isRole(role))throw new VaultError('SHARE',msg('share.err.role'));
+    const recipient=typeof name==='string'?name.trim().slice(0,160):'';
+    const locked=chosen.filter(p=>!sharing.packAllowed(p,role));
+    if(locked.length)throw new VaultError('SHARE',msg('share.err.locked',{pack:msg(sharing.PACK_LABEL[locked[0]])}));
+    const a=await this.access();if(chosen.some(p=>sharing.PACKS[p].cost)&&!a.caps.includes('cost'))throw new VaultError('FORBIDDEN',msg('share.err.locked',{pack:msg('share.pack.cost')}));
+    const e=this.requireEngine(),data:Payload['packs']={},hashes:Payload['hashes']={};
+    for(const p of chosen){const d=await sharing.readPack(e,p);data[p]=d;hashes[p]=await packHash(d);}
+    const me=(await e.conn.query(`SELECT display_name FROM role_assignments WHERE user_id=${sqlText(this.identity.userId)}`)).toArray()[0];
+    const owner=(await pricing.pricingState(e)).owner;
+    const publisher=me?String(me.display_name):owner?.id===this.identity.userId?owner.name:this.identity.userId;
+    const payload:Payload={v:1,tenant:this.identity.tenantId,currency:await workspaceCurrency(e),id:crypto.randomUUID(),exportedAt:new Date().toISOString(),exportedBy:{userId:this.identity.userId,name:publisher.slice(0,160)},recipient:{role,name:recipient},packs:data,hashes};
+    const code=newCode(),blob=await sealHandoff(payload,code);
+    await this.write('share.exported',{actor:this.identity.userId,id:payload.id,packs:chosen.join(','),role},async()=>{});
+    return {name:`rebatehq-share-${payload.exportedAt.slice(0,10)}.rhqshare`,blob,code,id:payload.id,packs:chosen.map(p=>({pack:p,rows:String(data[p]!.reduce((n,d)=>n+d.rows.length,0))}))};
+  }
+  /** Open a hand-off file and check it against this vault before anything changes. */
+  private async openShare(file:Blob,code:string){
+    this.shareTier();const e=this.requireEngine();
+    if(!(file instanceof Blob))throw new VaultError('SHARE',msg('share.err.notHandoff'));
+    const payload=await openHandoff(file,code,this.identity.tenantId),packs=sharing.PACK_IDS.filter(p=>payload.packs[p]);
+    if(!packs.length)throw new VaultError('SHARE',msg('share.err.damaged'));
+    sharing.selection(packs);
+    if(payload.currency!==await workspaceCurrency(e))throw new VaultError('CURRENCY',msg('share.err.currency',{code:payload.currency}));
+    const a=await this.access();
+    if(packs.some(p=>!sharing.packAllowed(p,payload.recipient.role)))throw new VaultError('SHARE',msg('share.err.damaged'));
+    if(packs.some(p=>sharing.PACKS[p].cost)&&!a.caps.includes('cost'))throw new VaultError('FORBIDDEN',msg('share.err.costNotForYou'));
+    const held=new Map((await e.conn.query('SELECT pack,published_at FROM shared_books')).toArray().map(r=>[String(r.pack),String(r.published_at)]));
+    const older=packs.filter(p=>held.has(p)&&held.get(p)!>payload.exportedAt);
+    return {payload,packs,older};
+  }
+  async shareImportPreview(file:Blob,code:string){
+    const {payload,packs,older}=await this.openShare(file,code);
+    return {id:payload.id,publisher:payload.exportedBy.name,exportedAt:payload.exportedAt,recipientRole:payload.recipient.role,recipientName:payload.recipient.name,
+      packs:packs.map(p=>({pack:p,rows:String(payload.packs[p]!.reduce((n,d)=>n+d.rows.length,0)),older:older.includes(p)}))};
+  }
+  /** Apply every pack in the file in one audited transaction. A copy older than the one already held is refused. */
+  async shareImport(file:Blob,code:string){
+    const {payload,packs,older}=await this.openShare(file,code);
+    if(older.length)throw new VaultError('SHARE',msg('share.err.older'));
+    const at=new Date().toISOString();let changed=0;
+    await this.write('share.imported',{actor:this.identity.userId,id:payload.id,packs:packs.join(','),from:payload.exportedBy.userId},async e=>{
+      for(const p of packs){
+        const r=await sharing.applyPack(e,p,payload.packs[p]!);changed+=r.changes.length;
+        await e.conn.query(`DELETE FROM shared_books WHERE pack=${sqlText(p)};INSERT INTO shared_books VALUES(${[p,payload.id,payload.exportedBy.userId,payload.exportedBy.name,payload.exportedAt,at,'file'].map(v=>sqlText(v)).join(',')},${r.rows},${sqlText(payload.hashes[p]!)},${sqlText(payload.recipient.role)});DELETE FROM shared_changes WHERE pack=${sqlText(p)};`);
+        for(let i=0;i<r.changes.length;i+=500)await e.conn.query(`INSERT INTO shared_changes VALUES ${r.changes.slice(i,i+500).map((c,j)=>`(${sqlText(p)},${i+j+1},${sqlText(c.key)},${c.before===null?'NULL':sqlText(c.before)},${c.after===null?'NULL':sqlText(c.after)})`).join(',')}`);
+      }
+      const lines=Number((await e.conn.query('SELECT count(*) AS n FROM (SELECT 1 FROM sales_lines LIMIT 1)')).toArray()[0].n);
+      if(lines&&(packs.includes('items')||packs.includes('customers')))await this.financialBody(e);
+      else await e.conn.query('UPDATE vault_meta SET pricing_revision=pricing_revision+1 WHERE id=1');
+    });
+    this.accessCache=null;
+    return {packs:packs.map(p=>({pack:p,rows:String(payload.packs[p]!.reduce((n,d)=>n+d.rows.length,0))})),changed:String(changed),publisher:payload.exportedBy.name,exportedAt:payload.exportedAt,state:await this.shareState()};
+  }
   async relayLocal(){
     const deviceId=this.licence.claims?.device??'',rows=(await this.requireEngine().conn.query('SELECT payload FROM relay_state WHERE id=1')).toArray();
     let identity=false,pending=false,lastSyncedAt:string|null=null;

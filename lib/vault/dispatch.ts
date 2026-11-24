@@ -29,6 +29,11 @@ export async function dispatch(service: VaultService, request: Request, hooks: H
     case "vendorPpvLines":return service.vendorPpvLines(request.data.product,{from:request.data.from,to:request.data.to},request.data.offset,request.data.grid);
     case "simOptions":return service.simOptions();
     case "relayLocal":return service.relayLocal();
+    case "shareState":return service.shareState();
+    case "shareCounts":return service.shareCounts();
+    case "shareExport":return service.shareExport(request.data.packs,request.data.role,request.data.name);
+    case "shareImportPreview":return service.shareImportPreview(request.data.file,request.data.code);
+    case "shareImport":return service.shareImport(request.data.file,request.data.code);
     case "agentState":return service.agentState();
     case "agentRows":return service.agentRows(request.data.offset,request.data.grid);
     case "agentRun":return service.agentRun(hooks.signal(),progress);

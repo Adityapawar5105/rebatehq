@@ -88,6 +88,8 @@ export const SUBTABS: readonly SubTab[] = [
   { id: "storage", section: "Settings", label: "shell.storage.heading", anchor: "storage-heading", page: "settings-security" },
   { id: "offline", section: "Settings", label: "offline.heading", anchor: "offline-heading", page: "settings-security" },
   { id: "roles", section: "Settings", label: "roles.teamAndRoles", anchor: "roles-heading", page: "settings-team" },
+  // Team sharing S1: the encrypted hand-off file (Professional and Scale; the worker checks the tier and role)
+  { id: "share", section: "Settings", label: "share.heading", anchor: "share-heading", page: "settings-team", show: notStarter },
 ];
 
 /** Palette search: every word typed must appear in the item's text, so "purchase receipts" and "pricing grid" both match. */
