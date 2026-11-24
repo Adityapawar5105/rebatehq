@@ -3257,4 +3257,13 @@ export const es: Catalog = {
   "pricing.protectedFloor": "Este mínimo es el costo más un margen",
   "pricing.protectedFloorHint": "Entonces solo se comparte con personas que pueden ver costos; las demás ven el objetivo como su mínimo.",
   "pricing.protectedMark": "· mínimo basado en el costo",
+  "share.pack.supplier": "Condiciones de proveedores, reembolsos y reclamaciones",
+  "share.pack.rules": "Reglas, vistas previas e historial de ejecuciones",
+  "share.pack.competitors": "Observaciones de la competencia",
+  "share.pack.documents": "PDF compartidos",
+  "share.pack.results": "Resultados publicados",
+  "relay.packsHeld": "Este dispositivo tiene claves para: {packs}.",
+  "relay.packsNone": "Este dispositivo aún no tiene claves de paquetes de datos.",
+  "relay.recoveryTitle": "Guarde un kit de recuperación",
+  "relay.recoveryBody": "Solo un dispositivo tiene las claves de uso compartido del propietario. Apruebe un segundo dispositivo del propietario o guarde una copia de seguridad cifrada de esta bóveda: si pierde este dispositivo, nadie podrá agregar personas ni cambiar quién ve qué, y el servidor no puede recuperarlo.",
 };

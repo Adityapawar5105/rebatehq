@@ -13,6 +13,8 @@ import {Badge,Button,Card,Field,Notice,Tabs,tabPanelProps,type Tone} from '@/com
 import {Icon} from '@/components/ui/Icon';
 const RELAY_ROLE: Record<string, MessageKey> = { owner: "relay.role.owner", manager: "relay.role.manager", rep: "relay.role.rep", analyst: "relay.role.analyst" };
 const relayRole = (r: string) => r in RELAY_ROLE ? t(RELAY_ROLE[r]) : r;
+/** Team sharing S2b: the data packs this device holds a key for, by name. */
+const PACK_NAME: Record<string, MessageKey> = { items: "share.pack.items", customers: "share.pack.customers", book: "share.pack.book", contracts: "share.pack.contracts", guards: "share.pack.guards", cost: "share.pack.cost", cost_floors: "share.pack.cost_floors", supplier: "share.pack.supplier", rules: "share.pack.rules", competitors: "share.pack.competitors", documents: "share.pack.documents", results: "share.pack.results" };
 const KIND: Record<string, MessageKey> = { price_change: "relay.priceChange", quote: "relay.quoteReference", rebate: "relay.rebateReference" };
 const STATUS: Record<string, MessageKey> = { pending: "relay.status.pending", approved: "relay.status.approved", rejected: "relay.status.rejected" };
 type Sync=RelayView['sync'];
@@ -113,6 +115,8 @@ export function RelayPanel({client,userId,tenantId,relayEnabled,onChange}:{clien
       <Button size="sm" disabled={busy} onClick={()=>void run('relayRetry',{},msg("relay.note7"))}>{t("relay.retryPendingSend")}</Button>
       <Button size="sm" disabled={busy} onClick={()=>void run('relayDiscard',{},msg("relay.note8"))}>{t("relay.discardPendingCopy")}</Button></>}>{t("relay.aSendIsPending")}</Notice>}
      {view.rejected.length>0&&<Notice tone="bad" role="alert">{t("relay.signedOperationsWereRejected", { count: view.rejected.length })}</Notice>}
+     {view.grid&&view.grid.people.some(p=>p.userId===userId&&p.role==='owner')&&view.ownerDevices<2&&<Notice tone="warn" data-testid="relay-recovery-kit" title={t("relay.recoveryTitle")}>{t("relay.recoveryBody")}</Notice>}
+     {view.grid&&<p className={styles.small} data-testid="relay-packs">{view.packs.length?t("relay.packsHeld",{packs:view.packs.map(p=>p in PACK_NAME?t(PACK_NAME[p]):p).join(', ')}):t("relay.packsNone")}</p>}
      <div {...tabPanelProps("relay",tab)}>
      {tab==='keys'&&<section><h3>{t("relay.deviceVerification")}</h3><p>{t("relay.yourFingerprint")}{" "}<code data-testid="relay-own-fingerprint">{view.fingerprint}</code></p>
       <details className={styles.small}><summary>{t("relay.techDetails")}</summary><p>{t("relay.currentVerificationHeadEpoch", { epoch: Number(view.head.epoch), sequence: Number(view.head.sequence) })}{" "}<code>{view.head.hash}</code>{t("relay.compareThisHeadWith")}</p></details>

@@ -277,3 +277,11 @@ See `docs/evidence/SECOND_AUDIT_PASS.md`. The independent security review (R02, 
 - Pack versions are a signed chain per pack. Only a person whose device holds the pack can select its rows.
 - Migration `20261125120000_sharing_s2_packs.sql` is **pending** until CI and a **user-run Restore Drill** pass. pgTAP plans 149 checks fresh and 152 in restore mode.
 - Not reachable from the app until S2b. See docs/evidence/SHARING_S2A_VERIFICATION.md.
+
+**Team sharing S2b: the worker signs and reads the grid (25 Nov 2026; built by Claude Code).**
+- Starting or rotating sharing signs a format 2 epoch built from Team and roles (unassigned people are Sales Reps; Recommended ticks).
+- Each device stores only its pack keys.
+- A receiving vault mirrors the signed role table, so a rep who created their own vault loses cost once they join.
+- Owners with one device see a recovery-kit prompt.
+- The relay gate proves that the rep device holds no cost pack key.
+- No migration. See docs/evidence/SHARING_S2B_VERIFICATION.md.

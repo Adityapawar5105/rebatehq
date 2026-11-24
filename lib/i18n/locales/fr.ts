@@ -3257,4 +3257,13 @@ export const fr: Catalog = {
   "pricing.protectedFloor": "Ce plancher est le coût plus une marge",
   "pricing.protectedFloorHint": "Il n’est alors partagé qu’avec les personnes qui voient les coûts ; les autres voient la cible comme plancher.",
   "pricing.protectedMark": "· plancher fondé sur le coût",
+  "share.pack.supplier": "Conditions fournisseurs, remises et réclamations",
+  "share.pack.rules": "Règles, aperçus et historique des exécutions",
+  "share.pack.competitors": "Observations de la concurrence",
+  "share.pack.documents": "PDF partagés",
+  "share.pack.results": "Résultats publiés",
+  "relay.packsHeld": "Cet appareil détient les clés de : {packs}.",
+  "relay.packsNone": "Cet appareil ne détient encore aucune clé de paquet de données.",
+  "relay.recoveryTitle": "Gardez une trousse de récupération",
+  "relay.recoveryBody": "Un seul appareil détient les clés de partage du propriétaire. Approuvez un deuxième appareil du propriétaire ou gardez une sauvegarde chiffrée de ce coffre : si cet appareil est perdu, personne ne pourra ajouter de personnes ni changer qui voit quoi, et le serveur ne peut pas le récupérer.",
 };
