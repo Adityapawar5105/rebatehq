@@ -154,8 +154,15 @@ export async function applyPack(e: Engine, pack: PackId, data: PackData): Promis
     } else if (pack === "cost_floors") {
       await e.conn.query(`UPDATE price_guardrails SET floor=s.floor,floor_from_cost=true FROM ${tmp} s WHERE price_guardrails.tier=s.tier AND price_guardrails.category IS NOT DISTINCT FROM s.category AND s.floor<=price_guardrails.target`);
     } else if (pack === "guards") {
-      await e.conn.query(`DELETE FROM price_guardrails t WHERE tier IS NOT NULL AND (EXISTS(SELECT 1 FROM ${tmp} s WHERE ${keyMatch(p.key, "s", "t")}) OR t.id LIKE 'shared-%');
-        INSERT INTO price_guardrails(id,scope,start,target,floor,tier,category,floor_from_cost) SELECT 'shared-'||md5(tier||'|'||coalesce(category,'')),'unit_price',start,target,floor,tier,category,false FROM ${tmp}`);
+      // A copy without cost carries the target in place of a floor based on cost. A floor this device already holds as
+      // based on cost is kept (while it is still at or under the new target), so a publisher who imports a sales copy
+      // never loses real floors; cost_floors, when present, then sets them from the file.
+      await e.conn.query(`DROP TABLE IF EXISTS md_share_keep; CREATE TEMP TABLE md_share_keep AS SELECT tier,category,floor FROM price_guardrails WHERE tier IS NOT NULL AND coalesce(floor_from_cost,false);
+        DELETE FROM price_guardrails t WHERE tier IS NOT NULL AND (EXISTS(SELECT 1 FROM ${tmp} s WHERE ${keyMatch(p.key, "s", "t")}) OR t.id LIKE 'shared-%');
+        INSERT INTO price_guardrails(id,scope,start,target,floor,tier,category,floor_from_cost) SELECT 'shared-'||md5(s.tier||'|'||coalesce(s.category,'')),'unit_price',s.start,s.target,
+          CASE WHEN k.floor IS NOT NULL AND k.floor<=s.target THEN k.floor ELSE s.floor END,s.tier,s.category,coalesce(k.floor<=s.target,false)
+          FROM ${tmp} s LEFT JOIN md_share_keep k ON k.tier=s.tier AND k.category IS NOT DISTINCT FROM s.category;
+        DROP TABLE md_share_keep`);
     } else {
       await e.conn.query(`DELETE FROM price_matrix t WHERE ${p.where} AND (t.source_id=${tag} OR EXISTS(SELECT 1 FROM ${tmp} s WHERE ${keyMatch(p.key, "s", "t")}) OR t.id IN (SELECT id FROM ${tmp}));
         INSERT INTO price_matrix(${cols},source_id) SELECT ${cols},${tag} FROM ${tmp}`);

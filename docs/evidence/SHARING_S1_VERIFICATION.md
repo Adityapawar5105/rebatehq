@@ -65,7 +65,7 @@ Any role, Professional and Scale.
 
 ## Tests
 
-**`tests/sharing.test.ts` (9 tests):**
+**`tests/sharing.test.ts` (10 tests):**
 - **Allow-list.** Every column of `products`, `customers`, `price_matrix`, `price_guardrails`, `vendor_costs` and `cost_basis_settings` is either carried or held back with a reason. No pack without cost carries a cost column, and the guardrails pack never reads a floor based on cost.
 - **Cost lock.** It is checked for every role and every pack. Prerequisites travel together; only Owner, Pricing Owner and the named Pricing Owner may export.
 - **Scan.** It refuses a planted `current_cost` column, an extra column and a badly typed value. A floor based on cost is replaced by the target.
@@ -86,6 +86,7 @@ Any role, Professional and Scale.
 - **Upgrade.** v23 to v24 keeps guardrails, and the unique index still holds.
 - **New vault.** It migrates v1 to v24 in **one transaction**, as the worker does.
 - **Apply.** Applying is idempotent and removes rows that a new shared copy no longer has.
+- **Keeping local floors.** A sales copy imported where floors based on cost already exist keeps them (and their flag) while they stay at or under the new target, so a publisher who imports a sales copy loses no real floors.
 - **Floors inside one vault.** A rep's Pricing state, Price Check and quote line carry the target in place of a floor based on cost, and pass the decision-16 scan; a Sales Manager sees the real floor.
 
 **Updated tests:**
@@ -106,7 +107,7 @@ Any role, Professional and Scale.
 |---|---|---|
 | `tsc --noEmit` | local | passed |
 | JavaScript unit tests | local | 78 passed |
-| TypeScript unit tests | local | 358 passed, 0 failed |
+| TypeScript unit tests | local | 359 passed, 0 failed (before the last test was added; `tests/sharing.test.ts` 10/10 after it) |
 | `next build --webpack` (lab enabled) | local | passed |
 | `shareUi`, Chrome, production server, `--share-ui-only` | local | passed |
 | `shareUi`, Firefox, production server, `--share-ui-only` | local | passed |

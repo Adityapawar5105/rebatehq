@@ -249,3 +249,14 @@ test("S1 floors based on cost: inside one vault a role without cost sees the tar
   } finally { c.close(); }
 });
 function q2(c: Conn, id: string) { return q(c, `SELECT floor_cents::VARCHAR AS floor, guard_status AS zone FROM quote_lines WHERE quote_id='${id}'`); }
+
+test("S1 a sales copy imported where floors based on cost already exist keeps them", async () => {
+  const c = await fresh();
+  try {
+    c.query(`INSERT INTO price_guardrails(id,scope,start,target,floor,tier,category,floor_from_cost) VALUES('mine','unit_price',11000,10000,${COST_FLOOR},'T01','Valves',true),('typed','unit_price',9000,8000,7000,'T02','Valves',false)`);
+    const guards: PackData = [{ part: 0, columns: PACKS.guards.parts[0].columns.map(k => k.name), rows: [["T01", "Valves", "11500", "10500", "10500"], ["T02", "Valves", "9000", "8000", "6000"]] }];
+    await applyPack(engine(c), "guards", guards);
+    assert.deepEqual(q(c, "SELECT tier,target::VARCHAR t,floor::VARCHAR f,floor_from_cost::VARCHAR x FROM price_guardrails ORDER BY tier"),
+      [{ tier: "T01", t: "10500", f: COST_FLOOR, x: "true" }, { tier: "T02", t: "8000", f: "6000", x: "false" }]);
+  } finally { c.close(); }
+});
