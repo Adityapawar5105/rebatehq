@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT extensions.plan(139 + CASE WHEN current_setting('app.restore_test_mode',true)='true' THEN 3 ELSE 0 END);
+SELECT extensions.plan(149 + CASE WHEN current_setting('app.restore_test_mode',true)='true' THEN 3 ELSE 0 END);
 SELECT set_config('app.phase1_migration_owner',current_user,true);
 -- INCLUDE FUNCTION ACL ALLOWLIST
 
@@ -90,7 +90,7 @@ END $$;
 
 -- 8R: 4 foundation tables keep fixtures here (wave-1 and wave-2 tables were dropped). The licence, relay and
 -- benchmark-consent tables are tested in chunk5b_control.sql, chunk7a_relay.sql and chunk8d_bench.sql.
-DELETE FROM pg_temp.phase1_rls_tables WHERE table_name IN ('workspace_licence','licence_seat','licence_location','licence_device','relay_device_key','relay_epoch','relay_key_wrap','relay_event','bench_consent');
+DELETE FROM pg_temp.phase1_rls_tables WHERE table_name IN ('workspace_licence','licence_seat','licence_location','licence_device','relay_device_key','relay_epoch','relay_key_wrap','relay_event','relay_pack_wrap','relay_pack_version','bench_consent');
 -- Suite-owned auth users and tenants are inserted before dependent rows.
 INSERT INTO auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,created_at,updated_at)
 VALUES
@@ -1114,5 +1114,6 @@ SELECT extensions.ok(current_setting('app.phase1_manager_invite')='true','Only o
 -- INCLUDE CHUNK 5B CHECKS
 -- INCLUDE CHUNK 7A CHECKS
 -- INCLUDE CHUNK 8D CHECKS
+-- INCLUDE SHARING S2 CHECKS
 SELECT * FROM extensions.finish();
 ROLLBACK;

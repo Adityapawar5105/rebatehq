@@ -17,7 +17,7 @@ export const RETIRED_PAGE_PATHS = Object.freeze([
 export const CONTROL_TABLES = Object.freeze([
   'tenant','membership','invite','audit_log','workspace_licence','licence_seat','licence_location','licence_device',
   // 7A: opaque ciphertext and public cryptographic/routing metadata only.
-  'relay_device_key','relay_epoch','relay_key_wrap','relay_event',
+  'relay_device_key','relay_epoch','relay_key_wrap','relay_event','relay_pack_wrap','relay_pack_version',
   // 8D: the Owner's benchmark consent only; pseudonymous bands live in rebatehq_private behind SQL functions.
   'bench_consent',
 ]);

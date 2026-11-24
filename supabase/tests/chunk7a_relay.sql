@@ -307,11 +307,14 @@ SELECT extensions.ok(true,'7A relay_epoch: rep INSERT fails with genuine RLS 425
 SELECT extensions.ok((SELECT count(*) FROM pg_temp.phase1_function_allowlist WHERE signature IN ('public.relay_allowed(uuid,boolean)','public.relay_directory(uuid)','public.relay_check_insert()'))=3 AND NOT EXISTS(SELECT 1 FROM pg_temp.phase1_function_acl_errors WHERE signature IN ('public.relay_allowed(uuid,boolean)','public.relay_directory(uuid)','public.relay_check_insert()')),'7A: every new helper/trigger has its exact EXECUTE allowlist');
 SELECT extensions.ok((SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='r' AND c.relname IN ('relay_device_key','relay_epoch','relay_key_wrap','relay_event'))=4,'7A: all four relay tables exist (non-vacuous inventory)');
 DO $$ DECLARE t text; actual text[]; expected text[]; checked integer:=0; BEGIN
- FOREACH t IN ARRAY ARRAY['relay_device_key','relay_epoch','relay_key_wrap','relay_event'] LOOP
+ -- Team sharing S2: the epoch's grid (roles and pack names only) and the two pack tables are reviewed here too.
+ FOREACH t IN ARRAY ARRAY['relay_device_key','relay_epoch','relay_key_wrap','relay_event','relay_pack_wrap','relay_pack_version'] LOOP
   checked:=checked+1;
   expected:=CASE t
    WHEN 'relay_device_key' THEN ARRAY['id','tenant_id','user_id','agreement_public','signing_public','possession_proof','signed_at','received_at']
-   WHEN 'relay_epoch' THEN ARRAY['id','tenant_id','epoch_number','previous_hash','base_sequence','base_hash','signer_user','signer_device','device_ids','member_roles','signature','content_hash','signed_at','received_at']
+   WHEN 'relay_epoch' THEN ARRAY['id','tenant_id','epoch_number','previous_hash','base_sequence','base_hash','signer_user','signer_device','device_ids','member_roles','signature','content_hash','signed_at','received_at','format','grid']
+   WHEN 'relay_pack_wrap' THEN ARRAY['id','tenant_id','epoch_id','pack','recipient_device','ephemeral_public','iv','ciphertext','received_at']
+   WHEN 'relay_pack_version' THEN ARRAY['id','tenant_id','epoch_id','pack','version','previous_hash','kind','base_version','sender_user','sender_device','iv','ciphertext','ciphertext_bytes','signature','content_hash','signed_at','received_at']
    WHEN 'relay_key_wrap' THEN ARRAY['id','tenant_id','epoch_id','recipient_device','ephemeral_public','iv','ciphertext','received_at']
    ELSE ARRAY['id','tenant_id','epoch_id','sequence','previous_hash','sender_user','sender_device','object_id','object_kind','recipient_ids','mention_ids','iv','ciphertext','ciphertext_bytes','signature','content_hash','signed_at','received_at'] END;
   SELECT array_agg(x ORDER BY x) INTO expected FROM unnest(expected)x;
@@ -319,7 +322,7 @@ DO $$ DECLARE t text; actual text[]; expected text[]; checked integer:=0; BEGIN
   IF actual IS DISTINCT FROM expected THEN RAISE EXCEPTION '7A unreviewed/plaintext column in %: %',t,actual; END IF;
   IF EXISTS(SELECT 1 FROM pg_attribute a CROSS JOIN LATERAL aclexplode(a.attacl) acl WHERE a.attrelid=('public.'||t)::regclass AND acl.grantee<>(SELECT relowner FROM pg_class WHERE oid=a.attrelid)) THEN RAISE EXCEPTION '7A unexpected column grant on %',t; END IF;
  END LOOP;
- IF checked<>4 THEN RAISE EXCEPTION '7A column loop did not cover four tables'; END IF;
+ IF checked<>6 THEN RAISE EXCEPTION '7A column loop did not cover six tables'; END IF;
 END $$;
 SELECT extensions.ok(true,'7A: exact metadata/ciphertext column inventory, no plaintext business columns or hidden column grants');
 DO $$ DECLARE n integer; BEGIN

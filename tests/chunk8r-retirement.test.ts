@@ -44,7 +44,9 @@ async function seedWave2(db: any) {
 }
 
 test("8R: the 12 wave-2 tables are dropped; control-plane tables, functions, RLS and the audit trail stay", async () => {
-  const { CONTROL_TABLES } = await import("../config/http-boundary.mjs");
+  const { CONTROL_TABLES: NOW } = await import("../config/http-boundary.mjs");
+  // The control plane as it stood at 8R: tables added by later migrations (team sharing S2) are not part of this replay.
+  const CONTROL_TABLES = (NOW as string[]).filter(t => !["relay_pack_wrap", "relay_pack_version"].includes(t));
   const db = await database(n => n < MIGRATION);
   try {
     const before = await publicTables(db);

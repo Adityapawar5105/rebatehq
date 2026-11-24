@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { msg } from "../i18n/core";
+import { ALL_PACKS, VAULT_ROLES } from "../sharing/catalog";
 export const RELAY_LIMITS = { messageBytes: 16_384, totalBytes: 16_777_216, events: 10_000, devices: 60, epochs: 256, page: 25, responseBytes: 3_145_728 } as const;
 export const ZERO_HASH = '0'.repeat(64);
 const uuid = z.string().uuid().transform(s => s.toLowerCase());
@@ -17,8 +18,29 @@ export type Device = z.infer<typeof DeviceSchema>;
 export type DirectoryDevice = Device & {role:RelayRole;label?:string};
 export const WrapSchema = z.object({id:uuid,deviceId:uuid,userId:uuid,role:RelayRole,ecdh:b64(65),signing:b64(65),ephemeral:b64(65),iv:b64(12),wrappedKey:b64(48)}).strict();
 export type Wrap = z.infer<typeof WrapSchema>;
-export const EpochSchema = z.object({v:z.literal('1'),id:uuid,tenantId:uuid,number:positive,previousHash:hash,baseSequence:counter,baseHash:hash,signerUser:uuid,signerDevice:uuid,createdAt:date,members:z.array(WrapSchema).min(1).max(RELAY_LIMITS.devices),signature:b64(64),hash}).strict().refine(e => new Set(e.members.map(m=>m.deviceId)).size===e.members.length && e.members.every((m,i)=>i===0||e.members[i-1].deviceId<m.deviceId));
+const epochFields = {id:uuid,tenantId:uuid,number:positive,previousHash:hash,baseSequence:counter,baseHash:hash,signerUser:uuid,signerDevice:uuid,createdAt:date,members:z.array(WrapSchema).min(1).max(RELAY_LIMITS.devices),signature:b64(64),hash};
+const sortedMembers = (e:{members:{deviceId:string}[]}) => new Set(e.members.map(m=>m.deviceId)).size===e.members.length && e.members.every((m,i)=>i===0||e.members[i-1].deviceId<m.deviceId);
+// Team sharing S2 (SHARING_DESIGN.md sections 3.3 and 4): epoch format 2 also carries the Owner-signed sharing grid (one
+// role table plus the packs each role or person receives) and one wrapped key per data pack for each entitled device.
+export const PackId = z.enum(ALL_PACKS);
+const packList = z.array(PackId).max(ALL_PACKS.length).refine(a => a.every((p,i)=>i===0||ALL_PACKS.indexOf(a[i-1])<ALL_PACKS.indexOf(p)));
+export const GridSchema = z.object({v:z.literal('1'),namedOwner:uuid.nullable(),
+ people:z.array(z.object({userId:uuid,role:z.enum(VAULT_ROLES),extras:packList}).strict()).min(1).max(RELAY_LIMITS.devices).refine(a=>a.every((p,i)=>i===0||a[i-1].userId<p.userId)),
+ ticks:z.array(z.tuple([z.enum(VAULT_ROLES),packList])).length(VAULT_ROLES.length).refine(a=>a.every(([r],i)=>r===VAULT_ROLES[i]))}).strict();
+export type Grid = z.infer<typeof GridSchema>;
+export const PackWrapSchema = z.object({id:uuid,pack:PackId,deviceId:uuid,ephemeral:b64(65),iv:b64(12),wrappedKey:b64(48)}).strict();
+export type PackWrap = z.infer<typeof PackWrapSchema>;
+export const EpochV1Schema = z.object({v:z.literal('1'),...epochFields}).strict().refine(sortedMembers);
+export const EpochV2Schema = z.object({v:z.literal('2'),...epochFields,grid:GridSchema,packWraps:z.array(PackWrapSchema).max(ALL_PACKS.length*RELAY_LIMITS.devices)}).strict().refine(sortedMembers);
+export const EpochSchema = z.union([EpochV1Schema,EpochV2Schema]);
 export type Epoch = z.infer<typeof EpochSchema>;
+export type EpochV2 = z.infer<typeof EpochV2Schema>;
+/** One published version of a pack: a signed, per-pack hash chain whose manifest is encrypted under that pack's key. */
+export const PackVersionSchema = z.object({v:z.literal('1'),id:uuid,tenantId:uuid,epochId:uuid,pack:PackId,version:positive,previousHash:hash,kind:z.enum(['snapshot','delta']),baseVersion:counter,senderUser:uuid,senderDevice:uuid,createdAt:date,iv:b64(12),ciphertext,signature:b64(64),hash}).strict();
+export type PackVersion = z.infer<typeof PackVersionSchema>;
+/** What a pack version's encrypted manifest says: its row count, content hash and the chunks to fetch (release S3). */
+export const ManifestSchema = z.object({kind:z.literal('manifest'),rows:counter,contentHash:hash,chunks:z.array(z.object({n:counter,bytes:counter,sha256:hash}).strict()).max(128)}).strict();
+export type Manifest = z.infer<typeof ManifestSchema>;
 export const EventSchema = z.object({v:z.literal('1'),id:uuid,tenantId:uuid,epochId:uuid,sequence:positive,previousHash:hash,senderUser:uuid,senderDevice:uuid,objectId:uuid,objectKind:z.enum(['quote','price_change','rebate']),recipients:ids,mentions:ids,createdAt:date,iv:b64(12),ciphertext,signature:b64(64),hash}).strict();
 export type RelayEvent = z.infer<typeof EventSchema>;
 export const ShareInputSchema = z.object({objectKind:EventSchema.shape.objectKind,title:z.string().trim().min(1).max(160),reference:z.string().trim().min(1).max(160),amountMinor:z.string().regex(/^(0|[1-9][0-9]{0,17})$/),currency:z.string().regex(/^[A-Z]{3}$/),preset:z.enum(['standard','conservative'])}).strict();
@@ -33,10 +55,13 @@ export type Content = z.infer<typeof ContentSchema>;
 export const PostSchema = z.discriminatedUnion('action',[
  z.object({action:z.literal('register'),device:DeviceSchema}).strict(),
  z.object({action:z.literal('epoch'),epoch:EpochSchema}).strict(),
+ z.object({action:z.literal('pack'),pack:PackVersionSchema}).strict(),
  z.object({action:z.literal('event'),event:EventSchema}).strict(),
 ]);
 export type Post = z.infer<typeof PostSchema>;
 export type Directory = {devices:DirectoryDevice[];latest:Epoch|null;head:{sequence:string;hash:string}};
+export const PackPageSchema=z.object({versions:z.array(PackVersionSchema).max(RELAY_LIMITS.page),head:z.object({version:counter,hash}).strict()}).strict();
+export type PackPage = z.infer<typeof PackPageSchema>;
 export type Page = {epochs:Epoch[];events:RelayEvent[];latestEpoch:string;head:{sequence:string;hash:string}};
 export const DirectorySchema=z.object({devices:z.array(DeviceSchema.extend({role:RelayRole,label:z.string().max(320).optional()}).strict()).max(RELAY_LIMITS.devices),latest:EpochSchema.nullable(),head:z.object({sequence:counter,hash}).strict()}).strict();
 export const PageSchema=z.object({epochs:z.array(EpochSchema).max(8),events:z.array(EventSchema).max(RELAY_LIMITS.page),latestEpoch:counter,head:z.object({sequence:counter,hash}).strict()}).strict();

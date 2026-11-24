@@ -85,3 +85,15 @@ Two checks were rewritten for tables that remain:
 ## Operator subscriptions (locked, 15 November 2026)
 
 `20261114120000_operator_subscriptions.sql` adds `workspace_licence.plan_type` (`pilot`/`paid`, default `pilot`), the read-only view `rebatehq_private.subscriptions` and the SECURITY INVOKER function `rebatehq_private.set_subscription(text,text,text,timestamptz)`. No table is added, so the tenant-table minimum stays **13**. The view and function are revoked from `PUBLIC, anon, authenticated, service_role, rebatehq_app`, and the private schema's USAGE was already revoked from those roles; the public function ACL registry does not cover the private schema. pgTAP now plans **139** fresh and **142** restore checks (three new checks in `chunk5b_control.sql`: the pilot default, the closed ACLs, and a real `set_subscription` call that is then undone). The restore licence hash includes `plan_type`. A rolled-back dry run on `rebatehq-staging` succeeded on 14 November 2026. After [CI #158](https://github.com/Adityapawar5105/rebatehq/actions) passed on PR #1, the migration was applied to `rebatehq-staging` the same day, recorded as version `20261114120000` (14 migrations there); the view and function were checked closed to every API role. It is now **locked**: [CI #160](https://github.com/Adityapawar5105/rebatehq/actions/runs/43623569198) and [Restore Drill #22](https://github.com/Adityapawar5105/rebatehq/actions/runs/43623613500) (local target, started at the user's request) passed on `ceea3af`, and [CI #161](https://github.com/Adityapawar5105/rebatehq/actions/runs/43623806190) passed on `4ad0960`; 14 migrations are applied and 0 are pending.
+
+## Team sharing S2 inventory (pending, 24 November 2026)
+
+`20261125120000_sharing_s2_packs.sql` is **pending**. It locks only after green CI **and a user-run Restore Drill**.
+
+- **New tenant tables:** `relay_pack_wrap` and `relay_pack_version` take the public tenant tables to 15.
+  - Like the 7A relay tables, they are excluded from the generic fixture graph.
+  - They are tested in `supabase/tests/sharing_s2.sql`.
+- **pgTAP:** fresh runs plan **149** checks and restore runs plan **152**.
+- **New function:** `relay_pack_reader(uuid,text)`, SECURITY DEFINER, executable by `rebatehq_app` only, is in the ACL registry.
+- **Replaced functions:** `relay_check_insert()` and `audit_row_change()` are replaced in full. The two new tables are audited as metadata only.
+- **Restore Drill:** the seed writes a format 2 epoch, pack wraps and a pack version, and equivalence now compares six relay tables.
