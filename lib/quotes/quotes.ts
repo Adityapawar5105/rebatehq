@@ -84,7 +84,9 @@ const RANK: Record<Guard, number> = { unset: 0, green: 1, yellow: 2, red: 3 };
 const worstOf = (gs: Guard[]) => gs.reduce<Guard>((w, g) => RANK[g] > RANK[w] ? g : w, gs.length ? "green" : "unset");
 
 /** Book price and guardrail for one SKU, customer, quantity and date. */
-export async function pricePoint(e: Engine, productId: string, customerId: string | null, quantity: string, date = today()): Promise<PricePoint> {
+/** costFloors (team sharing, vault v24): a floor flagged as cost plus a margin is shown only to a role that can see cost;
+ *  anyone else gets the target in its place, so below target needs approval (fail closed, as in a shared sales copy). */
+export async function pricePoint(e: Engine, productId: string, customerId: string | null, quantity: string, date = today(), costFloors = false): Promise<PricePoint> {
   if (!ID.test(productId)) bad("quote.chooseProduct");
   if (customerId !== null && !ID.test(customerId)) bad("quote.chooseCustomer");
   if (!QTY.test(quantity) || Number(quantity) <= 0) bad("quote.quantityInvalid");
@@ -100,7 +102,7 @@ export async function pricePoint(e: Engine, productId: string, customerId: strin
   const m:Record<string,unknown>|null=found?{...found,price:String(found.price),qb:String(found.qty_break)}:null;
   const source: PriceSource = m ? m.customer_id !== null ? "customer" : m.product_id === null ? "category" : "tier" : p.list !== null ? "list" : "none";
   const book = m ? String(m.price) : str(p.list);
-  const g = (await rows(e, `SELECT start::VARCHAR AS s, target::VARCHAR AS t, floor::VARCHAR AS f FROM price_guardrails WHERE tier=${Q(tier)} AND category=${Q(cat)}`))[0];
+  const g = (await rows(e, `SELECT start::VARCHAR AS s, target::VARCHAR AS t, ${costFloors ? "floor" : "CASE WHEN coalesce(floor_from_cost,false) THEN target ELSE floor END"}::VARCHAR AS f FROM price_guardrails WHERE tier=${Q(tier)} AND category=${Q(cat)}`))[0];
   return {
     productId: String(p.product_id), description: String(p.description ?? ""), category: cat, uom: String(p.uom ?? ""),
     customerId: c ? String(c.customer_id) : null, customerName: String(c?.name ?? ""), tier,
@@ -132,22 +134,22 @@ async function quoteRow(e: Engine, id: string) {
   return q;
 }
 /** Replace a draft's lines: each line is priced and checked against its guardrail now, and keeps that snapshot. */
-export async function linesSql(e: Engine, id: string, lines: LineInput[], userId: string, at: string) {
+export async function linesSql(e: Engine, id: string, lines: LineInput[], userId: string, at: string, costFloors = false) {
   const q = await quoteRow(e, id);
   assertMove(String(q.status), "draft", "quote.notEditable");
   if (String(q.status) === "pending") bad("quote.notEditable"); // a pending quote is withdrawn first (quoteWithdraw)
   if (String(q.created_by) !== userId) bad("quote.notYours");
-  const values = await lineValues(e, id, String(q.customer_id), lines);
+  const values = await lineValues(e, id, String(q.customer_id), lines, costFloors);
   return `DELETE FROM quote_lines WHERE quote_id=${Q(id)};${values.length ? `INSERT INTO quote_lines VALUES ${values.join(",")};` : ""}
 UPDATE quotes SET status='draft', updated_at=${Q(at)}, decided_by=NULL, decided_at=NULL, decision_note=NULL, relay_object=NULL WHERE id=${Q(id)};`; // a changed quote never inherits an approval shared for its old lines
 }
 /** quote_lines rows for a quote: each line priced and checked against today's guardrail, keeping that snapshot. */
-async function lineValues(e: Engine, id: string, customerId: string, lines: LineInput[]) {
+async function lineValues(e: Engine, id: string, customerId: string, lines: LineInput[], costFloors: boolean) {
   if (!Array.isArray(lines) || lines.length > MAX_LINES) bad("quote.tooManyLines", { max: MAX_LINES });
   const values: string[] = [];
   for (const [i, l] of lines.entries()) {
     const qty = String(l?.quantity ?? "");
-    const point = await pricePoint(e, String(l?.productId ?? ""), customerId, qty);
+    const point = await pricePoint(e, String(l?.productId ?? ""), customerId, qty, today(), costFloors);
     const unit = l?.unitCents === undefined || l.unitCents === null || l.unitCents === "" ? point.bookCents ?? "0" : String(l.unitCents);
     if (!CENTS.test(unit)) bad("quote.priceInvalid");
     const guard: Guard = point.targetCents !== null && point.floorCents !== null ? guardStatus(BigInt(unit), BigInt(point.targetCents), BigInt(point.floorCents)) as Guard : "unset";
@@ -167,9 +169,9 @@ async function sourceLines(e: Engine, id: string): Promise<LineInput[]> {
  * their items, quantities and quoted prices, but are priced and checked against today's guardrails again. Nothing of
  * the source's status, approval, reason, validity or relay link comes across.
  */
-export async function copySql(e: Engine, id: string, userId: string, at: string) {
+export async function copySql(e: Engine, id: string, userId: string, at: string, costFloors = false) {
   const q = await quoteRow(e, id), plan = await createSql(e, String(q.customer_id), userId, at);
-  const values = await lineValues(e, plan.id, String(q.customer_id), await sourceLines(e, id));
+  const values = await lineValues(e, plan.id, String(q.customer_id), await sourceLines(e, id), costFloors);
   return { ...plan, sql: plan.sql + (values.length ? `INSERT INTO quote_lines VALUES ${values.join(",")};` : "") };
 }
 /**
@@ -177,14 +179,14 @@ export async function copySql(e: Engine, id: string, userId: string, at: string)
  * original (Q-2026-0001-R1, -R2, ...) and pointing at it; it never inherits the approval, which a below-floor line must
  * earn again when the revision is submitted. The original stays as it was.
  */
-export async function reviseSql(e: Engine, id: string, userId: string, canApprove: boolean, at: string) {
+export async function reviseSql(e: Engine, id: string, userId: string, canApprove: boolean, at: string, costFloors = false) {
   const q = await quoteRow(e, id), status = String(q.status);
   if (status !== "submitted" && status !== "approved") bad("quote.reviseSentOnly");
   if (String(q.created_by) !== userId && !canApprove) bad("quote.notYours");
   const base = String(q.number).replace(/-R\d+$/, "");
   const k = Number((await rows(e, `SELECT count(*) AS n FROM quotes WHERE number LIKE ${Q(base + "-R%")}`))[0].n) + 1;
   const newId = crypto.randomUUID(), number = `${base}-R${k}`;
-  const values = await lineValues(e, newId, String(q.customer_id), await sourceLines(e, id));
+  const values = await lineValues(e, newId, String(q.customer_id), await sourceLines(e, id), costFloors);
   return { id: newId, number, sql: `INSERT INTO quotes(id,number,customer_id,status,created_by,created_at,updated_at,revision_of) VALUES(${Q(newId)},${Q(number)},${Q(String(q.customer_id))},'draft',${Q(userId)},${Q(at)},${Q(at)},${Q(id)});`
     + (values.length ? `INSERT INTO quote_lines VALUES ${values.join(",")};` : "") };
 }

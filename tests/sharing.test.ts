@@ -228,3 +228,24 @@ test("S1 apply is idempotent and removes rows an earlier shared copy had but the
     assert.deepEqual(again.changes, [{ key: "P2 · T · 0", before: "200", after: null }]);
   } finally { c.close(); }
 });
+
+test("S1 floors based on cost: inside one vault a role without cost sees the target in their place (Pricing and Price Check)", async () => {
+  const c = await publisher();
+  try {
+    const rep = serviceFor(c, "rep"), sm = serviceFor(c, "sm");
+    const repState = await call(rep, "pricingState", {}) as { guards: { tier: string; floor: string; protectedFloor?: boolean }[] };
+    assert.deepEqual(leaks(repState), [], "decision 16: Pricing state for a rep carries no cost-based floor");
+    assert.deepEqual(repState.guards.map(g => [g.tier, g.floor, g.protectedFloor]), [["T01", "10000", false], ["T02", "7000", false]]);
+    const smState = await call(sm, "pricingState", {}) as { guards: { tier: string; floor: string; protectedFloor?: boolean }[] };
+    assert.deepEqual(smState.guards.map(g => [g.tier, g.floor, g.protectedFloor]), [["T01", COST_FLOOR, true], ["T02", "7000", false]]);
+    const repPoint = await call(rep, "priceCheck", { productId: "P1", customerId: "C1", quantity: "1" }) as { floorCents: string };
+    assert.equal(repPoint.floorCents, "10000"); assert.deepEqual(leaks(repPoint), []);
+    assert.equal((await call(sm, "priceCheck", { productId: "P1", customerId: "C1", quantity: "1" }) as { floorCents: string }).floorCents, COST_FLOOR);
+    // A rep's quote line keeps the target as its floor, so pricing between floor and target needs approval.
+    const q = await call(rep, "quoteCreate", { customerId: "C1" }) as { id: string };
+    const v = await call(rep, "quoteLines", { id: q.id, lines: [{ productId: "P1", quantity: "1", unitCents: "9000" }] });
+    assert.deepEqual(leaks(v), []);
+    assert.deepEqual(q2(c, q.id), [{ floor: "10000", zone: "red" }]);
+  } finally { c.close(); }
+});
+function q2(c: Conn, id: string) { return q(c, `SELECT floor_cents::VARCHAR AS floor, guard_status AS zone FROM quote_lines WHERE quote_id='${id}'`); }

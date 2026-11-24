@@ -48,6 +48,7 @@ Any role, Professional and Scale.
 - **The flag.** A new tick box on the guardrail form, "This floor is cost plus a margin", sets `price_guardrails.floor_from_cost`.
 - **What a sales copy gets.** The guardrails pack carries the **target** in place of such a floor, so a receiving rep treats anything under target as needing approval (fail closed).
 - **What a cost role gets.** The real floor travels only in the `cost_floors` pack.
+- **Inside one vault.** The same rule applies to roles without cost: Pricing, Price Check and new quote lines show the target in place of such a floor, so pricing below target needs approval. This was found by the automated security review of the first S1 commit.
 
 ## Where it is built
 
@@ -64,7 +65,7 @@ Any role, Professional and Scale.
 
 ## Tests
 
-**`tests/sharing.test.ts` (8 tests):**
+**`tests/sharing.test.ts` (9 tests):**
 - **Allow-list.** Every column of `products`, `customers`, `price_matrix`, `price_guardrails`, `vendor_costs` and `cost_basis_settings` is either carried or held back with a reason. No pack without cost carries a cost column, and the guardrails pack never reads a floor based on cost.
 - **Cost lock.** It is checked for every role and every pack. Prerequisites travel together; only Owner, Pricing Owner and the named Pricing Owner may export.
 - **Scan.** It refuses a planted `current_cost` column, an extra column and a badly typed value. A floor based on cost is replaced by the target.
@@ -85,6 +86,7 @@ Any role, Professional and Scale.
 - **Upgrade.** v23 to v24 keeps guardrails, and the unique index still holds.
 - **New vault.** It migrates v1 to v24 in **one transaction**, as the worker does.
 - **Apply.** Applying is idempotent and removes rows that a new shared copy no longer has.
+- **Floors inside one vault.** A rep's Pricing state, Price Check and quote line carry the target in place of a floor based on cost, and pass the decision-16 scan; a Sales Manager sees the real floor.
 
 **Updated tests:**
 - the schema version and table count (`notes`, `rebate-local`, `reports`, `supplier-claims`, `vault`, `bench`);

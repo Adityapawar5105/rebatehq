@@ -647,14 +647,16 @@ export class VaultService {
   private async quoteView(id: string) { const a = await this.access(); return quotes.view(this.requireEngine(), id, this.identity.userId, a.caps.includes("cost"), a.caps.includes("quoteApprove")); }
   private async ownQuote(id: string) { const v = await this.quoteView(id); const a = await this.access(); if (!v.mine && !a.caps.includes("quoteApprove") && !a.caps.includes("cost")) throw new VaultError("FORBIDDEN", msg("vault.cannotDoThisAsk", { roleLabel: a.roleLabel })); return v; }
   /** Price Check: book price, start/target/floor and the zone for one SKU and customer. Never cost (decision 16). */
-  async priceCheck(productId: string, customerId: string | null, quantity: string) { this.quoteTier(); return quotes.pricePoint(this.requireEngine(), productId, customerId, quantity || "1"); }
+  /** Team sharing: a floor flagged as based on cost reaches only roles with cost; others get the target in its place. */
+  private async costFloors() { return (await this.access()).caps.includes("cost"); }
+  async priceCheck(productId: string, customerId: string | null, quantity: string) { this.quoteTier(); return quotes.pricePoint(this.requireEngine(), productId, customerId, quantity || "1", undefined, await this.costFloors()); }
   async quoteCreate(customerId: string) {
     this.quoteTier(); const at = new Date().toISOString(), plan = await quotes.createSql(this.requireEngine(), customerId, this.identity.userId, at);
     await this.write("quote.created", { quote_id: plan.id, actor: this.identity.userId }, async w => { await w.conn.query(plan.sql); });
     return this.quoteView(plan.id);
   }
   async quoteLines(id: string, lines: quotes.LineInput[]) {
-    this.quoteTier(); const sql = await quotes.linesSql(this.requireEngine(), id, lines, this.identity.userId, new Date().toISOString());
+    this.quoteTier(); const sql = await quotes.linesSql(this.requireEngine(), id, lines, this.identity.userId, new Date().toISOString(), await this.costFloors());
     await this.write("quote.lines", { quote_id: id, lines: String(lines.length) }, async w => { await w.conn.query(sql); });
     return this.quoteView(id);
   }
@@ -678,14 +680,14 @@ export class VaultService {
   // ---- Roadmap Phase 11: copy and revise, validity date, customer PDF, branding, price list and mailing list -------
   /** 11.1: a new draft of the caller's own from any quote they can open. */
   async quoteCopy(id: string) {
-    this.quoteTier(); await this.ownQuote(id); const plan = await quotes.copySql(this.requireEngine(), id, this.identity.userId, new Date().toISOString());
+    this.quoteTier(); await this.ownQuote(id); const plan = await quotes.copySql(this.requireEngine(), id, this.identity.userId, new Date().toISOString(), await this.costFloors());
     await this.write("quote.copied", { quote_id: plan.id, from: id, actor: this.identity.userId }, async w => { await w.conn.query(plan.sql); });
     return this.quoteView(plan.id);
   }
   /** 11.1: a sent quote changed as a new version; the approval is never carried over. */
   async quoteRevise(id: string) {
     this.quoteTier(); await this.ownQuote(id); const a = await this.access();
-    const plan = await quotes.reviseSql(this.requireEngine(), id, this.identity.userId, a.caps.includes("quoteApprove"), new Date().toISOString());
+    const plan = await quotes.reviseSql(this.requireEngine(), id, this.identity.userId, a.caps.includes("quoteApprove"), new Date().toISOString(), a.caps.includes("cost"));
     await this.write("quote.revised", { quote_id: plan.id, from: id, actor: this.identity.userId }, async w => { await w.conn.query(plan.sql); });
     return this.quoteView(plan.id);
   }
@@ -1083,7 +1085,10 @@ export class VaultService {
   async pricePlan(input:ops.PlanInput){this.opsTier();await this.requireOwnerNamed();let run='';const details={actor:this.identity.userId,run_id:''};await this.write('pricing.plan_drafted',details,async e=>{run=await ops.planDraft(e,input,this.identity.userId);details.run_id=run;});return this.rulePreview(run);}
   async priceRollback(version:string){this.opsTier();await this.requireOwnerNamed();let run='';const details={actor:this.identity.userId,run_id:'',version_id:version};await this.write('pricing.rollback_drafted',details,async e=>{run=await grid.gridRollback(e,version,this.identity.userId,this.licence.tier)??await ops.rollbackDraft(e,version,this.identity.userId);details.run_id=run;});return this.rulePreview(run);}
   async priceLetter(id:string,locale:import('../i18n/core').Locale){this.opsTier();const file=await ops.increaseLetter(this.requireEngine(),id,locale);await this.pricingWrite('pricing.letter_exported',async()=>{});return file;}
-  async pricingState(){const state=await pricing.pricingState(this.requireEngine());if((await this.access()).caps.includes('pricing'))return state;return {...state,rules:[],runs:[]};}
+  async pricingState(){const state=await pricing.pricingState(this.requireEngine()),caps=(await this.access()).caps;
+    // Team sharing: a floor based on cost is shown only to a role that can see cost (the same rule as the shared guardrails pack).
+    const guards=caps.includes('cost')?state.guards:state.guards.map(g=>({tier:g.tier,category:g.category,start:g.start,target:g.target,floor:g.protectedFloor?g.target:g.floor,protectedFloor:false}));
+    if(caps.includes('pricing'))return {...state,guards};return {...state,guards,rules:[],runs:[]};}
   /** Pricing changes need a named Pricing Owner (required at setup). */
   private async requireOwnerNamed(){if(!(await pricing.pricingState(this.requireEngine())).owner)throw new VaultError('OWNER',msg("vault.nameAPricingOwner"));}
   async pricingOwner(name:string, userId:string, backupDays=7){
