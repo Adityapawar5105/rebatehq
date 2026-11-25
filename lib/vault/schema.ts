@@ -241,9 +241,11 @@ CREATE TABLE shared_changes(pack VARCHAR NOT NULL,seq INTEGER NOT NULL,key VARCH
 // Team sharing S4b (25 Nov 2026; SHARING_DESIGN.md section 5): small deltas. shared_pack_rows holds, for each pack, the content
 // this vault last published (a publisher) or applied (a receiving seat), one whole row per key, so the next publish can
 // send only what changed and the next receipt can rebuild the full pack. It holds cost rows only on a seat that may see
-// cost, and no read command selects from it. shared_published is the publisher's own record of its last version.
+// cost, and no read command selects from it. shared_published is the publisher's own record of its last version and
+// the epoch it was published under (a version from an earlier epoch is never a delta base, so a rotation whose
+// re-publish failed still sends full copies next time).
 export const V25_SQL = `CREATE TABLE shared_pack_rows(pack VARCHAR NOT NULL,part INTEGER NOT NULL,row_key VARCHAR NOT NULL,row_json VARCHAR NOT NULL,PRIMARY KEY(pack,part,row_key));
-CREATE TABLE shared_published(pack VARCHAR PRIMARY KEY,version VARCHAR NOT NULL,hash VARCHAR NOT NULL,snapshot_version VARCHAR NOT NULL,snapshot_at VARCHAR NOT NULL,deltas_since INTEGER NOT NULL CHECK(deltas_since>=0));`;
+CREATE TABLE shared_published(pack VARCHAR PRIMARY KEY,epoch VARCHAR NOT NULL,version VARCHAR NOT NULL,hash VARCHAR NOT NULL,snapshot_version VARCHAR NOT NULL,snapshot_at VARCHAR NOT NULL,deltas_since INTEGER NOT NULL CHECK(deltas_since>=0));`;
 const STEPS = [V1_SQL, V2_SQL, V3_SQL, V4_SQL, V5_SQL, V6_SQL, V7_SQL, V8_SQL, V9_SQL, V10_SQL, V11_SQL, V12_SQL, V13_SQL,V14_SQL,V15_SQL,V16_SQL,V17_SQL,V18_SQL,V19_SQL,V20_SQL,V21_SQL,V22_SQL,V23_SQL,V24_SQL,V25_SQL];
 function checkVersion(version: number) {
   if (!Number.isInteger(version) || version < 1 || version > SCHEMA_VERSION) throw new Error(msg("vault.schema.unsupportedVaultSchemaVersion"));

@@ -272,7 +272,8 @@ export class VaultService {
   }
   /**
    * Publish the packs this device holds (a publisher only). Team sharing S4b (SHARING_DESIGN.md section 5):
-   * - after a key rotation every pack goes out as a full snapshot, under the new keys;
+   * - after a key rotation every pack goes out as a full snapshot, under the new keys. The epoch of each publish is
+   *   recorded, so if that re-publish failed, the next publish still sends full copies of every pack;
    * - otherwise only packs that changed are sent, so a change to cost alone reaches no device without cost;
    * - a changed pack goes out as a delta (rows changed, keys removed) unless a snapshot is due: no earlier publish here,
    *   a week or 50 deltas since the last snapshot, more than a quarter of the pack changed, or another publisher went in
@@ -283,23 +284,25 @@ export class VaultService {
    */
   private async publishAll(session:RelaySession,rotated:boolean){
     const e=this.requireEngine(),out:{pack:string;version:string;rows:string;kind:'snapshot'|'delta'}[]=[];
-    const plans=[];
+    const plans=[],epoch=session.epochId()??'';
     for(const p of sharing.PACK_IDS){
       if(!session.heldPacks().includes(p))continue;
       const full=await sharing.readPack(e,p),next=delta.toRows(p,full);
-      const row=(await e.conn.query(`SELECT version,hash,snapshot_version,snapshot_at,deltas_since FROM shared_published WHERE pack=${sqlText(p)}`)).toArray()[0];
-      const last=row?{version:String(row.version),hash:String(row.hash),snapshotVersion:String(row.snapshot_version),snapshotAt:String(row.snapshot_at),deltas:Number(row.deltas_since)}:null;
-      plans.push({p,full,next,last,d:last?await delta.diffPack(p,await this.packRows(e,p),next,last.version):null});
+      const row=(await e.conn.query(`SELECT epoch,version,hash,snapshot_version,snapshot_at,deltas_since FROM shared_published WHERE pack=${sqlText(p)}`)).toArray()[0];
+      const last=row?{epoch:String(row.epoch),version:String(row.version),hash:String(row.hash),snapshotVersion:String(row.snapshot_version),snapshotAt:String(row.snapshot_at),deltas:Number(row.deltas_since)}:null;
+      // A pack last published under an earlier epoch (or never) must go in full and must not be skipped.
+      const forced=rotated||!last||last.epoch!==epoch;
+      plans.push({p,full,next,last,forced,d:last&&!forced?await delta.diffPack(p,await this.packRows(e,p),next,last.version):null});
     }
-    const fresh=!rotated&&plans.every(x=>x.d&&x.d.size===0);
-    for(const {p,full,next,last,d} of plans){
-      if(!rotated&&!fresh&&d&&d.size===0)continue;
-      const snapshot=rotated||fresh||!last||!d||delta.needsSnapshot({rotated,last,size:d.size,total:d.total});
+    const fresh=plans.every(x=>!x.forced&&x.d&&x.d.size===0);
+    for(const {p,full,next,last,forced,d} of plans){
+      if(!forced&&!fresh&&d&&d.size===0)continue;
+      const snapshot=forced||fresh||!d||delta.needsSnapshot({rotated:forced,last,size:d.size,total:d.total});
       const r=await session.packPublish(p,full,snapshot?undefined:{data:{kind:'delta',base:d!.base,result:d!.result,parts:d!.parts},baseHash:last!.hash});
       const snap=r.kind==='snapshot',at=new Date().toISOString();
       await this.write('share.published',{actor:this.identity.userId,pack:p,version:r.version,kind:r.kind},async w=>{
         await this.savePackRows(w,p,next);
-        await w.conn.query(`DELETE FROM shared_published WHERE pack=${sqlText(p)};INSERT INTO shared_published VALUES(${[p,r.version,r.hash,snap?r.version:last!.snapshotVersion,snap?at:last!.snapshotAt].map(v=>sqlText(v)).join(',')},${snap?0:last!.deltas+1})`);
+        await w.conn.query(`DELETE FROM shared_published WHERE pack=${sqlText(p)};INSERT INTO shared_published VALUES(${[p,r.epoch,r.version,r.hash,snap?r.version:last!.snapshotVersion,snap?at:last!.snapshotAt].map(v=>sqlText(v)).join(',')},${snap?0:last!.deltas+1})`);
       });
       out.push({pack:p,version:r.version,rows:r.rows,kind:r.kind});
     }

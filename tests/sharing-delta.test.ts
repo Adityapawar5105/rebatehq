@@ -144,7 +144,7 @@ test("S4b end to end through both vaults: only what changed is sent; cost change
   const db = await testDatabase();
   const tag = Date.now().toString(36), pub = await vault("pub_" + tag), seat = await vault("seat_" + tag);
   try {
-    const { owner, rep, client, saved } = await sharing(db);
+    const { owner, rep, client, saved, roles } = await sharing(db);
     pub.query(`INSERT INTO role_assignments VALUES('${owner.actor.userId}','Olive','owner','${owner.actor.userId}','2025-01-01');
 INSERT INTO products(product_id,description,category,uom,current_cost,list_price,notes,barcode) VALUES('P1','Ball valve','Valves','EA',4321,12000,NULL,NULL),('P2','Gate valve','Valves','EA',NULL,9000,NULL,NULL);
 INSERT INTO price_guardrails(id,scope,start,target,floor,tier,category,floor_from_cost) VALUES('g2','unit_price',9000,8000,7000,'T02','Valves',false);
@@ -207,6 +207,19 @@ INSERT INTO price_matrix(id,product_id,category,customer_id,tier,qty_break,price
     seat.query("INSERT INTO shared_pack_rows VALUES('cost',0,'[\"P1\"]','[\"P1\",\"4321\"]')");
     await R.receiveAll(client(rep), undefined);
     assert.deepEqual(q(seat, "SELECT count(*)::VARCHAR n FROM shared_pack_rows WHERE pack='cost'"), [{ n: "0" }]);
+    // A rotation whose re-publish never ran (the tab closed): the next publish still sends every pack in full, under the
+    // new keys, because a version from an earlier epoch is never a delta base.
+    const v = await client(owner).view();
+    await client(owner).rotate(v.devices.map(d => ({ deviceId: d.deviceId, fingerprint: d.fingerprint })), grid(roles));
+    pub.query("UPDATE price_matrix SET price=10000 WHERE id='m1'");
+    const after = await P.publishAll(client(owner), false);
+    assert.equal(after.fresh, false);
+    assert.ok(after.published.length >= 6 && after.published.every(x => x.kind === "snapshot"), "every pack goes in full after a missed re-publish");
+    const epochs = q(pub, "SELECT DISTINCT epoch FROM shared_published");
+    assert.equal(epochs.length, 1, "all packs are now recorded under the new epoch");
+    const rs = client(rep); await rs.sync();
+    await R.receiveAll(rs, undefined);
+    assert.equal(price("m1"), "10000");
     assert.ok(q(pub, "SELECT action FROM audit_log").some(r => r.action === "share.published"));
   } finally { pub.close(); seat.close(); await db.close(); }
 });
@@ -234,4 +247,24 @@ test("S4b: the stored pack rows are a delta base only; no read command, screen o
   assert.ok(reads.some(l => l.includes("SELECT part,row_key,row_json")) && reads.some(l => l.includes("SELECT count(*)")));
   const calls = [...src.matchAll(/this\.packRows\(/g)].length;
   assert.equal(calls, 2, "packRows is called only by publishAll and receivePack");
+});
+
+test("S4b repeated keys: rows that share a pack key keep separate identities, so none is lost and a change to one is exact", async () => {
+  // price_matrix has no unique index on the pack key, and a guardrail with no category can repeat one.
+  const two = book(bookRow("m1", "P1", "10500"), bookRow("m2", "P1", "10400"), bookRow("m3", "P3", "7000"));
+  const rows = toRows("book", two);
+  assert.equal(rows[0].size, 3, "both rows with the same key are kept");
+  assert.equal(toData("book", rows)[0].rows.length, 3);
+  assert.deepEqual(toRows("book", book(...[...two[0].rows].reverse())), rows, "identities depend only on content");
+  const next = book(bookRow("m1", "P1", "10500"), bookRow("m2", "P1", "9900"), bookRow("m3", "P3", "7000"));
+  const d = strip(await diffPack("book", rows, toRows("book", next), "3"));
+  checkDelta("book", d);
+  const rebuilt = await applyDelta("book", rows, d);
+  assert.deepEqual(toData("book", rebuilt), toData("book", toRows("book", next)));
+  assert.equal(await packDigest("book", rebuilt), d.result);
+  // An identity must name its own row's key: a row cannot be filed under another key.
+  const moved = { ...d, parts: [{ ...d.parts[0], keys: d.parts[0].keys.map(k => ["P9", ...k.slice(1)]) }] };
+  assert.throws(() => checkDelta("book", moved), (e: any) => e.code === "CONTENT");
+  assert.throws(() => checkDelta("book", { ...d, parts: [{ ...d.parts[0], keys: [] }] }), (e: any) => e.code === "CONTENT", "one identity per row");
+  assert.throws(() => checkDelta("book", { ...d, parts: [{ ...d.parts[0], keys: d.parts[0].keys.map(k => [...k.slice(0, -1), "x"]) }] }), (e: any) => e.code === "CONTENT", "the ordinal is a number");
 });

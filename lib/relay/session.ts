@@ -149,7 +149,7 @@ export class RelaySession{
   // Chunks are uploaded after the signed version exists: Storage only accepts chunks of a version this person signed.
   for(const c of chunks){const iv=unbase64(c.iv),ct=unbase64(c.ciphertext),body=new Uint8Array(iv.length+ct.length);body.set(iv);body.set(ct,iv.length);await t.chunks.put(this.chunkPath(pack,id,c.n),body);}
   (this.state.packHeads??={})[pack]={version:version.version,hash:version.hash};(this.state.packApplied??={})[pack]=version.version;
-  await this.persist('pack_published');return {pack,version:version.version,hash:version.hash,kind:asDelta?'delta' as const:'snapshot' as const,rows:manifest.rows};
+  await this.persist('pack_published');return {pack,epoch:last.epoch.id,version:version.version,hash:version.hash,kind:asDelta?'delta' as const:'snapshot' as const,rows:manifest.rows};
  }
  /**
   * Read one pack's chain from the version this vault last applied, checked end to end, and return what to apply: the
@@ -203,5 +203,7 @@ export class RelaySession{
  async packMarkApplied(pack:string,version:string,head?:{version:string;hash:string}){(this.state.packApplied??={})[pack]=version;if(head)(this.state.packHeads??={})[pack]=head;await this.persist('pack_applied');}
  /** The packs this device holds keys for in the latest epoch. */
  heldPacks(){return Object.keys(this.last()?.packs??{});}
+ /** The epoch this device would publish under now (S4b: a delta never crosses epochs). */
+ epochId(){return this.last()?.epoch.id??null;}
  isPublisher(){const e=this.last()?.epoch;return e?.v==='2'&&gridPublisher(e.grid,this.scope.userId);}
 }

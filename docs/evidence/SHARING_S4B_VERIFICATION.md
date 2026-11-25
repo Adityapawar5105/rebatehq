@@ -5,7 +5,7 @@ Built by Claude Code on 25 November 2026 from `SHARING_DESIGN.md` section 5 ("Sn
 ## What it does
 
 **Publishing** (`publishAll` in `lib/vault/service.ts`, `lib/sharing/delta.ts`):
-- **After a key rotation,** every pack goes out as a full snapshot, under the new keys.
+- **After a key rotation,** every pack goes out as a full snapshot, under the new keys. Each publish records the epoch it went out under, and a version from an earlier epoch is never a delta base. So if the re-publish after a rotation failed (the tab closed, a chunk upload failed), the next publish still sends every pack in full, and nobody added at that rotation is left without a base.
 - **Otherwise only packs that changed are sent.** A change to cost alone therefore reaches no device without cost: there is no new version, no chunk and no doorbell ring on the packs it holds.
 - **A changed pack goes out as a delta:** whole rows added or changed, plus the keys removed; never field-level diffs. It goes as a snapshot instead in these cases:
   - there is no earlier publish from this device;
@@ -13,11 +13,12 @@ Built by Claude Code on 25 November 2026 from `SHARING_DESIGN.md` section 5 ("Sn
   - there have been 50 deltas since the last snapshot;
   - more than a quarter of the pack changed;
   - the server's head is not exactly the version and hash the delta was made against, because another publisher went in between (checked in `RelaySession.packPublish`).
-- **When nothing changed at all,** Publish now sends a fresh full copy of every pack. This is how a seat whose copy failed recovers. The message says "Nothing had changed, so a fresh full copy … was sent."
+- **When nothing changed at all,** Publish now sends a fresh full copy of every pack. The message says "Nothing had changed, so a fresh full copy … was sent." This recovers a seat whose copy failed only when no pack changed since: otherwise the first press sends the changes, and a second press sends the full copies. A key rotation is the unconditional full re-publish.
 - **The publisher's record** (`shared_published`, and its last published rows in `shared_pack_rows`) is written only after the version row and all of its chunks are on the server. A crash in between leaves the server ahead of the record, so the next publish finds the head moved and sends a snapshot.
 
 **The delta format** (`checkDelta`):
-- It is `{kind, base, result, parts:[{part, columns, rows, removed}]}`, with exact keys only.
+- It is `{kind, base, result, parts:[{part, columns, keys, rows, removed}]}`, with exact keys only.
+- **Row identities.** A pack key is not unique in every table: `price_matrix` has no unique index on it, and two guardrails with no category can share one. So each row's identity is its key values plus an ordinal over the sorted content of the rows that share that key. The same content always gives the same identities on the publisher and on every receiver. `keys[j]` names `rows[j]`, and each identity must carry its own row's key, so a row cannot be filed under another key.
 - `result` is the SHA-256 of the full pack after applying the delta. It is order-independent, because it is computed over sorted JSON rows.
 - The rows pass the same decision 16 scan as a full pack (`scanPack`), so a planted cost column is refused.
 - Removed keys must have exactly the key's arity and only short text or null values.
@@ -41,14 +42,14 @@ Built by Claude Code on 25 November 2026 from `SHARING_DESIGN.md` section 5 ("Sn
 
 **Vault v25** (`V25_SQL` in `lib/vault/schema.ts`):
 - `shared_pack_rows(pack, part, row_key, row_json)`: what this vault last published or applied, one whole row per key. It holds cost rows only on a seat that may see cost.
-- `shared_published(pack, version, hash, snapshot_version, snapshot_at, deltas_since ≥ 0)`: the publisher's own record.
+- `shared_published(pack, epoch, version, hash, snapshot_version, snapshot_at, deltas_since ≥ 0)`: the publisher's own record.
 - No read command, screen or export selects from `shared_pack_rows`, and a source-scan test enforces this.
 
 **What deltas save:** bandwidth and Storage only. The receiving device still rebuilds and applies the whole pack locally. Teams with two publishers who alternate always get snapshots. Compaction (removing earlier deltas and their chunks once a snapshot supersedes them) is **not built**.
 
 ## Checks run locally (not CI evidence)
 
-- `tests/sharing-delta.test.ts` (7 tests):
+- `tests/sharing-delta.test.ts` (8 tests):
   - **diff and apply:**
     - changed, added and removed rows;
     - multi-part packs;
@@ -72,15 +73,19 @@ Built by Claude Code on 25 November 2026 from `SHARING_DESIGN.md` section 5 ("Sn
     - a crash replay is harmless;
     - a missing base and a file import in between both recover;
     - a seat that lost cost drops its cost rows;
+  - **after a rotation whose re-publish never ran,** the next publish sends every pack in full under the new epoch, and the rep receives it;
+  - **repeated keys:** two rows with the same pack key are both kept, a change to one is exact, and a misfiled or missing identity is refused;
   - **v25 upgrade:** exactly two new tables, and `deltas_since` cannot go negative;
   - **source scan:** only the delta code reads `shared_pack_rows`.
 - `tests/relay-storage.test.ts` updated for the new receive shape. Schema pins were moved from v24 / 67 tables to v25 / 69 in `vault`, `sharing`, `bench`, `notes`, `reports`, `supplier-claims` and `rebate-local`.
-- **Suites:** JS 80 and TypeScript 393 tests pass. `tsc --noEmit` is clean.
+- **Suites:** the full runs on the final code passed: JS 80 of 80 and TypeScript 394 of 394. `tsc --noEmit` is clean.
+- **Vault browser gate** (lab mode, Chrome): **73 checks passed**. This ran on the first commit (`815a1a5`), before the epoch column and row identities were added.
 - **Relay browser gate** (lab mode, Chrome): **17 checks passed**. `liveUpdate` now makes a real change before Publish now:
   - the Owner saves one guardrail;
   - Publish now reports "Published 1 kind of data to the team.";
   - the Owner uploaded chunks only for `guards`, and the rep fetched chunks only for `guards`;
-  - the rep's guardrails version went up through the lab poll (48 s), with the book version unchanged.
+  - the rep's guardrails version went up through the lab poll (45 s on the final code), with the book version unchanged.
+  - This ran on the final code after the review fixes. The new assertions have not yet run under `--auth` against real Supabase; CI does that.
 - **Lab build note:** the lab relay gate needs `NEXT_PUBLIC_SUPABASE_URL` (for example `http://127.0.0.1:54321`) set at build and start, as `docs/evidence/SHARING_S3_VERIFICATION.md` already notes. Without it, the worker's `connect-src` blocks the Storage stand-in, and Start sharing fails with "could not reach the server".
 
 ## CI
