@@ -3223,6 +3223,8 @@ const share = {
   "relay.live": "Live",
   "relay.liveHint": "New shared data arrives as soon as it is published. Without a live connection it still arrives within a minute.",
   "share.readOnlyHint": "{name} shares this data, so it is read-only on this device.",
+  "thread.err.cannotRead": "Someone you mentioned or assigned cannot read this thread: they do not receive that kind of data under the sharing grid.",
+  "thread.err.notFound": "This thread is not on this device yet. Sync the shared inbox and try again.",
   "share.readOnly": "{name} shares {pack} with the team, so it is read-only on this device. Ask {name} to make the change and publish it.",
   "share.banner.title": "Shared by {name}",
   "share.banner.pack": "{pack}, version {version}",

@@ -290,6 +290,15 @@ Together they change the following.
   - until then they stay off.
 - **Who's viewing**: off by default, because it tells the server who is online.
 
+**As built in S5a (26 Nov 2026), with no server change.**
+- **Transport.** Threads and tasks are relay events of a new content kind. The body is sealed again under the pack key of the object it is about, and is bound to the event, thread, pack and sender. The outer object kind is always `price_change` and the object id is random, so the server learns neither the target nor the topic.
+- **Rules.** The sender's device, every mention and every assignee must hold the pack under that epoch. The table `TARGET_PACK` in `lib/sharing/threads.ts` maps each target to one pack: leak findings and cost to `cost`, claims and vendor reviews to `supplier`.
+- **Deviations from the plan above:**
+  - every member's device still fetches every event, because the 7A relay does not filter by recipient. A rep device therefore holds cost-thread ciphertext it cannot open;
+  - the 7A caps of 10,000 events and 16 MiB per workspace apply to threads too;
+  - email notices and "who's viewing" are not built.
+- See `docs/evidence/SHARING_S5A_VERIFICATION.md`.
+
 ## 9. Releases
 
 | Release | What | Server change | Depends on |

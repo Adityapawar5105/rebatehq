@@ -213,6 +213,11 @@ const REVIEWED: Record<string, string> = {
   quoteShare: "shares the quote number and price total only (no cost) through the ciphertext relay", quoteRelaySync: "returns the quote view (scanned as quoteGet)",
   relayView: "7A relay: only what a member chose to share", relayRegister: "7A relay", relayJoin: "7A relay", relayRotate: "7A relay", relaySync: "7A relay", relayShare: "7A relay: the sharer types the amount",
   relayRequest: "7A relay", relayDecide: "7A relay", relayComment: "7A relay: free text", relayRetry: "7A relay", relayDiscard: "7A relay",
+  threadList: "S5a: threads on packs this device holds; a role without cost never gets a cost pack's threads or readers (tests/relay-threads.test.ts); free text",
+  inboxState: "S5a: the same threads as threadList, as mentions, replies and tasks (tests/relay-threads.test.ts)",
+  inboxSeen: "S5a: marks the inbox read; returns inboxState", activityFeed: "S5a: who did what and when; cost threads and cost pack receipts left out for a role without cost (tests/relay-threads.test.ts)",
+  relayThreadOpen: "S5a relay: free text; a role without cost cannot open a thread on a cost object, and its device holds no cost key", relayThreadReply: "S5a relay: free text",
+  relayThreadStatus: "S5a relay", relayThreadTask: "S5a relay: an assignee who can read the thread",
 };
 test("decision 16: no Sales Rep payload contains cost or margin", async (context) => {
   // Keep the strict value scan: a random UUID can otherwise contain the short cost sentinel.

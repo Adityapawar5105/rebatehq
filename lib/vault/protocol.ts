@@ -123,6 +123,7 @@ export type Commands = {
   priceLetter:{id:string;locale:import("../i18n/core").Locale};
   relayView:Record<string,never>;relayRegister:Record<string,never>;relayJoin:{fingerprint:string};relayRotate:{confirmations:{deviceId:string;fingerprint:string}[]};relaySync:Record<string,never>;
   relayShare:{input:Omit<ShareInput,'amountMinor'>&{amount:string}};relayRequest:{id:string;approvers:string[]};relayDecide:{id:string;decision:'approve'|'reject'};relayComment:{id:string;text:string;mentions:string[]};relayRetry:Record<string,never>;relayDiscard:Record<string,never>;
+  relayThreadOpen:{target:import('../sharing/threads').Target;text:string;mentions:string[];task:import('../sharing/threads').TaskState|null};relayThreadReply:{id:string;text:string;mentions:string[]};relayThreadStatus:{id:string;resolved:boolean};relayThreadTask:{id:string;task:import('../sharing/threads').TaskState};
   home: Record<string, never>;
   checklist: Record<string, never>;
   checklistMark: { step: Step };
@@ -201,6 +202,7 @@ export type Commands = {
   vaultReset: Record<string, never>; passphraseChange: { current: string; next: string };
   quoteDecide: { id: string; decision: "approve" | "reject"; note: string | null }; quoteGet: { id: string }; quoteList: { pendingOnly?: boolean };
   quoteGuidance: { id: string }; quoteCrossSell: { id: string }; relayLocal: Record<string, never>;
+  threadList: { target: { type: import("../sharing/threads").TargetType; ref: string[] } | null }; inboxState: Record<string, never>; inboxSeen: Record<string, never>; activityFeed: Record<string, never>;
   shareState: Record<string, never>; shareCounts: Record<string, never>; shareExport: { packs: string[]; role: RoleId; name: string };
   shareImportPreview: { file: Blob; code: string }; shareImport: { file: Blob; code: string };
   shareGrid: Record<string, never>; shareGridSave: { grid: import("../relay/protocol").Grid }; shareGridDiscard: Record<string, never>; sharePublish: Record<string, never>;
@@ -235,7 +237,7 @@ export type Results = {
   vendorPpv:Awaited<ReturnType<VaultService["vendorPpv"]>>;
   vendorPpvLines:Awaited<ReturnType<VaultService["vendorPpvLines"]>>;
   simOptions:Awaited<ReturnType<VaultService["simOptions"]>>;
-  relayLocal:Awaited<ReturnType<VaultService["relayLocal"]>>; shareState:Awaited<ReturnType<VaultService["shareState"]>>; shareCounts:Awaited<ReturnType<VaultService["shareCounts"]>>; shareExport:Awaited<ReturnType<VaultService["shareExport"]>>; shareImportPreview:Awaited<ReturnType<VaultService["shareImportPreview"]>>; shareImport:Awaited<ReturnType<VaultService["shareImport"]>>; shareGrid:Awaited<ReturnType<VaultService["shareGrid"]>>; shareGridSave:Awaited<ReturnType<VaultService["shareGridSave"]>>; shareGridDiscard:Awaited<ReturnType<VaultService["shareGridDiscard"]>>; sharePublish:Awaited<ReturnType<VaultService["sharePublish"]>>; quoteOutcome:Awaited<ReturnType<VaultService["quoteOutcome"]>>; winLoss:Awaited<ReturnType<VaultService["winLoss"]>>; auditPack:Awaited<ReturnType<VaultService["auditPack"]>>;
+  relayLocal:Awaited<ReturnType<VaultService["relayLocal"]>>; threadList:Awaited<ReturnType<VaultService["threadList"]>>; inboxState:Awaited<ReturnType<VaultService["inboxState"]>>; inboxSeen:Awaited<ReturnType<VaultService["inboxSeen"]>>; activityFeed:Awaited<ReturnType<VaultService["activityFeed"]>>; shareState:Awaited<ReturnType<VaultService["shareState"]>>; shareCounts:Awaited<ReturnType<VaultService["shareCounts"]>>; shareExport:Awaited<ReturnType<VaultService["shareExport"]>>; shareImportPreview:Awaited<ReturnType<VaultService["shareImportPreview"]>>; shareImport:Awaited<ReturnType<VaultService["shareImport"]>>; shareGrid:Awaited<ReturnType<VaultService["shareGrid"]>>; shareGridSave:Awaited<ReturnType<VaultService["shareGridSave"]>>; shareGridDiscard:Awaited<ReturnType<VaultService["shareGridDiscard"]>>; sharePublish:Awaited<ReturnType<VaultService["sharePublish"]>>; quoteOutcome:Awaited<ReturnType<VaultService["quoteOutcome"]>>; winLoss:Awaited<ReturnType<VaultService["winLoss"]>>; auditPack:Awaited<ReturnType<VaultService["auditPack"]>>;
   templateVendors:Awaited<ReturnType<VaultService["templateVendors"]>>; negotiationSheet:Awaited<ReturnType<VaultService["negotiationSheet"]>>; rebateAgreement:Awaited<ReturnType<VaultService["rebateAgreement"]>>;
   agentState:Awaited<ReturnType<VaultService["agentState"]>>; agentRows:Awaited<ReturnType<VaultService["agentRows"]>>; agentRun:Awaited<ReturnType<VaultService["agentRun"]>>; agentMark:Awaited<ReturnType<VaultService["agentMark"]>>;
   agentSettingsSave:Awaited<ReturnType<VaultService["agentSettingsSave"]>>; indexState:Awaited<ReturnType<VaultService["indexState"]>>; indexSkus:Awaited<ReturnType<VaultService["indexSkus"]>>;
@@ -280,7 +282,7 @@ export type Results = {
   pricePlan:Awaited<ReturnType<VaultService["pricePlan"]>>;
   priceRollback:Awaited<ReturnType<VaultService["priceRollback"]>>;
   priceLetter:Awaited<ReturnType<VaultService["priceLetter"]>>;
-  relayView:RelayView;relayRegister:RelayView;relayJoin:RelayView;relayRotate:RelayView;relaySync:RelayView;relayShare:RelayView;relayRequest:RelayView;relayDecide:RelayView;relayComment:RelayView;relayRetry:RelayView;relayDiscard:RelayView;
+  relayView:RelayView;relayRegister:RelayView;relayJoin:RelayView;relayRotate:RelayView;relaySync:RelayView;relayShare:RelayView;relayRequest:RelayView;relayDecide:RelayView;relayComment:RelayView;relayRetry:RelayView;relayDiscard:RelayView;relayThreadOpen:RelayView;relayThreadReply:RelayView;relayThreadStatus:RelayView;relayThreadTask:RelayView;
   capacityUpgrade: VaultStatus;
   licenceSet: VaultStatus;
   search: SearchHit[];

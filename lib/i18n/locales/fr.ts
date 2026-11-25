@@ -3357,4 +3357,6 @@ export const fr: Catalog = {
   "share.readOnlyHint": "{name} partage ces données : elles sont en lecture seule sur cet appareil.",
   "relay.live": "En direct",
   "relay.liveHint": "Les nouvelles données partagées arrivent dès leur publication. Sans connexion en direct, elles arrivent quand même en moins d’une minute.",
+  "thread.err.cannotRead": "Une personne mentionnée ou assignée ne peut pas lire ce fil : elle ne reçoit pas ce type de données selon la grille de partage.",
+  "thread.err.notFound": "Ce fil n’est pas encore sur cet appareil. Synchronisez la boîte partagée et réessayez.",
 };

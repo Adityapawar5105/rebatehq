@@ -81,6 +81,9 @@ import { ROLE_IDS } from "./schema";
 import { capsFor } from "../roles/access";
 import { RECOMMENDED, packsFor, type AnyPack } from "../sharing/catalog";
 import { GOVERNED, lockedPacks } from "../sharing/governed";
+import { foldThreads, holders, inboxFor, visibleTo, TargetSchema, TARGET_PACK, type TargetType } from "../sharing/threads";
+import { COST_PACKS, type AnyPack as SharedPack } from "../sharing/catalog";
+import { fold } from "../relay/state";
 import { GridSchema, type Grid } from "../relay/protocol";
 import { checkGrid, gridBody, gridPublisher } from "../relay/crypto";
 export class VaultService {
@@ -240,6 +243,52 @@ export class VaultService {
     // poll left up to two minutes in which a publish could only arrive by polling (CI runs 238 to 247 of PR #37).
     this.relayListen(session);
     return result;
+  }
+  // ---- Team sharing S5a: threads, tasks, inbox and activity (lib/sharing/threads.ts), read from the local relay log ----
+  /** A role without cost may not open a thread on a cost object, even on a device that holds the key. */
+  private async threadTargetAllowed(type:TargetType){
+    if(COST_PACKS.includes(TARGET_PACK[type])&&!(await this.access()).caps.includes('cost'))throw new VaultError('FORBIDDEN',msg('share.err.costNotForYou'));
+  }
+  private async threadContext(){
+    const state=await this.relayStateRead(),cost=(await this.access()).caps.includes('cost'),epochs=state.epochs.map(e=>e.epoch),last=epochs.at(-1)??null;
+    const threads=foldThreads(state.entries,epochs).threads.filter(visibleTo(cost));
+    const names=new Map((await this.requireEngine().conn.query('SELECT user_id,display_name FROM role_assignments')).toArray().map(r=>[String(r.user_id),String(r.display_name)]));
+    const people=[...new Set([...(last?.members.map(m=>m.userId)??[]),...names.keys()])].sort().map(userId=>({userId,name:names.get(userId)??userId}));
+    // Who can be mentioned or assigned on a thread about each pack: the people holding it under the latest epoch.
+    const readers:Partial<Record<string,string[]>>={};
+    if(last)for(const p of new Set(Object.values(TARGET_PACK)))if(cost||!COST_PACKS.includes(p))readers[p]=[...holders(last,p)].sort();
+    return {state,threads,people,readers,joined:!!last,held:Object.keys(state.epochs.at(-1)?.packs??{})};
+  }
+  async threadList(target:{type:TargetType;ref:string[]}|null){
+    const c=await this.threadContext(),key=target?JSON.stringify([target.type,target.ref]):null;
+    const threads=c.threads.filter(t=>!key||JSON.stringify([t.target.type,t.target.ref])===key);
+    return {joined:c.joined,held:c.held,people:c.people,readers:c.readers,threads:threads.slice(0,200)};
+  }
+  async inboxState(){
+    const c=await this.threadContext(),seen=BigInt(c.state.inboxSeen??'0'),items=inboxFor(c.threads,this.identity.userId);
+    const tasks=c.threads.filter(t=>t.task&&!t.task.done).sort((a,b)=>(a.task!.due??'9999')<(b.task!.due??'9999')?-1:(a.task!.due??'9999')>(b.task!.due??'9999')?1:0);
+    return {joined:c.joined,people:c.people,items:items.slice(0,200),unread:String(items.filter(i=>BigInt(i.sequence)>seen).length),tasks:tasks.slice(0,200)};
+  }
+  async inboxSeen(){
+    const state=await this.relayStateRead();if(!state.epochs.length)return this.inboxState();
+    state.inboxSeen=state.head.sequence;
+    await this.write('relay.inbox_seen',{actor:this.identity.userId},async e=>{await e.conn.query(`UPDATE relay_state SET payload=${sqlText(JSON.stringify(state))} WHERE id=1`);});
+    return this.inboxState();
+  }
+  /** Who published, received, approved or commented, and when: this vault's relay log and its shared-data receipts. */
+  async activityFeed(){
+    const c=await this.threadContext(),items:{at:string;who:string;kind:string;label:string;pack:string|null}[]=[];
+    const titles=new Map(fold(c.state.entries,c.state.epochs.map(p=>p.epoch)).objects.map(o=>[o.id,o.subject.title]));
+    for(const {event:e,content:x} of c.state.entries){
+      if(!x||x.kind==='thread')continue;
+      const label=x.kind==='share'?x.subject.title:titles.get(e.objectId)??'';
+      items.push({at:e.createdAt,who:e.senderUser,kind:x.kind==='decision'?(x.decision==='approve'?'approved':'rejected'):x.kind==='request'?'requested':x.kind==='share'?'shared':'commented',label,pack:null});
+    }
+    for(const t of c.threads)for(const ev of t.events)items.push({at:ev.at,who:ev.author,kind:'thread.'+ev.kind,label:t.target.label,pack:t.pack});
+    const cost=(await this.access()).caps.includes('cost');
+    for(const r of (await this.requireEngine().conn.query("SELECT pack,version,publisher_id,published_at FROM shared_books WHERE via='relay'")).toArray())
+      if(cost||!COST_PACKS.includes(String(r.pack) as SharedPack))items.push({at:String(r.published_at),who:String(r.publisher_id),kind:'published',label:'',pack:String(r.pack)});
+    return {joined:c.joined,people:c.people,items:items.sort((a,b)=>a.at<b.at?1:a.at>b.at?-1:0).slice(0,200)};
   }
   /** Join the doorbell for this session's packs when the device has joined sharing and may write; never throws. */
   private relayListen(session: RelaySession) {
@@ -456,6 +505,10 @@ export class VaultService {
       case 'relayShare':{const {amount,...input}=request.data.input;const currency=await workspaceCurrency(this.requireEngine());if(input.currency!==currency)throw new VaultError('CURRENCY',msg('fx.current',{code:currency}));let amountMinor:string;try{amountMinor=minorUnits(amount).toString();}catch{throw new RelayError('CONTENT',msg("vault.enterANonNegative"));}return session.share({...input,amountMinor});}
       case 'relayRequest':return session.request(request.data.id,request.data.approvers);case 'relayDecide':return session.decide(request.data.id,request.data.decision);
       case 'relayComment':return session.comment(request.data.id,request.data.text,request.data.mentions);case 'relayRetry':return session.retry();case 'relayDiscard':return session.discard();
+      case 'relayThreadOpen':{const d=request.data,target=TargetSchema.parse(d.target);await this.threadTargetAllowed(target.type);return session.threadOpen(target,d.text,d.mentions,d.task);}
+      case 'relayThreadReply':return session.threadReply(request.data.id,request.data.text,request.data.mentions);
+      case 'relayThreadStatus':return session.threadStatus(request.data.id,request.data.resolved);
+      case 'relayThreadTask':return session.threadTask(request.data.id,request.data.task);
     }
   }
   engine: Engine | null = null;

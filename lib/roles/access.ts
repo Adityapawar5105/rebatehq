@@ -73,6 +73,10 @@ export const ACTIONS: Record<Action, { cap: Cap | null; mode: Mode }> = {
   quoteGuidance:r("quote"),quoteCrossSell:r("quote"),
   // v2.6 gap 2: local yes/no for the relay set-up card (reviewed for decision 16 in tests/quotes.test.ts).
   relayLocal:r("collaborate"),
+  // Team sharing S5a: threads, tasks, the inbox and the activity feed, read from this vault's relay log (no network). A
+  // device reads only threads on packs it holds, and a role without cost never sees a cost pack's threads.
+  threadList:r("collaborate"),inboxState:r("collaborate"),activityFeed:r("collaborate"),inboxSeen:w("collaborate"),
+  relayThreadOpen:w("collaborate"),relayThreadReply:w("collaborate"),relayThreadStatus:w("collaborate"),relayThreadTask:w("collaborate"),
   // Team sharing S1: the hand-off file. Export is a publisher's; anyone with a vault may open and import one (cost packs
   // are refused in the worker for a role without "cost").
   shareState:r("view"),shareCounts:r("share"),shareExport:w("share"),shareImportPreview:r("view"),shareImport:w("view"),

@@ -1,6 +1,8 @@
 import {admin,DirectorySchema,PageSchema,RelayError,ShareInputSchema,ZERO_HASH,levelsFor,fail,type Content,type Directory,type Epoch,type Grid,type RelayEvent,type ShareInput} from './protocol';
 import {ALL_PACKS} from '../sharing/catalog';
-import {generateIdentity,verifyDevice,fingerprint,newEpoch,verifyEpoch,unwrapEpoch,unwrapPacks,encryptEvent,verifyEvent,decryptEvent,encryptPackVersion,verifyPackVersion,decryptPackVersion,gridPublisher,base64,unbase64,type Identity} from './crypto';
+import {generateIdentity,verifyDevice,fingerprint,newEpoch,verifyEpoch,unwrapEpoch,unwrapPacks,encryptEvent,verifyEvent,decryptEvent,encryptPackVersion,verifyPackVersion,decryptPackVersion,gridPublisher,base64,unbase64,type Identity,sealThread,openThread} from './crypto';
+import type { AnyPack } from '../sharing/catalog';
+import { foldThreads, holders, THREAD_OBJECT_KIND, TARGET_PACK, type Target, type TaskState, type ThreadBody, type SealedState } from '../sharing/threads';
 import {PackPageSchema,type PackVersion} from './protocol';
 import {sealPack,openPack,openDelta} from '../sharing/publish';
 import type {DeltaData} from '../sharing/delta';
@@ -12,6 +14,8 @@ import { msg } from "../i18n/core";
 export const NOT_READY_MS = 15 * 60_000;
 import {syncStatus} from './sync-status';
 export type RelayState={version:'1';lastSyncedAt?:string;identity:Identity|null;retired:Identity[];epochs:{epoch:Epoch;key:string;packs?:Record<string,string>}[];start:{sequence:string;hash:string};head:{sequence:string;hash:string};entries:Applied[];pending:RelayEvent|null;pendingEpoch:{epoch:Epoch;key:string}|null;
+ /** Team sharing S5a: the log position up to which this person has seen their inbox. */
+ inboxSeen?:string;
  /** Team sharing S3a: grid edits an Owner made on this device, signed at the next rotation (never sent before). */
  gridDraft?:Grid;
  /** The hash of the signed epoch the draft was edited from; a draft from an older grid is never signed (security review). */
@@ -39,7 +43,7 @@ export class RelaySession{
  }
  private rosterMatches(d:Directory){const latest=this.last()?.epoch;return !!latest&&latest.members.length===d.devices.length&&latest.members.every((m,i)=>{const v=d.devices[i];return m.deviceId===v.deviceId&&m.userId===v.userId&&m.role===v.role&&m.ecdh===v.ecdh&&m.signing===v.signing;});}
  async view(){const d=this.directory??await this.loadDirectory(),identity=this.state.identity,current=d.devices.find(p=>p.deviceId===this.scope.deviceId&&p.userId===this.scope.userId),last=this.last(),signer=d.latest?.members.find(m=>m.deviceId===d.latest!.signerDevice),derived=fold(this.state.entries,this.state.epochs.map(e=>e.epoch));
-  return {sync:syncStatus({head:this.state.head,remote:d.head,pending:this.state.pending,pendingEpoch:!!this.state.pendingEpoch,rejected:derived.rejected.length,lastSyncedAt:this.state.lastSyncedAt}),registered:!!identity&&identity.device.deviceId===this.scope.deviceId&&!!current,joined:!!last,deviceId:this.scope.deviceId,fingerprint:identity?await fingerprint(identity.device):'',role:current?.role??'',devices:await Promise.all(d.devices.map(async v=>({deviceId:v.deviceId,userId:v.userId,label:v.label??v.userId,role:v.role,fingerprint:await fingerprint(v)}))),head:{...this.state.head,epoch:last?.epoch.number??'0'},administratorFingerprint:signer?await fingerprint(signer):'',canStart:!d.latest&&!!current&&admin(current.role),rotationRequired:!!last&&!this.rosterMatches(d),pending:!!this.state.pending||!!this.state.pendingEpoch,objects:derived.objects.slice(0,100).map(o=>({...o,comments:o.comments.slice(-100)})),rejected:derived.rejected,
+  return {sync:syncStatus({head:this.state.head,remote:d.head,pending:this.state.pending,pendingEpoch:!!this.state.pendingEpoch,rejected:derived.rejected.length+foldThreads(this.state.entries,this.state.epochs.map(e=>e.epoch)).rejected.length,lastSyncedAt:this.state.lastSyncedAt}),registered:!!identity&&identity.device.deviceId===this.scope.deviceId&&!!current,joined:!!last,deviceId:this.scope.deviceId,fingerprint:identity?await fingerprint(identity.device):'',role:current?.role??'',devices:await Promise.all(d.devices.map(async v=>({deviceId:v.deviceId,userId:v.userId,label:v.label??v.userId,role:v.role,fingerprint:await fingerprint(v)}))),head:{...this.state.head,epoch:last?.epoch.number??'0'},administratorFingerprint:signer?await fingerprint(signer):'',canStart:!d.latest&&!!current&&admin(current.role),rotationRequired:!!last&&!this.rosterMatches(d),pending:!!this.state.pending||!!this.state.pendingEpoch,objects:derived.objects.slice(0,100).map(o=>({...o,comments:o.comments.slice(-100)})),rejected:derived.rejected,
    packs:ALL_PACKS.filter(p=>!!last?.packs?.[p]),grid:last?.epoch.v==='2'?{namedOwner:last.epoch.grid.namedOwner,people:last.epoch.grid.people.map(p=>({userId:p.userId,role:p.role}))}:null,
    ownerDevices:d.devices.filter(v=>last?.epoch.v==='2'?last.epoch.grid.people.some(p=>p.userId===v.userId&&p.role==='owner'):v.role==='owner').length};
  }
@@ -81,6 +85,11 @@ export class RelaySession{
    if(!observed)throw new RelayError('NETWORK',msg("relay.err.theKeyPublicationIs"));
    await verifyEpoch(observed,null,await fingerprint(this.currentIdentity().device));this.state.epochs=[{epoch:observed,key:await this.keyFor(observed),packs:await this.packsFor(observed)}];this.state.start={sequence:observed.baseSequence,hash:observed.baseHash};this.state.head={...this.state.start};this.state.pendingEpoch=null;
   }
+  // S5a: an older version of the app quarantined content kinds it did not know (thread events); read them again now.
+  for(const entry of this.state.entries){
+   if(entry.content)continue;const keys=this.state.epochs.find(x=>x.epoch.id===entry.event.epochId);if(!keys)continue;
+   try{entry.content=await decryptEvent(entry.event,keys.key);entry.sealed=await this.openSealed(entry.event,entry.content,keys.packs);}catch(error){if(!(error instanceof RelayError&&['CONTENT','DECRYPT'].includes(error.code)))throw error;}
+  }
   for(let round=0;round<410;round++){
    this.signal.throwIfAborted();const page=PageSchema.parse(await this.transport.page(this.state.head.sequence,this.last()!.epoch.number));
    if(BigInt(page.head.sequence)<BigInt(this.state.head.sequence)||BigInt(page.latestEpoch)<BigInt(this.last()!.epoch.number))fail();
@@ -96,7 +105,8 @@ export class RelaySession{
     // can submit invalid encrypted content: quarantine it without applying an
     // approval, so one member cannot permanently poison the workspace log.
     let content:Content|null=null;try{content=await decryptEvent(e,entry.key);}catch(error){if(!(error instanceof RelayError&&['CONTENT','DECRYPT'].includes(error.code)))throw error;}
-    this.state.entries.push({event:e,content});this.state.head={sequence:e.sequence,hash:e.hash};
+    const sealed=content?await this.openSealed(e,content,entry.packs):undefined;
+    this.state.entries.push(sealed?{event:e,content,sealed}:{event:e,content});this.state.head={sequence:e.sequence,hash:e.hash};
     if(this.state.pending?.id===e.id){if(this.state.pending.hash!==e.hash)fail();this.state.pending=null;}
    }
    for(const {epoch} of this.state.epochs){
@@ -111,11 +121,14 @@ export class RelaySession{
   throw new RelayError('LIMIT',msg("relay.err.sharingExceededItsHistory"));
  }
  private object(id:string){const object=fold(this.state.entries,this.state.epochs.map(e=>e.epoch)).objects.find(o=>o.id===id);if(!object)throw new RelayError('CONTENT',msg("relay.err.syncThisSharedReference"));return object;}
- private async send(objectId:string,objectKind:RelayEvent['objectKind'],content:Content,recipients:string[]=[],mentions:string[]=[]){
+ private async send(objectId:string,objectKind:RelayEvent['objectKind'],content:Content|((last:{epoch:Epoch;key:string;packs?:Record<string,string>},id:string)=>Promise<{content:Content;sealed:SealedState}>),recipients:string[]=[],mentions:string[]=[]){
   await this.sync();const d=this.directory!;if(!this.rosterMatches(d))throw new RelayError('ROTATE',msg("relay.err.anAdministratorMustRotate"));
   if(this.state.pending)throw new RelayError('NETWORK',msg("relay.err.anItemIsStill"));
-  const last=this.last()!,event=await encryptEvent(this.currentIdentity(),last.epoch,last.key,this.state.head,objectId,objectKind,content,recipients,mentions);
-  ensureOperation(this.state.entries,this.state.epochs.map(e=>e.epoch),event,content);this.state.pending=event;await this.persist('send_pending');
+  const last=this.last()!,id=crypto.randomUUID(),built=typeof content==='function'?await content(last,id):{content,sealed:undefined};
+  const event=await encryptEvent(this.currentIdentity(),last.epoch,last.key,this.state.head,objectId,objectKind,built.content,recipients,mentions,id);
+  ensureOperation(this.state.entries,this.state.epochs.map(e=>e.epoch),event,built.content);
+  if(built.sealed&&foldThreads([...this.state.entries,{event,content:built.content,sealed:built.sealed}],this.state.epochs.map(e=>e.epoch)).rejected.includes(event.id))throw new RelayError('CONTENT',msg("relay.state.anInvalidSharedOperation"));
+  this.state.pending=event;await this.persist('send_pending');
   await this.transport.post({action:'event',event});return this.sync();
  }
  async retry(){
@@ -132,6 +145,33 @@ export class RelaySession{
  async request(id:string,approvers:string[]){await this.sync();const o=this.object(id);return this.send(id,o.kind,{kind:'request',subjectHash:o.hash,approvers},approvers);}
  async decide(id:string,decision:'approve'|'reject'){await this.sync();const o=this.object(id),r=o.approval;if(!r)throw new RelayError('CONTENT',msg("relay.err.thisReferenceHasNo"));return this.send(id,o.kind,{kind:'decision',requestId:r.id,requestHash:r.hash,level:String(r.decisions.length+1) as '1'|'2',decision},[r.requester,...r.approvers].filter(u=>u!==this.scope.userId));}
  async comment(id:string,text:string,mentions:string[]){await this.sync();const o=this.object(id);return this.send(id,o.kind,{kind:'comment',text},mentions,mentions);}
+ // ---- Team sharing S5a: threads and tasks (lib/sharing/threads.ts) ----
+ private async openSealed(e:RelayEvent,content:Content,packs:Record<string,string>|undefined):Promise<SealedState|undefined>{
+  if(content.kind!=='thread')return undefined;const key=packs?.[content.pack];if(!key)return {state:'nokey'};
+  try{return {state:'ok',body:await openThread(key,{eventId:e.id,tenantId:e.tenantId,epochId:e.epochId,objectId:e.objectId,pack:content.pack,senderUser:e.senderUser},content)};}
+  catch(error){if(error instanceof RelayError&&['CONTENT','DECRYPT'].includes(error.code))return {state:'bad'};throw error;}
+ }
+ /** Threads this device can read, folded from the local log (no network). */
+ threads(){return foldThreads(this.state.entries,this.state.epochs.map(e=>e.epoch));}
+ inboxSeen(){return this.state.inboxSeen??'0';}
+ async markInboxSeen(){this.state.inboxSeen=this.state.head.sequence;await this.persist('inbox_seen');}
+ private sealedSend(objectId:string,pack:AnyPack,body:ThreadBody,mentions:string[],recipients:string[]){
+  return this.send(objectId,THREAD_OBJECT_KIND,async(last,id)=>{
+   if(last.epoch.v!=='2')throw new RelayError('ROTATE',msg("relay.err.anAdministratorMustRotate"));
+   const key=last.packs?.[pack];if(!key)throw new RelayError('ACCESS',msg("relay.http.sharingRequiresAnApproved"));
+   // Everyone mentioned or assigned must be able to read the thread (hold the pack under this epoch).
+   const allowed=holders(last.epoch,pack);if([...mentions,...recipients].some(u=>!allowed.has(u)))throw new RelayError('CONTENT',msg("thread.err.cannotRead"));
+   const sealed=await sealThread(key,{eventId:id,tenantId:this.scope.tenantId,epochId:last.epoch.id,objectId,pack,senderUser:this.scope.userId},body);
+   return {content:{kind:'thread',pack,iv:sealed.iv,body:sealed.body},sealed:{state:'ok',body}};
+  },[...recipients,...mentions].filter(u=>u!==this.scope.userId),mentions.filter(u=>u!==this.scope.userId));
+ }
+ private thread(id:string){const t=this.threads().threads.find(x=>x.id===id);if(!t)throw new RelayError('CONTENT',msg("thread.err.notFound"));return t;}
+ async threadOpen(target:Target,text:string,mentions:string[],task:TaskState|null){
+  await this.sync();return this.sealedSend(crypto.randomUUID(),TARGET_PACK[target.type],{kind:'open',target,text,task},mentions,task?.assignee?[task.assignee]:[]);
+ }
+ async threadReply(id:string,text:string,mentions:string[]){await this.sync();const t=this.thread(id);return this.sealedSend(id,t.pack,{kind:'reply',text},mentions,[]);}
+ async threadStatus(id:string,resolved:boolean){await this.sync();const t=this.thread(id);return this.sealedSend(id,t.pack,{kind:'status',resolved},[],[]);}
+ async threadTask(id:string,task:TaskState){await this.sync();const t=this.thread(id);return this.sealedSend(id,t.pack,{kind:'task',task},[],task.assignee?[task.assignee]:[]);}
  // ---- Team sharing S3: publishing and receiving data packs (SHARING_DESIGN.md section 5) ----
  private packTransport(){const t=this.transport;if(!t.packPage||!t.chunks)throw new RelayError('NETWORK',msg("relay.http.sharingIsUnavailableYour"));return {page:t.packPage.bind(t),chunks:t.chunks};}
  private chunkPath(pack:string,versionId:string,n:number){return this.scope.tenantId+'/'+pack+'/'+versionId+'/'+n;}
