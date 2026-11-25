@@ -154,15 +154,15 @@ test("v2.6 gap 2: the relay set-up card's check is local: identity of this devic
     const now = Math.floor(Date.now() / 1000); s.licence.claims = { v: 1, sub: "u", workspace: "t", device: "dev-1", tier: "professional", state: "active", issued: now, expires: now + 3600, offlineUntil: now + 86400, reason: "" };
     const fetches: unknown[] = []; const real = globalThis.fetch; globalThis.fetch = (async (...a: unknown[]) => { fetches.push(a); throw new Error("no network"); }) as typeof fetch;
     try {
-      const none = { identity: false, pending: false, lastSyncedAt: null };
+      const none = { identity: false, pending: false, lastSyncedAt: null, live: null }; // live: the S4 doorbell, not started here
       assert.deepEqual(await s.relayLocal(), none, "no relay state yet");
       c.query(`INSERT INTO relay_state VALUES(1,'${JSON.stringify({ version: "1", identity: { device: { deviceId: "dev-2" } }, lastSyncedAt: "2026-11-20T10:00:00.000Z", pending: { sequence: "2" } })}')`);
       assert.deepEqual(await s.relayLocal(), none, "another device's identity does not count, nor its sync state");
       c.query(`UPDATE relay_state SET payload='${JSON.stringify({ version: "1", identity: { device: { deviceId: "dev-1" } } })}'`);
-      assert.deepEqual(await s.relayLocal(), { identity: true, pending: false, lastSyncedAt: null });
+      assert.deepEqual(await s.relayLocal(), { identity: true, pending: false, lastSyncedAt: null, live: null });
       // Roadmap 8.4: the sharing card's status comes from the same local row.
       c.query(`UPDATE relay_state SET payload='${JSON.stringify({ version: "1", identity: { device: { deviceId: "dev-1" } }, lastSyncedAt: "2026-11-20T10:00:00.000Z", pending: null, pendingEpoch: { epoch: {} } })}'`);
-      assert.deepEqual(await s.relayLocal(), { identity: true, pending: true, lastSyncedAt: "2026-11-20T10:00:00.000Z" });
+      assert.deepEqual(await s.relayLocal(), { identity: true, pending: true, lastSyncedAt: "2026-11-20T10:00:00.000Z", live: null });
       c.query("UPDATE relay_state SET payload='not json'");
       assert.deepEqual(await s.relayLocal(), none);
       assert.equal(fetches.length, 0, "the check never touches the network");

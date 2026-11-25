@@ -68,6 +68,7 @@ import { isLocale, plainText } from "../i18n/core";
 import * as quotes from "../quotes/quotes";
 import * as documents from "../quotes/documents";
 import {RelaySession,emptyRelay,type RelayState,type RelayView} from '../relay/session';
+import { doorbell, type Doorbell, type DoorbellToken } from '../relay/doorbell';
 import {relayHttp} from '../relay/http';
 import {RelayError} from '../relay/protocol';
 import {minorUnits} from '../spike/exact';
@@ -171,12 +172,59 @@ export class VaultService {
     });
     return changed;
   }
+  // Team sharing S4: while the app is open and unlocked, the worker's 60-second tick syncs a joined device (the path that
+  // guarantees delivery), and the Realtime doorbell makes it sync at once when a held pack gets a new version. Both run in
+  // the worker's one queue, so they never race a rotate or a publish; they never count as the person being active.
+  private bell: { epoch: string; door: Doorbell } | null = null;
+  private bellToken: { value: DoorbellToken; until: number } | null = null;
+  private lastBackground = 0;
+  private ringHook: (() => void) | null = null;
+  /** The worker passes how to queue an immediate sync when the doorbell rings. */
+  onRelayRing(hook: () => void) { this.ringHook = hook; }
+  private stopBell() { this.bell?.door.stop(); this.bell = null; this.bellToken = null; }
+  /** Returns true when the sync applied newer shared data or changed what the inbox shows, so the page refreshes. */
+  async relayBackground(ring = false): Promise<boolean> {
+    if (!this.engine || !this.licence.claims || !this.licence.writable || this.licence.tier === "starter") { this.stopBell(); return false; }
+    const state = await this.relayStateRead();
+    if (!state.epochs.length || !state.identity) { this.stopBell(); return false; }
+    // With the doorbell joined, a slow safety poll is enough; without it, every minute.
+    if (!ring && Date.now() - this.lastBackground < (this.bell?.door.open() ? 595_000 : 55_000)) return false;
+    this.lastBackground = Date.now();
+    const seen = async () => JSON.stringify((await this.requireEngine().conn.query("SELECT pack,version FROM shared_books ORDER BY pack")).toArray().map(r => [String(r.pack), String(r.version)]));
+    const before = await seen(), head = state.head?.sequence ?? "0";
+    this.quiet = true;
+    try {
+      const session = await this.relaySession(new AbortController().signal), view = await session.sync();
+      await this.mirrorGrid(session, view);
+      if (!session.isPublisher()) await this.receiveAll(session, view, true);
+      this.relayListen(session);
+      return before !== await seen() || ((await this.relayStateRead()).head?.sequence ?? "0") !== head;
+    } catch { return false; }
+    finally { this.quiet = false; }
+  }
+  /** Join the channels of the packs this device holds; a new epoch rejoins, because the server checks the key at join. */
+  private watchBell(session: RelaySession, epoch: string) {
+    if (this.bell && this.bell.epoch !== epoch) this.stopBell();
+    const deviceId = this.licence.claims?.device ?? "";
+    if (!this.bell) {
+      const token = async () => {
+        if (!this.bellToken || this.bellToken.until < Date.now() + 120_000) {
+          const t = await relayHttp(deviceId, new AbortController().signal).token!();
+          this.bellToken = { value: t, until: Date.parse(t.expiresAt) || Date.now() + 300_000 };
+        }
+        return this.bellToken.value;
+      };
+      this.bell = { epoch, door: doorbell(this.identity.tenantId, token, () => this.ringHook?.()) };
+    }
+    this.bell.door.watch(session.heldPacks());
+  }
   async relayLocal(){
     const deviceId=this.licence.claims?.device??'',rows=(await this.requireEngine().conn.query('SELECT payload FROM relay_state WHERE id=1')).toArray();
     let identity=false,pending=false,lastSyncedAt:string|null=null;
     try{const state=rows.length?JSON.parse(String(rows[0].payload)) as RelayState:null;identity=!!state?.identity&&state.identity.device.deviceId===deviceId;
       if(identity){pending=!!state!.pending||!!state!.pendingEpoch;lastSyncedAt=typeof state!.lastSyncedAt==='string'?state!.lastSyncedAt:null;}}catch{identity=false;}
-    return {identity,pending,lastSyncedAt};
+    // S4: the doorbell's state (joined channels, rings), for the sync status and for diagnosing a socket that never joins.
+    return {identity,pending,lastSyncedAt,live:this.bell?.door.state()??null};
   }
   async relay(request:Extract<import('./protocol').Request,{action:`relay${string}`}>,signal:AbortSignal){
     const session=await this.relaySession(signal);
@@ -186,7 +234,17 @@ export class VaultService {
     // read what follows, and new holders can read it); a sync or join on a receiving seat applies newer packs.
     if(request.action==='relayRotate'&&session.isPublisher())await this.publishAll(session);
     if((request.action==='relaySync'||request.action==='relayJoin')&&!session.isPublisher())await this.receiveAll(session,result as RelayView);
+    // S4: a device that has just opened, joined, synced or rotated listens at once. Waiting for the first background
+    // poll left up to two minutes in which a publish could only arrive by polling (CI runs 238 to 247 of PR #37).
+    this.relayListen(session);
     return result;
+  }
+  /** Join the doorbell for this session's packs when the device has joined sharing and may write; never throws. */
+  private relayListen(session: RelaySession) {
+    try {
+      if (!this.engine || !this.licence.writable || this.licence.tier === "starter" || !session.heldPacks().length) return;
+      void this.relayStateRead().then(state => { if (state.epochs.length && state.identity) this.watchBell(session, state.epochs.at(-1)?.epoch.id ?? ""); }).catch(() => undefined);
+    } catch { /* the poll still delivers */ }
   }
   private async relaySession(signal:AbortSignal){
     this.licence.assert();if(this.licence.tier==='starter')throw new VaultError('LICENCE',msg("vault.workspaceSharingRequiresProfessional"));
@@ -206,7 +264,7 @@ export class VaultService {
     return out;
   }
   /** On a receiving seat, apply the newest full copy of each pack this device holds, verified end to end. */
-  private async receiveAll(session:RelaySession,view:RelayView|undefined){
+  private async receiveAll(session:RelaySession,view:RelayView|undefined,quiet=false){
     const labels=new Map((view?.devices??[]).map((d:{userId:string;label:string})=>[d.userId,d.label]));
     // One pack that fails its checks (a chunk missing after a restore or a half-finished publish, or changed bytes) is
     // skipped without touching the vault; the others still apply, and the person is told to ask for a fresh publish.
@@ -215,13 +273,14 @@ export class VaultService {
       if(!session.heldPacks().includes(p))continue;
       if(sharing.PACKS[p].cost&&!(await this.access()).caps.includes('cost'))continue;
       let got:Awaited<ReturnType<RelaySession['packReceive']>>;
-      try{got=await session.packReceive(p);}catch(error){if(error instanceof DOMException&&error.name==='AbortError')throw error;failed++;continue;}
+      // S4: a version whose chunks are still uploading (the doorbell can ring first) is not ready yet, not a failure.
+      try{got=await session.packReceive(p);}catch(error){if(error instanceof DOMException&&error.name==='AbortError')throw error;if(!(error instanceof RelayError&&error.code==='NOT_READY'))failed++;continue;}
       if(!got)continue;
       await this.applyShared('share.received',{actor:this.identity.userId,pack:p,version:got.version,from:got.sender},[{pack:p,data:got.data,version:got.version,publisherId:got.sender,publisherName:labels.get(got.sender)??got.sender,publishedAt:got.createdAt,hash:await packHash(got.data)}],'relay',null);
       await session.packMarkApplied(p,got.version);
     }
     this.accessCache=null;
-    if(failed)throw new VaultError('SHARE',msg('share.receiveFailed',{count:failed}));
+    if(failed&&!quiet)throw new VaultError('SHARE',msg('share.receiveFailed',{count:failed}));
   }
   /** Settings › Who receives what › Publish now: send every pack this publisher's device holds to the team. */
   async sharePublish(signal:AbortSignal){
@@ -1327,7 +1386,7 @@ export class VaultService {
     return saved;
   }
   private async dispose() {
-    if (this.timer) clearTimeout(this.timer); this.timer = null;
+    if (this.timer) clearTimeout(this.timer); this.timer = null; this.stopBell(); this.lastBackground = 0;
     const engine = this.engine; this.engine = null; this.key = null; this.packLast=null; this.agentsOpened = false; this.studio.clear(); this.leakCache = null; this.accessCache = null; this.viewAs = null;
     if (engine) await closeMemory(engine).catch(() => undefined);
     this.releaseLease?.(); this.releaseLease = null; this.dirty = false;

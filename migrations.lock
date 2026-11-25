@@ -46,8 +46,12 @@
     "20261125120000_sharing_s2_packs.sql",
     "20261126120000_sharing_s3_storage.sql"
   ],
-  "pendingOrder": [],
-  "pendingMigrations": {},
+  "pendingOrder": [
+    "20261127120000_sharing_s4_doorbell.sql"
+  ],
+  "pendingMigrations": {
+    "20261127120000_sharing_s4_doorbell.sql": "f87a8d2bda664f76998c0e09a10b5030f3956045cb7feecbfe6fc7785b7b1000"
+  },
   "appliedMigrationEvidence": {
     "202610250001_revoke_platform_public_privileges.sql": {
       "date": "2026-10-26",

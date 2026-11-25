@@ -3354,4 +3354,6 @@ export const es: Catalog = {
   "share.banner.changes": "Qué cambió",
   "share.banner.stale": {"one":"Este dispositivo se sincronizó por última vez hace {count} día. Abra la bandeja compartida y sincronice para obtener lo último.","other":"Este dispositivo se sincronizó por última vez hace {count} días. Abra la bandeja compartida y sincronice para obtener lo último."},
   "share.readOnlyHint": "{name} comparte estos datos, así que son de solo lectura en este dispositivo.",
+  "relay.live": "En vivo",
+  "relay.liveHint": "Los datos compartidos nuevos llegan en cuanto se publican. Sin conexión en vivo, llegan igualmente en menos de un minuto.",
 };

@@ -150,6 +150,12 @@ jobs:
           JS
           pnpm test:vault:privacy --browser=chromium
           node scripts/test-relay-browser.mjs --auth --browser=chromium
+      - name: Realtime server log after a relay gate failure (team sharing S4)
+        if: failure()
+        shell: bash
+        run: |
+          c="$(docker ps --format '{{.Names}}' | grep -i realtime | head -n 1)"
+          if [ -n "$c" ]; then docker logs "$c" --tail 200 2>&1 | grep -viE "token|jwt|secret|apikey|password" | tail -n 120; fi
       - name: Upload privacy gate failure diagnostics
         if: failure()
         uses: actions/upload-artifact@v6

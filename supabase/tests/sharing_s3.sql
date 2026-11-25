@@ -4,13 +4,13 @@
 RESET ROLE;
 SELECT pg_temp.use_identity('');
 SELECT extensions.ok((SELECT count(*)=1 FROM storage.buckets WHERE id='relay-packs' AND NOT public AND file_size_limit=524400 AND allowed_mime_types=ARRAY['application/octet-stream'])
- AND (SELECT array_agg(p.proname::text)=ARRAY['relay_storage_allowed'] AND bool_and(p.prosecdef AND p.proconfig=ARRAY['search_path=public, pg_temp'])
+ AND (SELECT array_agg(p.proname::text ORDER BY p.proname)=ARRAY['relay_channel_allowed','relay_storage_allowed'] AND bool_and(p.prosecdef AND p.proconfig=ARRAY['search_path=public, pg_temp'])
    FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='rebatehq_storage')
  AND NOT EXISTS(SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='rebatehq_storage')
  AND has_schema_privilege('authenticated','rebatehq_storage','USAGE') AND has_function_privilege('authenticated','rebatehq_storage.relay_storage_allowed(text,boolean)','EXECUTE')
  AND NOT EXISTS(SELECT 1 FROM unnest(ARRAY['anon','service_role','rebatehq_app']) r WHERE has_schema_privilege(r,'rebatehq_storage','USAGE') OR has_function_privilege(r,'rebatehq_storage.relay_storage_allowed(text,boolean)','EXECUTE'))
  AND NOT has_function_privilege('anon','rebatehq_storage.relay_storage_allowed(text,boolean)','EXECUTE'),
- 'S3: the relay-packs bucket is private, capped at one chunk and octet-stream only; its rule is the only object in rebatehq_storage, callable by authenticated alone');
+ 'S3: the relay-packs bucket is private, capped at one chunk and octet-stream only; its rule and the S4 channel rule are the only objects in rebatehq_storage, callable by authenticated alone');
 SELECT extensions.ok((SELECT array_agg(policyname||':'||cmd||':'||array_to_string(roles,',') ORDER BY policyname)=ARRAY['relay_packs_read:SELECT:authenticated','relay_packs_write:INSERT:authenticated']
   FROM pg_policies WHERE schemaname='storage' AND tablename='objects' AND (qual LIKE '%relay-packs%' OR with_check LIKE '%relay-packs%'))
  AND NOT EXISTS(SELECT 1 FROM pg_policies WHERE schemaname='storage' AND tablename='objects' AND cmd IN ('UPDATE','DELETE','ALL') AND (coalesce(qual,'')||coalesce(with_check,'')) LIKE '%relay-packs%'),

@@ -19,7 +19,7 @@ const progress = (stage: string, done: string, total: string, kind?: import("../
 function cancellable() { return abort.signal; }
 async function handle(request: Request) {
   abort = new AbortController(); // each request gets its own cancellation scope
-  const result = await dispatch(service, request, { signal: cancellable, progress, unlocked: () => { void service.warmup()?.then(() => { post({ event: "writable" }); agentsDue(); }); } });
+  const result = await dispatch(service, request, { signal: cancellable, progress, unlocked: () => { void service.warmup()?.then(() => { post({ event: "writable" }); agentsDue(); relayDue(); }); } });
   post({ id: request.id, action: request.action, result } as Response);
 }
 scope.onmessage = event => {
@@ -45,5 +45,10 @@ scope.onmessage = event => {
 const agentsDue = () => { queue = queue.then(() => service.agentsDue()).then(ran => { if (ran) post({ event: "agents" }); }).catch(() => undefined); };
 // Roadmap 15.1: the folder pickup joins the same tick; a check that added files tells the page.
 const pickupDue = () => { queue = queue.then(() => service.folderPickupDue()).then(async result => { if (result && (result.added || result.error)) post({ event: "pickup", result, name: (await service.folderGet()).name }); }).catch(() => undefined); };
-setInterval(()=>{queue=queue.then(()=>service.backupDue()).catch(()=>undefined);agentsDue();pickupDue();},60_000);
+// Team sharing S4: the 60-second poll of a joined device, and an immediate sync when the Realtime doorbell rings (one
+// publish rings once per pack, so rings within a second and a half become one sync).
+const relayDue = (ring = false) => { queue = queue.then(() => service.relayBackground(ring)).then(changed => { if (changed) post({ event: "relay" }); }).catch(() => undefined); };
+let ringTimer: ReturnType<typeof setTimeout> | null = null;
+service.onRelayRing(() => { if (ringTimer) return; ringTimer = setTimeout(() => { ringTimer = null; relayDue(true); }, 1500); });
+setInterval(()=>{queue=queue.then(()=>service.backupDue()).catch(()=>undefined);agentsDue();pickupDue();relayDue();},60_000);
 

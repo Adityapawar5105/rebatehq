@@ -6,7 +6,7 @@ import { testDatabase } from "./helpers/database";
 import { relayFixture, asRelay } from "./helpers/relay-fixtures";
 import { relayPost, relayDirectory } from "../lib/relay/store";
 import { newEpoch, encryptPackVersion } from "../lib/relay/crypto";
-import { ZERO_HASH, type Grid } from "../lib/relay/protocol";
+import { ZERO_HASH, RelayError, type Grid } from "../lib/relay/protocol";
 import { RECOMMENDED } from "../lib/sharing/catalog";
 import { ROLE_IDS } from "../lib/vault/schema";
 
@@ -108,5 +108,44 @@ test("S3 publish and receive through sessions: a rep gets book prices, never a c
     await client(owner).packPublish("book", book);
     await client(rep).sync();
     assert.equal((await client(rep).packReceive("book"))?.version, "3");
+  } finally { await db.close(); }
+});
+
+test("S4 not ready yet: a version whose chunks are still uploading is skipped quietly, then received; an old gap is a failure", async () => {
+  const { RelaySession, emptyRelay, NOT_READY_MS } = await import("../lib/relay/session");
+  const { relayPage, relayPackPage } = await import("../lib/relay/store");
+  const db = await testDatabase();
+  try {
+    const { actors } = await relayFixture(db), [owner, , rep] = actors, saved = new Map<string, any>(), objects = new Map<string, Uint8Array>();
+    let hold = false; const held: [string, Uint8Array][] = [];
+    const client = (p: typeof owner) => new RelaySession(p.actor, structuredClone(saved.get(p.actor.deviceId) ?? emptyRelay()), {
+      directory: () => asRelay(db, p.actor, () => relayDirectory(db, p.actor)),
+      page: (after, epoch) => asRelay(db, p.actor, () => relayPage(db, p.actor, after, epoch)),
+      packPage: (pack, after) => asRelay(db, p.actor, () => relayPackPage(db, p.actor, pack, after)),
+      async post(value) { await asRelay(db, p.actor, () => relayPost(db, p.actor, value)); },
+      chunks: {
+        // The doorbell can ring between the version row and its chunks: hold uploads back to reproduce that window.
+        async put(path, bytes) { if (hold) { held.push([path, new Uint8Array(bytes)]); return; } objects.set(path, new Uint8Array(bytes)); },
+        async get(path) { const b = objects.get(path); if (!b) throw new RelayError("ACCESS", "missing"); return b; },
+      },
+    }, async v => { saved.set(p.actor.deviceId, structuredClone(v)); }, new AbortController().signal);
+    for (const p of actors) await client(p).register();
+    const roles: Record<string, Grid["people"][number]["role"]> = { [owner.actor.userId]: "owner", [actors[1].actor.userId]: "sales_manager", [rep.actor.userId]: "sales_rep" };
+    const grid = (users: string[], prev: Grid | null): Grid => prev ?? { v: "1", namedOwner: null, people: users.map(u => ({ userId: u, role: roles[u] ?? "sales_rep", extras: [] })), ticks: ROLE_IDS.map(r => [r, [...RECOMMENDED[r]]]) as Grid["ticks"] };
+    const v0 = await client(owner).view();
+    const root = await client(owner).rotate(v0.devices.map(d => ({ deviceId: d.deviceId, fingerprint: d.fingerprint })), grid);
+    await client(rep).join(root.fingerprint);
+    const { PACKS } = await import("../lib/sharing/packs");
+    const book = [{ part: 0, columns: PACKS.book.parts[0].columns.map(c => c.name), rows: [["m1", "P1", "Valves", "T01", "0", "10500", "2025-01-01", null]] }];
+    hold = true; await client(owner).packPublish("book", book); hold = false;
+    await assert.rejects(client(rep).packReceive("book"), (e: any) => e.code === "NOT_READY", "a just-signed version without chunks is not ready, not a failure");
+    for (const [k, v] of held) objects.set(k, v);
+    assert.deepEqual((await client(rep).packReceive("book"))?.data, book, "once the chunks land, the next ring or poll receives it");
+    // A version still without chunks long after it was signed (a restore, a lost upload) is a real failure.
+    const old = Date.now; Date.now = () => old() + NOT_READY_MS + 60_000;
+    try {
+      hold = true; await client(owner).packPublish("book", book); hold = false;
+      await assert.rejects(client(rep).packReceive("book"), (e: any) => e.code === "ACCESS");
+    } finally { Date.now = old; }
   } finally { await db.close(); }
 });

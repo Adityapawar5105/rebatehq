@@ -149,3 +149,12 @@ It also adds the private `relay-packs` bucket and two `storage.objects` policies
 - Encrypted pack chunks (Storage objects) are not restored. After a restore, a publisher opens Settings › Team and roles and
   presses **Publish now**, or rotates keys, which publishes a fresh copy for every holder. Pack-version rows restored without their
   chunks fail the manifest check on download and are never applied.
+
+## Team sharing S4 restore additions — unverified until the user-run drill passes
+
+Migration `20261127120000_sharing_s4_doorbell.sql` adds:
+- the doorbell trigger on `relay_pack_version` (public schema, dumped);
+- `rebatehq_storage.relay_channel_allowed` (dumped with that schema);
+- one SELECT policy on `realtime.messages`, which is never dumped.
+
+Step 7a (`scripts/restore-storage-objects.sql`) re-applies the policy where Realtime has created its table. Without it, joins fail closed and devices still receive on the 60-second poll.

@@ -3354,4 +3354,6 @@ export const fr: Catalog = {
   "share.banner.changes": "Ce qui a changé",
   "share.banner.stale": {"one":"Cet appareil s’est synchronisé il y a {count} jour. Ouvrez la boîte partagée et synchronisez pour obtenir la dernière version.","other":"Cet appareil s’est synchronisé il y a {count} jours. Ouvrez la boîte partagée et synchronisez pour obtenir la dernière version."},
   "share.readOnlyHint": "{name} partage ces données : elles sont en lecture seule sur cet appareil.",
+  "relay.live": "En direct",
+  "relay.liveHint": "Les nouvelles données partagées arrivent dès leur publication. Sans connexion en direct, elles arrivent quand même en moins d’une minute.",
 };

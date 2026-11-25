@@ -119,3 +119,12 @@ Two checks were rewritten for tables that remain:
   - Equivalence compares three schema ACLs and the `rebatehq_storage` function ACLs.
   - The drill re-applies the bucket and policies with `scripts/restore-storage-objects.sql` before pgTAP.
 - **CI and the drill start `storage-api`.**
+
+## Team sharing S4 doorbell (pending, 25 November 2026)
+
+`20261127120000_sharing_s4_doorbell.sql` is **pending** until CI and a user-run Restore Drill pass, with a rolled-back dry run on hosted staging; then it is locked in its own PR.
+- **`public.relay_pack_doorbell()`.** An AFTER INSERT trigger on `relay_pack_version`: SECURITY DEFINER, executable by its owner only (ACL registry). It swallows every error.
+- **`rebatehq_storage.relay_channel_allowed(text)`.** Executable by `authenticated` only, beside the Storage rule. S3 pgTAP check 1 now expects both functions.
+- **Policy.** One SELECT policy on `realtime.messages`, created only where that table exists. No GRANT or REVOKE is made on the managed `realtime` schema.
+- **pgTAP.** Fresh runs plan **155** checks and restore runs plan **158** (`supabase/tests/sharing_s4.sql`).
+- **Restore.** `scripts/restore-storage-objects.sql` re-applies the Realtime policy.

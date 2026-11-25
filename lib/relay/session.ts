@@ -7,6 +7,8 @@ import type {PackData,PackId} from '../sharing/packs';
 import {fold,ensureOperation,type Applied,type Shared} from './state';
 import type {RelayTransport} from './http';
 import { msg } from "../i18n/core";
+/** Team sharing S4: how long a pack version may lack its chunks before that counts as a failure (uploads take seconds). */
+export const NOT_READY_MS = 15 * 60_000;
 import {syncStatus} from './sync-status';
 export type RelayState={version:'1';lastSyncedAt?:string;identity:Identity|null;retired:Identity[];epochs:{epoch:Epoch;key:string;packs?:Record<string,string>}[];start:{sequence:string;hash:string};head:{sequence:string;hash:string};entries:Applied[];pending:RelayEvent|null;pendingEpoch:{epoch:Epoch;key:string}|null;
  /** Team sharing S3a: grid edits an Owner made on this device, signed at the next rotation (never sent before). */
@@ -152,7 +154,7 @@ export class RelaySession{
   * anchor's signature covers the link to them); after that every version must verify, in order, or nothing is applied.
   */
  async packReceive(pack:PackId):Promise<{version:string;createdAt:string;sender:string;data:PackData}|null>{
-  const t=this.packTransport();let head=this.state.packHeads?.[pack]??null,after=head?.version??'0',newest:{v:PackVersion;key:string}|null=null;
+  const t=this.packTransport(),start=this.state.packHeads?.[pack]??null;let head=start,after=head?.version??'0',newest:{v:PackVersion;key:string}|null=null;
   for(let round=0;round<400;round++){
    this.signal.throwIfAborted();const page=PackPageSchema.parse(await t.page(pack,after));
    for(const raw of page.versions){
@@ -168,7 +170,13 @@ export class RelaySession{
   const applied=this.state.packApplied?.[pack];
   if(!newest||(applied&&BigInt(applied)>=BigInt(newest.v.version))){await this.persist('pack_checked');return null;}
   const manifest=await decryptPackVersion(newest.v,newest.key),chunks=[];
-  for(const c of manifest.chunks){const b=await t.chunks.get(this.chunkPath(pack,newest.v.id,Number(c.n)));if(b.length<29)fail();chunks.push({n:Number(c.n),iv:base64(b.subarray(0,12)),ciphertext:base64(b.subarray(12))});}
+  for(const c of manifest.chunks){let b:Uint8Array;
+   // S4: the version row is written before its chunks, so a chunk missing within minutes of signing is still uploading.
+   try{b=await t.chunks.get(this.chunkPath(pack,newest.v.id,Number(c.n)));}catch(error){if(error instanceof RelayError&&error.code!=='LIMIT'&&Date.now()-Date.parse(newest.v.createdAt)<NOT_READY_MS){
+    // Keep the head where it was, so the next ring or poll walks to this version again.
+    if(start)this.state.packHeads![pack]=start;else delete this.state.packHeads![pack];
+    throw new RelayError('NOT_READY',msg('relay.http.sharingIsUnavailableYour'));}throw error;}
+   if(b.length<29)fail();chunks.push({n:Number(c.n),iv:base64(b.subarray(0,12)),ciphertext:base64(b.subarray(12))});}
   const data=await openPack(pack,manifest,chunks,newest.key,newest.v.id);
   await this.persist('pack_checked');
   return {version:newest.v.version,createdAt:newest.v.createdAt,sender:newest.v.senderUser,data};

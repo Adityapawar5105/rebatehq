@@ -192,7 +192,8 @@ The vault takes each person's role from this table instead of setting it separat
 - **Uploads go directly to Storage.** There is no upload route: the worker uses the person's own session token, and Storage checks the same rule as downloads.
 - **No `relay_blobs` table.** The chunk list and hashes are in the signed, encrypted manifest of the pack version, and a Storage object exists only for an allowed upload.
 - **No signed download links.** Downloads go directly to the authenticated Storage endpoint.
-- **Not built yet.** Deltas, compaction and the Realtime signal (step 6) are still to come: every publish is a snapshot, and seats receive on sync.
+- **Not built yet.** Deltas and compaction are still to come: every publish is a snapshot.
+- **S4a (25 Nov 2026).** The Realtime signal (step 6) and the 60-second poll (step 7) are built. The trigger rings `pack:<tenant>:<pack>` with the version number only; holders join with their own token; the poll stays the path that guarantees delivery. See `docs/evidence/SHARING_S4A_VERIFICATION.md`.
 
 See `docs/evidence/SHARING_S3_VERIFICATION.md`.
 
@@ -238,7 +239,7 @@ See `docs/evidence/SHARING_S3C_VERIFICATION.md`.
    - Grid roles checked against membership.
    - Larger limits and quotas, including a byte cap.
 2. **S3: `20261126120000_sharing_s3_storage.sql`.** The Storage bucket and its two policies (read, insert), whose rule is `rebatehq_storage.relay_storage_allowed`. `relay_blobs` was dropped: the signed manifest already carries the chunk metadata.
-3. **S4:** the Realtime policies.
+3. **S4: `20261127120000_sharing_s4_doorbell.sql`.** The doorbell trigger, the join rule `rebatehq_storage.relay_channel_allowed`, and one receive-only policy on `realtime.messages`.
 
 Together they change the following.
 

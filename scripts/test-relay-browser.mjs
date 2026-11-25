@@ -69,6 +69,27 @@ try{
   if(receiving){await page.getByTestId('shared-banner').waitFor({timeout:30000});assert.match(await page.getByTestId('shared-banner').innerText(),/Shared by/);}else assert.equal(await page.getByTestId('shared-banner').count(),0,'The publisher sees a shared-data banner on its own data');
   await page.evaluate(()=>{location.hash='#home';});await open(page);}
  checks.sharedSeatsReadOnlyUi=true;
+ // Team sharing S4: a new publish reaches a receiving seat with nobody pressing Sync. Against real Supabase the Realtime
+ // doorbell must bring it within 45 s; in the lab (no Realtime server) the worker's 60-second poll does.
+ {const shut=async p=>{const d=p.getByRole('dialog',{name:'Shared inbox',exact:true});if(await d.isVisible()){await close(p);await d.waitFor({state:'hidden'});}};
+  const reopen=async p=>{await shut(p);await p.evaluate(()=>{location.hash='#home';});await open(p);};
+  const bookVersion=async page=>{await page.evaluate(()=>{location.hash='#home';});await page.evaluate(()=>{location.hash='#pricing';});const b=page.getByTestId('shared-banner');await b.waitFor({timeout:30000});return Number((/Book prices, version (\d+)/.exec(await b.innerText())||[])[1]||0);};
+  if(auth){let joined=false;for(let i=0;i<20&&!joined;i++){await reopen(rep);const b=rep.getByTestId('relay-live');joined=!!(await b.count())&&(await b.getAttribute('data-joined')||'').split(',').includes('book');await shut(rep);if(!joined)await rep.waitForTimeout(3000);}assert.ok(joined,'The rep device never joined the book doorbell channel');}
+  await shut(rep);const before=await bookVersion(rep);assert.ok(before>0,'The rep has no book prices before the live update');
+  await shut(owner);await owner.evaluate(()=>{location.hash='#settings-team';});await owner.getByTestId('share-publish').click();await owner.getByText(/Published \d+ kinds? of data/).waitFor({timeout:120000});
+  const t0=Date.now();let after=before;while(after<=before&&Date.now()-t0<180000){await rep.waitForTimeout(3000);after=Number((/Book prices, version (\d+)/.exec(await rep.getByTestId('shared-banner').innerText().catch(()=>''))||[])[1]||0);}
+  assert.ok(after>before,'The rep did not receive the new publish without pressing Sync');const took=Date.now()-t0;if(auth){
+   await reopen(rep);const badge=rep.getByTestId('relay-live');const live={live:await badge.count()?{joined:(await badge.getAttribute('data-joined')||'').split(',').filter(Boolean),rings:Number(await badge.getAttribute('data-rings')),statuses:await badge.getAttribute('data-statuses')}:null};await shut(rep);
+   const q=async sql=>{try{return (await db.query(sql)).rows;}catch(e){return String(e.message).slice(0,160);}};
+   const direct=await q("SELECT realtime.send(jsonb_build_object('v','0'),'pack','pack:'||'"+actors[0].tenantId+"'||':book',true) AS sent");await rep.waitForTimeout(8000);
+   await reopen(rep);const after2=await badge.count()?Number(await badge.getAttribute('data-rings')):null;await shut(rep);
+   console.log('Doorbell diagnostics:',JSON.stringify({directSend:direct,ringsAfterDirectSend:after2,publications:await q("SELECT pubname,puballtables,pubviaroot,pubinsert FROM pg_publication"),publicationTables:await q("SELECT pubname,schemaname,tablename FROM pg_publication_tables WHERE schemaname='realtime'"),slots:await q("SELECT slot_name,plugin,active FROM pg_replication_slots"),live:live&&live.live,policies:await q("SELECT policyname,cmd FROM pg_policies WHERE schemaname='realtime'"),messages:await q("SELECT event,private,count(*)::int AS n,max(inserted_at)::text AS last FROM realtime.messages WHERE topic LIKE 'pack:%' GROUP BY 1,2"),partitions:await q("SELECT count(*)::int AS n FROM pg_inherits WHERE inhparent='realtime.messages'::regclass")}));
+   assert.ok(live&&live.live&&live.live.rings>0&&live.live.joined.includes('book'),'The Realtime doorbell did not ring on the rep device (see the diagnostics above)');
+   assert.ok(took<45000,'The Realtime doorbell did not deliver within 45 s (took '+Math.round(took/1000)+' s)');
+  }
+  console.log('Live update reached the rep in '+Math.round((Date.now()-t0)/1000)+' s ('+(auth?'Realtime doorbell':'lab poll')+').');
+  for(const page of [owner,rep])await reopen(page);}
+ checks.liveUpdate=true;
  for(const page of pages){await page.getByTestId('relay-sync-status').filter({hasText:'Synced'}).waitFor();assert.ok((await page.getByTestId('relay-sync-status').innerText()).includes('Last synced:'));}checks.syncIndicator=true;
  await rep.getByRole('tab',{name:'Share a reference',exact:true}).click();await rep.getByLabel('Reference type').selectOption('quote');await rep.getByLabel('Shared title').fill(marker);await rep.getByLabel('Local reference').fill(marker+'-reference');await rep.getByLabel('Amount',{exact:true}).fill(amount);await click(rep,'Share encrypted reference');
  await rep.getByRole('button',{name:marker,exact:true}).click();await rep.getByLabel('Pricing Owner approver').selectOption(actors[0].userId);await rep.getByLabel('Second-level manager').selectOption(actors[1].userId);await click(rep,'Request approval');
@@ -93,7 +114,7 @@ try{
  // An injected leak must trip the same scanner, including binary and base64.
  for(const value of [{ciphertext:Buffer.from(marker)}, {content:Buffer.from(marker).toString('base64')}])assert.throws(()=>assertNoRelayPlaintext(value,markers),/Private fixture content/);checks.scannerNegativeControls=true;
  for(let i=0;i<inspections.length;i++)await inspections[i];assert.deepEqual(failures,[]);checks.requestsHeadersBodiesConsole=true;
- assert.equal(Object.keys(checks).length,16,'Relay privacy check count changed; update the gate record');
+ assert.equal(Object.keys(checks).length,17,'Relay privacy check count changed; update the gate record');
  console.log('Relay browser/privacy gate: '+Object.keys(checks).length+' checks passed ('+channel+', '+(auth?'real authenticated local Supabase':'local PGlite transport; auth unverified')+').');
  await writeFile('test-results/vault-relay-'+channel+(auth?'-auth':'')+'.json',JSON.stringify(result,null,2)+'\n');
 }catch(e){
