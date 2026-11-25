@@ -20,7 +20,7 @@ export function RebateReconciliation({value}:{value:NonNullable<Results['marginW
  if(value.programs==='0')return null;
  return <Notice tone={value.valid?'info':'warn'} role={value.valid?undefined:'alert'}><p>{t('rebate.waterfallReconciliation',{booked:fmt.currency(value.booked),adjustment:fmt.currency(value.adjustment),recognized:fmt.currency(value.recognized)})}</p><p>{t('rebate.reconciliationHelp')}</p>{!value.valid&&<p>{t('rebate.reconciliationFailed')}</p>}</Notice>;
 }
-function CustomerRebatesView({client,caps,tier,busy,version,operation,refresh}:{client:VaultClient;caps:Cap[];tier?:Tier;busy:boolean;version:string;operation:(f:()=>Promise<void>)=>Promise<void>;refresh:()=>Promise<void>}){
+function CustomerRebatesView({client,caps,tier,busy,version,operation,refresh}:{client:VaultClient;caps:Cap[];tier?:Tier;busy:boolean;version:string;operation:(f:()=>Promise<void>)=>Promise<void>;refresh:()=>Promise<void>;discuss?:string|null}){
  const cost=caps.includes('cost'),manage=caps.includes('rebateManage'),mathRequest=useRef(0);
  useEffect(()=>()=>{mathRequest.current++;},[]);
  const [state,setState]=useState<Results['rebateState']|null>(null),[progress,setProgress]=useState<Results['rebateProgress']|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState(''),[form,setForm]=useState<ProgramInput>(fresh),[confirmed,setConfirmed]=useState(false),[math,setMath]=useState<Program|null>(null),[evidence,setEvidence]=useState<Results['rebateRows']|null>(null),[mathError,setMathError]=useState(false),[gq,setGq]=useState<GridQuery>({}),[eq,setEq]=useState<GridQuery>({});

@@ -2,6 +2,7 @@
 // Customers and item master grids with freeform row notes (chunk 7V-3b, blueprint v2.5 items 26-27). Both are
 // worker grids: sort and filter run over every row in the local vault. Notes are plain text (rendered as text,
 // never HTML), at most 1,000 characters, saved only in the encrypted vault. Shown to roles with `data` only.
+import { Discuss, useThreadCounts } from "./Threads";
 import { useEffect, useState } from "react";
 import type { VaultClient } from "@/lib/vault/client";
 import type { Results } from "@/lib/vault/protocol";
@@ -41,7 +42,9 @@ function useWorkerGrid<T extends { offset: number; grid: Results["customerList"]
   return { view, setView, gq, error, page: (offset: number) => run(offset, gq), query: (q: GridQuery) => { setGq(q); void run(0, q); } };
 }
 
-export function RecordsView({ client, version }: { client: VaultClient; version: string }) {
+/** Team sharing S5b: `discuss` is the signed-in user when this person may discuss shared data (Professional or Scale). */
+export function RecordsView({ client, version, discuss = null }: { client: VaultClient; version: string; discuss?: string | null }) {
+  const customerThreads = useThreadCounts(client, "customer", version), itemThreads = useThreadCounts(client, "item", version);
   const customers = useWorkerGrid((offset, grid) => client.call("customerList", { offset, grid }), version);
   const items = useWorkerGrid((offset, grid) => client.call("productList", { offset, grid }), version);
   const [note, setNote] = useState("");
@@ -68,6 +71,7 @@ export function RecordsView({ client, version }: { client: VaultClient; version:
             { id: "lines", name: t("notes.lines"), type: "int", num: true, value: r => r.lines },
             { id: "notes", name: t("notes.note"), value: r => r.notes, cell: r => <NoteCell client={client} kind="customer" id={r.customer_id} value={r.notes}
               onSaved={v => { customers.setView(x => x && { ...x, rows: x.rows.map(y => y.customer_id === r.customer_id ? { ...y, notes: v } : y) }); saved(); }}/> },
+            ...(discuss ? [{ id: "discuss", name: t("thread.discuss"), cell: (r: Results["customerList"]["rows"][number]) => <Discuss client={client} userId={discuss} target={{ type: "customer", ref: [r.customer_id], label: r.name || r.customer_id }} count={customerThreads([r.customer_id])}/> }] : []),
           ]}/>
         {pager(c, customers.page)}
       </>}
@@ -86,6 +90,7 @@ export function RecordsView({ client, version }: { client: VaultClient; version:
             { id: "lines", name: t("notes.lines"), type: "int", num: true, value: r => r.lines },
             { id: "notes", name: t("notes.note"), value: r => r.notes, cell: r => <NoteCell client={client} kind="product" id={r.product_id} value={r.notes}
               onSaved={v => { items.setView(x => x && { ...x, rows: x.rows.map(y => y.product_id === r.product_id ? { ...y, notes: v } : y) }); saved(); }}/> },
+            ...(discuss ? [{ id: "discuss", name: t("thread.discuss"), cell: (r: Results["productList"]["rows"][number]) => <Discuss client={client} userId={discuss} target={{ type: "item", ref: [r.product_id], label: r.description ? `${r.product_id} ${r.description}`.slice(0, 160) : r.product_id }} count={itemThreads([r.product_id])}/> }] : []),
           ]}/>
         {pager(p, items.page)}
       </>}

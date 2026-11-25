@@ -37,6 +37,7 @@ import { lockedPacks } from "@/lib/sharing/governed";
 /** Team sharing S3: the sections that hold shared packs, for the read-only banner on a receiving seat. */
 const SHARED_SECTIONS: Record<string, readonly string[] | undefined> = { Pricing: ["book", "contracts", "guards", "cost_floors"], "Data Hub": ["items", "customers", "cost"], "Rebates & Contracts": ["contracts"] };
 import { RelayOnboarding, RelayPanel, RelaySetupLine } from './RelayPanel';
+import { threadsChanged } from "./Threads";
 import { QuoteBranding } from './QuoteBranding';
 import { AgentsInbox } from './AgentsInbox';
 import { AuditPackButton } from './Templates';
@@ -93,7 +94,7 @@ export function VaultApp({ scope, email, workspace, lab = false, relayEnabled = 
       if(event.event === "licence"){setStatus(event.status);}
       else if (event.event === "locking") setLocking(true);
       else if (event.event === "progress") { setProgress(event); window.dispatchEvent(new CustomEvent("vault-progress", { detail: { stage: event.stage } })); }
-      else if (event.event === "writable" || event.event === "agents" || event.event === "relay") { void c.call("status", {}).then(s => { if (active) setStatus(s); }).catch(() => undefined); }
+      else if (event.event === "writable" || event.event === "agents" || event.event === "relay") { if (event.event === "relay") threadsChanged(); void c.call("status", {}).then(s => { if (active) setStatus(s); }).catch(() => undefined); }
       else if (event.event === "pickup") {
         // Roadmap 15.1: the scheduled folder pickup imported files or left them for review; Import Studio reloads its batch.
         const r = event.result, name = event.name ?? "";
@@ -128,6 +129,9 @@ export function VaultApp({ scope, email, workspace, lab = false, relayEnabled = 
   }
   // 9.2: the page reads the worker's one phase value instead of combining flags.
   const unlocked = !!status && status.phase !== "none" && status.phase !== "locked", access = status?.access, caps = access?.caps ?? [], visible = access?.sections ?? [...sections], shown: Section = visible.includes(section) ? section : "Home";
+  // Team sharing S5b: who may discuss shared data (Discuss buttons): sharing on (or the lab), the collaborate capability,
+  // Professional or Scale. Before this device joins, the dialog says how to join.
+  const discussAs = (relayEnabled || lab) && caps.includes("collaborate") && status?.licence?.tier !== "starter" && !!status?.licence?.tier ? scope.userId : null;
   const navItems = sections.filter(item => !unlocked || visible.includes(item));
   // Sub-pages per section (23 Nov 2026): the same role and tier rules as each view; Settings also lists the account pages.
   const navCtx = { caps, tier: status?.licence?.tier };
@@ -258,7 +262,7 @@ export function VaultApp({ scope, email, workspace, lab = false, relayEnabled = 
             <CleanupView client={client.current} version={`${status.lines}|${status.generation}`} busy={busy || !!sharedLock("cleanupApply")} operation={operation} onStatus={setStatus} setMessage={setMessage}/>
             {caps.includes("cost") && <CostBasisView client={client.current} version={`${status.lines}|${status.generation}`} busy={busy} operation={operation} canChoose={caps.includes("data") && !sharedLock("costBasisSet")}/>}
           </>}
-          {shown === "Data Hub" && client.current && page === "data-hub-records" && caps.includes("data") && <RecordsView client={client.current} version={`${status.lines}|${status.generation}`}/>}
+          {shown === "Data Hub" && client.current && page === "data-hub-records" && caps.includes("data") && <RecordsView client={client.current} version={`${status.lines}|${status.generation}`} discuss={discussAs}/>}
           {shown === "Data Hub" && page === "data-hub-import" && <>
             <details className={styles.card}><summary>{t("shell.columns.summary")}</summary>
               <p className={styles.small}><strong>{t("shell.columns.salesLabel")}</strong> <span translate="no">{t("shell.columns.sales")}</span></p>
@@ -267,11 +271,11 @@ export function VaultApp({ scope, email, workspace, lab = false, relayEnabled = 
               <p className={styles.muted}>{t("shell.columns.note")}</p>
             </details>
           </>}
-          {shown === "Margin" && client.current && <MarginView client={client.current} status={status} busy={busy} operation={operation} setMessage={setMessage} onStatus={setStatus}/>}
+          {shown === "Margin" && client.current && <MarginView client={client.current} status={status} busy={busy} operation={operation} setMessage={setMessage} onStatus={setStatus} discuss={discussAs}/>}
           {shown === "Pricing" && client.current && <PricingView tier={status.licence?.tier??'starter'} client={client.current} userId={scope.userId} caps={caps} busy={busy} operation={operation} refresh={async()=>setStatus(await client.current!.call("status",{}))}/>}
           {shown === "Quotes" && client.current && <QuotesView client={client.current} userId={scope.userId} caps={caps} tier={status.licence?.tier} busy={busy} operation={operation} relayEnabled={relayEnabled}/>}
           {shown === "Vendors" && client.current && <VendorsView client={client.current} tier={status.licence?.tier} version={`${status.lines}|${status.generation}`} canImport={caps.includes("data")} canSimulate={caps.includes("pricing")} canPrice={caps.includes("pricing")} busy={busy} operation={operation}/>}
-          {shown === "Rebates & Contracts" && client.current && <RebatesView client={client.current} caps={caps} tier={status.licence?.tier} busy={busy} version={status.generation} operation={operation} refresh={async()=>setStatus(await client.current!.call("status",{}))}/>}
+          {shown === "Rebates & Contracts" && client.current && <RebatesView client={client.current} discuss={discussAs} caps={caps} tier={status.licence?.tier} busy={busy} version={status.generation} operation={operation} refresh={async()=>setStatus(await client.current!.call("status",{}))}/>}
           {shown === "Reports" && client.current && <ReportsView client={client.current} caps={caps} tier={status.licence?.tier} busy={busy} version={`${status.lines}|${status.generation}`} operation={operation} refresh={async()=>setStatus(await client.current!.call("status",{}))}/>}
             {shown === "Reports" && caps.includes("cost") && client.current && <Card headingId="report-card-heading" title={t("shell.report.heading")} description={t("shell.report.body")}><LeakReportButton client={client.current} busy={busy || status.lines === "0"} operation={operation} setMessage={setMessage} onStatus={setStatus}/><ButtonLink variant="ghost" icon="search" href="#margin" data-testid="leak-choose-findings" onClick={() => setTimeout(() => scrollToHeading("leaks-heading"), 50)}>{t("shell.report.choose")}</ButtonLink></Card>}
           {shown === "Reports" && caps.includes("cost") && status.licence?.tier !== "starter" && client.current && <BenchmarksView client={client.current} version={`${status.lines}|${status.generation}`} busy={busy} operation={operation} pendingKey={`rebatehq.bench.withdrawPending:${scope.tenantId}:${scope.userId}`}/>}

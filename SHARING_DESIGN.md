@@ -299,6 +299,12 @@ Together they change the following.
   - email notices and "who's viewing" are not built.
 - See `docs/evidence/SHARING_S5A_VERIFICATION.md`.
 
+**S5b (26 Nov 2026): the screens.**
+- A **Discuss** button appears on customers, items, quotes, leak findings and supplier claims.
+- A **Threads and tasks** tab in the shared inbox shows what is for you, open tasks and the activity feed, with an unread badge.
+- A line says email notices stay off until a sender exists.
+- See `docs/evidence/SHARING_S5B_VERIFICATION.md`.
+
 ## 9. Releases
 
 | Release | What | Server change | Depends on |

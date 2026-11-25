@@ -83,7 +83,10 @@ export function foldThreads(entries: Entry[], epochs: Epoch[]) {
         events: [{ id: e.id, author: e.senderUser, at: e.createdAt, sequence: e.sequence, kind: "open" }] });
       continue;
     }
-    if (!t || t.pack !== pack) { if (!hidden.has(e.objectId)) bad(); continue; }
+    // A thread this log never saw opened (it began before this device joined) is skipped, not rejected: a rejection would
+    // show the sync status as a conflict on every device that joined later.
+    if (!t) continue;
+    if (t.pack !== pack) { bad(); continue; }
     if (b.kind === "reply") t.messages.push({ id: e.id, author: e.senderUser, text: b.text, at: e.createdAt, mentions: e.mentions, sequence: e.sequence });
     else if (b.kind === "status") { if (t.resolved === b.resolved) { bad(); continue; } t.resolved = b.resolved; }
     else { if (b.task.assignee && !allowed.has(b.task.assignee)) { bad(); continue; } t.task = b.task; }

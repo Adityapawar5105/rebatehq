@@ -77,3 +77,11 @@ The session checks the same rules before it posts anything. A body this device c
   - the activity feed without the cost thread for a rep;
   - the vault role filters cost threads even on a device holding the key.
 - **Classification:** reads are local and writes are relay state, never governed.
+
+## CI
+
+[CI #263](https://github.com/Adityapawar5105/rebatehq/actions/runs/45687045923) passed on `3f0cbe2` (PR #40), 25 November 2026: unit tests, audit and build; database tests and the Chromium privacy and relay gates (real Supabase, `--auth`); the Firefox lab gate; and `verify`. PR #40 was merged into `main`.
+
+Two automated security-review findings were fixed before the merge:
+- replies, status and task changes now carry the same cost check as opening a thread;
+- the check runs inside the session after its sync, so it also covers a thread that arrives with that sync, and refuses a thread it cannot find.

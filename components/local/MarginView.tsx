@@ -1,4 +1,5 @@
 "use client";
+import { Discuss } from "./Threads";
 import {CompetitorLog,ServiceOrders} from './PricingTools';
 import {RebateReconciliation} from "./RebatesView";
 import {MarginBridge} from "./PricingOps";
@@ -22,7 +23,8 @@ import { MARGIN_FILTER_EVENT } from "./CommandPalette";
 import styles from "./vault.module.css";
 import { DataGrid } from "@/components/ui/DataGrid";
 import type { GridQuery } from "@/lib/grid/core";
-type Shared = { client: VaultClient; busy: boolean; operation: (work: () => Promise<void>) => Promise<void>; setMessage: (m: string) => void; onStatus: (s: VaultStatus) => void; status: VaultStatus };
+/** `discuss`: team sharing S5b, the signed-in user when this person may discuss shared data (leak findings are cost). */
+type Shared = { client: VaultClient; busy: boolean; operation: (work: () => Promise<void>) => Promise<void>; setMessage: (m: string) => void; onStatus: (s: VaultStatus) => void; status: VaultStatus; discuss?: string | null };
 const $ = (cents: string | null | undefined) => cents === null || cents === undefined ? t("common.unknown") : fmt.currency(cents);
 /** Basis points ("1234") as a percent with two decimals, exactly. */
 const bpPercent = (bp: string) => { const neg = bp.startsWith("-"), abs = (neg ? bp.slice(1) : bp).padStart(3, "0"); return fmt.percent(`${neg ? "-" : ""}${abs.slice(0, -2)}.${abs.slice(-2)}`); };
@@ -43,7 +45,7 @@ function waterfallBars(w: Waterfall) {
   });
 }
 
-function WaterfallView({ client, busy, operation, setMessage, onStatus, status }: Shared) {
+function WaterfallView({ client, busy, operation, setMessage, onStatus, status, discuss = null }: Shared) {
   const [filters, setFilters] = useState<Filters>(NONE), [w, setW] = useState<Waterfall | null>(null), [dim, setDim] = useState<Dim>("customer"), sort = "pocket" as const;
   // Load failures show a notice with Retry instead of a skeleton that never ends (UI handoff 2.13).
   const [failed, setFailed] = useState<{ waterfall?: boolean; drill?: boolean; leaks?: boolean }>({}), [retry, setRetry] = useState(0);
@@ -99,7 +101,7 @@ function WaterfallView({ client, busy, operation, setMessage, onStatus, status }
         <DrillGrid d={d} gq={gq} setGq={setGq} client={client} dim={dim} filters={filters} sort={sort} open={open} addFilter={addFilter}/></>}
     </Card>
     <WhaleCard whale={whale} open={open}/>
-    <LeaksCard failed={retryBox("leaks")} client={client} leaks={leaks} busy={busy} operation={operation} setMessage={setMessage} onStatus={onStatus} onEvidence={leak => setTarget({ leak })}/>
+    <LeaksCard failed={retryBox("leaks")} client={client} leaks={leaks} busy={busy} operation={operation} setMessage={setMessage} onStatus={onStatus} onEvidence={leak => setTarget({ leak })} discuss={discuss}/>
   </>;
 }
 function DrillGrid({ d, gq, setGq, client, dim, filters, sort, open, addFilter }: { d: Drill; gq: GridQuery; setGq: (q: GridQuery) => void; client: VaultClient; dim: Dim; filters: Filters; sort: "pocket" | "margin" | "rate"; open: (metric: Metric, title: string, f?: Filters) => void; addFilter: (dim: Dim, value: string) => void }) {
@@ -148,7 +150,7 @@ function WhaleCard({ whale, open }: { whale: Whale | null; open: (m: Metric, t: 
     ]}/>
   </Card>;
 }
-function LeaksCard({ failed, client, leaks, busy, operation, setMessage, onStatus, onEvidence }: { failed?: React.ReactNode; client: VaultClient; leaks: LeaksView | null; busy: boolean; operation: Shared["operation"]; setMessage: Shared["setMessage"]; onStatus: Shared["onStatus"]; onEvidence: (f: Finding) => void }) {
+function LeaksCard({ failed, client, leaks, busy, operation, setMessage, onStatus, onEvidence, discuss = null }: { discuss?: string | null; failed?: React.ReactNode; client: VaultClient; leaks: LeaksView | null; busy: boolean; operation: Shared["operation"]; setMessage: Shared["setMessage"]; onStatus: Shared["onStatus"]; onEvidence: (f: Finding) => void }) {
   const [picked, setPicked] = useState<Finding[]>([]);
   // What the report will cover, live as findings are ticked (UI handoff 2.10): exact integer cents, no floats.
   const all = leaks?.result.findings.length ?? 0, pickedCents = picked.reduce((sum, f) => sum + BigInt(f.cents), BigInt(0)).toString();
@@ -166,6 +168,7 @@ function LeaksCard({ failed, client, leaks, busy, operation, setMessage, onStatu
         { id: "finding", name: t("margin.col.finding"), value: f => say(f.title), cell: f => <span className={styles.wrap}>{say(f.title)}</span> },
         { id: "lines", name: t("margin.col.lines"), type: "int", num: true, value: f => f.lines },
         { id: "leak", name: t("margin.col.leak"), type: "money", num: true, value: f => f.cents, cell: f => <button className={ui.numLink} aria-label={t("margin.mathForLeak", { title: say(f.title) })} onClick={() => onEvidence(f)}>{$(f.cents)}</button> },
+        ...(discuss ? [{ id: "discuss", name: t("thread.discuss"), cell: (f: Finding) => <Discuss client={client} userId={discuss} target={{ type: "leak", ref: [f.id], label: say(f.title).slice(0, 160) }}/> }] : []),
       ]}/> : <EmptyState icon="checkCircle" title={t("margin.noLeaks")}/>}
       <p className={styles.small}>{t("margin.notChecked", { uncosted: fmt.int(leaks.result.checked.uncostedLines), untiered: fmt.int(leaks.result.checked.untieredLines), credits: fmt.int(leaks.result.checked.creditLines) })}</p>
     </>}
