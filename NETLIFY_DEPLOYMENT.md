@@ -22,7 +22,7 @@ Configure these through Netlify's environment settings or secure CLI import. Kee
 
 Keep runtime `VAULT_LAB_ENABLED`, `DEV_IMPERSONATION_ENABLED`, `RELAY_ENABLED` and `BENCHMARKS_ENABLED` false. The build configuration also defaults them to false. Relay/benchmarks can be enabled in a separate reviewed configuration change. Never deploy `SEED_DATABASE_URL`, `APP_DB_LOGIN_PASSWORD`, a service-role key, a Supabase admin password or CI fixture credentials to the app runtime. Invitations additionally need `RESEND_API_KEY` and a verified `EMAIL_FROM`. Public/customer launch needs the operator's Supabase SMTP and rate-limit review; do not assume default SMTP accepts arbitrary customer addresses.
 
-The existing connected project is named `rebatehq-staging`. It has the 14 applied migrations, including 8R and the operator subscriptions migration. Treat it as staging; a real customer launch needs separately managed production services per OPERATIONS.md.
+The existing connected project is named `rebatehq-staging`. It has all **17** applied migrations, including team sharing S2, S3 and S4 (applied 25 November 2026, see below). Treat it as staging; a real customer launch needs separately managed production services per OPERATIONS.md.
 
 ## Deploy and verify
 
@@ -110,3 +110,16 @@ Template body used for both (subject "Your RebateHQ sign-in link" / "Confirm you
 3. In Supabase → Authentication → Rate Limits, raise "emails sent per hour" (for example 100).
 
 Gmail allows about 500 messages a day. The app password is a secret: it goes only into the Supabase dashboard, never into this repo or chat.
+
+## Staging migrations brought up to date — 25 November 2026 (Claude Code)
+
+At the user's request, the three team sharing migrations were applied to `rebatehq-staging` with the project's own Supabase CLI (2.122.0): `supabase db push --db-url <admin URL from the git-ignored .env.staging.local>`.
+- **Dry run:** it listed exactly `20261125120000_sharing_s2_packs`, `20261126120000_sharing_s3_storage` and `20261127120000_sharing_s4_doorbell`.
+- **Push:** all three applied and were recorded under those repository versions. Staging now lists 17 migrations, matching `migrations.lock`.
+- **Checked afterwards** (read-only queries):
+  - `relay_pack_wrap` and `relay_pack_version` exist, and the `relay-packs` bucket is private with a one-chunk limit;
+  - `relay_packs_read`, `relay_packs_write` and `relay_pack_doorbell_read` are present, along with `rebatehq_storage.relay_storage_allowed`, `relay_channel_allowed` and the doorbell trigger;
+  - `anon` can neither use `rebatehq_storage` nor call its rule, and the app role cannot call the trigger function.
+- **Security advisor:** no finding about these objects. Its three existing notes are unrelated: the private tables intentionally have no policies, `prevent_audit_mutation` has no fixed search_path, and leaked-password protection is off (an Auth setting; the app signs in by magic link).
+- **Runtime:** `RELAY_ENABLED` stays false on staging, so team sharing remains off there until a reviewed configuration change turns it on.
+- **Gotcha:** the admin URL in `.env.staging.local` carries an old password. The current one is `SUPABASE_DB_PASSWORD`; substitute it without printing.

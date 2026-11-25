@@ -320,5 +320,7 @@ See `docs/evidence/SECOND_AUDIT_PASS.md`. The independent security review (R02, 
 - A joined device syncs on the worker's 60-second tick while the app is open and unlocked: this is the path that guarantees delivery, quiet, in the worker's one queue.
 - The Realtime doorbell makes it sync at once: one private channel per held pack, version number only, the person's own token.
 - A chunk still uploading counts as not ready for 15 minutes.
-- Migration `20261127120000_sharing_s4_doorbell.sql` is **pending** until CI and a **user-run Restore Drill** pass. pgTAP plans 155 fresh and 158 restore checks.
+- Migration `20261127120000_sharing_s4_doorbell.sql` is **locked** (25 Nov 2026) after CI #257 and #258, a rolled-back hosted dry run and the user-run Restore Drill #27 (158 restore-mode checks). 17 migrations are applied and 0 are pending.
 - Relay gate: 17 checks (liveUpdate). See docs/evidence/SHARING_S4A_VERIFICATION.md.
+
+**Staging up to date (25 Nov 2026).** `rebatehq-staging` now has all 17 migrations (team sharing S2, S3 and S4 applied with `supabase db push`); `RELAY_ENABLED` stays false there. See NETLIFY_DEPLOYMENT.md.

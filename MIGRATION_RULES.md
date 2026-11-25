@@ -120,9 +120,12 @@ Two checks were rewritten for tables that remain:
   - The drill re-applies the bucket and policies with `scripts/restore-storage-objects.sql` before pgTAP.
 - **CI and the drill start `storage-api`.**
 
-## Team sharing S4 doorbell (pending, 25 November 2026)
+## Team sharing S4 doorbell (locked 25 November 2026)
 
-`20261127120000_sharing_s4_doorbell.sql` is **pending** until CI and a user-run Restore Drill pass, with a rolled-back dry run on hosted staging; then it is locked in its own PR.
+`20261127120000_sharing_s4_doorbell.sql` is **locked**: 17 applied, 0 pending.
+- **CI:** [CI #257](https://github.com/Adityapawar5105/rebatehq/actions/runs/45646205080) passed on `3a3364d`, where the authenticated relay gate proved a Realtime ring against real Supabase (11 s, 5 rings). [CI #258](https://github.com/Adityapawar5105/rebatehq/actions/runs/45649270101) passed on `main` at `853628d`.
+- **Hosted dry run:** S2, S3 and S4 together, rolled back by a final raised error, succeeded on `rebatehq-staging` and left it unchanged.
+- **Restore Drill:** the user-run [Restore Drill #27](https://github.com/Adityapawar5105/rebatehq/actions/runs/45652954657) (local target) passed on `853628d`. It re-applied the Realtime policy and ran the 158-check restore plan twice; S4 checks 156 to 158 passed in restore mode.
 - **`public.relay_pack_doorbell()`.** An AFTER INSERT trigger on `relay_pack_version`: SECURITY DEFINER, executable by its owner only (ACL registry). It swallows every error.
 - **`rebatehq_storage.relay_channel_allowed(text)`.** Executable by `authenticated` only, beside the Storage rule. S3 pgTAP check 1 now expects both functions.
 - **Policy.** One SELECT policy on `realtime.messages`, created only where that table exists. No GRANT or REVOKE is made on the managed `realtime` schema.

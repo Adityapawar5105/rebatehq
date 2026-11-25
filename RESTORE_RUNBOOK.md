@@ -150,7 +150,9 @@ It also adds the private `relay-packs` bucket and two `storage.objects` policies
   presses **Publish now**, or rotates keys, which publishes a fresh copy for every holder. Pack-version rows restored without their
   chunks fail the manifest check on download and are never applied.
 
-## Team sharing S4 restore additions — unverified until the user-run drill passes
+## Team sharing S4 restore additions — verified in local Restore Drill #27
+
+Verified 25 November 2026 in the user-run [Restore Drill #27](https://github.com/Adityapawar5105/rebatehq/actions/runs/45652954657) on `853628d`. Step 7a re-created the Realtime doorbell policy on the fresh target, and the 158-check restore plan passed twice.
 
 Migration `20261127120000_sharing_s4_doorbell.sql` adds:
 - the doorbell trigger on `relay_pack_version` (public schema, dumped);
