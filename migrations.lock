@@ -8,8 +8,8 @@
   "hashUpdateReason": "Windows CRLF versus CI LF caused different raw-byte hashes; normalized hash matches the CI content hash.",
   "sqlContentUnchangedSinceBaselineRun": true,
   "lockUpdateDate": "2026-11-25",
-  "lockUpdateReason": "Team sharing S3 storage migration (blueprint section 22 item 38) promoted from pending to locked after RebateHQ CI #241 (run 45552277036) passed on 3208d65 and CI #242 (run 45555188761) on main at c36bda4, with the authenticated relay gate against real Supabase Storage, and the user-run Restore Drill #25 (run 45557077582, local target) passed on c36bda4: dump allowlist public,rebatehq_private,rebatehq_storage, Storage bucket and policies re-applied by scripts/restore-storage-objects.sql, and the 155-check restore plan twice with unchanged row counts. Normalized hash unchanged since the last pending refresh. Prior locked migrations unchanged.",
-  "appliedThrough": "20261126120000_sharing_s3_storage.sql",
+  "lockUpdateReason": "Team sharing S4 doorbell migration (blueprint section 22 item 38) promoted from pending to locked after RebateHQ CI #257 (run 45646205080) passed on 3a3364d with the authenticated relay gate proving a Realtime ring (11 s, 5 rings) against real Supabase, CI #258 (run 45649270101) on main at 853628d, a rolled-back hosted dry run on rebatehq-staging, and the user-run Restore Drill #27 (run 45652954657, local target) on 853628d: the Realtime policy re-applied by scripts/restore-storage-objects.sql and the 158-check restore plan twice with unchanged row counts. Normalized hash unchanged since it was added. Prior locked migrations unchanged.",
+  "appliedThrough": "20261127120000_sharing_s4_doorbell.sql",
   "appliedMigrations": {
     "202610240001_phase1_foundation.sql": "8faa57997119f29b3921b0e15b4b9e964edbc7fa2ecd8b52fbe32392be38c3bb",
     "202610250001_revoke_platform_public_privileges.sql": "d4b48072fac75e3d5a6683fe4b13e00042c9feb5a6a65a9e5576e44ecb9214a2",
@@ -26,7 +26,8 @@
     "20261113120000_chunk8r_retire_wave2.sql": "745570eb0461997b3499bc0ebfd81173d44146390d9b766f02b99495efb4a13d",
     "20261114120000_operator_subscriptions.sql": "93009b04b1041f45ede8ef1258404ac15a3244f0b137454ac187493cdd2601a2",
     "20261125120000_sharing_s2_packs.sql": "e43c788ec32246b4f99a4fa9b55324ded2f6e67e4b22ce925a94599123124ff8",
-    "20261126120000_sharing_s3_storage.sql": "5dbf8bb03260345139c732bf8df080458aff4b2049386169fc68a6ca719c9273"
+    "20261126120000_sharing_s3_storage.sql": "5dbf8bb03260345139c732bf8df080458aff4b2049386169fc68a6ca719c9273",
+    "20261127120000_sharing_s4_doorbell.sql": "f87a8d2bda664f76998c0e09a10b5030f3956045cb7feecbfe6fc7785b7b1000"
   },
   "appliedOrder": [
     "202610240001_phase1_foundation.sql",
@@ -44,14 +45,11 @@
     "20261113120000_chunk8r_retire_wave2.sql",
     "20261114120000_operator_subscriptions.sql",
     "20261125120000_sharing_s2_packs.sql",
-    "20261126120000_sharing_s3_storage.sql"
-  ],
-  "pendingOrder": [
+    "20261126120000_sharing_s3_storage.sql",
     "20261127120000_sharing_s4_doorbell.sql"
   ],
-  "pendingMigrations": {
-    "20261127120000_sharing_s4_doorbell.sql": "f87a8d2bda664f76998c0e09a10b5030f3956045cb7feecbfe6fc7785b7b1000"
-  },
+  "pendingOrder": [],
+  "pendingMigrations": {},
   "appliedMigrationEvidence": {
     "202610250001_revoke_platform_public_privileges.sql": {
       "date": "2026-10-26",
@@ -142,6 +140,12 @@
       "commit": "c36bda4",
       "ciRun": "https://github.com/Adityapawar5105/rebatehq/actions/runs/45555188761",
       "restoreRun": "https://github.com/Adityapawar5105/rebatehq/actions/runs/45557077582"
+    },
+    "20261127120000_sharing_s4_doorbell.sql": {
+      "date": "2026-11-25",
+      "commit": "853628d",
+      "ciRun": "https://github.com/Adityapawar5105/rebatehq/actions/runs/45649270101",
+      "restoreRun": "https://github.com/Adityapawar5105/rebatehq/actions/runs/45652954657"
     }
   }
 }

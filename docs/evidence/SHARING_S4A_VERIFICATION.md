@@ -1,6 +1,12 @@
 # Team sharing S4a (live updates: the Realtime doorbell and the minute poll): verification
 
-25 November 2026. Blueprint section 22, item 38; `SHARING_DESIGN.md` sections 5 and 7. Built by Claude Code. Migration `20261127120000_sharing_s4_doorbell.sql` is **pending** until CI and the user's Restore Drill pass; then a lock PR follows. Small deltas are S4b.
+25 November 2026. Blueprint section 22, item 38; `SHARING_DESIGN.md` sections 5 and 7. Built by Claude Code. Migration `20261127120000_sharing_s4_doorbell.sql` is **locked** (25 November 2026).
+
+**Lock evidence:**
+- [CI #257](https://github.com/Adityapawar5105/rebatehq/actions/runs/45646205080) passed on `3a3364d`. Against real Supabase, the rep's **Live** badge showed the book channel joined, the publish reached the rep in **11 s**, and it heard **5 rings**, one per held pack. A direct `realtime.send` added a sixth.
+- [CI #258](https://github.com/Adityapawar5105/rebatehq/actions/runs/45649270101) passed on `main` at `853628d`.
+- A rolled-back dry run of S2, S3 and S4 together succeeded on `rebatehq-staging`, and staging was confirmed unchanged afterwards.
+- The user-run [Restore Drill #27](https://github.com/Adityapawar5105/rebatehq/actions/runs/45652954657) passed on `853628d`: 158 restore-mode checks twice, with the Realtime policy re-applied. Small deltas are S4b.
 
 ## What it does
 
