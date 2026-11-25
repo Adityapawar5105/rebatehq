@@ -3296,4 +3296,8 @@ export const es: Catalog = {
   "share.grid.ownerOnly": "Solo un propietario de la tabla firmada puede cambiar quién recibe qué.",
   "share.grid.invalid": "Esta tabla no se puede guardar: da costos a un rol que no puede verlos, no tiene propietario o cambia quién forma parte del equipo.",
   "share.grid.stale": "Otro propietario firmó una tabla más reciente después de crear este borrador. Revise el borrador frente a la tabla firmada y guárdelo de nuevo, o descártelo, antes de rotar las claves.",
+  "share.grid.publish": "Publicar ahora",
+  "share.grid.publishNote": "Envía los precios, artículos, clientes y límites actuales a todos, y cada persona recibe solo lo que le da la tabla firmada. Cada rotación de clave también publica una copia nueva.",
+  "share.receiveFailed": {"one":"{count} tipo de datos compartidos no superó las comprobaciones y no se aplicó. Pida a un Propietario o Responsable de precios que pulse Publicar ahora.","other":"{count} tipos de datos compartidos no superaron las comprobaciones y no se aplicaron. Pida a un Propietario o Responsable de precios que pulse Publicar ahora."},
+  "share.grid.published": {"one":"Se publicó {count} tipo de datos para el equipo.","other":"Se publicaron {count} tipos de datos para el equipo."},
 };

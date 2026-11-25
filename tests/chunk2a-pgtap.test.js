@@ -89,6 +89,7 @@ test("full pgTAP SQL executes in PGlite with assertion stubs and planned checks 
         RETURN '1..'||v_plan||' ('||v_ran||' checks passed)';
       END $$;
     `);
+    await db.exec(fs.readFileSync(path.join(root, 'tests/helpers/storage-stub.sql'), 'utf8'));
     for (const name of fs.readdirSync(path.join(root, 'supabase/migrations')).filter(n => n.endsWith('.sql')).sort()) {
       await db.exec(fs.readFileSync(path.join(root, 'supabase/migrations', name), 'utf8'));
     }

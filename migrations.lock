@@ -44,8 +44,12 @@
     "20261114120000_operator_subscriptions.sql",
     "20261125120000_sharing_s2_packs.sql"
   ],
-  "pendingOrder": [],
-  "pendingMigrations": {},
+  "pendingOrder": [
+    "20261126120000_sharing_s3_storage.sql"
+  ],
+  "pendingMigrations": {
+    "20261126120000_sharing_s3_storage.sql": "5dbf8bb03260345139c732bf8df080458aff4b2049386169fc68a6ca719c9273"
+  },
   "appliedMigrationEvidence": {
     "202610250001_revoke_platform_public_privileges.sql": {
       "date": "2026-10-26",

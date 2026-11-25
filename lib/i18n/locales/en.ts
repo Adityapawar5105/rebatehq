@@ -3174,6 +3174,10 @@ const auth3 = {
 } as const;
 // Team sharing S1 (blueprint section 22, item 38): the encrypted hand-off file and the protected-floor flag.
 const share = {
+  "share.grid.publish": "Publish now",
+  "share.grid.publishNote": "Sends the current prices, items, customers and guardrails to everyone, each person receiving only what the signed grid gives them. Each key rotation also publishes a fresh copy.",
+  "share.receiveFailed": {"one":"{count} kind of shared data failed its checks and was not applied. Ask an Owner or Pricing Owner to press Publish now.","other":"{count} kinds of shared data failed their checks and were not applied. Ask an Owner or Pricing Owner to press Publish now."},
+  "share.grid.published": {"one":"Published {count} kind of data to the team.","other":"Published {count} kinds of data to the team."},
   "share.grid.stale": "Another Owner signed a newer grid after this draft was made. Review the draft against the signed grid and save it again, or discard it, before rotating keys.",
   "share.grid.heading": "Who receives what",
   "share.grid.body": "Each tick shares one kind of data with everyone in that role, from the next key rotation. Cost never goes to a Sales Rep or Admin / IT: to give someone cost and margins, make them a Sales Manager in Team and roles.",

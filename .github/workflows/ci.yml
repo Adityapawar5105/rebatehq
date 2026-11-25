@@ -73,7 +73,7 @@ jobs:
         # retry now stops cleanly, prunes leftover networks and restarts Docker before starting again (two retries).
         shell: bash
         run: |
-          start() { pnpm exec supabase start -x studio,edge-runtime,storage-api,imgproxy,logflare,vector; }
+          start() { pnpm exec supabase start -x studio,edge-runtime,imgproxy,logflare,vector; }
           for attempt in 1 2 3; do
             if start; then exit 0; fi
             [ "$attempt" = 3 ] && break
@@ -186,7 +186,7 @@ jobs:
         # retry now stops cleanly, prunes leftover networks and restarts Docker before starting again (two retries).
         shell: bash
         run: |
-          start() { pnpm exec supabase start -x studio,edge-runtime,storage-api,imgproxy,logflare,vector; }
+          start() { pnpm exec supabase start -x studio,edge-runtime,imgproxy,logflare,vector; }
           for attempt in 1 2 3; do
             if start; then exit 0; fi
             [ "$attempt" = 3 ] && break

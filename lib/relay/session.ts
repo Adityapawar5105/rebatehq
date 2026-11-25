@@ -1,6 +1,9 @@
 import {admin,DirectorySchema,PageSchema,RelayError,ShareInputSchema,ZERO_HASH,levelsFor,fail,type Content,type Directory,type Epoch,type Grid,type RelayEvent,type ShareInput} from './protocol';
 import {ALL_PACKS} from '../sharing/catalog';
-import {generateIdentity,verifyDevice,fingerprint,newEpoch,verifyEpoch,unwrapEpoch,unwrapPacks,encryptEvent,verifyEvent,decryptEvent,type Identity} from './crypto';
+import {generateIdentity,verifyDevice,fingerprint,newEpoch,verifyEpoch,unwrapEpoch,unwrapPacks,encryptEvent,verifyEvent,decryptEvent,encryptPackVersion,verifyPackVersion,decryptPackVersion,gridPublisher,base64,unbase64,type Identity} from './crypto';
+import {PackPageSchema,type PackVersion} from './protocol';
+import {sealPack,openPack} from '../sharing/publish';
+import type {PackData,PackId} from '../sharing/packs';
 import {fold,ensureOperation,type Applied,type Shared} from './state';
 import type {RelayTransport} from './http';
 import { msg } from "../i18n/core";
@@ -9,7 +12,9 @@ export type RelayState={version:'1';lastSyncedAt?:string;identity:Identity|null;
  /** Team sharing S3a: grid edits an Owner made on this device, signed at the next rotation (never sent before). */
  gridDraft?:Grid;
  /** The hash of the signed epoch the draft was edited from; a draft from an older grid is never signed (security review). */
- gridDraftBase?:string};
+ gridDraftBase?:string;
+ /** Team sharing S3: the last verified version of each pack's chain, and the version this vault last applied. */
+ packHeads?:Record<string,{version:string;hash:string}>;packApplied?:Record<string,string>};
 export type RelayView={sync:{status:'synced'|'pending'|'conflict';lastSyncedAt:string|null};registered:boolean;joined:boolean;deviceId:string;fingerprint:string;role:string;devices:{deviceId:string;userId:string;label:string;role:string;fingerprint:string}[];head:{sequence:string;hash:string;epoch:string};administratorFingerprint:string;canStart:boolean;rotationRequired:boolean;pending:boolean;objects:Shared[];rejected:string[];packs:string[];grid:{namedOwner:string|null;people:{userId:string;role:string}[]}|null;ownerDevices:number};
 export function emptyRelay():RelayState{return {version:'1',identity:null,retired:[],epochs:[],start:{sequence:'0',hash:ZERO_HASH},head:{sequence:'0',hash:ZERO_HASH},entries:[],pending:null,pendingEpoch:null};}
 export class RelaySession{
@@ -124,4 +129,53 @@ export class RelaySession{
  async request(id:string,approvers:string[]){await this.sync();const o=this.object(id);return this.send(id,o.kind,{kind:'request',subjectHash:o.hash,approvers},approvers);}
  async decide(id:string,decision:'approve'|'reject'){await this.sync();const o=this.object(id),r=o.approval;if(!r)throw new RelayError('CONTENT',msg("relay.err.thisReferenceHasNo"));return this.send(id,o.kind,{kind:'decision',requestId:r.id,requestHash:r.hash,level:String(r.decisions.length+1) as '1'|'2',decision},[r.requester,...r.approvers].filter(u=>u!==this.scope.userId));}
  async comment(id:string,text:string,mentions:string[]){await this.sync();const o=this.object(id);return this.send(id,o.kind,{kind:'comment',text},mentions,mentions);}
+ // ---- Team sharing S3: publishing and receiving data packs (SHARING_DESIGN.md section 5) ----
+ private packTransport(){const t=this.transport;if(!t.packPage||!t.chunks)throw new RelayError('NETWORK',msg("relay.http.sharingIsUnavailableYour"));return {page:t.packPage.bind(t),chunks:t.chunks};}
+ private chunkPath(pack:string,versionId:string,n:number){return this.scope.tenantId+'/'+pack+'/'+versionId+'/'+n;}
+ /** Publish a full copy of one pack under the latest epoch. Only a grid publisher whose device holds the pack can. */
+ async packPublish(pack:PackId,data:PackData){
+  await this.sync();const last=this.last(),me=this.currentIdentity(),t=this.packTransport();
+  if(!last||last.epoch.v!=='2')throw new RelayError('ROTATE',msg("relay.err.anAdministratorMustRotate"));
+  const key=last.packs?.[pack];if(!key||!gridPublisher(last.epoch.grid,me.device.userId))throw new RelayError('ACCESS',msg("relay.http.sharingRequiresAnApproved"));
+  const head=PackPageSchema.parse(await t.page(pack,this.state.packHeads?.[pack]?.version??'0')).head,id=crypto.randomUUID();
+  const {chunks,manifest}=await sealPack(pack,data,key,id);
+  const version=await encryptPackVersion(me,last.epoch,key,head,pack,'snapshot','0',manifest,id);
+  await this.transport.post({action:'pack',pack:version});
+  // Chunks are uploaded after the signed version exists: Storage only accepts chunks of a version this person signed.
+  for(const c of chunks){const iv=unbase64(c.iv),ct=unbase64(c.ciphertext),body=new Uint8Array(iv.length+ct.length);body.set(iv);body.set(ct,iv.length);await t.chunks.put(this.chunkPath(pack,id,c.n),body);}
+  (this.state.packHeads??={})[pack]={version:version.version,hash:version.hash};(this.state.packApplied??={})[pack]=version.version;
+  await this.persist('pack_published');return {pack,version:version.version,rows:manifest.rows};
+ }
+ /**
+  * Read one pack's chain and return the newest full copy this vault has not applied, checked end to end. A device anchors
+  * at the first version signed under an epoch it holds (versions before it joined cannot be checked and are skipped; the
+  * anchor's signature covers the link to them); after that every version must verify, in order, or nothing is applied.
+  */
+ async packReceive(pack:PackId):Promise<{version:string;createdAt:string;sender:string;data:PackData}|null>{
+  const t=this.packTransport();let head=this.state.packHeads?.[pack]??null,after=head?.version??'0',newest:{v:PackVersion;key:string}|null=null;
+  for(let round=0;round<400;round++){
+   this.signal.throwIfAborted();const page=PackPageSchema.parse(await t.page(pack,after));
+   for(const raw of page.versions){
+    const entry=this.state.epochs.find(e=>e.epoch.id===raw.epochId);
+    if(!entry){if(head)fail();after=raw.version;continue;}
+    const v=await verifyPackVersion(raw,entry.epoch,head??{version:(BigInt(raw.version)-BigInt(1)).toString(),hash:raw.previousHash});
+    head={version:v.version,hash:v.hash};after=v.version;
+    const key=entry.packs?.[pack];if(v.kind==='snapshot'&&key)newest={v,key};
+   }
+   if(BigInt(after)>=BigInt(page.head.version)||!page.versions.length)break;
+  }
+  if(head)(this.state.packHeads??={})[pack]=head;
+  const applied=this.state.packApplied?.[pack];
+  if(!newest||(applied&&BigInt(applied)>=BigInt(newest.v.version))){await this.persist('pack_checked');return null;}
+  const manifest=await decryptPackVersion(newest.v,newest.key),chunks=[];
+  for(const c of manifest.chunks){const b=await t.chunks.get(this.chunkPath(pack,newest.v.id,Number(c.n)));if(b.length<29)fail();chunks.push({n:Number(c.n),iv:base64(b.subarray(0,12)),ciphertext:base64(b.subarray(12))});}
+  const data=await openPack(pack,manifest,chunks,newest.key,newest.v.id);
+  await this.persist('pack_checked');
+  return {version:newest.v.version,createdAt:newest.v.createdAt,sender:newest.v.senderUser,data};
+ }
+ /** Record that this vault applied a pack version (after the vault's own audited write succeeded). */
+ async packMarkApplied(pack:string,version:string){(this.state.packApplied??={})[pack]=version;await this.persist('pack_applied');}
+ /** The packs this device holds keys for in the latest epoch. */
+ heldPacks(){return Object.keys(this.last()?.packs??{});}
+ isPublisher(){const e=this.last()?.epoch;return e?.v==='2'&&gridPublisher(e.grid,this.scope.userId);}
 }

@@ -30,7 +30,7 @@ export async function proxy(request:NextRequest){
  // Only engine workers fetch verified in-memory WASM blobs. Page fetch policy
  // stays self-only; no external host or JS unsafe-eval is added.
  const workerAsset=request.nextUrl.pathname.startsWith("/spike/");
- const policy=["default-src 'self'",`script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${dev?" 'unsafe-eval'":""}${lab?" 'wasm-unsafe-eval'":""}`,...(lab?["worker-src 'self' blob:"]:[]),"style-src 'self' 'unsafe-inline'","img-src 'self' data: blob:","font-src 'self' data:",`connect-src 'self' ${workerAsset?"blob:":lab?"":connectOrigin}`.trim(),"object-src 'none'","base-uri 'self'","form-action 'self'","frame-ancestors 'none'",...(dev?[]:["upgrade-insecure-requests"])].join("; ");
+ const policy=["default-src 'self'",`script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${dev?" 'unsafe-eval'":""}${lab?" 'wasm-unsafe-eval'":""}`,...(lab?["worker-src 'self' blob:"]:[]),"style-src 'self' 'unsafe-inline'","img-src 'self' data: blob:","font-src 'self' data:",`connect-src 'self' ${workerAsset?`blob: ${connectOrigin}`.trim():lab?"":connectOrigin}`.trim(),"object-src 'none'","base-uri 'self'","form-action 'self'","frame-ancestors 'none'",...(dev?[]:["upgrade-insecure-requests"])].join("; ");
  requestHeaders.set("x-nonce",nonce);requestHeaders.set("Content-Security-Policy",policy);
  let response=NextResponse.next({request:{headers:requestHeaders}});
  if(supabaseUrl&&process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY){

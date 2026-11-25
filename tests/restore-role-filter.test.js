@@ -137,10 +137,10 @@ test("restore workflow filters roles, snapshots source before shutdown, and keep
 
 test("restore dump schema builder permits only owned schemas and rejects a storage-inclusive dump", async () => {
   const { APPLICATION_SCHEMAS, EXCLUDED_SUPABASE_SCHEMAS, assertMigrationsFitApplicationSchemas, buildApplicationDumpArgs } = await import("../scripts/restore-dump-scope.mjs");
-  assert.deepEqual(APPLICATION_SCHEMAS, ["public", "rebatehq_private"]);
+  assert.deepEqual(APPLICATION_SCHEMAS, ["public", "rebatehq_private", "rebatehq_storage"]); // S3 adds the Storage rule schema
   assert.ok(EXCLUDED_SUPABASE_SCHEMAS.includes("storage"));
   assert.ok(assertMigrationsFitApplicationSchemas() >= 1, "All current SQL migrations must fit the reviewed application schema scope.");
-  assert.deepEqual(buildApplicationDumpArgs(), ["--schema", "public,rebatehq_private"]);
+  assert.deepEqual(buildApplicationDumpArgs(), ["--schema", "public,rebatehq_private,rebatehq_storage"]);
   assert.throws(() => buildApplicationDumpArgs(["public", "storage"]), /only the application schema allowlist/);
   assert.throws(() => buildApplicationDumpArgs(["public", "auth"]), /only the application schema allowlist/);
 });

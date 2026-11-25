@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-export const APPLICATION_SCHEMAS = Object.freeze(["public", "rebatehq_private"]);
+export const APPLICATION_SCHEMAS = Object.freeze(["public", "rebatehq_private", "rebatehq_storage"]);
 
 export const EXCLUDED_SUPABASE_SCHEMAS = Object.freeze([
   "auth", "storage", "extensions", "realtime", "vault", "graphql", "graphql_public",

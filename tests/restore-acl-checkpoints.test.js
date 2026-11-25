@@ -60,6 +60,7 @@ test("restore checkpoint focus functions exist after every migration and keep th
     await db.exec(`CREATE SCHEMA extensions;CREATE SCHEMA auth;CREATE ROLE anon;CREATE ROLE authenticated;CREATE ROLE service_role BYPASSRLS;
       CREATE TABLE auth.users(id uuid PRIMARY KEY,email text,email_confirmed_at timestamptz);
       CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;`);
+    await db.exec(fs.readFileSync(path.join(__dirname, "helpers", "storage-stub.sql"), "utf8"));
     for (const name of fs.readdirSync(path.join(__dirname, "..", "supabase", "migrations")).filter(n => n.endsWith(".sql")).sort())
       await db.exec(fs.readFileSync(path.join(__dirname, "..", "supabase", "migrations", name), "utf8"));
     const rows = (await db.query(FUNCTION_ACL_SQL)).rows;

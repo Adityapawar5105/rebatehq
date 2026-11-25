@@ -99,3 +99,18 @@ Two checks were rewritten for tables that remain:
 - **New function:** `relay_pack_reader(uuid,text)`, SECURITY DEFINER, executable by `rebatehq_app` only, is in the ACL registry.
 - **Replaced functions:** `relay_check_insert()` and `audit_row_change()` are replaced in full. The two new tables are audited as metadata only.
 - **Restore Drill:** the seed writes a format 2 epoch, pack wraps and a pack version, and equivalence now compares six relay tables.
+
+## Team sharing S3 storage (pending, 25 November 2026)
+
+`20261126120000_sharing_s3_storage.sql` is **pending** until CI and a user-run Restore Drill pass; then it is locked in its own PR.
+- **New schema `rebatehq_storage`.** It holds one function, `relay_storage_allowed(text,boolean)`: SECURITY DEFINER, `search_path=public, pg_temp`, with USAGE and EXECUTE for `authenticated` only.
+  - It is outside the public function ACL registry on purpose: that registry forbids `authenticated` grants, and the Data API does not expose this schema.
+  - pgTAP S3 check 1 proves it is the only object there, with those ACLs.
+- **Storage.** The private `relay-packs` bucket and two `storage.objects` policies (read, insert). No GRANT or REVOKE is made on the managed `storage` schema.
+- **No new tenant table.** The minimum stays **15**.
+- **pgTAP.** Fresh runs plan **152** checks and restore runs plan **155** (`supabase/tests/sharing_s3.sql`).
+- **Restore.**
+  - The dump allowlist is `public,rebatehq_private,rebatehq_storage`.
+  - Equivalence compares three schema ACLs and the `rebatehq_storage` function ACLs.
+  - The drill re-applies the bucket and policies with `scripts/restore-storage-objects.sql` before pgTAP.
+- **CI and the drill start `storage-api`.**
