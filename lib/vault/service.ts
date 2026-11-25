@@ -223,7 +223,8 @@ export class VaultService {
     let identity=false,pending=false,lastSyncedAt:string|null=null;
     try{const state=rows.length?JSON.parse(String(rows[0].payload)) as RelayState:null;identity=!!state?.identity&&state.identity.device.deviceId===deviceId;
       if(identity){pending=!!state!.pending||!!state!.pendingEpoch;lastSyncedAt=typeof state!.lastSyncedAt==='string'?state!.lastSyncedAt:null;}}catch{identity=false;}
-    return {identity,pending,lastSyncedAt};
+    // S4: the doorbell's state (joined channels, rings), for the sync status and for diagnosing a socket that never joins.
+    return {identity,pending,lastSyncedAt,live:this.bell?.door.state()??null};
   }
   async relay(request:Extract<import('./protocol').Request,{action:`relay${string}`}>,signal:AbortSignal){
     const session=await this.relaySession(signal);
