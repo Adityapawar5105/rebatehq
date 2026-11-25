@@ -123,7 +123,7 @@ test("role changes follow the rules: no self-edits, last Owner and named Pricing
   } finally { c.close(); }
 });
 test("a vault cannot be created without naming a Pricing Owner", async () => {
-  const service = { licenceGuard:()=>undefined, guard: async () => undefined, create: async () => { throw new Error("must not run"); } } as unknown as VaultService;
+  const service = { licenceGuard:()=>undefined, sharedGuard: async () => undefined, guard: async () => undefined, create: async () => { throw new Error("must not run"); } } as unknown as VaultService;
   for (const ownerName of ["", "   ", undefined as unknown as string]) await assert.rejects(dispatch(service, { id: "1", action: "create", data: { passphrase: "a long passphrase", tier: "starter", ownerName } } as Request, { signal: () => new AbortController().signal, progress: () => undefined }), (e: unknown) => e instanceof VaultError && e.code === "OWNER");
 });
 

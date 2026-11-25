@@ -9,12 +9,12 @@ import { Button, Card, Checkbox, Field, Notice } from "@/components/ui/ui";
 import { fmt, msg, say, t } from "@/lib/i18n";
 import { download } from "./PricingView";
 import { PACK_IDS, PACK_LABEL, type PackId } from "@/lib/sharing/packs";
+import { STALE_DAYS, daysSince } from "@/lib/sharing/stale";
 import styles from "./vault.module.css";
 
 type State = Results["shareState"]; type Counts = Results["shareCounts"]; type Preview = Results["shareImportPreview"];
 const FULL = ["items", "customers", "book", "contracts", "guards", "cost", "cost_floors"], SALES = ["items", "customers", "book", "contracts", "guards"];
 const packLabel = (p: string) => (PACK_IDS as readonly string[]).includes(p) ? t(PACK_LABEL[p as PackId]) : p;
-const STALE_DAYS = 7;
 
 export function ShareHandoff({ client, busy, operation, refresh }: { client: VaultClient; busy: boolean; operation: (f: () => Promise<void>) => Promise<void>; refresh: () => Promise<void> }) {
   const [state, setState] = useState<State | null>(null), [counts, setCounts] = useState<Counts | null>(null), [note, setNote] = useState("");
@@ -28,12 +28,15 @@ export function ShareHandoff({ client, busy, operation, refresh }: { client: Vau
   const chosen = packs.filter(p => !lockedPack(p));
   const toggle = (p: string, on: boolean) => setPacks(on ? [...new Set([...packs, p])] : packs.filter(x => x !== p));
   const newest = state.books.reduce<string | null>((m, b) => !m || b.publishedAt > m ? b.publishedAt : m, null);
-  const age = newest ? Math.floor((Date.now() - Date.parse(newest)) / 86_400_000) : 0;
+  // A file copy ages from when it was published. A relay copy (S3) is only stale when this device has not synced for a
+  // week: a publisher with nothing new to send does not make it old.
+  const relayOnly = state.books.length > 0 && state.books.every(b => b.via === "relay");
+  const age = relayOnly ? daysSince(state.lastSyncedAt) : daysSince(newest);
   return <Card headingId="share-heading" title={t("share.heading")} description={t("share.body")} data-testid="share-card">
     <p role="status">{say(note)}</p>
     {state.books.length > 0 && <Notice tone={age > STALE_DAYS ? "warn" : "info"} title={t("share.received", { name: state.books[0].publisher, date: fmt.date(newest!) })} data-testid="share-received">
       <ul className={styles.guardList}>{state.books.map(b => <li key={b.pack}>{t("share.receivedPack", { pack: packLabel(b.pack), rows: fmt.int(b.rows), date: fmt.date(b.publishedAt) })}</li>)}</ul>
-      {age > STALE_DAYS && <p>{t("share.stale", { count: age })}</p>}
+      {age > STALE_DAYS && <p>{t(relayOnly ? "share.banner.stale" : "share.stale", { count: age })}</p>}
       {state.changes.length > 0 && <details><summary>{t("share.changes", { count: state.changes.length })}</summary><ul className={styles.guardList} data-testid="share-changes">{state.changes.map((c, i) => <li key={i}>{t("share.change", { pack: packLabel(c.pack), key: c.key, before: c.before === null ? t("share.none") : fmt.currency(c.before), after: c.after === null ? t("share.removed") : fmt.currency(c.after) })}</li>)}</ul></details>}
       <p className={styles.muted}>{t("share.receivedNote")}</p>
     </Notice>}

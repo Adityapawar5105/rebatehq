@@ -220,6 +220,13 @@ The same tables serve the hand-off file (S1) and the relay (S3), so S1 carries f
 
 **Roll back:** re-publishing an earlier version makes it a new, higher version, so versions only ever go up.
 
+**As built in S3c (25 Nov 2026):**
+- **Read-only.** The worker refuses each classified write on a receiving seat (`lib/sharing/governed.ts`). Edit buttons stay visible, and the refusal names the publisher.
+- **Staleness.** For relay copies it is measured from the last sync.
+- **Roll back.** It is the existing audited price roll back followed by **Publish now**: re-sending old chunks would be undone by the next publish, which reads the publisher's tables.
+
+See `docs/evidence/SHARING_S3C_VERIFICATION.md`.
+
 ## 7. Server changes: three migrations
 
 **Revised 24 Nov 2026 (S2a).** The first version of this section planned one migration. Storage and Realtime policies run as `authenticated`, without the app's request context, and nothing exercises them until S3 and S4; once locked, they could not be fixed. So the server changes ship in three migrations, each with the release that exercises it, and each follows `MIGRATION_RULES.md` (CI, then a user-run Restore Drill, then the lock):

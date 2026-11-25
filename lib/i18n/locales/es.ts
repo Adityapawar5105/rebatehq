@@ -3346,4 +3346,11 @@ export const es: Catalog = {
   "people.status.invited": "Invitado",
   "people.status.local": "En este dispositivo",
   "people.roleGuide": "Qué puede hacer cada rol",
+  "share.readOnly": "{name} comparte {pack} con el equipo, así que es de solo lectura en este dispositivo. Pida a {name} que haga el cambio y lo publique.",
+  "share.banner.title": "Compartido por {name}",
+  "share.banner.pack": "{pack}, versión {version}",
+  "share.banner.received": "recibido el {date}",
+  "share.banner.body": "Estos datos vienen de quien los publica y aquí son de solo lectura. Los cambios llegan con la próxima publicación. Sus propias notas se quedan en este dispositivo.",
+  "share.banner.changes": "Qué cambió",
+  "share.banner.stale": {"one":"Este dispositivo se sincronizó por última vez hace {count} día. Abra la bandeja compartida y sincronice para obtener lo último.","other":"Este dispositivo se sincronizó por última vez hace {count} días. Abra la bandeja compartida y sincronice para obtener lo último."},
 };

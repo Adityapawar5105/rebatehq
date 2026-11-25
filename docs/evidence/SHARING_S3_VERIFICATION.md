@@ -91,11 +91,7 @@ The worker script's `connect-src` now allows the Supabase origin.
 
 ## Not done in S3b (still to come)
 
-- **Not yet built:**
-  - read-only governed screens and the "Shared by" banner on receiving seats;
-  - "what changed since your version";
-  - roll back;
-  - the 7-day staleness warning.
+- **Built later in S3c** (docs/evidence/SHARING_S3C_VERIFICATION.md): read-only receiving seats and the "Shared by" banner, what changed, roll back through the audited price roll back, and staleness from the last sync.
 - **Deltas and compaction.** Every publish is a full snapshot, and old chunks are not removed. No per-workspace Storage cap is enforced beyond 64 MiB per version and the bucket's object size.
 - **Realtime (S4).** Receiving happens on sync and join; there is no live signal yet.
 - **Unverified until CI:** real Supabase Storage (the authenticated CI relay gate) and the Restore Drill with the re-apply step.

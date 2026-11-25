@@ -309,3 +309,9 @@ See `docs/evidence/SECOND_AUDIT_PASS.md`. The independent security review (R02, 
 - With sharing on, a grid Owner's edits are labelled drafts and others cannot edit.
 - Workspace access, invitations and suspension stay on `/account/users`, restyled to match; its role select now uses the role id.
 - No schema, migration or privacy-gate change. See docs/evidence/TEAM_PEOPLE_VERIFICATION.md.
+
+**Team sharing S3c: read-only receiving seats (25 Nov 2026; built by Claude Code).**
+- On a device that receives relay packs and is not a publisher, the worker refuses writes to shared tables (`sharedGuard` in dispatch; every write command is classified in `lib/sharing/governed.ts`, enforced by a test).
+- Pricing, Data Hub and Rebates & Contracts show "Shared by {name}" with versions, received date and a What changed link.
+- Staleness for relay copies is measured from the last sync. Roll back is the audited price roll back plus Publish now.
+- No schema or migration change. Relay gate: 16 checks. See docs/evidence/SHARING_S3C_VERIFICATION.md.
