@@ -75,12 +75,13 @@ try{
   await close(rep);const before=await bookVersion(rep);assert.ok(before>0,'The rep has no book prices before the live update');
   await close(owner);await owner.evaluate(()=>{location.hash='#settings-team';});await owner.getByTestId('share-publish').click();await owner.getByText(/Published \d+ kinds? of data/).waitFor({timeout:120000});
   const t0=Date.now();let after=before;while(after<=before&&Date.now()-t0<180000){await rep.waitForTimeout(3000);after=Number((/Book prices, version (\d+)/.exec(await rep.getByTestId('shared-banner').innerText().catch(()=>''))||[])[1]||0);}
-  assert.ok(after>before,'The rep did not receive the new publish without pressing Sync');if(auth&&Date.now()-t0>=45000){
+  assert.ok(after>before,'The rep did not receive the new publish without pressing Sync');const took=Date.now()-t0;if(auth){
    const live=await rep.evaluate(()=>new Promise(res=>{const w=window.__vaultWorkers.at(-1);if(!w)return res('no worker');const id='diag-'+Math.random();const on=e=>{if(e.data&&e.data.id===id){w.removeEventListener('message',on);res(e.data.result??e.data.error);}};w.addEventListener('message',on);w.postMessage({id,action:'relayLocal',data:{}});setTimeout(()=>res('timeout'),10000);}));
    const q=async sql=>{try{return (await db.query(sql)).rows;}catch(e){return String(e.message).slice(0,160);}};
    console.log('Doorbell diagnostics:',JSON.stringify({live:live&&live.live,policies:await q("SELECT policyname,cmd FROM pg_policies WHERE schemaname='realtime'"),messages:await q("SELECT event,private,count(*)::int AS n,max(inserted_at)::text AS last FROM realtime.messages WHERE topic LIKE 'pack:%' GROUP BY 1,2"),partitions:await q("SELECT count(*)::int AS n FROM pg_inherits WHERE inhparent='realtime.messages'::regclass")}));
+   assert.ok(live&&live.live&&live.live.rings>0&&live.live.joined.includes('book'),'The Realtime doorbell did not ring on the rep device (see the diagnostics above)');
+   assert.ok(took<45000,'The Realtime doorbell did not deliver within 45 s (took '+Math.round(took/1000)+' s)');
   }
-  if(auth)assert.ok(Date.now()-t0<45000,'The Realtime doorbell did not deliver within 45 s (took '+Math.round((Date.now()-t0)/1000)+' s)');
   console.log('Live update reached the rep in '+Math.round((Date.now()-t0)/1000)+' s ('+(auth?'Realtime doorbell':'lab poll')+').');
   for(const page of [owner,rep]){await page.evaluate(()=>{location.hash='#home';});await open(page);}}
  checks.liveUpdate=true;
