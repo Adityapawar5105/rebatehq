@@ -11,6 +11,7 @@ import { getWorkspaceCurrency, fmt, msg, say, t, type MessageKey } from "@/lib/i
 import styles from './vault.module.css';
 import {Badge,Button,Card,Field,Notice,Tabs,tabPanelProps,type Tone} from '@/components/ui/ui';
 import {Icon} from '@/components/ui/Icon';
+import {ThreadsInbox} from './Threads';
 const RELAY_ROLE: Record<string, MessageKey> = { owner: "relay.role.owner", manager: "relay.role.manager", rep: "relay.role.rep", analyst: "relay.role.analyst" };
 const relayRole = (r: string) => r in RELAY_ROLE ? t(RELAY_ROLE[r]) : r;
 /** Team sharing S2b: the data packs this device holds a key for, by name. */
@@ -21,7 +22,7 @@ type Sync=RelayView['sync'];
 const SYNC_TONE:Record<Sync['status'],Tone>={synced:'ok',pending:'warn',conflict:'bad'};
 const SYNC_TEXT:Record<Sync['status'],MessageKey>={synced:'monitor.synced',pending:'monitor.pending',conflict:'monitor.conflict'};
 type RelayAction=Extract<Action,`relay${string}`>;
-type Tab='inbox'|'share'|'keys';
+type Tab='inbox'|'threads'|'share'|'keys';
 /** v2.6 gap 2: this browser remembers that the user dismissed the sharing set-up card (a preference, never business data). */
 const onboardKey=(tenant:string,user:string)=>`rebatehq.relayOnboarding.dismissed:${tenant}:${user}`;
 const dismissed=(tenant:string,user:string)=>{try{return localStorage.getItem(onboardKey(tenant,user))==="yes";}catch{return false;}};
@@ -67,6 +68,10 @@ export function RelayPanel({client,userId,tenantId,relayEnabled,onChange}:{clien
  // 8.4: the last status this page knows. It starts from the vault's own relay row and is replaced by the inbox's full
  // status (which can also report a conflict) once the inbox has been opened.
  const [local,setLocal]=useState<Local|null>(null),[live,setLive]=useState<Sync|null>(null);
+ // Team sharing S5b: what needs this person (mentions, replies, tasks) since they last looked, read locally.
+ const [unread,setUnread]=useState(0);
+ const readUnread=useCallback(async()=>{try{setUnread(Number((await client.call("inboxState",{})).unread));}catch{setUnread(0);}},[client]);
+ useEffect(()=>{void readUnread();const go=()=>void readUnread();window.addEventListener('rebatehq:threads-changed',go);return()=>window.removeEventListener('rebatehq:threads-changed',go);},[readUnread]);
  const readLocal=useCallback(async()=>{try{setLocal(await client.call("relayLocal",{}));}catch{setLocal(null);}},[client]);
  useEffect(()=>{void readLocal();},[readLocal]);
  const start=(next:Tab)=>{setTab(next);setSelected('');setView(null);setError('');setBusy(true);setOpen(true);};
@@ -79,7 +84,7 @@ export function RelayPanel({client,userId,tenantId,relayEnabled,onChange}:{clien
   setBusy(true);setError('');setNotice('');
   try{const value=await client.call(action,data) as RelayView;setView(value);setLive(value.sync);setNotice(message);await onChange();return true;}
   catch(e){setError(e instanceof Error&&e.message?e.message:msg("relay.sharingCouldNotFinish"));try{const v=await client.call('relayView',{});setView(v);setLive(v.sync);}catch{/* Keep the last confirmed view when offline. */}return false;}
-  finally{setBusy(false);void readLocal();}
+  finally{setBusy(false);void readLocal();void readUnread();}
  }
  const object=view?.objects.find(o=>o.id===selected),request=object?.approval,canDecide=!!request&&request.status==='pending'&&request.approvers[request.decisions.length]===userId,canRequest=!!object&&!request&&object.author===userId;
  const admins=[...new Map((view?.devices??[]).filter(d=>['owner','manager'].includes(d.role)&&d.userId!==userId).map(d=>[d.userId,d])).values()];
@@ -90,7 +95,8 @@ export function RelayPanel({client,userId,tenantId,relayEnabled,onChange}:{clien
  return <Card headingId="relay-card-heading" title={t("relay.workspaceSharing2")} description={t("relay.shareAnEncryptedReference")}
   actions={cardSync&&<Badge tone={SYNC_TONE[cardSync.status]} data-testid="relay-card-status" title={cardSync.lastSyncedAt?t('monitor.lastSynced',{date:fmt.dateTime(cardSync.lastSyncedAt)}):t('monitor.neverSynced')}>{t(SYNC_TEXT[cardSync.status])}</Badge>}>
   {cardSync&&<p className={styles.small}>{cardSync.lastSyncedAt?t('monitor.lastSynced',{date:fmt.dateTime(cardSync.lastSyncedAt)}):t('monitor.neverSynced')}</p>}
-  <Button onClick={()=>start('inbox')}>{t("relay.openSharedInbox")}</Button>
+  <div className={styles.row}><Button onClick={()=>start('inbox')}>{t("relay.openSharedInbox")}</Button>
+   {unread>0&&<Button variant="ghost" data-testid="relay-unread" onClick={()=>start('threads')}><Badge tone="accent">{t("thread.unread",{count:unread})}</Badge></Button>}</div>
   <dialog ref={dialog} className={styles.relayDialog} aria-labelledby="relay-title" aria-busy={open&&(busy||(!view&&!error))} onCancel={()=>setOpen(false)}>
    <div className={styles.row}><h2 id="relay-title">{t("relay.sharedInbox")}</h2>
     {view&&<span data-testid="relay-sync-status"><Badge tone={SYNC_TONE[view.sync.status]}>{t(SYNC_TEXT[view.sync.status])}</Badge> {view.sync.lastSyncedAt?t('monitor.lastSynced',{date:fmt.dateTime(view.sync.lastSyncedAt)}):t('monitor.neverSynced')}</span>}
@@ -108,7 +114,7 @@ export function RelayPanel({client,userId,tenantId,relayEnabled,onChange}:{clien
      view.administratorFingerprint?<form onSubmit={e=>{e.preventDefault();void run('relayJoin',{fingerprint:pin},msg("relay.note4"));}}><p>{t("relay.askATrustedAdministrator")}</p><Field label={t("relay.verifiedAdministratorFingerprint")}><input value={pin} onChange={e=>setPin(e.target.value)} autoComplete="off" required/></Field><Button variant="primary" type="submit" disabled={busy||!pin.trim()}>{t("relay.verifyAndJoinSharing")}</Button></form>:<><p>{t("relay.askYourAdministratorTo")}</p><Button variant="primary" disabled={busy} onClick={()=>void run('relayView',{},msg("relay.note5"))}>{t("relay.refreshSharingSetup")}</Button></>}
     </>:<>
      <div className={styles.row}>
-      <Tabs label={t("relay.workspaceSharing")} idPrefix="relay" active={tab} onChange={x=>{if(x==='keys')setConfirmed([]);setTab(x);}} tabs={[{id:'inbox',label:t("relay.inbox")},{id:'share',label:t("relay.shareAReference2")},{id:'keys',label:t("relay.deviceKeys")}]}/>
+      <Tabs label={t("relay.workspaceSharing")} idPrefix="relay" active={tab} onChange={x=>{if(x==='keys')setConfirmed([]);setTab(x);}} tabs={[{id:'inbox',label:t("relay.inbox")},{id:'threads',label:unread?`${t("thread.tab")} (${unread})`:t("thread.tab")},{id:'share',label:t("relay.shareAReference2")},{id:'keys',label:t("relay.deviceKeys")}]}/>
       <Button variant={tab==='inbox'&&!object?'primary':'secondary'} disabled={busy} onClick={()=>void run('relaySync',{},msg("relay.note6"))}>{t("relay.syncInbox")}</Button>
      </div>
      {view.rotationRequired&&<Notice tone="warn" role="alert">{t("relay.theMemberDeviceList")}</Notice>}
@@ -122,6 +128,7 @@ export function RelayPanel({client,userId,tenantId,relayEnabled,onChange}:{clien
      {tab==='keys'&&<section><h3>{t("relay.deviceVerification")}</h3><p>{t("relay.yourFingerprint")}{" "}<code data-testid="relay-own-fingerprint">{view.fingerprint}</code></p>
       <details className={styles.small}><summary>{t("relay.techDetails")}</summary><p>{t("relay.currentVerificationHeadEpoch", { epoch: Number(view.head.epoch), sequence: Number(view.head.sequence) })}{" "}<code>{view.head.hash}</code>{t("relay.compareThisHeadWith")}</p></details>
       <DeviceChecks view={view} confirmed={confirmed} setConfirmed={setConfirmed} disabled={busy}/>{['owner','manager'].includes(view.role)&&<Button variant="primary" disabled={busy||confirmed.length!==view.devices.length} onClick={()=>rotate("relay.note9")}>{t("relay.rotateWorkspaceKey")}</Button>}<p className={styles.muted}>{t("relay.revokeLostDevicesIn")}</p></section>}
+     {tab==='threads'&&<ThreadsInbox client={client} userId={userId} onUnread={setUnread}/>}
      {tab==='share'&&<form onSubmit={e=>{e.preventDefault();void run('relayShare',{input:{objectKind:kind,title,reference,amount,currency,preset}},msg("relay.note10")).then(ok=>{if(ok){setTitle('');setReference('');setAmount('');setTab('inbox');setSelected('');}});}}>
       <h3>{t("relay.shareAReference")}</h3><p>{t("relay.thisSharesASummary")}</p>
       <Field label={t("relay.referenceType")}><select value={kind} onChange={e=>setKind(e.target.value as ShareInput['objectKind'])}><option value="price_change">{t("relay.priceChange")}</option><option value="quote">{t("relay.quoteReference")}</option><option value="rebate">{t("relay.rebateReference")}</option></select></Field>

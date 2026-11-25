@@ -100,6 +100,46 @@ try{
   console.log('Live update reached the rep in '+Math.round((Date.now()-t0)/1000)+' s ('+(auth?'Realtime doorbell':'lab poll')+').');
   for(const page of [owner,rep])await reopen(page);}
  checks.liveUpdate=true;
+ // Team sharing S5b: threads and tasks. The Owner loads the Playground, opens Discuss on an item, mentions the rep and assigns
+ // a task; the rep finds it under Threads and tasks after a sync, opens it, replies and marks it done; the Owner sees the
+ // reply. Every word stays encrypted: the marker is scanned for in every request and server row below.
+ {const shut=async p=>{const d=p.getByRole('dialog',{name:'Shared inbox',exact:true});if(await d.isVisible()){await close(p);await d.waitFor({state:'hidden'});}};
+  const threadsTab=async p=>{await shut(p);await p.evaluate(()=>{location.hash='home';});await open(p);await click(p,'Sync inbox');await p.getByRole('tab',{name:/^Threads and tasks/}).click();await p.getByTestId('threads-inbox').waitFor();};
+  const esc=v=>v.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),repName=new RegExp('@('+esc(actors[2].email??'')+'|'+actors[2].userId+')');
+  await shut(owner);await owner.evaluate(()=>{location.hash='home';});
+  await owner.getByTestId('home-start').getByRole('button',{name:'Try the Playground',exact:true}).click();
+  await owner.getByTestId('sample-banner').waitFor({timeout:180000});
+  await owner.evaluate(()=>{location.hash='data-hub-records';});
+  const items=owner.getByTestId('item-grid');await items.waitFor({timeout:60000});
+  await items.getByTestId('thread-discuss').first().click();
+  const dlg=owner.locator('dialog[open][data-testid="thread-dialog"]');await dlg.waitFor();
+  await dlg.getByTestId('thread-not-joined').waitFor({state:'detached'});
+  await dlg.getByLabel('Message',{exact:true}).fill(marker+'-thread');
+  await dlg.getByRole('checkbox',{name:repName}).check();
+  await dlg.getByRole('checkbox',{name:'Make this a task',exact:true}).check();await dlg.getByTestId('thread-assignee').selectOption(actors[2].userId);
+  await dlg.getByRole('button',{name:'Send',exact:true}).click();
+  await dlg.getByText('Sent to your team, encrypted.',{exact:true}).waitFor({timeout:60000});
+  assert.ok((await dlg.getByTestId('thread-card').first().innerText()).includes(marker+'-thread'),'The new thread is not shown');
+  await dlg.getByRole('button',{name:'Close',exact:true}).first().click();
+  assert.equal(await owner.getByRole('alert').filter({hasText:/\S/}).count(),0,'Starting a thread reported an error');
+  await owner.evaluate(()=>{location.hash='home';});
+  await threadsTab(rep);
+  const inbox=rep.getByTestId('threads-inbox');
+  await inbox.getByText('Mentioned you').first().waitFor();await inbox.getByText('Assigned you a task').first().waitFor();
+  assert.ok((await inbox.innerText()).includes(marker+'-thread'),'The rep inbox does not show the thread');
+  await inbox.getByRole('button',{name:'Open',exact:true}).first().click();
+  const opened=rep.getByTestId('thread-opened');await opened.waitFor();
+  await opened.getByLabel('Reply',{exact:true}).fill(marker+'-reply');await opened.getByRole('button',{name:'Send',exact:true}).click();
+  await opened.getByText(marker+'-reply').waitFor({timeout:60000});
+  await opened.getByRole('button',{name:'Mark done',exact:true}).click();await opened.getByTestId('thread-task').filter({hasText:'Task done'}).waitFor({timeout:60000});
+  await inbox.getByRole('button',{name:'Mark all as read',exact:true}).click();await inbox.getByTestId('threads-unread').filter({hasText:'0 unread'}).waitFor();
+  await shut(rep);
+  await threadsTab(owner);
+  const ownerInbox=owner.getByTestId('threads-inbox');await ownerInbox.getByText('Replied',{exact:true}).first().waitFor();
+  assert.ok((await ownerInbox.innerText()).includes(marker+'-reply'),'The Owner does not see the rep reply');
+  await shut(owner);
+  for(const page of [owner,rep])await open(page);}
+ checks.threadsUi=true;
  for(const page of pages){await page.getByTestId('relay-sync-status').filter({hasText:'Synced'}).waitFor();assert.ok((await page.getByTestId('relay-sync-status').innerText()).includes('Last synced:'));}checks.syncIndicator=true;
  await rep.getByRole('tab',{name:'Share a reference',exact:true}).click();await rep.getByLabel('Reference type').selectOption('quote');await rep.getByLabel('Shared title').fill(marker);await rep.getByLabel('Local reference').fill(marker+'-reference');await rep.getByLabel('Amount',{exact:true}).fill(amount);await click(rep,'Share encrypted reference');
  await rep.getByRole('button',{name:marker,exact:true}).click();await rep.getByLabel('Pricing Owner approver').selectOption(actors[0].userId);await rep.getByLabel('Second-level manager').selectOption(actors[1].userId);await click(rep,'Request approval');

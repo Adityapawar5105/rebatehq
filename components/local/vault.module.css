@@ -75,3 +75,5 @@
 /* Palette sections with nothing typed (15 Nov 2026): Recent and Suggested headings. */
 .paletteList li.paletteHeading{display:flex;justify-content:space-between;align-items:center;cursor:default;min-height:0;padding:12px 12px 4px;font-size:var(--fs-xs);font-weight:600;color:var(--text-muted)}
 .paletteClear{font:inherit;font-size:var(--fs-xs);text-transform:none;letter-spacing:0;color:var(--link);background:none;border:0;padding:2px 4px;cursor:pointer;text-decoration:underline}
+/* Team sharing S5b: one thread in a Discuss dialog or the inbox. */
+.threadCard{border:1px solid var(--border);border-radius:8px;padding:12px 16px;margin:12px 0;background:var(--surface)}
