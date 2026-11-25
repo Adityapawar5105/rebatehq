@@ -164,7 +164,7 @@ try{
  // An injected leak must trip the same scanner, including binary and base64.
  for(const value of [{ciphertext:Buffer.from(marker)}, {content:Buffer.from(marker).toString('base64')}])assert.throws(()=>assertNoRelayPlaintext(value,markers),/Private fixture content/);checks.scannerNegativeControls=true;
  for(let i=0;i<inspections.length;i++)await inspections[i];assert.deepEqual(failures,[]);checks.requestsHeadersBodiesConsole=true;
- assert.equal(Object.keys(checks).length,17,'Relay privacy check count changed; update the gate record');
+ assert.equal(Object.keys(checks).length,18,'Relay privacy check count changed; update the gate record');
  console.log('Relay browser/privacy gate: '+Object.keys(checks).length+' checks passed ('+channel+', '+(auth?'real authenticated local Supabase':'local PGlite transport; auth unverified')+').');
  await writeFile('test-results/vault-relay-'+channel+(auth?'-auth':'')+'.json',JSON.stringify(result,null,2)+'\n');
 }catch(e){
