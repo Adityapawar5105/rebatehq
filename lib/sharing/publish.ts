@@ -5,6 +5,7 @@
 //   pack key, the version ID and the chunk number → SHA-256 of each encrypted chunk in the manifest.
 // The manifest itself is encrypted under the pack key and signed inside the pack version (lib/relay/crypto.ts).
 import { scanPack, type PackData, type PackId } from "./packs";
+import { checkDelta, type DeltaData } from "./delta";
 import { RelayError, type Manifest } from "../relay/protocol";
 import { msg } from "../i18n/core";
 
@@ -41,8 +42,9 @@ async function chunkKey(packKey: string, versionId: string, n: number) {
 const aad = (versionId: string, pack: string, n: number) => buf(enc.encode(JSON.stringify(["rehq.relay.packchunk.v1", versionId, pack, n])));
 
 /** Seal a pack for one version: the chunks to upload and the manifest to sign. The pack is scanned first (decision 16). */
-export async function sealPack(pack: PackId, data: PackData, packKey: string, versionId: string): Promise<{ chunks: EncryptedChunk[]; manifest: Manifest }> {
-  scanPack(pack, data);
+export async function sealPack(pack: PackId, data: PackData | DeltaData, packKey: string, versionId: string): Promise<{ chunks: EncryptedChunk[]; manifest: Manifest }> {
+  // S4b: a delta is checked as strictly as a full pack (lib/sharing/delta.ts).
+  const rows = Array.isArray(data) ? (scanPack(pack, data), data.reduce((s, d) => s + d.rows.length, 0)) : checkDelta(pack, data).parts.reduce((s, p) => s + p.rows.length + p.removed.length, 0);
   const json = enc.encode(JSON.stringify(data));
   if (json.length > MAX_JSON_BYTES) throw new RelayError("LIMIT", msg("share.err.tooLarge"));
   const contentHash = await hex(json), zipped = await pipe(json, new CompressionStream("gzip"));
@@ -56,11 +58,23 @@ export async function sealPack(pack: PackId, data: PackData, packKey: string, ve
     entries.push({ n: String(n), bytes: String(ct.length), sha256: await hex(ct) });
   }
   zipped.fill(0);
-  return { chunks, manifest: { kind: "manifest", rows: String(data.reduce((s, d) => s + d.rows.length, 0)), contentHash, chunks: entries } };
+  return { chunks, manifest: { kind: "manifest", rows: String(rows), contentHash, chunks: entries } };
 }
 
 /** Open a pack from its verified manifest and the fetched chunks. Any missing, extra, altered or reordered chunk fails. */
 export async function openPack(pack: PackId, manifest: Manifest, chunks: EncryptedChunk[], packKey: string, versionId: string): Promise<PackData> {
+  const data = await openPackJson(pack, manifest, chunks, packKey, versionId) as PackData;
+  scanPack(pack, data);
+  if (String(data.reduce((s, d) => s + d.rows.length, 0)) !== manifest.rows) fail();
+  return data;
+}
+/** S4b: open a delta version, checked as strictly as a full pack. */
+export async function openDelta(pack: PackId, manifest: Manifest, chunks: EncryptedChunk[], packKey: string, versionId: string): Promise<DeltaData> {
+  const d = checkDelta(pack, await openPackJson(pack, manifest, chunks, packKey, versionId));
+  if (String(d.parts.reduce((s, p) => s + p.rows.length + p.removed.length, 0)) !== manifest.rows) fail();
+  return d;
+}
+async function openPackJson(pack: PackId, manifest: Manifest, chunks: EncryptedChunk[], packKey: string, versionId: string): Promise<unknown> {
   if (chunks.length !== manifest.chunks.length || !manifest.chunks.length) fail();
   const parts: Uint8Array[] = [];
   for (const [i, entry] of manifest.chunks.entries()) {
@@ -76,9 +90,5 @@ export async function openPack(pack: PackId, manifest: Manifest, chunks: Encrypt
   let json: Uint8Array;
   try { json = await inflate(zipped, MAX_JSON_BYTES); } catch (error) { if (error instanceof RelayError && error.code === "LIMIT") throw error; return fail(); } finally { zipped.fill(0); }
   if (await hex(json) !== manifest.contentHash) fail();
-  let data: PackData;
-  try { data = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(json)); } catch { return fail(); } finally { json.fill(0); }
-  scanPack(pack, data);
-  if (String(data.reduce((s, d) => s + d.rows.length, 0)) !== manifest.rows) fail();
-  return data;
+  try { return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(json)); } catch { return fail(); } finally { json.fill(0); }
 }

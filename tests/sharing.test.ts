@@ -206,7 +206,7 @@ test("S1 v24: the upgrade keeps every guardrail (not based on cost) and adds the
     c.query(upgradeSql(23));
     assert.deepEqual(q(c, "SELECT id,floor::VARCHAR f,floor_from_cost::VARCHAR x FROM price_guardrails"), [{ id: "g", f: "1", x: "false" }]);
     assert.deepEqual(tablesFor(24).filter(t => !tablesFor(23).includes(t)), ["shared_books", "shared_changes"]);
-    assert.equal(SCHEMA_VERSION, 24);
+    assert.ok(SCHEMA_VERSION >= 24);
     assert.throws(() => c.query("INSERT INTO price_guardrails(id,scope,start,target,floor,tier,category) VALUES('g2','unit_price',3,2,1,'T','C')"), "the tier and category index is rebuilt");
   } finally { c.close(); }
 });

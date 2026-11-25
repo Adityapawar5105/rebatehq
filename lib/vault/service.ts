@@ -75,6 +75,7 @@ import {minorUnits} from '../spike/exact';
 import { msg } from "../i18n/core";
 import { businessToday } from "./today";
 import * as sharing from "../sharing/packs";
+import * as delta from "../sharing/delta";
 import { newCode, openHandoff, packHash, sealHandoff, type Payload } from "../sharing/handoff";
 import { ROLE_IDS } from "./schema";
 import { capsFor } from "../roles/access";
@@ -158,13 +159,14 @@ export class VaultService {
     return {packs:packs.map(p=>({pack:p,rows:String(payload.packs[p]!.reduce((n,d)=>n+d.rows.length,0))})),changed:String(changed),publisher:payload.exportedBy.name,exportedAt:payload.exportedAt,state:await this.shareState()};
   }
   /** Apply shared packs in one audited write: governed tables, shared_books (where each came from) and shared_changes. */
-  private async applyShared(action:string,details:Record<string,string>,entries:{pack:sharing.PackId;data:sharing.PackData;version:string;publisherId:string;publisherName:string;publishedAt:string;hash:string}[],via:'file'|'relay',role:string|null){
+  private async applyShared(action:string,details:Record<string,string>,entries:{pack:sharing.PackId;data:sharing.PackData;version:string;publisherId:string;publisherName:string;publishedAt:string;hash:string;rows?:delta.PackRows}[],via:'file'|'relay',role:string|null){
     const at=new Date().toISOString();let changed=0;
     await this.write(action,details,async e=>{
       for(const x of entries){const p=x.pack;
         const r=await sharing.applyPack(e,p,x.data);changed+=r.changes.length;
         await e.conn.query(`DELETE FROM shared_books WHERE pack=${sqlText(p)};INSERT INTO shared_books VALUES(${[p,x.version,x.publisherId,x.publisherName.slice(0,160),x.publishedAt,at,via].map(v=>sqlText(v)).join(',')},${r.rows},${sqlText(x.hash)},${role===null?'NULL':sqlText(role)});DELETE FROM shared_changes WHERE pack=${sqlText(p)};`);
         for(let i=0;i<r.changes.length;i+=500)await e.conn.query(`INSERT INTO shared_changes VALUES ${r.changes.slice(i,i+500).map((c,j)=>`(${sqlText(p)},${i+j+1},${sqlText(c.key)},${c.before===null?'NULL':sqlText(c.before)},${c.after===null?'NULL':sqlText(c.after)})`).join(',')}`);
+        if(x.rows)await this.savePackRows(e,p,x.rows);
       }
       const packs=entries.map(x=>x.pack),lines=Number((await e.conn.query('SELECT count(*) AS n FROM (SELECT 1 FROM sales_lines LIMIT 1)')).toArray()[0].n);
       if(lines&&(packs.includes('items')||packs.includes('customers')))await this.financialBody(e);
@@ -232,7 +234,7 @@ export class VaultService {
     await this.mirrorGrid(session,result as RelayView);
     // Team sharing S3: a key rotation by a publisher re-publishes every pack under the new keys (so nobody removed can
     // read what follows, and new holders can read it); a sync or join on a receiving seat applies newer packs.
-    if(request.action==='relayRotate'&&session.isPublisher())await this.publishAll(session);
+    if(request.action==='relayRotate'&&session.isPublisher())await this.publishAll(session,true);
     if((request.action==='relaySync'||request.action==='relayJoin')&&!session.isPublisher())await this.receiveAll(session,result as RelayView);
     // S4: a device that has just opened, joined, synced or rotated listens at once. Waiting for the first background
     // poll left up to two minutes in which a publish could only arrive by polling (CI runs 238 to 247 of PR #37).
@@ -257,27 +259,103 @@ export class VaultService {
     },signal);
     return session;
   }
-  /** Publish every built pack this device holds (a publisher only). */
-  private async publishAll(session:RelaySession){
-    const e=this.requireEngine(),out:{pack:string;version:string;rows:string}[]=[];
-    for(const p of sharing.PACK_IDS)if(session.heldPacks().includes(p))out.push(await session.packPublish(p,await sharing.readPack(e,p)));
-    return out;
+  /** S4b: the rows this vault last published or applied for a pack, key → row per part (see schema V25_SQL). */
+  private async packRows(e:Engine,p:sharing.PackId):Promise<delta.PackRows>{
+    const rows=sharing.PACKS[p].parts.map(()=>new Map<string,string>());
+    for(const r of (await e.conn.query(`SELECT part,row_key,row_json FROM shared_pack_rows WHERE pack=${sqlText(p)}`)).toArray())rows[Number(r.part)]?.set(String(r.row_key),String(r.row_json));
+    return rows;
   }
-  /** On a receiving seat, apply the newest full copy of each pack this device holds, verified end to end. */
+  private async savePackRows(e:Engine,p:sharing.PackId,rows:delta.PackRows){
+    await e.conn.query(`DELETE FROM shared_pack_rows WHERE pack=${sqlText(p)}`);
+    const all=rows.flatMap((m,i)=>[...m].map(([k,v])=>`(${sqlText(p)},${i},${sqlText(k)},${sqlText(v)})`));
+    for(let i=0;i<all.length;i+=500)await e.conn.query(`INSERT INTO shared_pack_rows VALUES ${all.slice(i,i+500).join(',')}`);
+  }
+  /**
+   * Publish the packs this device holds (a publisher only). Team sharing S4b (SHARING_DESIGN.md section 5):
+   * - after a key rotation every pack goes out as a full snapshot, under the new keys;
+   * - otherwise only packs that changed are sent, so a change to cost alone reaches no device without cost;
+   * - a changed pack goes out as a delta (rows changed, keys removed) unless a snapshot is due: no earlier publish here,
+   *   a week or 50 deltas since the last snapshot, more than a quarter of the pack changed, or another publisher went in
+   *   between (the relay session checks the server's head);
+   * - when nothing changed at all, Publish now sends a fresh full copy of every pack, which is how a seat whose copy
+   *   failed recovers.
+   * The publisher's record is written only once the version and all its chunks are on the server.
+   */
+  private async publishAll(session:RelaySession,rotated:boolean){
+    const e=this.requireEngine(),out:{pack:string;version:string;rows:string;kind:'snapshot'|'delta'}[]=[];
+    const plans=[];
+    for(const p of sharing.PACK_IDS){
+      if(!session.heldPacks().includes(p))continue;
+      const full=await sharing.readPack(e,p),next=delta.toRows(p,full);
+      const row=(await e.conn.query(`SELECT version,hash,snapshot_version,snapshot_at,deltas_since FROM shared_published WHERE pack=${sqlText(p)}`)).toArray()[0];
+      const last=row?{version:String(row.version),hash:String(row.hash),snapshotVersion:String(row.snapshot_version),snapshotAt:String(row.snapshot_at),deltas:Number(row.deltas_since)}:null;
+      plans.push({p,full,next,last,d:last?await delta.diffPack(p,await this.packRows(e,p),next,last.version):null});
+    }
+    const fresh=!rotated&&plans.every(x=>x.d&&x.d.size===0);
+    for(const {p,full,next,last,d} of plans){
+      if(!rotated&&!fresh&&d&&d.size===0)continue;
+      const snapshot=rotated||fresh||!last||!d||delta.needsSnapshot({rotated,last,size:d.size,total:d.total});
+      const r=await session.packPublish(p,full,snapshot?undefined:{data:{kind:'delta',base:d!.base,result:d!.result,parts:d!.parts},baseHash:last!.hash});
+      const snap=r.kind==='snapshot',at=new Date().toISOString();
+      await this.write('share.published',{actor:this.identity.userId,pack:p,version:r.version,kind:r.kind},async w=>{
+        await this.savePackRows(w,p,next);
+        await w.conn.query(`DELETE FROM shared_published WHERE pack=${sqlText(p)};INSERT INTO shared_published VALUES(${[p,r.version,r.hash,snap?r.version:last!.snapshotVersion,snap?at:last!.snapshotAt].map(v=>sqlText(v)).join(',')},${snap?0:last!.deltas+1})`);
+      });
+      out.push({pack:p,version:r.version,rows:r.rows,kind:r.kind});
+    }
+    return {published:out,fresh};
+  }
+  /**
+   * S4b: what one pack's chain gives this vault, rebuilt into full rows. A chain that starts with a delta applies to the
+   * relay copy this vault holds; when that copy is not the delta's base (an upgrade from v24, a file import in between,
+   * a role change) or the rebuilt rows do not match the publisher's digest, the walk starts again from the newest
+   * snapshot, once.
+   */
+  private async receivePack(session:RelaySession,p:sharing.PackId){
+    const e=this.requireEngine();
+    for(let attempt=0;;attempt++){
+      const got=await session.packReceive(p);if(!got)return null;
+      try{
+        let rows:delta.PackRows|null=null;
+        for(const step of got.steps){
+          if(step.kind==='snapshot'){rows=delta.toRows(p,step.data);continue;}
+          if(!rows){
+            const book=(await e.conn.query(`SELECT version,via FROM shared_books WHERE pack=${sqlText(p)}`)).toArray()[0];
+            if(!book||String(book.via)!=='relay'||String(book.version)!==step.data.base)throw new RelayError('CONTENT',msg('share.err.damaged'));
+            rows=await this.packRows(e,p);
+          }
+          rows=await delta.applyDelta(p,rows,step.data);
+        }
+        if(!rows)return null;
+        return {got,rows};
+      }catch(error){
+        if(attempt||!(error instanceof RelayError&&error.code==='CONTENT'))throw error;
+        session.packReset(p);
+      }
+    }
+  }
+  /** On a receiving seat, bring each pack this device holds up to its newest version, verified end to end. */
   private async receiveAll(session:RelaySession,view:RelayView|undefined,quiet=false){
     const labels=new Map((view?.devices??[]).map((d:{userId:string;label:string})=>[d.userId,d.label]));
     // One pack that fails its checks (a chunk missing after a restore or a half-finished publish, or changed bytes) is
     // skipped without touching the vault; the others still apply, and the person is told to ask for a fresh publish.
-    let failed=0;
+    let failed=0;const cost=(await this.access()).caps.includes('cost');
     for(const p of sharing.PACK_IDS){
+      if(sharing.PACKS[p].cost&&!cost){
+        // S4b: a seat that lost cost (the signed grid changed its role, so it no longer holds the key either) keeps no
+        // cost rows as a delta base.
+        if(Number((await this.requireEngine().conn.query(`SELECT count(*) AS n FROM shared_pack_rows WHERE pack=${sqlText(p)}`)).toArray()[0].n))
+          await this.write('share.base_cleared',{actor:this.identity.userId,pack:p},async w=>{await w.conn.query(`DELETE FROM shared_pack_rows WHERE pack=${sqlText(p)}`);});
+        continue;
+      }
       if(!session.heldPacks().includes(p))continue;
-      if(sharing.PACKS[p].cost&&!(await this.access()).caps.includes('cost'))continue;
-      let got:Awaited<ReturnType<RelaySession['packReceive']>>;
+      let got:Awaited<ReturnType<VaultService['receivePack']>>;
       // S4: a version whose chunks are still uploading (the doorbell can ring first) is not ready yet, not a failure.
-      try{got=await session.packReceive(p);}catch(error){if(error instanceof DOMException&&error.name==='AbortError')throw error;if(!(error instanceof RelayError&&error.code==='NOT_READY'))failed++;continue;}
+      try{got=await this.receivePack(session,p);}catch(error){if(error instanceof DOMException&&error.name==='AbortError')throw error;if(!(error instanceof RelayError&&error.code==='NOT_READY'))failed++;continue;}
       if(!got)continue;
-      await this.applyShared('share.received',{actor:this.identity.userId,pack:p,version:got.version,from:got.sender},[{pack:p,data:got.data,version:got.version,publisherId:got.sender,publisherName:labels.get(got.sender)??got.sender,publishedAt:got.createdAt,hash:await packHash(got.data)}],'relay',null);
-      await session.packMarkApplied(p,got.version);
+      const full=delta.toData(p,got.rows),g=got.got;
+      await this.applyShared('share.received',{actor:this.identity.userId,pack:p,version:g.version,from:g.sender},[{pack:p,data:full,version:g.version,publisherId:g.sender,publisherName:labels.get(g.sender)??g.sender,publishedAt:g.createdAt,hash:await packHash(full),rows:got.rows}],'relay',null);
+      await session.packMarkApplied(p,g.version,g.head);
     }
     this.accessCache=null;
     if(failed&&!quiet)throw new VaultError('SHARE',msg('share.receiveFailed',{count:failed}));
@@ -286,7 +364,7 @@ export class VaultService {
   async sharePublish(signal:AbortSignal){
     const session=await this.relaySession(signal);await session.sync();
     if(!session.isPublisher())throw new VaultError('FORBIDDEN',msg('share.grid.ownerOnly'));
-    return {published:await this.publishAll(session)};
+    return await this.publishAll(session,false);
   }
   /** Team sharing S2b: the grid an Owner or Pricing Owner signs, built from this vault's Team and roles. Anyone without a
    *  role here is a Sales Rep (least privilege, as in accessFor); the ticks are the "Recommended" preset until the

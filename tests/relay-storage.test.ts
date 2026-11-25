@@ -85,13 +85,13 @@ test("S3 publish and receive through sessions: a rep gets book prices, never a c
     assert.ok(![...objects.values()].some(b => Buffer.from(b).toString("latin1").includes("10500")), "only ciphertext in Storage");
     // The rep receives book prices, verified end to end; cost is neither held nor fetchable.
     const got = await client(rep).packReceive("book");
-    assert.deepEqual(got?.data, book); assert.equal(got?.version, "1");
+    assert.deepEqual(got?.steps.map(s => [s.kind, s.data]), [["snapshot", book]]); assert.equal(got?.version, "1");
     assert.ok(!client(rep).heldPacks().includes("cost"));
     assert.equal(await client(rep).packReceive("cost"), null, "a rep sees no cost version at all");
     const costPath = [...objects.keys()].find(k => k.includes("/cost/"))!;
     await assert.rejects(as(db, rep.actor.userId, "SELECT 1").then(() => client(rep)["packTransport"]().chunks.get(costPath)));
     assert.ok(refused.includes(costPath), "decision 16: Storage refuses the rep a cost chunk");
-    assert.deepEqual((await client(manager).packReceive("cost"))?.data, cost, "a Sales Manager receives cost");
+    assert.deepEqual((await client(manager).packReceive("cost"))?.steps.at(-1)?.data, cost, "a Sales Manager receives cost");
     // Nobody but the signer can add a chunk, and nothing can replace one.
     const bookPath = [...objects.keys()].find(k => k.includes("/book/"))!;
     await assert.rejects(client(manager)["packTransport"]().chunks.put(bookPath.replace(/\/0$/, "/1"), new Uint8Array(40)));
@@ -140,7 +140,7 @@ test("S4 not ready yet: a version whose chunks are still uploading is skipped qu
     hold = true; await client(owner).packPublish("book", book); hold = false;
     await assert.rejects(client(rep).packReceive("book"), (e: any) => e.code === "NOT_READY", "a just-signed version without chunks is not ready, not a failure");
     for (const [k, v] of held) objects.set(k, v);
-    assert.deepEqual((await client(rep).packReceive("book"))?.data, book, "once the chunks land, the next ring or poll receives it");
+    assert.deepEqual((await client(rep).packReceive("book"))?.steps.at(-1)?.data, book, "once the chunks land, the next ring or poll receives it");
     // A version still without chunks long after it was signed (a restore, a lost upload) is a real failure.
     const old = Date.now; Date.now = () => old() + NOT_READY_MS + 60_000;
     try {

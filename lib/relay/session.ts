@@ -2,7 +2,8 @@ import {admin,DirectorySchema,PageSchema,RelayError,ShareInputSchema,ZERO_HASH,l
 import {ALL_PACKS} from '../sharing/catalog';
 import {generateIdentity,verifyDevice,fingerprint,newEpoch,verifyEpoch,unwrapEpoch,unwrapPacks,encryptEvent,verifyEvent,decryptEvent,encryptPackVersion,verifyPackVersion,decryptPackVersion,gridPublisher,base64,unbase64,type Identity} from './crypto';
 import {PackPageSchema,type PackVersion} from './protocol';
-import {sealPack,openPack} from '../sharing/publish';
+import {sealPack,openPack,openDelta} from '../sharing/publish';
+import type {DeltaData} from '../sharing/delta';
 import type {PackData,PackId} from '../sharing/packs';
 import {fold,ensureOperation,type Applied,type Shared} from './state';
 import type {RelayTransport} from './http';
@@ -135,54 +136,71 @@ export class RelaySession{
  private packTransport(){const t=this.transport;if(!t.packPage||!t.chunks)throw new RelayError('NETWORK',msg("relay.http.sharingIsUnavailableYour"));return {page:t.packPage.bind(t),chunks:t.chunks};}
  private chunkPath(pack:string,versionId:string,n:number){return this.scope.tenantId+'/'+pack+'/'+versionId+'/'+n;}
  /** Publish a full copy of one pack under the latest epoch. Only a grid publisher whose device holds the pack can. */
- async packPublish(pack:PackId,data:PackData){
+ async packPublish(pack:PackId,data:PackData,delta?:{data:DeltaData;baseHash:string}){
   await this.sync();const last=this.last(),me=this.currentIdentity(),t=this.packTransport();
   if(!last||last.epoch.v!=='2')throw new RelayError('ROTATE',msg("relay.err.anAdministratorMustRotate"));
   const key=last.packs?.[pack];if(!key||!gridPublisher(last.epoch.grid,me.device.userId))throw new RelayError('ACCESS',msg("relay.http.sharingRequiresAnApproved"));
   const head=PackPageSchema.parse(await t.page(pack,this.state.packHeads?.[pack]?.version??'0')).head,id=crypto.randomUUID();
-  const {chunks,manifest}=await sealPack(pack,data,key,id);
-  const version=await encryptPackVersion(me,last.epoch,key,head,pack,'snapshot','0',manifest,id);
+  // S4b: a delta only applies to exactly the version it was made from; if another publisher went in between, send all.
+  const asDelta=!!delta&&head.version===delta.data.base&&head.hash===delta.baseHash;
+  const {chunks,manifest}=await sealPack(pack,asDelta?delta!.data:data,key,id);
+  const version=await encryptPackVersion(me,last.epoch,key,head,pack,asDelta?'delta':'snapshot',asDelta?delta!.data.base:'0',manifest,id);
   await this.transport.post({action:'pack',pack:version});
   // Chunks are uploaded after the signed version exists: Storage only accepts chunks of a version this person signed.
   for(const c of chunks){const iv=unbase64(c.iv),ct=unbase64(c.ciphertext),body=new Uint8Array(iv.length+ct.length);body.set(iv);body.set(ct,iv.length);await t.chunks.put(this.chunkPath(pack,id,c.n),body);}
   (this.state.packHeads??={})[pack]={version:version.version,hash:version.hash};(this.state.packApplied??={})[pack]=version.version;
-  await this.persist('pack_published');return {pack,version:version.version,rows:manifest.rows};
+  await this.persist('pack_published');return {pack,version:version.version,hash:version.hash,kind:asDelta?'delta' as const:'snapshot' as const,rows:manifest.rows};
  }
  /**
-  * Read one pack's chain and return the newest full copy this vault has not applied, checked end to end. A device anchors
-  * at the first version signed under an epoch it holds (versions before it joined cannot be checked and are skipped; the
-  * anchor's signature covers the link to them); after that every version must verify, in order, or nothing is applied.
+  * Read one pack's chain from the version this vault last applied, checked end to end, and return what to apply: the
+  * newest snapshot this device can open (when there is one after that point) and the contiguous chain of deltas after it
+  * (S4b). A device anchors at the first version signed under an epoch it holds (versions before it joined cannot be
+  * checked and are skipped; the anchor's signature covers the link to them); after that every version must verify, in
+  * order, or nothing is applied. Nothing is persisted here: the vault calls packMarkApplied once its own write succeeded,
+  * so a failed or interrupted apply is simply walked again.
   */
- async packReceive(pack:PackId):Promise<{version:string;createdAt:string;sender:string;data:PackData}|null>{
-  const t=this.packTransport(),start=this.state.packHeads?.[pack]??null;let head=start,after=head?.version??'0',newest:{v:PackVersion;key:string}|null=null;
+ async packReceive(pack:PackId):Promise<{version:string;createdAt:string;sender:string;head:{version:string;hash:string};steps:Array<{kind:'snapshot';version:string;data:PackData}|{kind:'delta';version:string;data:DeltaData}>}|null>{
+  const t=this.packTransport(),start=this.state.packHeads?.[pack]??null;let head=start,after=head?.version??'0';const seen:Array<{v:PackVersion;key:string|null}>=[];
   for(let round=0;round<400;round++){
    this.signal.throwIfAborted();const page=PackPageSchema.parse(await t.page(pack,after));
    for(const raw of page.versions){
     const entry=this.state.epochs.find(e=>e.epoch.id===raw.epochId);
     if(!entry){if(head)fail();after=raw.version;continue;}
     const v=await verifyPackVersion(raw,entry.epoch,head??{version:(BigInt(raw.version)-BigInt(1)).toString(),hash:raw.previousHash});
-    head={version:v.version,hash:v.hash};after=v.version;
-    const key=entry.packs?.[pack];if(v.kind==='snapshot'&&key)newest={v,key};
+    head={version:v.version,hash:v.hash};after=v.version;seen.push({v,key:entry.packs?.[pack]??null});
    }
    if(BigInt(after)>=BigInt(page.head.version)||!page.versions.length)break;
   }
-  if(head)(this.state.packHeads??={})[pack]=head;
-  const applied=this.state.packApplied?.[pack];
-  if(!newest||(applied&&BigInt(applied)>=BigInt(newest.v.version))){await this.persist('pack_checked');return null;}
-  const manifest=await decryptPackVersion(newest.v,newest.key),chunks=[];
-  for(const c of manifest.chunks){let b:Uint8Array;
-   // S4: the version row is written before its chunks, so a chunk missing within minutes of signing is still uploading.
-   try{b=await t.chunks.get(this.chunkPath(pack,newest.v.id,Number(c.n)));}catch(error){if(error instanceof RelayError&&error.code!=='LIMIT'&&Date.now()-Date.parse(newest.v.createdAt)<NOT_READY_MS){
-    // Keep the head where it was, so the next ring or poll walks to this version again.
-    if(start)this.state.packHeads![pack]=start;else delete this.state.packHeads![pack];
-    throw new RelayError('NOT_READY',msg('relay.http.sharingIsUnavailableYour'));}throw error;}
-   if(b.length<29)fail();chunks.push({n:Number(c.n),iv:base64(b.subarray(0,12)),ciphertext:base64(b.subarray(12))});}
-  const data=await openPack(pack,manifest,chunks,newest.key,newest.v.id);
-  await this.persist('pack_checked');
-  return {version:newest.v.version,createdAt:newest.v.createdAt,sender:newest.v.senderUser,data};
+  // From the newest snapshot this device can open, or else from what it last applied; stop at the first version it
+  // cannot open or the first delta that does not follow the one before it (a later snapshot then starts again).
+  let from=-1;for(let i=seen.length-1;i>=0;i--)if(seen[i].v.kind==='snapshot'&&seen[i].key){from=i;break;}
+  const chosen:Array<{v:PackVersion;key:string}>=[];let prev:string|null=from>=0?null:start?.version??null;
+  for(const e of seen.slice(Math.max(from,0))){
+   if(!e.key)break;
+   if(e.v.kind==='delta'&&(prev===null||e.v.baseVersion!==prev))break;
+   chosen.push({v:e.v,key:e.key});prev=e.v.version;
+  }
+  if(!chosen.length){
+   // Nothing here this device can use (versions under keys it does not hold): move past them so they are not walked again.
+   if(seen.length&&seen.every(e=>!e.key)&&head){(this.state.packHeads??={})[pack]=head;await this.persist('pack_checked');}
+   return null;
+  }
+  const steps:Array<{kind:'snapshot';version:string;data:PackData}|{kind:'delta';version:string;data:DeltaData}>=[];
+  for(const {v,key} of chosen){
+   const manifest=await decryptPackVersion(v,key),chunks=[];
+   for(const c of manifest.chunks){let b:Uint8Array;
+    // S4: the version row is written before its chunks, so a chunk missing within minutes of signing is still uploading.
+    try{b=await t.chunks.get(this.chunkPath(pack,v.id,Number(c.n)));}catch(error){if(error instanceof RelayError&&error.code!=='LIMIT'&&Date.now()-Date.parse(v.createdAt)<NOT_READY_MS)throw new RelayError('NOT_READY',msg('relay.http.sharingIsUnavailableYour'));throw error;}
+    if(b.length<29)fail();chunks.push({n:Number(c.n),iv:base64(b.subarray(0,12)),ciphertext:base64(b.subarray(12))});}
+   steps.push(v.kind==='snapshot'?{kind:'snapshot',version:v.version,data:await openPack(pack,manifest,chunks,key,v.id)}:{kind:'delta',version:v.version,data:await openDelta(pack,manifest,chunks,key,v.id)});
+  }
+  const lastStep=chosen[chosen.length-1].v;
+  return {version:lastStep.version,createdAt:lastStep.createdAt,sender:lastStep.senderUser,head:{version:lastStep.version,hash:lastStep.hash},steps};
  }
+ /** Forget where this pack's walk stopped, so the next receive starts again from its newest snapshot (S4b recovery). */
+ packReset(pack:string){if(this.state.packHeads)delete this.state.packHeads[pack];if(this.state.packApplied)delete this.state.packApplied[pack];}
  /** Record that this vault applied a pack version (after the vault's own audited write succeeded). */
- async packMarkApplied(pack:string,version:string){(this.state.packApplied??={})[pack]=version;await this.persist('pack_applied');}
+ async packMarkApplied(pack:string,version:string,head?:{version:string;hash:string}){(this.state.packApplied??={})[pack]=version;if(head)(this.state.packHeads??={})[pack]=head;await this.persist('pack_applied');}
  /** The packs this device holds keys for in the latest epoch. */
  heldPacks(){return Object.keys(this.last()?.packs??{});}
  isPublisher(){const e=this.last()?.epoch;return e?.v==='2'&&gridPublisher(e.grid,this.scope.userId);}
