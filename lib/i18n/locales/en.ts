@@ -3220,6 +3220,8 @@ const auth3 = {
 } as const;
 // Team sharing S1 (blueprint section 22, item 38): the encrypted hand-off file and the protected-floor flag.
 const share = {
+  "relay.live": "Live",
+  "relay.liveHint": "New shared data arrives as soon as it is published. Without a live connection it still arrives within a minute.",
   "share.readOnlyHint": "{name} shares this data, so it is read-only on this device.",
   "share.readOnly": "{name} shares {pack} with the team, so it is read-only on this device. Ask {name} to make the change and publish it.",
   "share.banner.title": "Shared by {name}",

@@ -27,7 +27,7 @@ const onboardKey=(tenant:string,user:string)=>`rebatehq.relayOnboarding.dismisse
 const dismissed=(tenant:string,user:string)=>{try{return localStorage.getItem(onboardKey(tenant,user))==="yes";}catch{return false;}};
 /** The set-up card's button opens the inbox on the device-key step through this page event (no data is carried). */
 const SETUP_EVENT='rebatehq:relay-setup';
-type Local={identity:boolean;pending:boolean;lastSyncedAt:string|null};
+type Local={identity:boolean;pending:boolean;lastSyncedAt:string|null;live?:{joined:string[];rings:number;statuses?:Record<string,string>}|null};
 
 /** 8.5: "Turn on sharing" card, shown under the Home work tabs on Professional or Scale when the server has sharing on,
  *  this device has no key and the card was not dismissed. Both checks are local: the server flag comes from the page. */
@@ -72,7 +72,7 @@ export function RelayPanel({client,userId,tenantId,relayEnabled,onChange}:{clien
  const start=(next:Tab)=>{setTab(next);setSelected('');setView(null);setError('');setBusy(true);setOpen(true);};
  useEffect(()=>{const go=()=>start('keys');window.addEventListener(SETUP_EVENT,go);return()=>window.removeEventListener(SETUP_EVENT,go);},[]);
  useEffect(()=>{if(!open)return;let active=true;dialog.current?.showModal();setView(null);setError('');setBusy(true);
-  void client.call('relayView',{}).then(v=>{if(active){setView(v);setLive(v.sync);}}).catch(e=>{if(active)setError(e instanceof Error&&e.message?e.message:msg("relay.sharingCouldNotFinish"));}).finally(()=>{if(active)setBusy(false);});
+  void readLocal();void client.call('relayView',{}).then(v=>{if(active){setView(v);setLive(v.sync);}}).catch(e=>{if(active)setError(e instanceof Error&&e.message?e.message:msg("relay.sharingCouldNotFinish"));}).finally(()=>{if(active)setBusy(false);});
   return()=>{active=false;dialog.current?.close();};
  },[client,open]);
  async function run<K extends RelayAction>(action:K,data:Commands[K],message:string){
@@ -94,6 +94,7 @@ export function RelayPanel({client,userId,tenantId,relayEnabled,onChange}:{clien
   <dialog ref={dialog} className={styles.relayDialog} aria-labelledby="relay-title" aria-busy={open&&(busy||(!view&&!error))} onCancel={()=>setOpen(false)}>
    <div className={styles.row}><h2 id="relay-title">{t("relay.sharedInbox")}</h2>
     {view&&<span data-testid="relay-sync-status"><Badge tone={SYNC_TONE[view.sync.status]}>{t(SYNC_TEXT[view.sync.status])}</Badge> {view.sync.lastSyncedAt?t('monitor.lastSynced',{date:fmt.dateTime(view.sync.lastSyncedAt)}):t('monitor.neverSynced')}</span>}
+    {local?.live&&<span data-testid="relay-live" data-joined={local.live.joined.join(',')} data-rings={String(local.live.rings)} data-statuses={JSON.stringify(local.live.statuses??{})} title={t('relay.liveHint')}>{local.live.joined.length>0&&<Badge tone="ok" icon="checkCircle">{t('relay.live')}</Badge>}</span>}
     <Button onClick={()=>setOpen(false)}>{t("relay.closeSharedInbox")}</Button></div>
    <p className={styles.muted}>{t("relay.sharedWithEveryApproved")}</p>
    {error&&<Notice tone="bad" role="alert">{say(error)}</Notice>}
