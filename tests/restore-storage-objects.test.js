@@ -10,8 +10,8 @@ const policies = sql => [...sql.matchAll(/CREATE POLICY[\s\S]*?\);/g)].map(m => 
 const bucket = sql => (/VALUES\('relay-packs'[^;\n]*/.exec(sql) || [""])[0];
 
 test("the restore drill re-applies exactly the migration's relay-packs bucket and policies", () => {
-  const migration = read("supabase/migrations/20261126120000_sharing_s3_storage.sql"), restore = read("scripts/restore-storage-objects.sql");
-  assert.equal(policies(migration).length, 2);
+  const migration = read("supabase/migrations/20261126120000_sharing_s3_storage.sql") + read("supabase/migrations/20261127120000_sharing_s4_doorbell.sql"), restore = read("scripts/restore-storage-objects.sql");
+  assert.equal(policies(migration).length, 3, "two Storage policies (S3) and the Realtime doorbell policy (S4)");
   assert.deepEqual(policies(restore), policies(migration));
   assert.equal(bucket(restore), bucket(migration));
   assert.match(restore, /DROP POLICY IF EXISTS relay_packs_read ON storage\.objects;/);
@@ -37,9 +37,10 @@ test("the re-apply script runs twice in PGlite after every migration and leaves 
     await db.exec(read("tests/helpers/storage-stub.sql"));
     for (const name of fs.readdirSync(path.join(root, "supabase/migrations")).filter(n => n.endsWith(".sql")).sort()) await db.exec(read("supabase/migrations/" + name));
     // As after a restore: the dump brought rebatehq_storage, but the storage rows and policies are gone.
-    await db.exec("DROP POLICY relay_packs_read ON storage.objects;DROP POLICY relay_packs_write ON storage.objects;DELETE FROM storage.buckets;");
+    await db.exec("DROP POLICY relay_packs_read ON storage.objects;DROP POLICY relay_packs_write ON storage.objects;DROP POLICY relay_pack_doorbell_read ON realtime.messages;DELETE FROM storage.buckets;");
     for (let i = 0; i < 2; i++) await db.exec(read("scripts/restore-storage-objects.sql"));
     assert.deepEqual((await db.query("SELECT id,public,file_size_limit::text AS l FROM storage.buckets")).rows, [{ id: "relay-packs", public: false, l: "524400" }]);
     assert.deepEqual((await db.query("SELECT policyname,cmd FROM pg_policies WHERE schemaname='storage' ORDER BY policyname")).rows.map(r => [r.policyname, r.cmd]), [["relay_packs_read", "SELECT"], ["relay_packs_write", "INSERT"]]);
+    assert.deepEqual((await db.query("SELECT policyname,cmd,roles::text AS r FROM pg_policies WHERE schemaname='realtime'")).rows.map(r => [r.policyname, r.cmd, r.r]), [["relay_pack_doorbell_read", "SELECT", "{authenticated}"]]);
   } finally { await db.close(); }
 });

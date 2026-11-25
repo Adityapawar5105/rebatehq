@@ -93,7 +93,7 @@ export function VaultApp({ scope, email, workspace, lab = false, relayEnabled = 
       if(event.event === "licence"){setStatus(event.status);}
       else if (event.event === "locking") setLocking(true);
       else if (event.event === "progress") { setProgress(event); window.dispatchEvent(new CustomEvent("vault-progress", { detail: { stage: event.stage } })); }
-      else if (event.event === "writable" || event.event === "agents") { void c.call("status", {}).then(s => { if (active) setStatus(s); }).catch(() => undefined); }
+      else if (event.event === "writable" || event.event === "agents" || event.event === "relay") { void c.call("status", {}).then(s => { if (active) setStatus(s); }).catch(() => undefined); }
       else if (event.event === "pickup") {
         // Roadmap 15.1: the scheduled folder pickup imported files or left them for review; Import Studio reloads its batch.
         const r = event.result, name = event.name ?? "";

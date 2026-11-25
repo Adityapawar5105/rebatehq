@@ -69,6 +69,16 @@ try{
   if(receiving){await page.getByTestId('shared-banner').waitFor({timeout:30000});assert.match(await page.getByTestId('shared-banner').innerText(),/Shared by/);}else assert.equal(await page.getByTestId('shared-banner').count(),0,'The publisher sees a shared-data banner on its own data');
   await page.evaluate(()=>{location.hash='#home';});await open(page);}
  checks.sharedSeatsReadOnlyUi=true;
+ // Team sharing S4: a new publish reaches a receiving seat with nobody pressing Sync. Against real Supabase the Realtime
+ // doorbell must bring it within 45 s; in the lab (no Realtime server) the worker's 60-second poll does.
+ {const bookVersion=async page=>{await page.evaluate(()=>{location.hash='#home';});await page.evaluate(()=>{location.hash='#pricing';});const b=page.getByTestId('shared-banner');await b.waitFor({timeout:30000});return Number((/Book prices, version (\d+)/.exec(await b.innerText())||[])[1]||0);};
+  await close(rep);const before=await bookVersion(rep);assert.ok(before>0,'The rep has no book prices before the live update');
+  await close(owner);await owner.evaluate(()=>{location.hash='#settings-team';});await owner.getByTestId('share-publish').click();await owner.getByText(/Published \d+ kinds? of data/).waitFor({timeout:120000});
+  const t0=Date.now();let after=before;while(after<=before&&Date.now()-t0<180000){await rep.waitForTimeout(3000);after=Number((/Book prices, version (\d+)/.exec(await rep.getByTestId('shared-banner').innerText().catch(()=>''))||[])[1]||0);}
+  assert.ok(after>before,'The rep did not receive the new publish without pressing Sync');if(auth)assert.ok(Date.now()-t0<45000,'The Realtime doorbell did not deliver within 45 s (took '+Math.round((Date.now()-t0)/1000)+' s)');
+  console.log('Live update reached the rep in '+Math.round((Date.now()-t0)/1000)+' s ('+(auth?'Realtime doorbell':'lab poll')+').');
+  for(const page of [owner,rep]){await page.evaluate(()=>{location.hash='#home';});await open(page);}}
+ checks.liveUpdate=true;
  for(const page of pages){await page.getByTestId('relay-sync-status').filter({hasText:'Synced'}).waitFor();assert.ok((await page.getByTestId('relay-sync-status').innerText()).includes('Last synced:'));}checks.syncIndicator=true;
  await rep.getByRole('tab',{name:'Share a reference',exact:true}).click();await rep.getByLabel('Reference type').selectOption('quote');await rep.getByLabel('Shared title').fill(marker);await rep.getByLabel('Local reference').fill(marker+'-reference');await rep.getByLabel('Amount',{exact:true}).fill(amount);await click(rep,'Share encrypted reference');
  await rep.getByRole('button',{name:marker,exact:true}).click();await rep.getByLabel('Pricing Owner approver').selectOption(actors[0].userId);await rep.getByLabel('Second-level manager').selectOption(actors[1].userId);await click(rep,'Request approval');
@@ -93,7 +103,7 @@ try{
  // An injected leak must trip the same scanner, including binary and base64.
  for(const value of [{ciphertext:Buffer.from(marker)}, {content:Buffer.from(marker).toString('base64')}])assert.throws(()=>assertNoRelayPlaintext(value,markers),/Private fixture content/);checks.scannerNegativeControls=true;
  for(let i=0;i<inspections.length;i++)await inspections[i];assert.deepEqual(failures,[]);checks.requestsHeadersBodiesConsole=true;
- assert.equal(Object.keys(checks).length,16,'Relay privacy check count changed; update the gate record');
+ assert.equal(Object.keys(checks).length,17,'Relay privacy check count changed; update the gate record');
  console.log('Relay browser/privacy gate: '+Object.keys(checks).length+' checks passed ('+channel+', '+(auth?'real authenticated local Supabase':'local PGlite transport; auth unverified')+').');
  await writeFile('test-results/vault-relay-'+channel+(auth?'-auth':'')+'.json',JSON.stringify(result,null,2)+'\n');
 }catch(e){

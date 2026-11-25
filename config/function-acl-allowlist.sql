@@ -27,6 +27,7 @@ INSERT INTO pg_temp.phase1_function_allowlist(signature,grantees) VALUES
  ('public.relay_directory(uuid)',ARRAY['$owner','rebatehq_app']),
  ('public.relay_pack_reader(uuid,text)',ARRAY['$owner','rebatehq_app']),
  ('public.relay_check_insert()',ARRAY['$owner']),
+ ('public.relay_pack_doorbell()',ARRAY['$owner']),
  ('public.bench_owner(uuid,boolean)',ARRAY['$owner','rebatehq_app']),
  ('public.bench_quarter_end(text)',ARRAY['$owner','rebatehq_app']),
  ('public.bench_submit(uuid,bytea,text,text,jsonb)',ARRAY['$owner','rebatehq_app']),

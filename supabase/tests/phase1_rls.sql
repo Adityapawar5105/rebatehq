@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT extensions.plan(152 + CASE WHEN current_setting('app.restore_test_mode',true)='true' THEN 3 ELSE 0 END);
+SELECT extensions.plan(155 + CASE WHEN current_setting('app.restore_test_mode',true)='true' THEN 3 ELSE 0 END);
 SELECT set_config('app.phase1_migration_owner',current_user,true);
 -- INCLUDE FUNCTION ACL ALLOWLIST
 
@@ -1116,5 +1116,6 @@ SELECT extensions.ok(current_setting('app.phase1_manager_invite')='true','Only o
 -- INCLUDE CHUNK 8D CHECKS
 -- INCLUDE SHARING S2 CHECKS
 -- INCLUDE SHARING S3 CHECKS
+-- INCLUDE SHARING S4 CHECKS
 SELECT * FROM extensions.finish();
 ROLLBACK;

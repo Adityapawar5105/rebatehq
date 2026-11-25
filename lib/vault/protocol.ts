@@ -329,6 +329,8 @@ export type Response = { [K in Action]: { id: string; action: K; result: Results
   | { event: "locking" }
   | { event: "writable" }
   | { event: "agents" }
+  /** Team sharing S4: a background sync applied newer shared data or changed the inbox. */
+  | { event: "relay" }
   | { event: "pickup"; result: import("./folder").PickupResult; name: string | null }
   | { event: "licence"; status:VaultStatus };
 /** Command palette hit: IDs and names only, never cost or price (chunk 7U). */

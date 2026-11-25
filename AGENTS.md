@@ -315,3 +315,10 @@ See `docs/evidence/SECOND_AUDIT_PASS.md`. The independent security review (R02, 
 - Pricing, Data Hub and Rebates & Contracts show "Shared by {name}" with versions, received date and a What changed link.
 - Staleness for relay copies is measured from the last sync. Roll back is the audited price roll back plus Publish now.
 - No schema or migration change. Relay gate: 16 checks. See docs/evidence/SHARING_S3C_VERIFICATION.md.
+
+**Team sharing S4a: live updates (25 Nov 2026; built by Claude Code).**
+- A joined device syncs on the worker's 60-second tick while the app is open and unlocked: this is the path that guarantees delivery, quiet, in the worker's one queue.
+- The Realtime doorbell makes it sync at once: one private channel per held pack, version number only, the person's own token.
+- A chunk still uploading counts as not ready for 15 minutes.
+- Migration `20261127120000_sharing_s4_doorbell.sql` is **pending** until CI and a **user-run Restore Drill** pass. pgTAP plans 155 fresh and 158 restore checks.
+- Relay gate: 17 checks (liveUpdate). See docs/evidence/SHARING_S4A_VERIFICATION.md.

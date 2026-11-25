@@ -4,7 +4,9 @@ import {PostSchema,DirectorySchema,PageSchema,PackPageSchema,RelayError,RELAY_LI
 import { msg } from "../i18n/core";
 /** Team sharing S3: where encrypted pack chunks are stored (Supabase Storage, checked by relay_storage_allowed). */
 export type ChunkStore={put(path:string,bytes:Uint8Array):Promise<void>;get(path:string):Promise<Uint8Array>};
-export type RelayTransport={directory():Promise<Directory>;page(after:string,epochAfter:string):Promise<Page>;post(value:Post):Promise<void>;packPage?(pack:string,after:string):Promise<PackPage>;chunks?:ChunkStore};
+export type RelayTransport={directory():Promise<Directory>;page(after:string,epochAfter:string):Promise<Page>;post(value:Post):Promise<void>;packPage?(pack:string,after:string):Promise<PackPage>;chunks?:ChunkStore;
+ /** Team sharing S4: the person's own short-lived session token, for the Realtime doorbell (never a service key). */
+ token?():Promise<z.infer<typeof TokenSchema>>};
 const TokenSchema=z.object({url:z.string().url(),apikey:z.string().min(1).max(400),token:z.string().min(1).max(8000),expiresAt:z.string()}).strict();
 const CHUNK_PATH=/^[0-9a-f-]{36}\/[a-z_]{1,20}\/[0-9a-f-]{36}\/(0|[1-9][0-9]?|1[01][0-9]|12[0-7])$/;
 const messages:Record<string,string>={ACCESS:msg("relay.http.sharingRequiresAnApproved"),ROTATE:msg("relay.http.theWorkspaceKeyOr"),CONFLICT:msg("relay.http.someoneChangedTheShared"),LIMIT:msg("relay.http.theSharingQuotaWas"),DEVICE:msg("relay.http.thisDeviceHasDifferent"),VERIFY:msg("relay.http.aSharedRecordCould")};
@@ -29,6 +31,7 @@ export function relayHttp(deviceId:string,signal:AbortSignal):RelayTransport{
   async packPage(pack,after){if(!/^[a-z_]{1,20}$/.test(pack)||!/^(0|[1-9][0-9]{0,8})$/.test(after))throw new RelayError('VERIFY',msg("relay.http.invalidLocalSharingCursor"));return PackPageSchema.parse(await request({mode:'packs',pack,after}));},
   async page(after,epochAfter){if(!/^(0|[1-9][0-9]{0,8})$/.test(after)||!/^(0|[1-9][0-9]{0,5})$/.test(epochAfter))throw new RelayError('VERIFY',msg("relay.http.invalidLocalSharingCursor"));return PageSchema.parse(await request({mode:'sync',after,epochAfter}));},
   chunks:storageChunks(()=>request({mode:'token'}).then(v=>TokenSchema.parse(v)),signal),
+  token:()=>request({mode:'token'}).then(v=>TokenSchema.parse(v)),
   async post(value){const result=await request(null,value) as {ok?:unknown};if(result.ok!==true)throw new RelayError('NETWORK',msg("relay.http.sharingDidNotAcknowledge"));},
  };
 }
