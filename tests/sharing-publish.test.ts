@@ -1,7 +1,7 @@
 // Team sharing S3: sealing a pack into encrypted chunks and a manifest, and opening it again (SHARING_DESIGN.md section 5).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { sealPack, openPack, CHUNK_BYTES } from "../lib/sharing/publish";
+import { sealPack, openPack, inflate, CHUNK_BYTES, MAX_JSON_BYTES } from "../lib/sharing/publish";
 import { ManifestSchema } from "../lib/relay/protocol";
 import { PACKS, type PackData } from "../lib/sharing/packs";
 
@@ -33,4 +33,13 @@ test("S3 open refuses a missing, altered, swapped or replayed chunk, the wrong k
   await assert.rejects(sealPack("items", [{ part: 0, columns: [...PACKS.items.parts[0].columns.map(c => c.name).slice(0, -1), "current_cost"], rows: [] }], k, id), "the decision 16 scan runs before sealing");
   const small = await sealPack("book", book(1), k, id);
   assert.equal(small.chunks.length, 1); assert.equal((await openPack("book", small.manifest, small.chunks, k, id))[0].rows.length, 1);
+});
+
+test("opening stops as soon as decompressed output passes the cap, so a signed gzip bomb cannot fill a receiving tab", async () => {
+  const zeros = new Uint8Array(4 * 1024 * 1024);
+  const bomb = new Uint8Array(await new Response(new Blob([zeros]).stream().pipeThrough(new CompressionStream("gzip"))).arrayBuffer());
+  assert.ok(bomb.length < 64 * 1024, "4 MiB of zeros compresses to a few KiB");
+  await assert.rejects(inflate(bomb, 1024 * 1024), (e: any) => e.code === "LIMIT");
+  assert.equal((await inflate(bomb, 8 * 1024 * 1024)).length, zeros.length);
+  assert.equal(MAX_JSON_BYTES, 256 * 1024 * 1024);
 });

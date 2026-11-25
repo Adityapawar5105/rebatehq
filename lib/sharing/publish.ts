@@ -10,6 +10,9 @@ import { msg } from "../i18n/core";
 
 export const CHUNK_BYTES = 512 * 1024;
 export const MAX_CHUNKS = 128;
+/** The most a pack may hold uncompressed. Opening stops as soon as decompressed output passes it, so a signed but hostile
+ *  manifest cannot expand a few compressed chunks into a decompression bomb in a receiving tab. */
+export const MAX_JSON_BYTES = 256 * 1024 * 1024;
 export type EncryptedChunk = { n: number; iv: string; ciphertext: string };
 const enc = new TextEncoder();
 const buf = (v: Uint8Array) => new Uint8Array(v).buffer;
@@ -17,7 +20,17 @@ const b64 = (v: Uint8Array) => { let s = ""; for (let i = 0; i < v.length; i += 
 const unb64 = (v: string) => Uint8Array.from(atob(v), c => c.charCodeAt(0));
 const hex = async (v: Uint8Array) => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", buf(v))), b => b.toString(16).padStart(2, "0")).join("");
 const fail = (): never => { throw new RelayError("CONTENT", msg("relay.crypto.anAuthenticatedButInvalid")); };
-async function pipe(bytes: Uint8Array, stream: CompressionStream | DecompressionStream) { return new Uint8Array(await new Response(new Blob([buf(bytes)]).stream().pipeThrough(stream)).arrayBuffer()); }
+export async function inflate(bytes: Uint8Array, limit: number) {
+  const reader = new Blob([buf(bytes)]).stream().pipeThrough(new DecompressionStream("gzip")).getReader(), parts: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read(); if (done) break;
+    total += value.length; if (total > limit) { await reader.cancel(); throw new RelayError("LIMIT", msg("share.err.tooLarge")); }
+    parts.push(value);
+  }
+  const out = new Uint8Array(total); let at = 0; for (const p of parts) { out.set(p, at); at += p.length; p.fill(0); } return out;
+}
+async function pipe(bytes: Uint8Array, stream: CompressionStream) { return new Uint8Array(await new Response(new Blob([buf(bytes)]).stream().pipeThrough(stream)).arrayBuffer()); }
 async function chunkKey(packKey: string, versionId: string, n: number) {
   const raw = unb64(packKey);
   try {
@@ -30,7 +43,9 @@ const aad = (versionId: string, pack: string, n: number) => buf(enc.encode(JSON.
 /** Seal a pack for one version: the chunks to upload and the manifest to sign. The pack is scanned first (decision 16). */
 export async function sealPack(pack: PackId, data: PackData, packKey: string, versionId: string): Promise<{ chunks: EncryptedChunk[]; manifest: Manifest }> {
   scanPack(pack, data);
-  const json = enc.encode(JSON.stringify(data)), contentHash = await hex(json), zipped = await pipe(json, new CompressionStream("gzip"));
+  const json = enc.encode(JSON.stringify(data));
+  if (json.length > MAX_JSON_BYTES) throw new RelayError("LIMIT", msg("share.err.tooLarge"));
+  const contentHash = await hex(json), zipped = await pipe(json, new CompressionStream("gzip"));
   json.fill(0);
   if (Math.ceil(zipped.length / CHUNK_BYTES) > MAX_CHUNKS) throw new RelayError("LIMIT", msg("share.err.tooLarge"));
   const chunks: EncryptedChunk[] = [], entries: Manifest["chunks"] = [];
@@ -59,7 +74,7 @@ export async function openPack(pack: PackId, manifest: Manifest, chunks: Encrypt
   const zipped = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
   let at = 0; for (const p of parts) { zipped.set(p, at); at += p.length; p.fill(0); }
   let json: Uint8Array;
-  try { json = await pipe(zipped, new DecompressionStream("gzip")); } catch { return fail(); } finally { zipped.fill(0); }
+  try { json = await inflate(zipped, MAX_JSON_BYTES); } catch (error) { if (error instanceof RelayError && error.code === "LIMIT") throw error; return fail(); } finally { zipped.fill(0); }
   if (await hex(json) !== manifest.contentHash) fail();
   let data: PackData;
   try { data = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(json)); } catch { return fail(); } finally { json.fill(0); }

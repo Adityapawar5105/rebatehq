@@ -12,6 +12,7 @@
   - a signed pack version on the relay (S2). Its manifest is encrypted under the pack key and lists the chunks, sizes and SHA-256 hashes;
   - encrypted chunks in the private `relay-packs` bucket, at `<tenant>/<pack>/<version id>/<n>`.
 - Rows are gzipped and cut into chunks of at most 512 KiB, with at most 128 chunks per version.
+- A pack holds at most 256 MiB uncompressed. Opening stops as soon as decompressed output passes that, so a hostile signed manifest cannot act as a gzip bomb in a receiving tab (found by the push security review).
 - Each chunk is sealed with AES-GCM under a key derived (HKDF) from the pack key, the version id and the chunk number. The AAD binds the version, pack and chunk number (`lib/sharing/publish.ts`).
 
 **Receiving.** A seat that is not a publisher receives after each sync or join. For each pack its device holds (cost packs only for roles with `cost`), it:
