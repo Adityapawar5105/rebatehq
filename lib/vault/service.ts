@@ -188,7 +188,7 @@ export class VaultService {
     const state = await this.relayStateRead();
     if (!state.epochs.length || !state.identity) { this.stopBell(); return false; }
     // With the doorbell joined, a slow safety poll is enough; without it, every minute.
-    if (!ring && Date.now() - this.lastBackground < (this.bell?.door.open() ? 600_000 : 60_000)) return false;
+    if (!ring && Date.now() - this.lastBackground < (this.bell?.door.open() ? 595_000 : 55_000)) return false;
     this.lastBackground = Date.now();
     const seen = async () => JSON.stringify((await this.requireEngine().conn.query("SELECT pack,version FROM shared_books ORDER BY pack")).toArray().map(r => [String(r.pack), String(r.version)]));
     const before = await seen(), head = state.head?.sequence ?? "0";
@@ -197,7 +197,7 @@ export class VaultService {
       const session = await this.relaySession(new AbortController().signal), view = await session.sync();
       await this.mirrorGrid(session, view);
       if (!session.isPublisher()) await this.receiveAll(session, view, true);
-      this.watchBell(session, (await this.relayStateRead()).epochs.at(-1)?.epoch.id ?? "");
+      this.relayListen(session);
       return before !== await seen() || ((await this.relayStateRead()).head?.sequence ?? "0") !== head;
     } catch { return false; }
     finally { this.quiet = false; }
@@ -234,7 +234,17 @@ export class VaultService {
     // read what follows, and new holders can read it); a sync or join on a receiving seat applies newer packs.
     if(request.action==='relayRotate'&&session.isPublisher())await this.publishAll(session);
     if((request.action==='relaySync'||request.action==='relayJoin')&&!session.isPublisher())await this.receiveAll(session,result as RelayView);
+    // S4: a device that has just opened, joined, synced or rotated listens at once. Waiting for the first background
+    // poll left up to two minutes in which a publish could only arrive by polling (CI runs 238 to 247 of PR #37).
+    this.relayListen(session);
     return result;
+  }
+  /** Join the doorbell for this session's packs when the device has joined sharing and may write; never throws. */
+  private relayListen(session: RelaySession) {
+    try {
+      if (!this.engine || !this.licence.writable || this.licence.tier === "starter" || !session.heldPacks().length) return;
+      void this.relayStateRead().then(state => { if (state.epochs.length && state.identity) this.watchBell(session, state.epochs.at(-1)?.epoch.id ?? ""); }).catch(() => undefined);
+    } catch { /* the poll still delivers */ }
   }
   private async relaySession(signal:AbortSignal){
     this.licence.assert();if(this.licence.tier==='starter')throw new VaultError('LICENCE',msg("vault.workspaceSharingRequiresProfessional"));

@@ -65,3 +65,20 @@
   - the policy being created there;
   - the re-apply step in the Restore Drill;
   - a rolled-back dry run on hosted staging before the lock.
+
+## CI findings (25 November 2026)
+
+Four authenticated CI runs on PR #37 delivered the live update only by the poll, in 42 to 48 s. The gate added diagnostics run by run:
+- **The rep device:** its six pack channels were SUBSCRIBED, but it heard no ring.
+- **The database:** the read policy existed, and Realtime had stored the private pack messages, with partitions present and the replication slot active.
+- **A direct send:** `realtime.send` from SQL rang the rep within 8 s.
+- **The Realtime server log:** it showed the tenant's **first** join, and the start of its replication stream, only when the poll had already delivered. That was about 45 s after the Owner published.
+
+**The cause.** The worker started the doorbell only as the last step of a background poll. After unlocking, joining or a rotation, a device could go up to two minutes without listening, and a publish in that window could only arrive by polling.
+
+**The fixes:**
+- every relay action (open, join, sync, rotate) starts or rejoins the doorbell at once;
+- a background sync runs right after unlock;
+- the minute check allows timer jitter (55 s);
+- `setAuth` is awaited before any private channel joins;
+- the authenticated gate waits until the rep's **Live** badge shows the book channel joined before the Owner publishes, then requires at least one ring and delivery within 45 s.

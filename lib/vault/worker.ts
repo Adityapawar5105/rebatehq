@@ -19,7 +19,7 @@ const progress = (stage: string, done: string, total: string, kind?: import("../
 function cancellable() { return abort.signal; }
 async function handle(request: Request) {
   abort = new AbortController(); // each request gets its own cancellation scope
-  const result = await dispatch(service, request, { signal: cancellable, progress, unlocked: () => { void service.warmup()?.then(() => { post({ event: "writable" }); agentsDue(); }); } });
+  const result = await dispatch(service, request, { signal: cancellable, progress, unlocked: () => { void service.warmup()?.then(() => { post({ event: "writable" }); agentsDue(); relayDue(); }); } });
   post({ id: request.id, action: request.action, result } as Response);
 }
 scope.onmessage = event => {

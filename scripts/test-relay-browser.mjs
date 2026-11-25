@@ -72,6 +72,7 @@ try{
  // Team sharing S4: a new publish reaches a receiving seat with nobody pressing Sync. Against real Supabase the Realtime
  // doorbell must bring it within 45 s; in the lab (no Realtime server) the worker's 60-second poll does.
  {const bookVersion=async page=>{await page.evaluate(()=>{location.hash='#home';});await page.evaluate(()=>{location.hash='#pricing';});const b=page.getByTestId('shared-banner');await b.waitFor({timeout:30000});return Number((/Book prices, version (\d+)/.exec(await b.innerText())||[])[1]||0);};
+  if(auth){let joined=false;for(let i=0;i<20&&!joined;i++){await rep.evaluate(()=>{location.hash='#home';});await open(rep);const b=rep.getByTestId('relay-live');joined=!!(await b.count())&&(await b.getAttribute('data-joined')||'').split(',').includes('book');await close(rep);if(!joined)await rep.waitForTimeout(3000);}assert.ok(joined,'The rep device never joined the book doorbell channel');}
   await close(rep);const before=await bookVersion(rep);assert.ok(before>0,'The rep has no book prices before the live update');
   await close(owner);await owner.evaluate(()=>{location.hash='#settings-team';});await owner.getByTestId('share-publish').click();await owner.getByText(/Published \d+ kinds? of data/).waitFor({timeout:120000});
   const t0=Date.now();let after=before;while(after<=before&&Date.now()-t0<180000){await rep.waitForTimeout(3000);after=Number((/Book prices, version (\d+)/.exec(await rep.getByTestId('shared-banner').innerText().catch(()=>''))||[])[1]||0);}
