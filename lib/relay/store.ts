@@ -25,7 +25,9 @@ export async function relayDevices(db:RelayDb,tenant:string):Promise<DirectoryDe
  const rows=await db.query('SELECT * FROM public.relay_directory($1::uuid)',[tenant]);
  return rows.rows.map(r=>({...deviceFrom(r,tenant),role:r.member_role,label:r.email}));
 }
-export async function relayHead(db:RelayDb,tenant:string){const rows=await db.query('SELECT sequence::text AS sequence,content_hash FROM public.relay_event WHERE tenant_id=$1::uuid ORDER BY sequence DESC LIMIT 1',[tenant]);return rows.rows.length?{sequence:rows.rows[0].sequence,hash:hex(rows.rows[0].content_hash)}:{sequence:'0',hash:ZERO_HASH};}
+// The text alias must not share the column's name: ORDER BY would sort the text, putting "9" after "10" (found 26 Nov 2026
+// when a workspace first passed nine events; the same held for a pack's tenth version).
+export async function relayHead(db:RelayDb,tenant:string){const rows=await db.query('SELECT sequence::text AS head_sequence,content_hash FROM public.relay_event WHERE tenant_id=$1::uuid ORDER BY sequence DESC LIMIT 1',[tenant]);return rows.rows.length?{sequence:rows.rows[0].head_sequence,hash:hex(rows.rows[0].content_hash)}:{sequence:'0',hash:ZERO_HASH};}
 export async function relayEpochs(db:RelayDb,tenant:string,query:{latest?:boolean;id?:string;after?:string}={}):Promise<Epoch[]>{
  const rows=await db.query(`SELECT * FROM public.relay_epoch WHERE tenant_id=$1::uuid AND ($2::uuid IS NULL OR id=$2::uuid) AND ($3::bigint IS NULL OR epoch_number>$3::bigint) ORDER BY epoch_number ${query.latest?'DESC':'ASC'} LIMIT ${query.latest||query.id?'1':'8'}`,[tenant,query.id??null,query.after??null]);
  if(!rows.rows.length)return [];
@@ -94,7 +96,7 @@ export async function relayPost(db:RelayDb,actor:RelayActor,input:unknown):Promi
 // ---- Team sharing S2: pack versions. Row-level security returns a pack's rows only to a person whose active device
 // holds that pack's key in the latest epoch, so a device without a cost pack never receives its rows or head.
 function packFrom(r:Row):PackVersion{return {v:'1',id:r.id,tenantId:r.tenant_id,epochId:r.epoch_id,pack:r.pack,version:String(r.version),previousHash:hex(r.previous_hash),kind:r.kind,baseVersion:String(r.base_version),senderUser:r.sender_user,senderDevice:r.sender_device,createdAt:iso(r.signed_at),iv:encoded(r.iv),ciphertext:encoded(r.ciphertext),signature:encoded(r.signature),hash:hex(r.content_hash)};}
-async function packHead(db:RelayDb,tenant:string,pack:string){const r=await db.query('SELECT version::text AS version,content_hash FROM public.relay_pack_version WHERE tenant_id=$1::uuid AND pack=$2::text ORDER BY version DESC LIMIT 1',[tenant,pack]);return r.rows.length?{version:r.rows[0].version,hash:hex(r.rows[0].content_hash)}:{version:'0',hash:ZERO_HASH};}
+async function packHead(db:RelayDb,tenant:string,pack:string){const r=await db.query('SELECT version::text AS head_version,content_hash FROM public.relay_pack_version WHERE tenant_id=$1::uuid AND pack=$2::text ORDER BY version DESC LIMIT 1',[tenant,pack]);return r.rows.length?{version:r.rows[0].head_version,hash:hex(r.rows[0].content_hash)}:{version:'0',hash:ZERO_HASH};}
 export async function relayPackPage(db:RelayDb,actor:RelayActor,pack:string,after:string):Promise<PackPage>{
  if(!(ALL_PACKS as readonly string[]).includes(pack)||!/^(0|[1-9][0-9]{0,8})$/.test(after))throw new RelayError('REQUEST',msg("relay.store.theSharingRequestHas"));
  await authorizeRelay(db,actor);await lockRelay(db,actor.tenantId);
