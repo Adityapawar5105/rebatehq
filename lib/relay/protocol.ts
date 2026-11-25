@@ -50,6 +50,8 @@ export const ContentSchema = z.discriminatedUnion('kind',[
  z.object({kind:z.literal('request'),subjectHash:hash,approvers:z.array(uuid).min(1).max(2)}).strict(),
  z.object({kind:z.literal('decision'),requestId:uuid,requestHash:hash,level:z.enum(['1','2']),decision:z.enum(['approve','reject'])}).strict(),
  z.object({kind:z.literal('comment'),text:z.string().trim().min(1).max(4000)}).strict(),
+ // Team sharing S5a: a thread or task event; `body` is sealed again under the pack key (lib/sharing/threads.ts).
+ z.object({kind:z.literal('thread'),pack:PackId,iv:b64(12),body:z.string().min(24).max(12_000).regex(/^[A-Za-z0-9+/]+={0,2}$/)}).strict(),
 ]);
 export type Content = z.infer<typeof ContentSchema>;
 export const PostSchema = z.discriminatedUnion('action',[

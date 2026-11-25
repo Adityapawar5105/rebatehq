@@ -30,6 +30,10 @@ export async function dispatch(service: VaultService, request: Request, hooks: H
     case "vendorPpvLines":return service.vendorPpvLines(request.data.product,{from:request.data.from,to:request.data.to},request.data.offset,request.data.grid);
     case "simOptions":return service.simOptions();
     case "relayLocal":return service.relayLocal();
+    case "threadList":return service.threadList(request.data.target);
+    case "inboxState":return service.inboxState();
+    case "inboxSeen":return service.inboxSeen();
+    case "activityFeed":return service.activityFeed();
     case "shareState":return service.shareState();
     case "shareCounts":return service.shareCounts();
     case "shareExport":return service.shareExport(request.data.packs,request.data.role,request.data.name);
@@ -101,7 +105,7 @@ export async function dispatch(service: VaultService, request: Request, hooks: H
     case "priceLandedCheck": return service.priceLandedCheck(request.data.receipt,request.data.file,hooks.signal());
     case "serviceOrders": return service.serviceOrders(request.data.offset,request.data.grid);
     case "serviceFlag": return service.serviceFlag(request.data.key,request.data.free);
-    case "relayView":case "relayRegister":case "relayJoin":case "relayRotate":case "relaySync":case "relayShare":case "relayRequest":case "relayDecide":case "relayComment":case "relayRetry":case "relayDiscard":return service.relay(request,hooks.signal());
+    case "relayView":case "relayRegister":case "relayJoin":case "relayRotate":case "relaySync":case "relayShare":case "relayRequest":case "relayDecide":case "relayComment":case "relayRetry":case "relayDiscard":case "relayThreadOpen":case "relayThreadReply":case "relayThreadStatus":case "relayThreadTask":return service.relay(request,hooks.signal());
     case "home": return service.home();
     case "checklist": return service.checklist();
     case "checklistMark": return service.checklistMark(request.data.step);

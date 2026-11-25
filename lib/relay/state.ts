@@ -1,6 +1,7 @@
 import { admin,levelsFor,RelayError,type Content,type Epoch,type RelayEvent,type ShareInput } from './protocol';
 import { msg } from "../i18n/core";
-export type Applied = {event:RelayEvent;content:Content|null};
+/** `sealed`: for an S5a thread event, whether this device could open its body (lib/sharing/threads.ts). */
+export type Applied = {event:RelayEvent;content:Content|null;sealed?:import('../sharing/threads').SealedState};
 export type Approval = {id:string;hash:string;requester:string;approvers:string[];decisions:{userId:string;decision:'approve'|'reject';level:string}[];status:'pending'|'approved'|'rejected'};
 export type Shared = {id:string;kind:RelayEvent['objectKind'];subject:ShareInput;author:string;hash:string;epochId:string;requiredLevels:1|2;approval:Approval|null;comments:{id:string;author:string;text:string;mentions:string[]}[];sequence:string};
 function reject():never{throw new RelayError('CONTENT',msg("relay.state.anInvalidSharedOperation"));}
@@ -8,6 +9,7 @@ export function fold(entries:Applied[],epochs:Epoch[]){
  const objects=new Map<string,Shared>(),rejected:string[]=[];
  for(const {event:e,content:c} of entries){
   if(!c){rejected.push(e.id);continue;}
+  if(c.kind==='thread')continue; // S5a: threads and tasks are folded by foldThreads
   try{
    const epoch=epochs.find(p=>p.id===e.epochId);if(!epoch)reject();
    if(c.kind==='share'){

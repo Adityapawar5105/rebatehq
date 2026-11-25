@@ -1,6 +1,7 @@
 import { DeviceSchema,EpochSchema,EventSchema,ContentSchema,PackVersionSchema,ManifestSchema,RelayError,ZERO_HASH,admin,fail,type Device,type DirectoryDevice,type Epoch,type EpochV2,type Grid,type PackWrap,type PackVersion,type Manifest,type Wrap,type RelayEvent,type Content } from './protocol';
 import { ALL_PACKS, COST_PACKS, costRole, packsFor, publisherRole, type AnyPack } from '../sharing/catalog';
 import { msg } from "../i18n/core";
+import { ThreadBodySchema, type ThreadBody } from '../sharing/threads';
 const enc=new TextEncoder();
 const bytes=(v:Uint8Array)=>new Uint8Array(v).buffer;
 export const base64=(v:Uint8Array)=>{let s='';for(const b of v)s+=String.fromCharCode(b);return btoa(s);};
@@ -151,6 +152,21 @@ export async function verifyEvent(value:unknown,epoch:Epoch,head:{sequence:strin
 export async function decryptEvent(e:RelayEvent,key:string){let plain:Uint8Array|undefined;try{
  try{plain=new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv:bytes(unbase64(e.iv)),additionalData:bytes(canonical(eventHeader(e)))},await messageKey(key,e),bytes(unbase64(e.ciphertext))));}catch{throw new RelayError('DECRYPT',msg("relay.crypto.thisSignedItemCould"));}
  try{return ContentSchema.parse(JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(plain)));}catch{throw new RelayError('CONTENT',msg("relay.crypto.anAuthenticatedButInvalid"));}
+ }finally{plain?.fill(0);}}
+
+// ---- Team sharing S5a: thread bodies, sealed under the pack key of the object they are about ----
+type ThreadBinding={eventId:string;tenantId:string;epochId:string;objectId:string;pack:AnyPack;senderUser:string};
+const threadAad=(b:ThreadBinding)=>bytes(canonical(['rehq.relay.thread.v1',b.eventId,b.tenantId,b.epochId,b.objectId,b.pack,b.senderUser]));
+async function threadKey(packKey:string,b:ThreadBinding){const raw=unbase64(packKey);try{return await hkdf(raw,uuidBytes(b.eventId),['rehq.relay.thread.v1',b.tenantId,b.epochId,b.pack]);}finally{raw.fill(0);}}
+/** Seal a thread body so only devices holding `packKey` can read it, and so it cannot be moved to another event, thread,
+ *  pack or sender. */
+export async function sealThread(packKey:string,b:ThreadBinding,body:ThreadBody){
+ const plain=canonical(ThreadBodySchema.parse(body)),iv=crypto.getRandomValues(new Uint8Array(12));
+ try{if(plain.length>8_000)fail();return {iv:base64(iv),body:base64(new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv:bytes(iv),additionalData:threadAad(b)},await threadKey(packKey,b),bytes(plain))))};}finally{plain.fill(0);}
+}
+export async function openThread(packKey:string,b:ThreadBinding,sealed:{iv:string;body:string}):Promise<ThreadBody>{let plain:Uint8Array|undefined;try{
+ try{plain=new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv:bytes(unbase64(sealed.iv)),additionalData:threadAad(b)},await threadKey(packKey,b),bytes(unbase64(sealed.body))));}catch{throw new RelayError('DECRYPT',msg("relay.crypto.thisSignedItemCould"));}
+ try{return ThreadBodySchema.parse(JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(plain)));}catch{throw new RelayError('CONTENT',msg("relay.crypto.anAuthenticatedButInvalid"));}
  }finally{plain?.fill(0);}}
 
 // ---- Team sharing S2: published pack versions (a signed hash chain per pack; the manifest is under the pack key) ----

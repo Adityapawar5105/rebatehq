@@ -40,6 +40,7 @@ export const NOT_GOVERNED: Readonly<Partial<Record<Action, string>>> = {
   negotiationSheet: "a generated file", rebateAgreement: "a generated file", relayView: "relay state", relayRegister: "relay state",
   relayJoin: "relay state", relayRotate: "relay state", relaySync: "relay state", relayShare: "relay state", relayRequest: "relay state",
   relayDecide: "relay state", relayComment: "relay state", relayRetry: "relay state", relayDiscard: "relay state",
+  relayThreadOpen: "relay state", relayThreadReply: "relay state", relayThreadStatus: "relay state", relayThreadTask: "relay state", inboxSeen: "relay state",
   capacityUpgrade: "vault capacity", create: "a new vault", vaultReset: "starting again on this device", passphraseChange: "the passphrase",
   checklistMark: "the checklist", roleSet: "roles follow the signed grid", roleRemove: "roles follow the signed grid", pricingOwner: "roles follow the signed grid",
   ruleSave: "a draft that needs approval", ruleSimulate: "a preview", priceExport: "export files and receipts",

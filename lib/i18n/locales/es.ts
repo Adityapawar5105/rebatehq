@@ -3357,4 +3357,6 @@ export const es: Catalog = {
   "share.readOnlyHint": "{name} comparte estos datos, así que son de solo lectura en este dispositivo.",
   "relay.live": "En vivo",
   "relay.liveHint": "Los datos compartidos nuevos llegan en cuanto se publican. Sin conexión en vivo, llegan igualmente en menos de un minuto.",
+  "thread.err.cannotRead": "Alguien a quien mencionó o asignó no puede leer este hilo: no recibe ese tipo de datos según la tabla de uso compartido.",
+  "thread.err.notFound": "Este hilo aún no está en este dispositivo. Sincronice la bandeja compartida e inténtelo de nuevo.",
 };
