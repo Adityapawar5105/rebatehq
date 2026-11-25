@@ -3220,6 +3220,13 @@ const auth3 = {
 } as const;
 // Team sharing S1 (blueprint section 22, item 38): the encrypted hand-off file and the protected-floor flag.
 const share = {
+  "share.readOnly": "{name} shares {pack} with the team, so it is read-only on this device. Ask {name} to make the change and publish it.",
+  "share.banner.title": "Shared by {name}",
+  "share.banner.pack": "{pack}, version {version}",
+  "share.banner.received": "received {date}",
+  "share.banner.body": "This data comes from the publisher and is read-only here. Changes arrive with the next publish. Your own notes stay on this device.",
+  "share.banner.changes": "What changed",
+  "share.banner.stale": {"one":"This device last synced {count} day ago. Open the shared inbox and sync to get the latest.","other":"This device last synced {count} days ago. Open the shared inbox and sync to get the latest."},
   "share.grid.publish": "Publish now",
   "share.grid.publishNote": "Sends the current prices, items, customers and guardrails to everyone, each person receiving only what the signed grid gives them. Each key rotation also publishes a fresh copy.",
   "share.receiveFailed": {"one":"{count} kind of shared data failed its checks and was not applied. Ask an Owner or Pricing Owner to press Publish now.","other":"{count} kinds of shared data failed their checks and were not applied. Ask an Owner or Pricing Owner to press Publish now."},

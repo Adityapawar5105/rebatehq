@@ -31,6 +31,9 @@ import { RolesView } from "./RolesView";
 import { ShareHandoff } from "./ShareHandoff";
 import { ShareGrid } from "./ShareGrid";
 import type { TeamDirectory } from "@/lib/team";
+import { SharedBanner } from "./SharedBanner";
+/** Team sharing S3: the sections that hold shared packs, for the read-only banner on a receiving seat. */
+const SHARED_SECTIONS: Record<string, readonly string[] | undefined> = { Pricing: ["book", "contracts", "guards", "cost_floors"], "Data Hub": ["items", "customers", "cost"], "Rebates & Contracts": ["contracts"] };
 import { RelayOnboarding, RelayPanel, RelaySetupLine } from './RelayPanel';
 import { QuoteBranding } from './QuoteBranding';
 import { AgentsInbox } from './AgentsInbox';
@@ -245,6 +248,7 @@ export function VaultApp({ scope, email, workspace, lab = false, relayEnabled = 
           {shown === "Home" && client.current && caps.includes("cost") && status.licence?.tier !== "starter" && <AgentsInbox client={client.current} version={`${status.lines}|${status.generation}`} canPrice={caps.includes("pricing")} busy={busy} operation={operation}/>}
           {shown === "Home" && client.current && caps.includes('collaborate') && status.licence?.tier!=='starter' && <RelayPanel client={client.current} userId={scope.userId} tenantId={scope.tenantId} relayEnabled={relayEnabled} onChange={async()=>setStatus(await client.current!.call('status',{}))}/>}
           {/* D1 (23 Nov 2026): Data Hub's sections are split over four sub-pages picked in the sidebar. */}
+          {client.current && SHARED_SECTIONS[shown] && <SharedBanner client={client.current} packs={SHARED_SECTIONS[shown]!} version={`${status.lines}|${status.generation}`}/>}
           {shown === "Data Hub" && client.current && (page === "data-hub-import" || page === "data-hub-fix") && <ImportStudio part={page === "data-hub-fix" ? "fix" : "import"} client={client.current} status={status} caps={caps} busy={busy} operation={operation} onStatus={setStatus} setMessage={setMessage}/>}
           {shown === "Data Hub" && client.current && page === "data-hub-cleanup" && <>
             <CleanupView client={client.current} version={`${status.lines}|${status.generation}`} busy={busy} operation={operation} onStatus={setStatus} setMessage={setMessage}/>

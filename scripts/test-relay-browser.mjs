@@ -64,6 +64,11 @@ try{
  assert.ok(!storageRequests.some(x=>x.page===2&&['cost','cost_floors','supplier','rules','competitors','results'].includes(x.pack)),'decision 16: the rep device requested a cost chunk');
  assert.ok(!storageRequests.some(x=>x.page===1&&['cost','cost_floors','supplier','rules','competitors','results'].includes(x.pack)),'decision 16: the second device (a Sales Rep under the grid) requested a cost chunk');
  checks.packsPublishedAndReceived=true;
+ // Team sharing S3: a receiving seat shows the shared sections as read-only with who shared them; the publisher does not.
+ for(const [page,receiving] of [[pages[1],true],[pages[2],true],[pages[0],false]]){await close(page);await page.evaluate(()=>{location.hash='#pricing';});await page.locator('#local-content').waitFor();await page.waitForTimeout(800);
+  if(receiving){await page.getByTestId('shared-banner').waitFor({timeout:30000});assert.match(await page.getByTestId('shared-banner').innerText(),/Shared by/);}else assert.equal(await page.getByTestId('shared-banner').count(),0,'The publisher sees a shared-data banner on its own data');
+  await page.evaluate(()=>{location.hash='#home';});await open(page);}
+ checks.sharedSeatsReadOnlyUi=true;
  for(const page of pages){await page.getByTestId('relay-sync-status').filter({hasText:'Synced'}).waitFor();assert.ok((await page.getByTestId('relay-sync-status').innerText()).includes('Last synced:'));}checks.syncIndicator=true;
  await rep.getByRole('tab',{name:'Share a reference',exact:true}).click();await rep.getByLabel('Reference type').selectOption('quote');await rep.getByLabel('Shared title').fill(marker);await rep.getByLabel('Local reference').fill(marker+'-reference');await rep.getByLabel('Amount',{exact:true}).fill(amount);await click(rep,'Share encrypted reference');
  await rep.getByRole('button',{name:marker,exact:true}).click();await rep.getByLabel('Pricing Owner approver').selectOption(actors[0].userId);await rep.getByLabel('Second-level manager').selectOption(actors[1].userId);await click(rep,'Request approval');
@@ -88,7 +93,7 @@ try{
  // An injected leak must trip the same scanner, including binary and base64.
  for(const value of [{ciphertext:Buffer.from(marker)}, {content:Buffer.from(marker).toString('base64')}])assert.throws(()=>assertNoRelayPlaintext(value,markers),/Private fixture content/);checks.scannerNegativeControls=true;
  for(let i=0;i<inspections.length;i++)await inspections[i];assert.deepEqual(failures,[]);checks.requestsHeadersBodiesConsole=true;
- assert.equal(Object.keys(checks).length,15,'Relay privacy check count changed; update the gate record');
+ assert.equal(Object.keys(checks).length,16,'Relay privacy check count changed; update the gate record');
  console.log('Relay browser/privacy gate: '+Object.keys(checks).length+' checks passed ('+channel+', '+(auth?'real authenticated local Supabase':'local PGlite transport; auth unverified')+').');
  await writeFile('test-results/vault-relay-'+channel+(auth?'-auth':'')+'.json',JSON.stringify(result,null,2)+'\n');
 }catch(e){

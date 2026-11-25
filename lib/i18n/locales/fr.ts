@@ -3346,4 +3346,11 @@ export const fr: Catalog = {
   "people.status.invited": "Invité",
   "people.status.local": "Sur cet appareil",
   "people.roleGuide": "Ce que chaque rôle peut faire",
+  "share.readOnly": "{name} partage {pack} avec l’équipe : ces données sont en lecture seule sur cet appareil. Demandez à {name} de faire la modification et de la publier.",
+  "share.banner.title": "Partagé par {name}",
+  "share.banner.pack": "{pack}, version {version}",
+  "share.banner.received": "reçu le {date}",
+  "share.banner.body": "Ces données viennent de la personne qui les publie et sont en lecture seule ici. Les modifications arrivent avec la prochaine publication. Vos propres notes restent sur cet appareil.",
+  "share.banner.changes": "Ce qui a changé",
+  "share.banner.stale": {"one":"Cet appareil s’est synchronisé il y a {count} jour. Ouvrez la boîte partagée et synchronisez pour obtenir la dernière version.","other":"Cet appareil s’est synchronisé il y a {count} jours. Ouvrez la boîte partagée et synchronisez pour obtenir la dernière version."},
 };

@@ -78,6 +78,7 @@ import { newCode, openHandoff, packHash, sealHandoff, type Payload } from "../sh
 import { ROLE_IDS } from "./schema";
 import { capsFor } from "../roles/access";
 import { RECOMMENDED, packsFor, type AnyPack } from "../sharing/catalog";
+import { GOVERNED, IMPORT_PACKS } from "../sharing/governed";
 import { GridSchema, type Grid } from "../relay/protocol";
 import { checkGrid, gridBody, gridPublisher } from "../relay/crypto";
 export class VaultService {
@@ -96,7 +97,10 @@ export class VaultService {
     const changes=(await e.conn.query('SELECT pack,key,before_value,after_value FROM shared_changes ORDER BY pack,seq LIMIT 200')).toArray()
       .map(r=>({pack:String(r.pack),key:String(r.key),before:r.before_value===null?null:String(r.before_value),after:r.after_value===null?null:String(r.after_value)}))
       .filter(c=>known(c.pack)&&!sharing.PACKS[c.pack].cost);
-    return {books,changes,tier:this.licence.tier,canExport:a.caps.includes('share')&&this.licence.tier!=='starter',
+    // S3: a receiving seat (relay copies, not a publisher) shows shared sections as read-only; a relay copy is stale only when
+    // this device has not synced for a week, not when the publisher simply had nothing new to send.
+    const receiving=!!(await this.receivingPacks()),lastSyncedAt=(await this.relayStateRead()).lastSyncedAt??null;
+    return {books,changes,receiving,lastSyncedAt,tier:this.licence.tier,canExport:a.caps.includes('share')&&this.licence.tier!=='starter',
       roles:ROLE_IDS.map(role=>({role,locked:!capsFor(role,false).includes('cost')}))};
   }
   /** Rows in each pack on this (publishing) device, for the export screen. */
@@ -324,6 +328,23 @@ export class VaultService {
   // Starting again on this device deletes only local files: it never needs a licence (audit B-3).
   /** 9.3: the licence rule comes from ACTIONS (vaultReset is marked "always": a forgotten passphrase needs no licence). */
   licenceGuard(action:Action) { this.licence.guard(action); }
+  /** Team sharing S3: on a receiving seat, refuse a write to data the publisher shares through the relay. The publisher is
+   *  authoritative, so a local edit would be replaced at the next publish (lib/sharing/governed.ts classifies every write). */
+  async sharedGuard(action:Action) {
+    const rule = GOVERNED[action]; if (!rule || !this.engine) return;
+    const relay = await this.receivingPacks(); if (!relay) return;
+    const packs: readonly string[] = rule === "any" ? [...relay.keys()] : rule === "import" ? (await this.studioState()).files.flatMap(f => IMPORT_PACKS[String(f.role ?? "")] ?? []) : rule;
+    const hit = packs.find(p => relay.has(p)); if (!hit) return;
+    throw new VaultError("SHARE", msg("share.readOnly", { name: relay.get(hit)!, pack: msg(`share.pack.${hit}` as import("../i18n/core").MessageKey) }));
+  }
+  /** The packs this device received through the relay while it is not a publisher under the signed grid, with each
+   *  publisher's name; null on a publisher, without sharing, or with nothing received. */
+  private async receivingPacks(): Promise<Map<string, string> | null> {
+    const state = await this.relayStateRead(), signed = this.signedGrid(state);
+    if (!state.epochs.length || !signed || gridPublisher(signed, this.identity.userId)) return null;
+    const rows = (await this.requireEngine().conn.query("SELECT pack,publisher_name FROM shared_books WHERE via='relay'")).toArray();
+    return rows.length ? new Map(rows.map(r => [String(r.pack), String(r.publisher_name)])) : null;
+  }
   async licenceSet(envelope:import("../licence-policy").LicenceEnvelope|null,device:string,offline:boolean){try{await this.licence.set(envelope,this.identity,device,offline);}catch{/* Invalid assertions clear authority but never prevent read-only unlock/recovery. */}this.tier=this.licence.effective(this.tier);return this.status();}
   private identity!: Scope;
   storage!: VaultStorage;
