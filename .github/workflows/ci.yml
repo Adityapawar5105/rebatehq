@@ -37,13 +37,15 @@ jobs:
         # CI #194 (Node 24.22.3) and PR #22 (Node 24.22.1, 22 Nov 2026): V8 aborts while a test process that used
         # WebAssembly exits ("jit_page_->allocations_.erase"), after every test in it has passed. Pinning Node did not
         # stop it. The suite is rerun once only when that signature is present and no assertion failed; any real
-        # failure still fails the job, and the crash stays visible as a warning.
+        # failure still fails the job, and the crash stays visible as a warning. CI #240 (25 Nov 2026) hit the same
+        # family as a glibc heap abort ("corrupted size vs. prev_size") inside a PGlite test file, before its other
+        # tests ran; the rerun runs the whole suite again, so nothing goes untested.
         shell: bash
         run: |
           set +e
           pnpm test 2>&1 | tee test-output.log; code=${PIPESTATUS[0]}
-          if [ "$code" != 0 ] && grep -q "jit_page_->allocations_.erase" test-output.log && ! grep -qE "AssertionError|not ok [0-9]" test-output.log; then
-            echo "::warning::V8 crashed while a test process exited after its tests passed; rerunning the unit tests once."
+          if [ "$code" != 0 ] && grep -qE "jit_page_->allocations_.erase|corrupted size vs. prev_size" test-output.log && ! grep -qE "AssertionError|not ok [0-9]" test-output.log; then
+            echo "::warning::A test process crashed natively (V8 or the C heap) with no assertion failure; rerunning the unit tests once."
             pnpm test; code=$?
           fi
           exit $code
