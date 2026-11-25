@@ -291,3 +291,5 @@ See `docs/evidence/SECOND_AUDIT_PASS.md`. The independent security review (R02, 
 - With no draft pending, every vault, an Owner's included, mirrors the signed role table.
 - Settings › Team and roles › Who receives what: pack-by-role ticks with cost locks, presets, per-person extras, Preview as, and what changes.
 - No migration. See docs/evidence/SHARING_S3A_VERIFICATION.md.
+
+**The team sharing S2 migration is locked (25 Nov 2026).** It passed CI #229 and the user-run Restore Drills #23 and #24 (152 restore-mode checks). 15 migrations are applied and 0 are pending.
