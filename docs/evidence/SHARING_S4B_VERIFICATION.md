@@ -90,7 +90,13 @@ Built by Claude Code on 25 November 2026 from `SHARING_DESIGN.md` section 5 ("Sn
 
 ## CI
 
-Pending: the PR's CI run is recorded here once it passes.
+[CI #261](https://github.com/Adityapawar5105/rebatehq/actions/runs/45683555982) passed on `61f2390` (PR #39), 25 November 2026. All four jobs passed:
+- unit tests, audit and build;
+- database tests and the Chromium privacy and relay gates, against real Supabase with `--auth`, including the new `liveUpdate` assertions;
+- the Firefox lab gate;
+- `verify`.
+
+PR #39 was merged into `main`.
 
 ## Not verified
 

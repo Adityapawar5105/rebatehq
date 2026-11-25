@@ -330,7 +330,8 @@ See `docs/evidence/SECOND_AUDIT_PASS.md`. The independent security review (R02, 
 - Each publish records its epoch; a version from an earlier epoch is never a delta base. Row identities are the pack key plus an ordinal, because pack keys can repeat.
 - A snapshot goes after a rotation, with no earlier publish, after 7 days or 50 deltas, above 25% changed, or when another publisher went in between. Publish now with nothing changed sends a fresh full copy (recovery).
 - The receiver rebuilds the pack from its relay copy, checks the digest and applies it like a snapshot; a missing or mismatched base starts again from the newest snapshot (`packReset`).
-- Local vault **v25 / 69 tables** (`shared_pack_rows`, `shared_published`); no Supabase migration. Compaction is not built. See docs/evidence/SHARING_S4B_VERIFICATION.md.
+- Local vault **v25 / 69 tables** (`shared_pack_rows`, `shared_published`); no Supabase migration. Compaction is not built.
+- **It passed** [CI #261](https://github.com/Adityapawar5105/rebatehq/actions/runs/45683555982) on `61f2390` and merged as PR #39. See docs/evidence/SHARING_S4B_VERIFICATION.md.
 
 **Team sharing S5a: threads, tasks, inbox and activity in the worker (26 Nov 2026; built by Claude Code).**
 - Thread and task events ride the 7A relay with no server change. The body is sealed under the pack key of its object (`TARGET_PACK` in `lib/sharing/threads.ts`), so a rep device cannot read a cost thread.
