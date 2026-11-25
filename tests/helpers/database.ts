@@ -7,6 +7,7 @@ export async function testDatabase(executed=new Set<string>()){
  await db.exec(`CREATE SCHEMA extensions;CREATE SCHEMA auth;CREATE ROLE anon;CREATE ROLE authenticated;CREATE ROLE service_role BYPASSRLS;
   CREATE TABLE auth.users(id uuid PRIMARY KEY,email text,email_confirmed_at timestamptz);
   CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;`);
+ await db.exec(readFileSync("tests/helpers/storage-stub.sql","utf8"));
  for(const n of readdirSync("supabase/migrations").filter(n=>n.endsWith(".sql")).sort())await db.exec(readFileSync("supabase/migrations/"+n,"utf8"));
  await installTestIdentityKey(db);
  const original=db.query.bind(db);db.query=(sql:string,args?:unknown[])=>{executed.add(normalizedSql(sql));return original(sql,args);};

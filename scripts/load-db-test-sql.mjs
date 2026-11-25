@@ -12,5 +12,6 @@ export async function loadDatabaseTestSql() {
   const chunk7a=await readFile(new URL('../supabase/tests/chunk7a_relay.sql',import.meta.url),'utf8');
   const chunk8d=await readFile(new URL('../supabase/tests/chunk8d_bench.sql',import.meta.url),'utf8');
   const sharingS2=await readFile(new URL('../supabase/tests/sharing_s2.sql',import.meta.url),'utf8');
-  return template.replace(marker, () => allowlist).replace('-- INCLUDE CHUNK 5B CHECKS',()=>chunk5b).replace('-- INCLUDE CHUNK 7A CHECKS',()=>chunk7a).replace('-- INCLUDE CHUNK 8D CHECKS',()=>chunk8d).replace('-- INCLUDE SHARING S2 CHECKS',()=>sharingS2);
+  const sharingS3=await readFile(new URL('../supabase/tests/sharing_s3.sql',import.meta.url),'utf8');
+  return template.replace(marker, () => allowlist).replace('-- INCLUDE CHUNK 5B CHECKS',()=>chunk5b).replace('-- INCLUDE CHUNK 7A CHECKS',()=>chunk7a).replace('-- INCLUDE CHUNK 8D CHECKS',()=>chunk8d).replace('-- INCLUDE SHARING S2 CHECKS',()=>sharingS2).replace('-- INCLUDE SHARING S3 CHECKS',()=>sharingS3);
 }

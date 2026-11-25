@@ -252,7 +252,7 @@ const publicFunctionAclSql = `
   LEFT JOIN LATERAL aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) acl ON true
   LEFT JOIN pg_roles grantor ON grantor.oid=acl.grantor
   LEFT JOIN pg_roles grantee ON grantee.oid=acl.grantee
-  WHERE n.nspname='public'
+  WHERE n.nspname IN ('public','rebatehq_storage')
   GROUP BY p.oid,n.nspname,p.proname,p.prosecdef,p.proconfig,owner.rolname
   ORDER BY p.oid::regprocedure::text
 `;
@@ -267,7 +267,7 @@ const schemaAclSql = `
   LEFT JOIN LATERAL aclexplode(COALESCE(n.nspacl,acldefault('n',n.nspowner))) acl ON true
   LEFT JOIN pg_roles grantor ON grantor.oid=acl.grantor
   LEFT JOIN pg_roles grantee ON grantee.oid=acl.grantee
-  WHERE n.nspname IN ('public','rebatehq_private')
+  WHERE n.nspname IN ('public','rebatehq_private','rebatehq_storage')
   GROUP BY n.oid,n.nspname,owner.rolname ORDER BY n.nspname
 `;
 
@@ -320,7 +320,7 @@ async function snapshot(pool, applicationTableNames, authUserIds) {
   const schemas = (await pool.query(schemaAclSql)).rows;
   const defaultPrivileges = (await pool.query(defaultPrivilegesSql)).rows;
   assert.equal(applicationTables.length, applicationTableNames.length, "Application table ACL inventory is incomplete.");
-  assert.equal(schemas.length, 2, "The application-owned schema ACL inventory must contain public and rebatehq_private exactly once.");
+  assert.equal(schemas.length, 3, "The application-owned schema ACL inventory must contain public, rebatehq_private and rebatehq_storage exactly once.");
 
   const applicationRows = {};
   const tenantRowCounts = {};

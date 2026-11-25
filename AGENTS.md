@@ -293,3 +293,11 @@ See `docs/evidence/SECOND_AUDIT_PASS.md`. The independent security review (R02, 
 - No migration. See docs/evidence/SHARING_S3A_VERIFICATION.md.
 
 **The team sharing S2 migration is locked (25 Nov 2026).** It passed CI #229 and the user-run Restore Drills #23 and #24 (152 restore-mode checks). 15 migrations are applied and 0 are pending.
+
+**Team sharing S3b: packs published and received through Supabase Storage (25 Nov 2026; built by Claude Code).**
+- A publisher's device publishes every pack it holds after each rotation, or on **Publish now**: gzipped chunks, sealed per chunk with AES-GCM, in the private `relay-packs` bucket, listed in the signed, encrypted manifest of the pack version.
+- Receiving seats apply newer packs on sync and join. A pack that fails its checks is skipped, and the rest apply.
+- The worker calls Storage directly with the person's own session token (`/api/relay?mode=token`).
+- The Storage rule `rebatehq_storage.relay_storage_allowed` lets a holder of the pack read and the signer write. A rep device can never fetch a cost chunk.
+- Migration `20261126120000_sharing_s3_storage.sql` is **pending** until CI and a **user-run Restore Drill** pass. The drill re-applies the bucket and policies with `scripts/restore-storage-objects.sql`. pgTAP plans 152 fresh and 155 restore checks.
+- Relay gate: 15 checks. See docs/evidence/SHARING_S3_VERIFICATION.md.

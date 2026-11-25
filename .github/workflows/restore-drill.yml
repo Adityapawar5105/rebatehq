@@ -44,7 +44,7 @@ jobs:
       - name: Start source Supabase and apply migrations (local)
         if: inputs.target == 'local'
         run: |
-          pnpm exec supabase start -x studio,edge-runtime,storage-api,imgproxy,logflare,vector
+          pnpm exec supabase start -x studio,edge-runtime,imgproxy,logflare,vector
           pnpm exec supabase db reset
       - name: Generate local source database URLs (local)
         if: inputs.target == 'local'
@@ -86,6 +86,7 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/rebatehq-dump"
           cp scripts/restore-platform-acl-cleanup.sql "$RUNNER_TEMP/rebatehq-dump/restore-platform-acl-cleanup.sql"
+          cp scripts/restore-storage-objects.sql "$RUNNER_TEMP/rebatehq-dump/restore-storage-objects.sql"
           schema_allowlist="$(node scripts/restore-dump-scope.mjs)"
           echo "Using application schema allowlist: $schema_allowlist"
           if [[ "$RESTORE_TARGET" == "local" ]]; then
@@ -144,7 +145,7 @@ jobs:
           target_dir="$RUNNER_TEMP/rebatehq-restore-target"
           mkdir -p "$target_dir/supabase"
           sed 's/^project_id = "rebatehq-local"$/project_id = "rebatehq-restore"/' supabase/config.toml > "$target_dir/supabase/config.toml"
-          pnpm exec supabase start --workdir "$target_dir" -x studio,edge-runtime,storage-api,imgproxy,logflare,vector
+          pnpm exec supabase start --workdir "$target_dir" -x studio,edge-runtime,imgproxy,logflare,vector
           pnpm exec supabase status --workdir "$target_dir" --output env > "$RUNNER_TEMP/target-status.env"
           db_url="$(sed -n 's/^DB_URL=//p' "$RUNNER_TEMP/target-status.env" | head -n 1 | sed 's/^"//; s/"$//')"
           if [[ -z "$db_url" ]]; then echo "Target Supabase CLI status did not return DB_URL." >&2; exit 1; fi
@@ -261,6 +262,21 @@ jobs:
             psql "$RESTORE_TEST_TARGET_DATABASE_URL" --single-transaction --set ON_ERROR_STOP=1 \
             --command='SET session_replication_role = replica' --file /restore/data.sql
           printf 'RESTORE_END_EPOCH=%s\n' "$(date +%s)" >> "$GITHUB_ENV"
+      # Team sharing S3: dumps exclude the storage schema, so the relay-packs bucket and policies are re-applied.
+      - name: Re-apply Storage bucket and policies (local)
+        if: inputs.target == 'local'
+        shell: bash
+        run: |
+          docker cp "$RUNNER_TEMP/rebatehq-dump/restore-storage-objects.sql" "$RESTORE_DB_CONTAINER:/tmp/restore-storage-objects.sql"
+          docker exec "$RESTORE_DB_CONTAINER" psql -U postgres -d postgres --set ON_ERROR_STOP=1 --file=/tmp/restore-storage-objects.sql
+      - name: Re-apply Storage bucket and policies (hosted)
+        if: inputs.target == 'hosted'
+        env:
+          RESTORE_TEST_TARGET_DATABASE_URL: ${{ secrets.RESTORE_TEST_TARGET_DATABASE_URL }}
+        shell: bash
+        run: |
+          docker run --rm -v "$RUNNER_TEMP/rebatehq-dump:/restore:ro" postgres:17-alpine \
+            psql "$RESTORE_TEST_TARGET_DATABASE_URL" --set ON_ERROR_STOP=1 --file /restore/restore-storage-objects.sql
       - name: Capture function ACLs after data restore
         run: node scripts/inspect-restore-function-acls.mjs after-data "$RUNNER_TEMP/rebatehq-dump/function-acl-evidence"
       - name: Compare restored role attributes, grants, and application row counts

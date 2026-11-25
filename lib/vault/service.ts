@@ -79,7 +79,7 @@ import { ROLE_IDS } from "./schema";
 import { capsFor } from "../roles/access";
 import { RECOMMENDED } from "../sharing/catalog";
 import { GridSchema, type Grid } from "../relay/protocol";
-import { checkGrid, gridBody } from "../relay/crypto";
+import { checkGrid, gridBody, gridPublisher } from "../relay/crypto";
 export class VaultService {
   /** v2.6 gap 2: whether this device already has a relay identity, read from the vault only (no network request).
    *  Roadmap 8.4: also whether a send is waiting and when the inbox last synced, so the sharing card can show its status
@@ -147,19 +147,25 @@ export class VaultService {
   async shareImport(file:Blob,code:string){
     const {payload,packs,older}=await this.openShare(file,code);
     if(older.length)throw new VaultError('SHARE',msg('share.err.older'));
+    const changed=await this.applyShared('share.imported',{actor:this.identity.userId,id:payload.id,packs:packs.join(','),from:payload.exportedBy.userId},
+      packs.map(p=>({pack:p,data:payload.packs[p]!,version:payload.id,publisherId:payload.exportedBy.userId,publisherName:payload.exportedBy.name,publishedAt:payload.exportedAt,hash:payload.hashes[p]!})),'file',payload.recipient.role);
+    this.accessCache=null;
+    return {packs:packs.map(p=>({pack:p,rows:String(payload.packs[p]!.reduce((n,d)=>n+d.rows.length,0))})),changed:String(changed),publisher:payload.exportedBy.name,exportedAt:payload.exportedAt,state:await this.shareState()};
+  }
+  /** Apply shared packs in one audited write: governed tables, shared_books (where each came from) and shared_changes. */
+  private async applyShared(action:string,details:Record<string,string>,entries:{pack:sharing.PackId;data:sharing.PackData;version:string;publisherId:string;publisherName:string;publishedAt:string;hash:string}[],via:'file'|'relay',role:string|null){
     const at=new Date().toISOString();let changed=0;
-    await this.write('share.imported',{actor:this.identity.userId,id:payload.id,packs:packs.join(','),from:payload.exportedBy.userId},async e=>{
-      for(const p of packs){
-        const r=await sharing.applyPack(e,p,payload.packs[p]!);changed+=r.changes.length;
-        await e.conn.query(`DELETE FROM shared_books WHERE pack=${sqlText(p)};INSERT INTO shared_books VALUES(${[p,payload.id,payload.exportedBy.userId,payload.exportedBy.name,payload.exportedAt,at,'file'].map(v=>sqlText(v)).join(',')},${r.rows},${sqlText(payload.hashes[p]!)},${sqlText(payload.recipient.role)});DELETE FROM shared_changes WHERE pack=${sqlText(p)};`);
+    await this.write(action,details,async e=>{
+      for(const x of entries){const p=x.pack;
+        const r=await sharing.applyPack(e,p,x.data);changed+=r.changes.length;
+        await e.conn.query(`DELETE FROM shared_books WHERE pack=${sqlText(p)};INSERT INTO shared_books VALUES(${[p,x.version,x.publisherId,x.publisherName.slice(0,160),x.publishedAt,at,via].map(v=>sqlText(v)).join(',')},${r.rows},${sqlText(x.hash)},${role===null?'NULL':sqlText(role)});DELETE FROM shared_changes WHERE pack=${sqlText(p)};`);
         for(let i=0;i<r.changes.length;i+=500)await e.conn.query(`INSERT INTO shared_changes VALUES ${r.changes.slice(i,i+500).map((c,j)=>`(${sqlText(p)},${i+j+1},${sqlText(c.key)},${c.before===null?'NULL':sqlText(c.before)},${c.after===null?'NULL':sqlText(c.after)})`).join(',')}`);
       }
-      const lines=Number((await e.conn.query('SELECT count(*) AS n FROM (SELECT 1 FROM sales_lines LIMIT 1)')).toArray()[0].n);
+      const packs=entries.map(x=>x.pack),lines=Number((await e.conn.query('SELECT count(*) AS n FROM (SELECT 1 FROM sales_lines LIMIT 1)')).toArray()[0].n);
       if(lines&&(packs.includes('items')||packs.includes('customers')))await this.financialBody(e);
       else await e.conn.query('UPDATE vault_meta SET pricing_revision=pricing_revision+1 WHERE id=1');
     });
-    this.accessCache=null;
-    return {packs:packs.map(p=>({pack:p,rows:String(payload.packs[p]!.reduce((n,d)=>n+d.rows.length,0))})),changed:String(changed),publisher:payload.exportedBy.name,exportedAt:payload.exportedAt,state:await this.shareState()};
+    return changed;
   }
   async relayLocal(){
     const deviceId=this.licence.claims?.device??'',rows=(await this.requireEngine().conn.query('SELECT payload FROM relay_state WHERE id=1')).toArray();
@@ -169,6 +175,16 @@ export class VaultService {
     return {identity,pending,lastSyncedAt};
   }
   async relay(request:Extract<import('./protocol').Request,{action:`relay${string}`}>,signal:AbortSignal){
+    const session=await this.relaySession(signal);
+    const result=await this.relayAction(session,request);
+    await this.mirrorGrid(session,result as RelayView);
+    // Team sharing S3: a key rotation by a publisher re-publishes every pack under the new keys (so nobody removed can
+    // read what follows, and new holders can read it); a sync or join on a receiving seat applies newer packs.
+    if(request.action==='relayRotate'&&session.isPublisher())await this.publishAll(session);
+    if((request.action==='relaySync'||request.action==='relayJoin')&&!session.isPublisher())await this.receiveAll(session,result as RelayView);
+    return result;
+  }
+  private async relaySession(signal:AbortSignal){
     this.licence.assert();if(this.licence.tier==='starter')throw new VaultError('LICENCE',msg("vault.workspaceSharingRequiresProfessional"));
     const deviceId=this.licence.claims?.device??'';
     if(!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(deviceId))throw new VaultError('LICENCE',msg("vault.reconnectToVerifyThis"));
@@ -177,9 +193,37 @@ export class VaultService {
     const session=new RelaySession({...this.identity,deviceId},state,relayHttp(deviceId,signal),async(value,stage)=>{
       await this.write('relay.'+stage,{actor:this.identity.userId},async e=>{await e.conn.query(`INSERT INTO relay_state VALUES(1,${sqlText(JSON.stringify(value))}) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload`);});
     },signal);
-    const result=await this.relayAction(session,request);
-    await this.mirrorGrid(session,result as RelayView);
-    return result;
+    return session;
+  }
+  /** Publish every built pack this device holds (a publisher only). */
+  private async publishAll(session:RelaySession){
+    const e=this.requireEngine(),out:{pack:string;version:string;rows:string}[]=[];
+    for(const p of sharing.PACK_IDS)if(session.heldPacks().includes(p))out.push(await session.packPublish(p,await sharing.readPack(e,p)));
+    return out;
+  }
+  /** On a receiving seat, apply the newest full copy of each pack this device holds, verified end to end. */
+  private async receiveAll(session:RelaySession,view:RelayView|undefined){
+    const labels=new Map((view?.devices??[]).map((d:{userId:string;label:string})=>[d.userId,d.label]));
+    // One pack that fails its checks (a chunk missing after a restore or a half-finished publish, or changed bytes) is
+    // skipped without touching the vault; the others still apply, and the person is told to ask for a fresh publish.
+    let failed=0;
+    for(const p of sharing.PACK_IDS){
+      if(!session.heldPacks().includes(p))continue;
+      if(sharing.PACKS[p].cost&&!(await this.access()).caps.includes('cost'))continue;
+      let got:Awaited<ReturnType<RelaySession['packReceive']>>;
+      try{got=await session.packReceive(p);}catch(error){if(error instanceof DOMException&&error.name==='AbortError')throw error;failed++;continue;}
+      if(!got)continue;
+      await this.applyShared('share.received',{actor:this.identity.userId,pack:p,version:got.version,from:got.sender},[{pack:p,data:got.data,version:got.version,publisherId:got.sender,publisherName:labels.get(got.sender)??got.sender,publishedAt:got.createdAt,hash:await packHash(got.data)}],'relay',null);
+      await session.packMarkApplied(p,got.version);
+    }
+    this.accessCache=null;
+    if(failed)throw new VaultError('SHARE',msg('share.receiveFailed',{count:failed}));
+  }
+  /** Settings › Who receives what › Publish now: send every pack this publisher's device holds to the team. */
+  async sharePublish(signal:AbortSignal){
+    const session=await this.relaySession(signal);await session.sync();
+    if(!session.isPublisher())throw new VaultError('FORBIDDEN',msg('share.grid.ownerOnly'));
+    return {published:await this.publishAll(session)};
   }
   /** Team sharing S2b: the grid an Owner or Pricing Owner signs, built from this vault's Team and roles. Anyone without a
    *  role here is a Sales Rep (least privilege, as in accessFor); the ticks are the "Recommended" preset until the
@@ -248,6 +292,7 @@ export class VaultService {
     const names=new Map((await e.conn.query('SELECT user_id,display_name FROM role_assignments')).toArray().map(r=>[String(r.user_id),String(r.display_name)]));
     const grid=draft??signed;
     return {signed,draft,stale:this.draftStale(state),joined:state.epochs.length>0,canSign:!!signed&&signed.people.some(p=>p.userId===this.identity.userId&&p.role==='owner'),
+      canPublish:!!signed&&gridPublisher(signed,this.identity.userId),
       people:(grid?.people??[]).map(p=>({userId:p.userId,name:names.get(p.userId)??p.userId,you:p.userId===this.identity.userId}))};
   }
   async shareGridSave(grid:unknown){

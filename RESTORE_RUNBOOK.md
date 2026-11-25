@@ -35,6 +35,7 @@ The locked pricing/rebate migration and local-target restore are **verified in [
 5. Install and verify `btree_gist` in the target's existing `extensions` schema, then restore owned roles and the complete `public` schema dump including its GRANT statements with `ON_ERROR_STOP=1`. Capture the after-schema function ACL checkpoint. Do not apply migration files to this restored schema.
 6. Run `scripts/restore-platform-acl-cleanup.sql` with `ON_ERROR_STOP=1`. This idempotent restore-only script removes only PUBLIC/anon/authenticated/service_role table, column, sequence, function and default privileges for application owners. It contains no function allowlist and grants nothing. Running it after schema restore also removes ACLs inherited from target defaults during object creation. All intended application grants come from the dump. The warning gate fails on ineffective privilege statements. Capture the after-cleanup checkpoint and require all application function grants to be unchanged.
 7. Prepare synthetic `auth.users` rows for only the referenced UUIDs, without source emails, password hashes or secrets. Restore only application data with `ON_ERROR_STOP=1`, then capture the after-data ACL checkpoint.
+7a. Team sharing S3: run `scripts/restore-storage-objects.sql` with `ON_ERROR_STOP=1` after the data restore. Dumps exclude the Supabase-managed `storage` schema, so this idempotent script recreates the private `relay-packs` bucket and its two policies, which call `rebatehq_storage.relay_storage_allowed` (restored from the dump with schema `rebatehq_storage`). A real restore needs the same step.
 8. Compare source/target role attributes and memberships; full table/schema/function ACLs and metadata; inventory, per-table/per-tenant counts; auth IDs; and sentinel hash. Keep every section strict. Verify the sentinel, create the restricted app login, verify runtime-role/no-context RLS, and run the complete restore-mode database suite twice (91 planned = 91 run each time for locked Chunk 2B) with unchanged row counts.
 
 For a manual check against a prepared disposable target, the relevant project commands are:
@@ -132,3 +133,17 @@ suite twice with no row-count residue (fresh CI suite: **152** checks). The new
 migration stays pending until CI and the user's manually triggered local-target
 Restore Drill both pass. Hosted target, independent protocol review, physical
 crash recovery and operational key-loss recovery remain unverified.
+
+## Team sharing S3 restore additions — unverified until the user-run drill passes
+
+Migration `20261126120000_sharing_s3_storage.sql` adds schema `rebatehq_storage`, which holds one SECURITY DEFINER function,
+`relay_storage_allowed(text,boolean)`. Only `authenticated` may use it, and the Data API does not expose the schema.
+It also adds the private `relay-packs` bucket and two `storage.objects` policies (read, insert).
+
+- The dump allowlist is now `public,rebatehq_private,rebatehq_storage` (`scripts/restore-dump-scope.mjs`). The equivalence check compares
+  the three schema ACLs and the function ACLs of `public` and `rebatehq_storage`.
+- The bucket row and policies live in `storage`, which is never dumped. The drill re-applies them with
+  `scripts/restore-storage-objects.sql` (step 7a) before pgTAP, whose S3 checks run in restore mode too.
+- Encrypted pack chunks (Storage objects) are not restored. After a restore, a publisher opens Settings › Team and roles and
+  presses **Publish now**, or rotates keys, which publishes a fresh copy for every holder. Pack-version rows restored without their
+  chunks fail the manifest check on download and are never applied.

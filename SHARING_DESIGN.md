@@ -187,6 +187,15 @@ The vault takes each person's role from this table instead of setting it separat
 - The publisher sends a fresh snapshot about weekly, or when deltas since the last snapshot pass a size threshold. Earlier deltas and blobs are then removed (compaction).
 - A new seat downloads one snapshot per pack.
 
+**As built in S3b (25 Nov 2026).** Steps 2 to 5 and 8 differ from the plan above:
+- **Chunks.** They are gzipped and at most 512 KiB.
+- **Uploads go directly to Storage.** There is no upload route: the worker uses the person's own session token, and Storage checks the same rule as downloads.
+- **No `relay_blobs` table.** The chunk list and hashes are in the signed, encrypted manifest of the pack version, and a Storage object exists only for an allowed upload.
+- **No signed download links.** Downloads go directly to the authenticated Storage endpoint.
+- **Not built yet.** Deltas, compaction and the Realtime signal (step 6) are still to come: every publish is a snapshot, and seats receive on sync.
+
+See `docs/evidence/SHARING_S3_VERIFICATION.md`.
+
 ## 6. Receiving and reading
 
 **Vault v24** adds:
@@ -221,7 +230,7 @@ The same tables serve the hand-off file (S1) and the relay (S3), so S1 carries f
    - Pack versions readable only by holders of the pack.
    - Grid roles checked against membership.
    - Larger limits and quotas, including a byte cap.
-2. **S3:** `relay_blobs` (metadata only) and the Storage bucket and its policies.
+2. **S3: `20261126120000_sharing_s3_storage.sql`.** The Storage bucket and its two policies (read, insert), whose rule is `rebatehq_storage.relay_storage_allowed`. `relay_blobs` was dropped: the signed manifest already carries the chunk metadata.
 3. **S4:** the Realtime policies.
 
 Together they change the following.
@@ -245,7 +254,9 @@ Together they change the following.
 
 **Storage (S3 migration):**
 - a private bucket, `relay-packs`;
-- policies on `storage.objects` that call a new SECURITY DEFINER helper, which checks the tenant folder, an active membership with a Professional or Scale licence, an active device and a wrap for the pack;
+- policies on `storage.objects` that call a new SECURITY DEFINER helper, which checks the tenant folder, an active membership with a Professional or Scale licence, an active device and a wrap for the pack (for writes, that the user signed that pack version within the hour);
+- the helper lives alone in schema `rebatehq_storage`, which the Data API does not expose, because no public function may be granted to `authenticated`;
+- restores re-apply the bucket and policies with `scripts/restore-storage-objects.sql`, since dumps exclude `storage`;
 - no GRANT or REVOKE on the managed `storage` schema;
 - CI's local Supabase starts `storage-api`.
 

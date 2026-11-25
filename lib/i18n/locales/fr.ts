@@ -3296,4 +3296,8 @@ export const fr: Catalog = {
   "share.grid.ownerOnly": "Seul un propriétaire de la grille signée peut changer qui reçoit quoi.",
   "share.grid.invalid": "Cette grille ne peut pas être enregistrée : elle donne des coûts à un rôle qui ne peut pas les voir, n’a pas de propriétaire ou change qui fait partie de l’équipe.",
   "share.grid.stale": "Un autre propriétaire a signé une grille plus récente après la création de ce brouillon. Revoyez le brouillon par rapport à la grille signée et enregistrez-le de nouveau, ou abandonnez-le, avant de faire tourner les clés.",
+  "share.grid.publish": "Publier maintenant",
+  "share.grid.publishNote": "Envoie les prix, articles, clients et garde-fous actuels à tous, chaque personne ne recevant que ce que la grille signée lui donne. Chaque rotation de clé publie aussi une copie récente.",
+  "share.receiveFailed": {"one":"{count} type de données partagées n’a pas passé les vérifications et n’a pas été appliqué. Demandez à un propriétaire ou responsable des prix de cliquer sur Publier maintenant.","other":"{count} types de données partagées n’ont pas passé les vérifications et n’ont pas été appliqués. Demandez à un propriétaire ou responsable des prix de cliquer sur Publier maintenant."},
+  "share.grid.published": {"one":"{count} type de données publié pour l’équipe.","other":"{count} types de données publiés pour l’équipe."},
 };
