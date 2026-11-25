@@ -37,6 +37,7 @@ import { lockedPacks } from "@/lib/sharing/governed";
 /** Team sharing S3: the sections that hold shared packs, for the read-only banner on a receiving seat. */
 const SHARED_SECTIONS: Record<string, readonly string[] | undefined> = { Pricing: ["book", "contracts", "guards", "cost_floors"], "Data Hub": ["items", "customers", "cost"], "Rebates & Contracts": ["contracts"] };
 import { RelayOnboarding, RelayPanel, RelaySetupLine } from './RelayPanel';
+import { threadsChanged } from "./Threads";
 import { QuoteBranding } from './QuoteBranding';
 import { AgentsInbox } from './AgentsInbox';
 import { AuditPackButton } from './Templates';
@@ -93,7 +94,7 @@ export function VaultApp({ scope, email, workspace, lab = false, relayEnabled = 
       if(event.event === "licence"){setStatus(event.status);}
       else if (event.event === "locking") setLocking(true);
       else if (event.event === "progress") { setProgress(event); window.dispatchEvent(new CustomEvent("vault-progress", { detail: { stage: event.stage } })); }
-      else if (event.event === "writable" || event.event === "agents" || event.event === "relay") { void c.call("status", {}).then(s => { if (active) setStatus(s); }).catch(() => undefined); }
+      else if (event.event === "writable" || event.event === "agents" || event.event === "relay") { if (event.event === "relay") threadsChanged(); void c.call("status", {}).then(s => { if (active) setStatus(s); }).catch(() => undefined); }
       else if (event.event === "pickup") {
         // Roadmap 15.1: the scheduled folder pickup imported files or left them for review; Import Studio reloads its batch.
         const r = event.result, name = event.name ?? "";

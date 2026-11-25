@@ -4,7 +4,7 @@
 // tab with what needs this person, open tasks and the activity feed. Everything is read from the vault's relay log in the
 // worker (threadList, inboxState, activityFeed); sending goes through the relay (relayThread*), encrypted under the key of
 // the pack the object belongs to (lib/sharing/threads.ts).
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { VaultClient } from "@/lib/vault/client";
 import type { Results } from "@/lib/vault/protocol";
 import type { Target, TargetType, Thread } from "@/lib/sharing/threads";
@@ -45,18 +45,24 @@ export function useThreadCounts(client: VaultClient, type: TargetType, version: 
 
 /** A "Discuss" button that opens the threads about one object. */
 export function Discuss({ client, userId, target, count = 0 }: { client: VaultClient; userId: string; target: Target; count?: number }) {
-  const dialog = useRef<HTMLDialogElement>(null), [open, setOpen] = useState(false);
-  useEffect(() => { if (open) dialog.current?.showModal(); else dialog.current?.close(); }, [open]);
+  const [open, setOpen] = useState(false);
   return <>
     <Button size="sm" variant="ghost" icon="inbox" data-testid="thread-discuss" aria-label={t("thread.discussAbout", { label: target.label })} onClick={() => setOpen(true)}>
       {t("thread.discuss")}{count > 0 && <> <Badge tone="accent">{fmt.int(count)}</Badge></>}
     </Button>
-    <dialog ref={dialog} className={styles.relayDialog} aria-labelledby="thread-title" onCancel={() => setOpen(false)} data-testid="thread-dialog">
-      <div className={styles.row}><h2 id="thread-title" translate="no">{t("thread.title", { kind: t(TARGET_NAME[target.type]), label: target.label })}</h2>
-        <Button onClick={() => setOpen(false)}>{t("thread.close")}</Button></div>
-      {open && <ThreadsFor client={client} userId={userId} target={target} />}
-    </dialog>
+    {open && <DiscussDialog client={client} userId={userId} target={target} onClose={() => setOpen(false)} />}
   </>;
+}
+/** Rendered only while open (a grid of fifty rows holds no fifty hidden dialogs), with its own heading id. */
+function DiscussDialog({ client, userId, target, onClose }: { client: VaultClient; userId: string; target: Target; onClose: () => void }) {
+  const dialog = useRef<HTMLDialogElement>(null), id = useId();
+  useEffect(() => { const d = dialog.current; d?.showModal(); return () => d?.close(); }, []);
+  return <dialog ref={dialog} className={styles.relayDialog} aria-labelledby={id} onCancel={e => { e.preventDefault(); onClose(); }} data-testid="thread-dialog"
+    onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
+    <div className={styles.row}><h2 id={id} translate="no">{t("thread.title", { kind: t(TARGET_NAME[target.type]), label: target.label })}</h2>
+      <Button onClick={onClose}>{t("thread.close")}</Button></div>
+    <ThreadsFor client={client} userId={userId} target={target} />
+  </dialog>;
 }
 
 /** The threads about one object (or, with `only`, one thread from the inbox), with replies, status and task editing. */

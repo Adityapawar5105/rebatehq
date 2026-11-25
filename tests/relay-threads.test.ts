@@ -115,6 +115,11 @@ test("S5a threads through sessions: open, mention, reply, resolve, task; a rep n
     const out = foldThreads([...entries, forged, mention], epochs);
     assert.deepEqual(out.rejected.sort(), [forged.event.id, mention.event.id].sort());
     assert.equal(out.threads.length, 2, "rejected events change nothing");
+    // A device that joined later holds a reply and a status change for a thread whose "open" came before its log began:
+    // they are skipped, not rejected (a rejection would show the sync status as a conflict).
+    const later = entries.filter(e => !(e.content?.kind === "thread" && e.sealed?.state === "ok" && e.sealed.body.kind === "open" && e.event.objectId === itemThread));
+    const skipped = foldThreads(later, epochs);
+    assert.equal(skipped.rejected.length, 0); assert.ok(!skipped.threads.some(x => x.id === itemThread));
     void M;
   } finally { await db.close(); }
 });

@@ -208,7 +208,9 @@ export function QuotesView({ client, userId, caps, tier, busy, operation, relayE
     {tab === "new" && quote && <Card headingId="quote-heading" data-testid="quote" data-status={quote.status}
       title={<><span translate="no">{quote.number}</span> <Badge tone={STATUS_TONE[quote.status]} data-testid="quote-status">{t(STATUS[quote.status])}</Badge> <Zone guard={quote.worst}/></>}
       actions={<>
-        {canShare && tier !== "starter" && <Discuss client={client} userId={userId} target={{ type: "quote", ref: [quote.number], label: `${quote.number} ${quote.customerName || quote.customerId || ""}`.trim().slice(0, 160) }}/>}
+        {/* S5b: quote numbers are per vault, so the thread is keyed by the quote's id; the label carries the number only (a quote
+            thread is sealed under book prices, and a customer's name belongs to the customers pack). */}
+        {canShare && tier !== "starter" && <Discuss client={client} userId={userId} target={{ type: "quote", ref: [quote.id], label: quote.number }}/>}
         {/* Phase 11: copy, revise a sent quote as a new version, and the customer PDF (prices only). */}
         {next.includes("pdf") && <Button icon="download" disabled={busy} data-testid="quote-pdf" onClick={() => void operation(async () => { const f = await client.call("quotePdf", { id: quote.id, locale: getLocale() }); saveFile(f.name, new Blob([f.bytes as BlobPart], { type: "application/pdf" })); setNote(msg("qdoc.pdfSaved", { name: f.name })); })}>{t("qdoc.pdfButton")}</Button>}
         {next.includes("revise") && <Button disabled={busy} data-testid="quote-revise" onClick={() => void operation(async () => { show(await client.call("quoteRevise", { id: quote.id })); setReason(""); setDecisionNote(""); setNote(msg("qdoc.revised")); })}>{t("qdoc.reviseButton")}</Button>}

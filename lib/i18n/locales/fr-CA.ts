@@ -62,4 +62,6 @@ export const frCA: Partial<Catalog> = {
   "qdoc.brandingHelp": "Imprimée sur le PDF client de la soumission. Conservée dans ce coffre chiffré.",
   "qdoc.brandingSaved": "Présentation des soumissions enregistrée.",
   "people.searchPlaceholder": "Rechercher par nom ou courriel",
+  "thread.target.quote": "Soumission",
+  "thread.emailOff": "Les avis par courriel sont désactivés : ils exigent un expéditeur pour votre domaine. D’ici là, les nouveautés s’affichent ici et sur le badge de la boîte, tant que l’application est ouverte.",
 };

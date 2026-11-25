@@ -33,6 +33,7 @@ The S5b gate pushed the lab workspace past nine relay events, and the Sales Mana
 - **Cause:** `relayHead` and `packHead` in `lib/relay/store.ts` selected `sequence::text AS sequence` and then ordered by `sequence`, which Postgres resolves to the text alias. So "9" sorted after "10".
 - **Who it would hit:** every workspace past nine events. A pack's tenth version would also have broken publishing; with S4b deltas, ten publishes come quickly.
 - **Fix:** the aliases are renamed. `tests/relay-head-order.test.ts` covers twelve events and eleven versions of one pack; it fails without the fix and passes with it.
+- **CI:** it passed [CI #264](https://github.com/Adityapawar5105/rebatehq/actions/runs/45689910186) on `1ecafdf` and merged as PR #41.
 
 ## Checks run locally (not CI evidence)
 

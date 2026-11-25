@@ -3432,5 +3432,5 @@ export const fr: Catalog = {
   "thread.target.leak": "Fuite détectée",
   "thread.target.claim": "Réclamation fournisseur",
   "thread.target.vendor": "Revue fournisseur",
-  "thread.emailOff": "Les avis par courriel sont désactivés : ils exigent un expéditeur pour votre domaine. D’ici là, les nouveautés s’affichent ici et sur le badge de la boîte, tant que l’application est ouverte.",
+  "thread.emailOff": "Les avis par e-mail sont désactivés : ils exigent un expéditeur pour votre domaine. D’ici là, les nouveautés s’affichent ici et sur le badge de la boîte, tant que l’application est ouverte.",
 };
