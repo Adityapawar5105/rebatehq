@@ -165,13 +165,16 @@ test("S5a vault reads: thread list by object, inbox with unread and tasks, activ
     ownerVault.query(`UPDATE role_assignments SET role='sales_rep' WHERE user_id='${O}'`);
     (o as unknown as { accessCache: unknown }).accessCache = null;
     assert.equal((await call(o, "threadList", { target: null })).threads.length, 1, "decision 16: the vault role filters cost threads too");
-    // And it cannot write to one either: open, reply, resolve or assign (checked before any network call).
-    const costId = foldThreads(saved.get(owner.actor.deviceId)!.entries, saved.get(owner.actor.deviceId)!.epochs.map(e => e.epoch)).threads.find(t => t.pack === "cost")!.id;
-    const session = { threads: () => foldThreads(saved.get(owner.actor.deviceId)!.entries, saved.get(owner.actor.deviceId)!.epochs.map(e => e.epoch)) };
-    const svc = o as unknown as { threadPackAllowed(s: unknown, id: string): Promise<void>; threadTargetAllowed(t: string): Promise<void> };
-    await assert.rejects(svc.threadPackAllowed(session, costId), code("FORBIDDEN"));
-    await assert.rejects(svc.threadTargetAllowed("leak"), code("FORBIDDEN"));
-    await svc.threadTargetAllowed("item");
+    // And it cannot write to one either, on a device that holds the key: the guard runs in the session after its sync, so
+    // a thread that only arrives with that sync is covered, and a thread it cannot find is refused.
+    const guard = await (o as unknown as { threadGuard(): Promise<(p: string) => boolean> }).threadGuard();
+    const s = client(owner); s.packGuard = guard as never;
+    const costId = s.threads().threads.find(t => t.pack === "cost")!.id;
+    await assert.rejects(s.threadReply(costId, "no", []), code("ACCESS"));
+    await assert.rejects(s.threadStatus(costId, true), code("ACCESS"));
+    await assert.rejects(s.threadTask(costId, { assignee: null, due: null, done: false }), code("ACCESS"));
+    await assert.rejects(s.threadOpen({ type: "leak", ref: ["C9"], label: "x" }, "no", [], null), code("ACCESS"));
+    await assert.rejects(s.threadReply(crypto.randomUUID(), "no", []), code("CONTENT"), "an unknown thread fails closed");
   } finally { repVault.close(); ownerVault.close(); await db.close(); }
 });
 

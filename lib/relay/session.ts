@@ -165,9 +165,12 @@ export class RelaySession{
    return {content:{kind:'thread',pack,iv:sealed.iv,body:sealed.body},sealed:{state:'ok',body}};
   },[...recipients,...mentions].filter(u=>u!==this.scope.userId),mentions.filter(u=>u!==this.scope.userId));
  }
- private thread(id:string){const t=this.threads().threads.find(x=>x.id===id);if(!t)throw new RelayError('CONTENT',msg("thread.err.notFound"));return t;}
+ /** Set by the vault: which packs this person's vault role may discuss (a role without cost never writes a cost thread). */
+ packGuard:(pack:AnyPack)=>boolean=()=>true;
+ private guard(pack:AnyPack){if(!this.packGuard(pack))throw new RelayError('ACCESS',msg('share.err.costNotForYou'));}
+ private thread(id:string){const t=this.threads().threads.find(x=>x.id===id);if(!t)throw new RelayError('CONTENT',msg("thread.err.notFound"));this.guard(t.pack);return t;}
  async threadOpen(target:Target,text:string,mentions:string[],task:TaskState|null){
-  await this.sync();return this.sealedSend(crypto.randomUUID(),TARGET_PACK[target.type],{kind:'open',target,text,task},mentions,task?.assignee?[task.assignee]:[]);
+  this.guard(TARGET_PACK[target.type]);await this.sync();return this.sealedSend(crypto.randomUUID(),TARGET_PACK[target.type],{kind:'open',target,text,task},mentions,task?.assignee?[task.assignee]:[]);
  }
  async threadReply(id:string,text:string,mentions:string[]){await this.sync();const t=this.thread(id);return this.sealedSend(id,t.pack,{kind:'reply',text},mentions,[]);}
  async threadStatus(id:string,resolved:boolean){await this.sync();const t=this.thread(id);return this.sealedSend(id,t.pack,{kind:'status',resolved},[],[]);}

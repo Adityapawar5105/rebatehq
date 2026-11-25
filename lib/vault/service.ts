@@ -245,15 +245,9 @@ export class VaultService {
     return result;
   }
   // ---- Team sharing S5a: threads, tasks, inbox and activity (lib/sharing/threads.ts), read from the local relay log ----
-  /** A role without cost may not open a thread on a cost object, even on a device that holds the key. */
-  private async threadTargetAllowed(type:TargetType){
-    if(COST_PACKS.includes(TARGET_PACK[type])&&!(await this.access()).caps.includes('cost'))throw new VaultError('FORBIDDEN',msg('share.err.costNotForYou'));
-  }
-  /** The same check for an existing thread: a role without cost may not reply to, resolve or assign a cost thread. */
-  private async threadPackAllowed(session:RelaySession,id:string){
-    const pack=session.threads().threads.find(t=>t.id===id)?.pack;
-    if(pack&&COST_PACKS.includes(pack)&&!(await this.access()).caps.includes('cost'))throw new VaultError('FORBIDDEN',msg('share.err.costNotForYou'));
-  }
+  /** Which packs this vault role may discuss: a role without cost never opens, replies to, resolves or assigns a thread on
+   *  a cost pack, even on a device that still holds the key. */
+  private async threadGuard(){const cost=(await this.access()).caps.includes('cost');return (pack:SharedPack)=>cost||!COST_PACKS.includes(pack);}
   private async threadContext(){
     const state=await this.relayStateRead(),cost=(await this.access()).caps.includes('cost'),epochs=state.epochs.map(e=>e.epoch),last=epochs.at(-1)??null;
     const threads=foldThreads(state.entries,epochs).threads.filter(visibleTo(cost));
@@ -510,11 +504,12 @@ export class VaultService {
       case 'relayShare':{const {amount,...input}=request.data.input;const currency=await workspaceCurrency(this.requireEngine());if(input.currency!==currency)throw new VaultError('CURRENCY',msg('fx.current',{code:currency}));let amountMinor:string;try{amountMinor=minorUnits(amount).toString();}catch{throw new RelayError('CONTENT',msg("vault.enterANonNegative"));}return session.share({...input,amountMinor});}
       case 'relayRequest':return session.request(request.data.id,request.data.approvers);case 'relayDecide':return session.decide(request.data.id,request.data.decision);
       case 'relayComment':return session.comment(request.data.id,request.data.text,request.data.mentions);case 'relayRetry':return session.retry();case 'relayDiscard':return session.discard();
-      case 'relayThreadOpen':{const d=request.data,target=TargetSchema.parse(d.target);await this.threadTargetAllowed(target.type);return session.threadOpen(target,d.text,d.mentions,d.task);}
-      // Replies, status and task changes get the same vault-role check as opening a thread (security review of S5a).
-      case 'relayThreadReply':await this.threadPackAllowed(session,request.data.id);return session.threadReply(request.data.id,request.data.text,request.data.mentions);
-      case 'relayThreadStatus':await this.threadPackAllowed(session,request.data.id);return session.threadStatus(request.data.id,request.data.resolved);
-      case 'relayThreadTask':await this.threadPackAllowed(session,request.data.id);return session.threadTask(request.data.id,request.data.task);
+      // S5a security review: the vault role's cost check is enforced by the session after its sync, on the thread actually
+      // written to, and fails closed (a thread it cannot find is refused).
+      case 'relayThreadOpen':{const d=request.data,target=TargetSchema.parse(d.target);session.packGuard=await this.threadGuard();return session.threadOpen(target,d.text,d.mentions,d.task);}
+      case 'relayThreadReply':session.packGuard=await this.threadGuard();return session.threadReply(request.data.id,request.data.text,request.data.mentions);
+      case 'relayThreadStatus':session.packGuard=await this.threadGuard();return session.threadStatus(request.data.id,request.data.resolved);
+      case 'relayThreadTask':session.packGuard=await this.threadGuard();return session.threadTask(request.data.id,request.data.task);
     }
   }
   engine: Engine | null = null;
