@@ -86,9 +86,11 @@ Two checks were rewritten for tables that remain:
 
 `20261114120000_operator_subscriptions.sql` adds `workspace_licence.plan_type` (`pilot`/`paid`, default `pilot`), the read-only view `rebatehq_private.subscriptions` and the SECURITY INVOKER function `rebatehq_private.set_subscription(text,text,text,timestamptz)`. No table is added, so the tenant-table minimum stays **13**. The view and function are revoked from `PUBLIC, anon, authenticated, service_role, rebatehq_app`, and the private schema's USAGE was already revoked from those roles; the public function ACL registry does not cover the private schema. pgTAP now plans **139** fresh and **142** restore checks (three new checks in `chunk5b_control.sql`: the pilot default, the closed ACLs, and a real `set_subscription` call that is then undone). The restore licence hash includes `plan_type`. A rolled-back dry run on `rebatehq-staging` succeeded on 14 November 2026. After [CI #158](https://github.com/Adityapawar5105/rebatehq/actions) passed on PR #1, the migration was applied to `rebatehq-staging` the same day, recorded as version `20261114120000` (14 migrations there); the view and function were checked closed to every API role. It is now **locked**: [CI #160](https://github.com/Adityapawar5105/rebatehq/actions/runs/43623569198) and [Restore Drill #22](https://github.com/Adityapawar5105/rebatehq/actions/runs/43623613500) (local target, started at the user's request) passed on `ceea3af`, and [CI #161](https://github.com/Adityapawar5105/rebatehq/actions/runs/43623806190) passed on `4ad0960`; 14 migrations are applied and 0 are pending.
 
-## Team sharing S2 inventory (pending, 24 November 2026)
+## Team sharing S2 inventory (locked 25 November 2026)
 
-`20261125120000_sharing_s2_packs.sql` is **pending**. It locks only after green CI **and a user-run Restore Drill**.
+`20261125120000_sharing_s2_packs.sql` is **locked**: 15 applied, 0 pending.
+- **CI:** it passed [CI #229](https://github.com/Adityapawar5105/rebatehq/actions/runs/45457625300) on `05dd35e`.
+- **Restore Drills:** the user-run [Restore Drill #23](https://github.com/Adityapawar5105/rebatehq/actions/runs/45539740448) and [#24](https://github.com/Adityapawar5105/rebatehq/actions/runs/45539767088) (local target) passed on `075ded4`. Both ran 152 restore-mode checks, and the relay content hashes matched, including `relay_pack_wrap` (12 rows) and `relay_pack_version` (1 row).
 
 - **New tenant tables:** `relay_pack_wrap` and `relay_pack_version` take the public tenant tables to 15.
   - Like the 7A relay tables, they are excluded from the generic fixture graph.

@@ -138,7 +138,8 @@ A pack version is a signed hash chain per pack, and its manifest is encrypted un
 | `tsc --noEmit`, schema lint, migration lock (1 pending) | local | passed |
 | Unit tests | local | 78 JS and 367 TS passed (including the PGlite runs of the full pgTAP SQL, fresh and populated) |
 | pgTAP 149/152, relay gate, browser gates | CI | recorded in the PR |
-| Restore Drill | **the user** | not run yet; the migration stays pending until it passes |
+| CI | [CI #229](https://github.com/Adityapawar5105/rebatehq/actions/runs/45457625300) on `05dd35e` | passed (pgTAP 149, both browser gates, `verify`) |
+| Restore Drill | user-run [#23](https://github.com/Adityapawar5105/rebatehq/actions/runs/45539740448) and [#24](https://github.com/Adityapawar5105/rebatehq/actions/runs/45539767088), local target, on `075ded4` | passed: 152 restore-mode checks; relay content hashes equal (pack wraps 12 → 12, pack versions 1 → 1). **The migration is locked** (25 Nov 2026) |
 
 ## Bugs the tests found
 
