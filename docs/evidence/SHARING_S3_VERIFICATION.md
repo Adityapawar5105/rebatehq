@@ -1,6 +1,15 @@
 # Team sharing S3b (packs published and received through Supabase Storage): verification
 
-25 November 2026. Blueprint section 22, item 38; `SHARING_DESIGN.md` sections 5 and 7. Built by Claude Code after the user chose Supabase Storage with direct downloads. Migration `20261126120000_sharing_s3_storage.sql` is **pending** until CI and the user's Restore Drill pass; then a lock PR follows.
+25 November 2026. Blueprint section 22, item 38; `SHARING_DESIGN.md` sections 5 and 7. Built by Claude Code after the user chose Supabase Storage with direct downloads. Migration `20261126120000_sharing_s3_storage.sql` is **locked** (25 November 2026).
+
+**CI and restore evidence:**
+- [CI #241](https://github.com/Adityapawar5105/rebatehq/actions/runs/45552277036) passed on `3208d65`, and [CI #242](https://github.com/Adityapawar5105/rebatehq/actions/runs/45555188761) on `main` at `c36bda4`. Both included the authenticated relay gate against real Supabase Storage and the 152-check pgTAP plan.
+- The user-run [Restore Drill #25](https://github.com/Adityapawar5105/rebatehq/actions/runs/45557077582) (local target) passed on `c36bda4`:
+  - it dumped the three application schemas;
+  - it re-applied the bucket and policies before pgTAP;
+  - it matched 25 function ACLs;
+  - it ran 155 restore-mode checks twice with unchanged row counts.
+- The earlier runs CI #237 to #240 failed on test flakes outside S3 (an unhandled share-count refusal under Preview as, a two-letter ciphertext check, and a native heap abort), fixed in PR #32.
 
 ## What it does
 

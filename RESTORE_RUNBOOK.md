@@ -134,7 +134,9 @@ migration stays pending until CI and the user's manually triggered local-target
 Restore Drill both pass. Hosted target, independent protocol review, physical
 crash recovery and operational key-loss recovery remain unverified.
 
-## Team sharing S3 restore additions — unverified until the user-run drill passes
+## Team sharing S3 restore additions — verified in local Restore Drill #25
+
+Verified 25 November 2026 in the user-run [Restore Drill #25](https://github.com/Adityapawar5105/rebatehq/actions/runs/45557077582) on `c36bda4` (local target): the three schemas were dumped, step 7a re-created the bucket and both policies on the fresh target, and the 155-check restore plan passed twice. A hosted-target restore of Storage objects remains unverified.
 
 Migration `20261126120000_sharing_s3_storage.sql` adds schema `rebatehq_storage`, which holds one SECURITY DEFINER function,
 `relay_storage_allowed(text,boolean)`. Only `authenticated` may use it, and the Data API does not expose the schema.
