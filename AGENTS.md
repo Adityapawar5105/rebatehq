@@ -343,4 +343,10 @@ See `docs/evidence/SECOND_AUDIT_PASS.md`. The independent security review (R02, 
 - **Discuss** (`components/local/Threads.tsx`) is on Data Hub customers and items, quotes, leak findings and supplier claims; mentions and assignees are limited to people who receive the pack.
 - The shared inbox has a **Threads and tasks** tab: for you, open tasks and activity, as shared grids, with an unread badge. Relay gate: 18 checks (`threadsUi`).
 - **Relay head fix (PR #41):** `relayHead` and `packHead` sorted a text alias, so "9" came after "10" and syncs failed past nine events. Fixed, with `tests/relay-head-order.test.ts`. It passed [CI #264](https://github.com/Adityapawar5105/rebatehq/actions/runs/45689910186) on `1ecafdf` and merged.
-- No migration and no schema change. See docs/evidence/SHARING_S5B_VERIFICATION.md.
+- No migration and no schema change.
+- **It passed** [CI #267](https://github.com/Adityapawar5105/rebatehq/actions/runs/45693771972) on `d53d3e2` and merged as PR #42. See docs/evidence/SHARING_S5B_VERIFICATION.md.
+
+**Cloudflare Workers trial (26 Nov 2026; a desk study by Claude Code).** `CLOUDFLARE_TRIAL.md`.
+- Nothing was installed or deployed: there is no package manager here, and an account and deployment need the owner.
+- Blockers: OpenNext does not run the Node.js `proxy.ts`; the `pg` pool on `globalThis` needs per-request clients or Hyperdrive; the CA file cannot be read at run time; the `/spike/*` headers would need to move.
+- Recommendation: stay on Netlify for now. If a move is wanted, try vinext on a throwaway branch first, then OpenNext with `middleware.ts`; Vercel runs `proxy.ts` natively.
