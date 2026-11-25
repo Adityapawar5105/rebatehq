@@ -3353,4 +3353,5 @@ export const es: Catalog = {
   "share.banner.body": "Estos datos vienen de quien los publica y aquí son de solo lectura. Los cambios llegan con la próxima publicación. Sus propias notas se quedan en este dispositivo.",
   "share.banner.changes": "Qué cambió",
   "share.banner.stale": {"one":"Este dispositivo se sincronizó por última vez hace {count} día. Abra la bandeja compartida y sincronice para obtener lo último.","other":"Este dispositivo se sincronizó por última vez hace {count} días. Abra la bandeja compartida y sincronice para obtener lo último."},
+  "share.readOnlyHint": "{name} comparte estos datos, así que son de solo lectura en este dispositivo.",
 };

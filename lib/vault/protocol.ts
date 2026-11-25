@@ -24,7 +24,9 @@ import type { LineInput, PricePoint, QuoteSummary, QuoteView } from "../quotes/q
 export type Tier = "starter" | "professional" | "scale";
 export type Scope = { userId: string; tenantId: string };
 /** What the signed-in person may do in this vault. Computed in the worker; the UI only mirrors it. */
-export type Access = { role: RoleId; roleLabel: string; assigned: boolean; viewAs: RoleId | null; caps: Cap[]; sections: string[]; ownerNamed: boolean };
+export type Access = { role: RoleId; roleLabel: string; assigned: boolean; viewAs: RoleId | null; caps: Cap[]; sections: string[]; ownerNamed: boolean;
+  /** Team sharing S3c: the packs this receiving seat holds read-only, with each publisher (lib/sharing/governed.ts). */
+  shared?: import("../sharing/governed").SharedLock };
 /** Roadmap 9.2: the vault's state as one value, decided in the worker (the older flags stay beside it). In order of
  *  precedence: no vault on this device, locked, read-only licence, unsaved changes, preparing the first change, ready. */
 export type VaultPhase = "none" | "locked" | "readOnly" | "unsaved" | "preparing" | "ready";

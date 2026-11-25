@@ -13,6 +13,7 @@ import { scrollToHeading } from "./scroll";
 import type { SampleState } from "@/lib/studio/playground";
 import styles from "./vault.module.css";
 import hs from "./home.module.css";
+import { useSharedLock } from "./sharedLock";
 import ui from "@/components/ui/ui.module.css";
 const money = (cents: string) => fmt.currency(cents);
 
@@ -106,6 +107,7 @@ export function CreateNew({ items }: { items: { href: string; label: string; ico
  * on 15 Nov 2026, both at the user's request (blueprint section 22). */
 export function HomeView({ client, userId, version, busy, operation, refresh, onHome, sample, afterWork }: { client: VaultClient; userId: string; version: string; busy: boolean; operation: (f: () => Promise<void>) => Promise<void>; refresh: () => Promise<void>; onHome?: (home: HomeData) => void; sample?: SampleState; /** 8.5: shown directly under the work tabs (the sharing set-up card). */ afterWork?: ReactNode }) {
   const [home, setHome] = useState<HomeData | null>(null), [owner, setOwner] = useState(""), [note, setNote] = useState("");
+  const playLock = useSharedLock()("playgroundLoad");
   const [work, setWork] = useState<{ drafts: WorkItem[]; action: WorkItem[] } | null>(null);
   const load = async () => setHome(await client.call("home", {}));
   useEffect(() => { let on = true; void client.call("home", {}).then(h => { if (on) setHome(h); }).catch(() => { if (on) setNote(msg("home.couldNotLoadHome")); }); return () => { on = false; }; }, [client, version]);
@@ -135,7 +137,7 @@ export function HomeView({ client, userId, version, busy, operation, refresh, on
       <Field label={t("home.pricingOwnerName")}><input value={owner} maxLength={160} onChange={e => setOwner(e.target.value)}/></Field>
       <Button variant="primary" disabled={busy || !owner.trim()} onClick={() => void operation(async () => { await client.call("pricingOwner", { name: owner, userId, backupDays: 7 }); setOwner(""); await load(); await refresh(); })}>{t("home.nameMeAsPricing")}</Button>
     </Notice>}
-    {sample === "empty" && has("data") && dataHub && <StartCard busy={busy} onPlayground={() => void operation(async () => { await client.call("playgroundLoad", {}); await refresh(); })}/>}
+    {sample === "empty" && has("data") && dataHub && <StartCard busy={busy || !!playLock} onPlayground={() => void operation(async () => { await client.call("playgroundLoad", {}); await refresh(); })}/>}
     {work ? <WorkTabs key={version} drafts={work.drafts} action={work.action}/> : <Card aria-busy="true"><Skeleton lines={3}/></Card>}
     {afterWork}
     {has('cost')&&<HomeMonitor client={client} version={version} sample={sample}/>}

@@ -32,6 +32,8 @@ import { ShareHandoff } from "./ShareHandoff";
 import { ShareGrid } from "./ShareGrid";
 import type { TeamDirectory } from "@/lib/team";
 import { SharedBanner } from "./SharedBanner";
+import { SharedLockProvider } from "./sharedLock";
+import { lockedPacks } from "@/lib/sharing/governed";
 /** Team sharing S3: the sections that hold shared packs, for the read-only banner on a receiving seat. */
 const SHARED_SECTIONS: Record<string, readonly string[] | undefined> = { Pricing: ["book", "contracts", "guards", "cost_floors"], "Data Hub": ["items", "customers", "cost"], "Rebates & Contracts": ["contracts"] };
 import { RelayOnboarding, RelayPanel, RelaySetupLine } from './RelayPanel';
@@ -133,6 +135,8 @@ export function VaultApp({ scope, email, workspace, lab = false, relayEnabled = 
     ...sectionPages(s, navCtx).map(p => ({ href: "#" + p.hash, hash: p.hash, label: t(p.label), testId: p.testId })),
     ...(s === "Settings" && !lab ? account.map(a => ({ href: a.href, hash: "", label: t(a.label), testId: undefined })) : []),
   ];
+  // S3c: whether a write is read-only on this receiving seat (the same rule the worker enforces).
+  const sharedLock = (action: import("@/lib/vault/protocol").Action) => lockedPacks(action, access?.shared ?? null).length > 0;
   const pages = pagesOf(shown), page = pageOfHash(hash, pages.filter(p => p.hash)) ?? "", pageInfo = pages.length > 1 ? pages.find(p => p.hash === page) : undefined;
   const sideItems: SideNavItem[] = navItems.map(item => ({ href: `#${SECTION_HASH[item]}`, label: t(SECTION_LABEL[item]), icon: SECTION_ICON[item], current: shown === item,
     children: pagesOf(item).map(p => ({ href: p.href, label: p.label, testId: p.testId, current: shown === item && !!p.hash && p.hash === page })) }));
@@ -192,7 +196,7 @@ export function VaultApp({ scope, email, workspace, lab = false, relayEnabled = 
         lock: unlocked ? lock : undefined,
         save: unlocked && status?.dirty ? () => void operation(async () => { setStatus(await client.current!.call("save", {})); setMessage(msg("shell.saved")); }) : undefined,
       }}/>}
-      <main id="local-content" className={sh.content} tabIndex={-1}>
+      <main id="local-content" className={sh.content} tabIndex={-1}><SharedLockProvider value={access?.shared}>
         {unlocked && shown === "Home" && <PageHeader eyebrow={<span translate="no">{workspace}</span>} title={homeInfo?.name ? t("home.welcome", { name: homeInfo.name }) : t("home.welcomeBack")}
           description={homeInfo && <span data-testid="role-banner">{t("home.yourRole", { roleLabel: homeInfo.role })}{t("common.listSeparator")}{homeInfo.owner ? t("home.pricingOwnerTheyApprove", { pricingOwner: homeInfo.owner }) : t("home.noPricingOwnerIs")}</span>}
           actions={<div className={hs.headerActions}><CreateNew items={[
@@ -251,8 +255,8 @@ export function VaultApp({ scope, email, workspace, lab = false, relayEnabled = 
           {client.current && SHARED_SECTIONS[shown] && <SharedBanner client={client.current} packs={SHARED_SECTIONS[shown]!} version={`${status.lines}|${status.generation}`}/>}
           {shown === "Data Hub" && client.current && (page === "data-hub-import" || page === "data-hub-fix") && <ImportStudio part={page === "data-hub-fix" ? "fix" : "import"} client={client.current} status={status} caps={caps} busy={busy} operation={operation} onStatus={setStatus} setMessage={setMessage}/>}
           {shown === "Data Hub" && client.current && page === "data-hub-cleanup" && <>
-            <CleanupView client={client.current} version={`${status.lines}|${status.generation}`} busy={busy} operation={operation} onStatus={setStatus} setMessage={setMessage}/>
-            {caps.includes("cost") && <CostBasisView client={client.current} version={`${status.lines}|${status.generation}`} busy={busy} operation={operation} canChoose={caps.includes("data")}/>}
+            <CleanupView client={client.current} version={`${status.lines}|${status.generation}`} busy={busy || !!sharedLock("cleanupApply")} operation={operation} onStatus={setStatus} setMessage={setMessage}/>
+            {caps.includes("cost") && <CostBasisView client={client.current} version={`${status.lines}|${status.generation}`} busy={busy} operation={operation} canChoose={caps.includes("data") && !sharedLock("costBasisSet")}/>}
           </>}
           {shown === "Data Hub" && client.current && page === "data-hub-records" && caps.includes("data") && <RecordsView client={client.current} version={`${status.lines}|${status.generation}`}/>}
           {shown === "Data Hub" && page === "data-hub-import" && <>
@@ -296,7 +300,7 @@ export function VaultApp({ scope, email, workspace, lab = false, relayEnabled = 
           {shown === "Settings" && page === "settings-general" && <GlossaryCard/>}
           {shown === "Settings" && page === "settings-security" && <OfflineCard licenceUntil={status.licence?.offline && status.licence.until ? new Date(Number(status.licence.until)).toISOString() : null}/>}
         </>}
-      </main>
+      </SharedLockProvider></main>
     </div>
   </div></GridTotalsProvider>;
 }

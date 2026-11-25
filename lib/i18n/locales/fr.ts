@@ -3353,4 +3353,5 @@ export const fr: Catalog = {
   "share.banner.body": "Ces données viennent de la personne qui les publie et sont en lecture seule ici. Les modifications arrivent avec la prochaine publication. Vos propres notes restent sur cet appareil.",
   "share.banner.changes": "Ce qui a changé",
   "share.banner.stale": {"one":"Cet appareil s’est synchronisé il y a {count} jour. Ouvrez la boîte partagée et synchronisez pour obtenir la dernière version.","other":"Cet appareil s’est synchronisé il y a {count} jours. Ouvrez la boîte partagée et synchronisez pour obtenir la dernière version."},
+  "share.readOnlyHint": "{name} partage ces données : elles sont en lecture seule sur cet appareil.",
 };

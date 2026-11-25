@@ -18,6 +18,7 @@ import { DataGrid } from "@/components/ui/DataGrid";
 import { Badge, ButtonLink, Card, Field, Notice, Button as UiButton } from "@/components/ui/ui";
 import { VaultClientError, type VaultClient } from "@/lib/vault/client";
 import type { Cap } from "@/lib/roles/access";
+import { useSharedLock } from "./sharedLock";
 import { scrollToHeading } from "./scroll";
 type Props = { client: VaultClient; status: VaultStatus; caps?: Cap[]; busy: boolean; operation: (work: () => Promise<void>) => Promise<void>; onStatus: (status: VaultStatus) => void; setMessage: (message: string) => void };
 const ACCEPT = ".csv,.tsv,.txt,.prn,.xlsx,.xlsm,.xls,.xlsb,.ods,.json,.xml,.parquet,.pdf";
@@ -47,6 +48,8 @@ const statusText = (f: FileView) => f.loadable ? t("studio.readyToLoad") : f.rol
 
 export function ImportStudio({ part = "import", client, status, caps = [], busy, operation, onStatus, setMessage }: Props & { part?: "import" | "fix" }) {
   const [studio, setStudio] = useState<StudioState | null>(null), [sources, setSources] = useState<SourceView[]>([]);
+  // S3c: on a receiving seat, an import that would overwrite shared rows (or the Playground) is disabled with the reason.
+  const lock = useSharedLock(), importLock = lock("studioCommit", studio?.files.map(f => f.role) ?? []), playLock = lock("playgroundLoad");
   const [open, setOpen] = useState<string | null>(null), [ack, setAck] = useState(false), [over, setOver] = useState(false);
   const [recipeName, setRecipeName] = useState(""), [removing, setRemoving] = useState<string | null>(null), [losing, setLosing] = useState<{ products: string; customers: string } | null>(null);
   useEffect(() => {
@@ -123,7 +126,7 @@ export function ImportStudio({ part = "import", client, status, caps = [], busy,
         {scanned.others && <p>{t("studio.scanned.others")}</p>}
       </Notice>}
       {status.sample === "empty" && !files.length && <p className={styles.small} data-testid="studio-try-playground">{t("studio.noFileHandy")}{" "}
-        <UiButton size="sm" variant="ghost" disabled={busy} onClick={() => void operation(async () => { const out = await client.call("playgroundLoad", {}); onStatus(out.status); await refreshSources(); bump(); setMessage(msg("studio.playgroundLoadedInvoiceLines", { lines: out.manifest.lines, count: out.manifest.leaks.length })); })}>{t("home.start.sampleButton")}</UiButton></p>}
+        <UiButton size="sm" variant="ghost" disabled={busy || !!playLock} title={playLock ?? undefined} onClick={() => void operation(async () => { const out = await client.call("playgroundLoad", {}); onStatus(out.status); await refreshSources(); bump(); setMessage(msg("studio.playgroundLoadedInvoiceLines", { lines: out.manifest.lines, count: out.manifest.leaks.length })); })}>{t("home.start.sampleButton")}</UiButton></p>}
       <FolderReimport client={client} busy={busy} operation={operation} setMessage={setMessage} onAdded={next => { setStudio(next); setAck(false); setOpen(next.files.at(-1)?.id ?? null); }}/>
     </Card>
     {files.length > 0 && <Card headingId="batch-heading" title={t("studio.filesInThisBatch")}>
@@ -141,7 +144,7 @@ export function ImportStudio({ part = "import", client, status, caps = [], busy,
           </div> },
       ]}/>
       <div className={styles.row}>
-        <UiButton variant="primary" disabled={busy} onClick={() => void operation(async () => { const next = await client.call("studioPlan", {}); setStudio(next); setAck(false); setMessage(msg("studio.batchReviewedCheckThe")); })}>{t("studio.reviewImport")}</UiButton>
+        <UiButton variant="primary" disabled={busy || !!importLock} title={importLock ?? undefined} data-testid="studio-plan" onClick={() => void operation(async () => { const next = await client.call("studioPlan", {}); setStudio(next); setAck(false); setMessage(msg("studio.batchReviewedCheckThe")); })}>{t("studio.reviewImport")}</UiButton>
         <UiButton disabled={busy} onClick={() => void operation(async () => { const out = await client.call("studioZip", {}); save(out.blob, out.name); setMessage(msg("studio.downloadedConvertedCsvFile", { count: files.length, name: out.name })); })}>{t("studio.downloadAllAsZip")}</UiButton>
         <UiButton disabled={busy} onClick={() => void operation(async () => { setStudio(await client.call("studioClear", {})); setOpen(null); })}>{t("studio.clearBatch")}</UiButton>
       </div>
@@ -173,7 +176,7 @@ export function ImportStudio({ part = "import", client, status, caps = [], busy,
       </details>)}
       {(report.rejected !== "0" || report.rebateTerms || report.skippedPages) && report.loaded !== "0" && <label className={styles.row}><input type="checkbox" data-testid="studio-ack" style={{ width: "auto" }} checked={ack} onChange={event => setAck(event.target.checked)}/>{" "}<span>{report.rejected!=="0"&&<span>{t("studio.ackRejected", { loaded: fmt.int(report.loaded), rejected: fmt.int(report.rejected) })} </span>}{report.rebateTerms&&<span>{t("rebate.confirm")}</span>}{report.skippedPages&&<span> {t("studio.skippedPagesAck")}</span>}</span></label>}
       {report.loaded === "0" && <Notice tone="bad" role="alert">{t("studio.noValidRowsTo")}</Notice>}
-      <UiButton variant="primary" disabled={busy || !canCommit || status.dirty} onClick={() => void operation(async () => {
+      <UiButton variant="primary" disabled={busy || !canCommit || status.dirty || !!importLock} title={importLock ?? undefined} onClick={() => void operation(async () => {
         const out = await client.call("studioCommit", { acknowledge: ack }); onStatus(out.status); setStudio(out.studio); setAck(false); setOpen(null); await refreshSources(); bump();
         setAfter({ loaded: out.result.loaded, rejected: out.result.rejected }); window.scrollTo({ top: 0 });
         setMessage(msg("studio.imported", { rows: fmt.int(out.result.loaded), count: Number(out.result.files) }) + (out.result.cleanup ? "" : " " + msg("studio.cleanupHarmless")));
@@ -375,12 +378,12 @@ function HealthCard({ client, version }: Shared) {
 }
 /** Playground: fictional sample data with planted leaks, only in a vault without real files. */
 function Playground({ client, busy, operation, onStatus, setMessage, bump, sources, onSources }: Shared & { sources: SourceView[]; onSources: () => Promise<void> }) {
-  const [manifest, setManifest] = useState<PlaygroundManifest | null>(null);
+  const [manifest, setManifest] = useState<PlaygroundManifest | null>(null), playLock = useSharedLock()("playgroundLoad");
   const loaded = sources.some(s => s.name.startsWith(PLAYGROUND_PREFIX)), real = sources.some(s => !s.name.startsWith(PLAYGROUND_PREFIX));
   if (real && !loaded) return null;
   return <Card headingId="playground-heading" title={t("studio.playground")}>
     <p>{t("studio.aFictionalIndustrialValve")}</p>
-    {!loaded ? <UiButton variant="primary" disabled={busy} onClick={() => void operation(async () => { const out = await client.call("playgroundLoad", {}); onStatus(out.status); setManifest(out.manifest); await onSources(); bump(); setMessage(msg("studio.playgroundLoadedInvoiceLines", { lines: out.manifest.lines, count: out.manifest.leaks.length })); })}>{t("studio.loadThePlayground")}</UiButton>
+    {!loaded ? <UiButton variant="primary" disabled={busy || !!playLock} title={playLock ?? undefined} onClick={() => void operation(async () => { const out = await client.call("playgroundLoad", {}); onStatus(out.status); setManifest(out.manifest); await onSources(); bump(); setMessage(msg("studio.playgroundLoadedInvoiceLines", { lines: out.manifest.lines, count: out.manifest.leaks.length })); })}>{t("studio.loadThePlayground")}</UiButton>
       : <UiButton disabled={busy} onClick={() => void operation(async () => { const out = await client.call("playgroundRemove", {}); onStatus(out.status); setManifest(null); await onSources(); bump(); setMessage(msg("studio.removedPlaygroundFilesAnd", { count: Number(out.removed) })); })}>{t("studio.removePlaygroundData")}</UiButton>}
     {manifest && <ul className={styles.small}>{manifest.leaks.map(l => <li key={l.id}>{t("studio.plantedLeak", { id: l.id, description: l.id in PLANTED ? t(PLANTED[l.id],{minimum:fmt.currency("10000"),freight:fmt.currency("1500")}) : l.description, count: l.lines, dollars: fmt.currency(l.cents) })}</li>)}</ul>}
   </Card>;

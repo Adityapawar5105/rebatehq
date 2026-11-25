@@ -45,5 +45,26 @@
 **Suites.** The full JS (80) and TypeScript (382) suites pass. The `roles.test.ts` fake service gained `sharedGuard`.
 
 ## Not done (still to come)
-- **Edit buttons:** they are not disabled ahead of time; the worker refuses the write and the screen shows the message.
 - **Deltas, compaction and Realtime (S4).**
+
+## Follow-up: buttons disabled before they are pressed (25 Nov 2026)
+
+**The gap.** On a receiving seat, the edit buttons for shared data used to stay enabled; pressing one showed the refusal. Now the worker puts what the seat holds read-only on `Access` (`shared`: each relay pack with its publisher).
+
+**One rule for both sides.** `lockedPacks` in `lib/sharing/governed.ts` decides for the worker guard and for the screens.
+- The screens use `useSharedLock()` (`components/local/sharedLock.tsx`).
+- Each locked button is disabled, and its tooltip says "{name} shares this data, so it is read-only on this device".
+
+**Buttons covered:**
+- Save guardrails and Approve (Pricing);
+- Import Studio plan and commit, decided by the staged file kinds;
+- every Playground button, including the Home start card;
+- the hand-off file import;
+- item cleanup and cost basis (Data Hub).
+
+**Checks run locally (not CI evidence):**
+- A new test in `tests/sharing-governed.test.ts` covers `lockedPacks` and `Access.shared` (only relay copies; null on the publisher), and confirms every governed button reads the lock.
+- JS 80 and TS 383 tests pass.
+- The lab relay gate (16 checks) and vault gate passed in Chrome.
+
+**Not covered:** the relay gate's receiving roles (Sales Manager, Sales Rep) have none of these buttons, so the disabled state is covered by the tests, not seen in a browser.
