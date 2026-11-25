@@ -1,5 +1,5 @@
 import { msg } from "../i18n/core";
-export const SCHEMA_VERSION = 24;
+export const SCHEMA_VERSION = 25;
 const V1_TABLES = ["vault_meta", "products", "customers", "price_matrix", "price_guardrails", "source_files", "import_batches", "sales_lines", "vendor_costs", "cost_basis_settings", "rules", "rule_runs", "price_versions", "roi_ledger", "audit_log", "import_issues", "converter_recipes"] as const;
 const V4_TABLES = [...V1_TABLES, "rejected_rows"] as const;
 const V5_TABLES = [...V4_TABLES, "agg_cpm", "agg_cm", "agg_p", "recon_issues"] as const;
@@ -18,9 +18,10 @@ const V20_TABLES = [...V19_TABLES,"quote_outcomes"] as const;
 const V21_TABLES = [...V20_TABLES,"bench_family_map","bench_shares","bench_figures"] as const;
 const V22_TABLES = [...V21_TABLES,"quote_branding"] as const;
 const V23_TABLES = [...V22_TABLES,"claim_payments","export_layouts","sim_runs"] as const;
-export const TABLES = [...V23_TABLES,"shared_books","shared_changes"] as const;
+const V24_TABLES = [...V23_TABLES,"shared_books","shared_changes"] as const;
+export const TABLES = [...V24_TABLES,"shared_pack_rows","shared_published"] as const;
 /** Tables that exist at a schema version (in creation order, so copy-on-write inserts parents first). */
-export function tablesFor(version: number): readonly string[] { return version >= 24 ? TABLES : version >= 23 ? V23_TABLES : version >= 22 ? V22_TABLES : version >= 21 ? V21_TABLES : version >= 20 ? V20_TABLES : version >= 19 ? V19_TABLES : version >= 18 ? V18_TABLES : version >= 17 ? V17_TABLES : version >= 16 ? V16_TABLES : version >= 14 ? V15_TABLES : version >= 12 ? V12_TABLES : version >= 11 ? V11_TABLES : version >= 10 ? V10_TABLES : version >= 9 ? V9_TABLES : version >= 7 ? V7_TABLES : version >= 6 ? V6_TABLES : version >= 5 ? V5_TABLES : version >= 4 ? V4_TABLES : V1_TABLES; }
+export function tablesFor(version: number): readonly string[] { return version >= 25 ? TABLES : version >= 24 ? V24_TABLES : version >= 23 ? V23_TABLES : version >= 22 ? V22_TABLES : version >= 21 ? V21_TABLES : version >= 20 ? V20_TABLES : version >= 19 ? V19_TABLES : version >= 18 ? V18_TABLES : version >= 17 ? V17_TABLES : version >= 16 ? V16_TABLES : version >= 14 ? V15_TABLES : version >= 12 ? V12_TABLES : version >= 11 ? V11_TABLES : version >= 10 ? V10_TABLES : version >= 9 ? V9_TABLES : version >= 7 ? V7_TABLES : version >= 6 ? V6_TABLES : version >= 5 ? V5_TABLES : version >= 4 ? V4_TABLES : V1_TABLES; }
 // These are local DuckDB migrations, not Supabase migrations. V1 stays frozen
 // so the committed encrypted compatibility fixture exercises a real upgrade.
 export const V1_SQL = `
@@ -237,7 +238,15 @@ UPDATE price_guardrails SET floor_from_cost=false;
 CREATE UNIQUE INDEX guardrail_tier_category_v24 ON price_guardrails(tier,category);
 CREATE TABLE shared_books(pack VARCHAR PRIMARY KEY,version VARCHAR NOT NULL,publisher_id VARCHAR NOT NULL,publisher_name VARCHAR NOT NULL,published_at VARCHAR NOT NULL,received_at VARCHAR NOT NULL,via VARCHAR NOT NULL CHECK(via IN ('file','relay')),rows BIGINT NOT NULL CHECK(rows>=0),content_hash VARCHAR NOT NULL,recipient_role VARCHAR);
 CREATE TABLE shared_changes(pack VARCHAR NOT NULL,seq INTEGER NOT NULL,key VARCHAR NOT NULL,before_value VARCHAR,after_value VARCHAR,PRIMARY KEY(pack,seq));`;
-const STEPS = [V1_SQL, V2_SQL, V3_SQL, V4_SQL, V5_SQL, V6_SQL, V7_SQL, V8_SQL, V9_SQL, V10_SQL, V11_SQL, V12_SQL, V13_SQL,V14_SQL,V15_SQL,V16_SQL,V17_SQL,V18_SQL,V19_SQL,V20_SQL,V21_SQL,V22_SQL,V23_SQL,V24_SQL];
+// Team sharing S4b (25 Nov 2026; SHARING_DESIGN.md section 5): small deltas. shared_pack_rows holds, for each pack, the content
+// this vault last published (a publisher) or applied (a receiving seat), one whole row per key, so the next publish can
+// send only what changed and the next receipt can rebuild the full pack. It holds cost rows only on a seat that may see
+// cost, and no read command selects from it. shared_published is the publisher's own record of its last version and
+// the epoch it was published under (a version from an earlier epoch is never a delta base, so a rotation whose
+// re-publish failed still sends full copies next time).
+export const V25_SQL = `CREATE TABLE shared_pack_rows(pack VARCHAR NOT NULL,part INTEGER NOT NULL,row_key VARCHAR NOT NULL,row_json VARCHAR NOT NULL,PRIMARY KEY(pack,part,row_key));
+CREATE TABLE shared_published(pack VARCHAR PRIMARY KEY,epoch VARCHAR NOT NULL,version VARCHAR NOT NULL,hash VARCHAR NOT NULL,snapshot_version VARCHAR NOT NULL,snapshot_at VARCHAR NOT NULL,deltas_since INTEGER NOT NULL CHECK(deltas_since>=0));`;
+const STEPS = [V1_SQL, V2_SQL, V3_SQL, V4_SQL, V5_SQL, V6_SQL, V7_SQL, V8_SQL, V9_SQL, V10_SQL, V11_SQL, V12_SQL, V13_SQL,V14_SQL,V15_SQL,V16_SQL,V17_SQL,V18_SQL,V19_SQL,V20_SQL,V21_SQL,V22_SQL,V23_SQL,V24_SQL,V25_SQL];
 function checkVersion(version: number) {
   if (!Number.isInteger(version) || version < 1 || version > SCHEMA_VERSION) throw new Error(msg("vault.schema.unsupportedVaultSchemaVersion"));
 }

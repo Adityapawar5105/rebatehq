@@ -73,12 +73,22 @@ try{
  // doorbell must bring it within 45 s; in the lab (no Realtime server) the worker's 60-second poll does.
  {const shut=async p=>{const d=p.getByRole('dialog',{name:'Shared inbox',exact:true});if(await d.isVisible()){await close(p);await d.waitFor({state:'hidden'});}};
   const reopen=async p=>{await shut(p);await p.evaluate(()=>{location.hash='#home';});await open(p);};
-  const bookVersion=async page=>{await page.evaluate(()=>{location.hash='#home';});await page.evaluate(()=>{location.hash='#pricing';});const b=page.getByTestId('shared-banner');await b.waitFor({timeout:30000});return Number((/Book prices, version (\d+)/.exec(await b.innerText())||[])[1]||0);};
+  const versions=async page=>{await page.evaluate(()=>{location.hash='#home';});await page.evaluate(()=>{location.hash='#pricing';});const b=page.getByTestId('shared-banner');await b.waitFor({timeout:30000});const text=await b.innerText();return {book:Number((/Book prices, version (\d+)/.exec(text)||[])[1]||0),guards:Number((/Guardrails, version (\d+)/.exec(text)||[])[1]||0)};};
   if(auth){let joined=false;for(let i=0;i<20&&!joined;i++){await reopen(rep);const b=rep.getByTestId('relay-live');joined=!!(await b.count())&&(await b.getAttribute('data-joined')||'').split(',').includes('book');await shut(rep);if(!joined)await rep.waitForTimeout(3000);}assert.ok(joined,'The rep device never joined the book doorbell channel');}
-  await shut(rep);const before=await bookVersion(rep);assert.ok(before>0,'The rep has no book prices before the live update');
-  await shut(owner);await owner.evaluate(()=>{location.hash='#settings-team';});await owner.getByTestId('share-publish').click();await owner.getByText(/Published \d+ kinds? of data/).waitFor({timeout:120000});
-  const t0=Date.now();let after=before;while(after<=before&&Date.now()-t0<180000){await rep.waitForTimeout(3000);after=Number((/Book prices, version (\d+)/.exec(await rep.getByTestId('shared-banner').innerText().catch(()=>''))||[])[1]||0);}
-  assert.ok(after>before,'The rep did not receive the new publish without pressing Sync');const took=Date.now()-t0;if(auth){
+  await shut(rep);const start=await versions(rep);assert.ok(start.book>0&&start.guards>0,'The rep has no book prices or guardrails before the live update');const before=start.guards;
+  // S4b: a real change (one guardrail) and Publish now: only that pack is published, and the rep fetches only its chunk.
+  await shut(owner);await owner.evaluate(()=>{location.hash='#pricing';});
+  for(const [label,value] of Object.entries({'Customer tier':'TS4B','Product category':'Valves','Start price (cents)':'12000','Target price (cents)':'10000','Floor price (cents)':'8000'}))await owner.getByLabel(label,{exact:true}).fill(value);
+  await owner.getByRole('button',{name:'Save guardrails',exact:true}).click();await owner.getByRole('status').filter({hasText:'Guardrails saved.'}).waitFor();
+  const seen=storageRequests.length;
+  await owner.evaluate(()=>{location.hash='#settings-team';});await owner.getByTestId('share-publish').click();await owner.getByText('Published 1 kind of data to the team.',{exact:true}).waitFor({timeout:120000});
+  const t0=Date.now();let after=before,now=start;while(after<=before&&Date.now()-t0<180000){await rep.waitForTimeout(3000);const text=await rep.getByTestId('shared-banner').innerText().catch(()=>'');now={book:Number((/Book prices, version (\d+)/.exec(text)||[])[1]||0),guards:Number((/Guardrails, version (\d+)/.exec(text)||[])[1]||0)};after=now.guards;}
+  assert.ok(after>before,'The rep did not receive the new publish without pressing Sync');const took=Date.now()-t0;
+  assert.equal(now.book,start.book,'A guardrail change published the book prices again');
+  const fetched=storageRequests.slice(seen);
+  assert.deepEqual([...new Set(fetched.filter(x=>!x.read).map(x=>x.pack))],['guards'],'Publish now sent packs that did not change');
+  assert.deepEqual([...new Set(fetched.filter(x=>x.read&&x.page===2).map(x=>x.pack))],['guards'],'The rep fetched chunks of packs that did not change');
+  if(auth){
    await reopen(rep);const badge=rep.getByTestId('relay-live');const live={live:await badge.count()?{joined:(await badge.getAttribute('data-joined')||'').split(',').filter(Boolean),rings:Number(await badge.getAttribute('data-rings')),statuses:await badge.getAttribute('data-statuses')}:null};await shut(rep);
    const q=async sql=>{try{return (await db.query(sql)).rows;}catch(e){return String(e.message).slice(0,160);}};
    const direct=await q("SELECT realtime.send(jsonb_build_object('v','0'),'pack','pack:'||'"+actors[0].tenantId+"'||':book',true) AS sent");await rep.waitForTimeout(8000);
