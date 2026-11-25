@@ -249,6 +249,11 @@ export class VaultService {
   private async threadTargetAllowed(type:TargetType){
     if(COST_PACKS.includes(TARGET_PACK[type])&&!(await this.access()).caps.includes('cost'))throw new VaultError('FORBIDDEN',msg('share.err.costNotForYou'));
   }
+  /** The same check for an existing thread: a role without cost may not reply to, resolve or assign a cost thread. */
+  private async threadPackAllowed(session:RelaySession,id:string){
+    const pack=session.threads().threads.find(t=>t.id===id)?.pack;
+    if(pack&&COST_PACKS.includes(pack)&&!(await this.access()).caps.includes('cost'))throw new VaultError('FORBIDDEN',msg('share.err.costNotForYou'));
+  }
   private async threadContext(){
     const state=await this.relayStateRead(),cost=(await this.access()).caps.includes('cost'),epochs=state.epochs.map(e=>e.epoch),last=epochs.at(-1)??null;
     const threads=foldThreads(state.entries,epochs).threads.filter(visibleTo(cost));
@@ -506,9 +511,10 @@ export class VaultService {
       case 'relayRequest':return session.request(request.data.id,request.data.approvers);case 'relayDecide':return session.decide(request.data.id,request.data.decision);
       case 'relayComment':return session.comment(request.data.id,request.data.text,request.data.mentions);case 'relayRetry':return session.retry();case 'relayDiscard':return session.discard();
       case 'relayThreadOpen':{const d=request.data,target=TargetSchema.parse(d.target);await this.threadTargetAllowed(target.type);return session.threadOpen(target,d.text,d.mentions,d.task);}
-      case 'relayThreadReply':return session.threadReply(request.data.id,request.data.text,request.data.mentions);
-      case 'relayThreadStatus':return session.threadStatus(request.data.id,request.data.resolved);
-      case 'relayThreadTask':return session.threadTask(request.data.id,request.data.task);
+      // Replies, status and task changes get the same vault-role check as opening a thread (security review of S5a).
+      case 'relayThreadReply':await this.threadPackAllowed(session,request.data.id);return session.threadReply(request.data.id,request.data.text,request.data.mentions);
+      case 'relayThreadStatus':await this.threadPackAllowed(session,request.data.id);return session.threadStatus(request.data.id,request.data.resolved);
+      case 'relayThreadTask':await this.threadPackAllowed(session,request.data.id);return session.threadTask(request.data.id,request.data.task);
     }
   }
   engine: Engine | null = null;

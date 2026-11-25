@@ -165,6 +165,13 @@ test("S5a vault reads: thread list by object, inbox with unread and tasks, activ
     ownerVault.query(`UPDATE role_assignments SET role='sales_rep' WHERE user_id='${O}'`);
     (o as unknown as { accessCache: unknown }).accessCache = null;
     assert.equal((await call(o, "threadList", { target: null })).threads.length, 1, "decision 16: the vault role filters cost threads too");
+    // And it cannot write to one either: open, reply, resolve or assign (checked before any network call).
+    const costId = foldThreads(saved.get(owner.actor.deviceId)!.entries, saved.get(owner.actor.deviceId)!.epochs.map(e => e.epoch)).threads.find(t => t.pack === "cost")!.id;
+    const session = { threads: () => foldThreads(saved.get(owner.actor.deviceId)!.entries, saved.get(owner.actor.deviceId)!.epochs.map(e => e.epoch)) };
+    const svc = o as unknown as { threadPackAllowed(s: unknown, id: string): Promise<void>; threadTargetAllowed(t: string): Promise<void> };
+    await assert.rejects(svc.threadPackAllowed(session, costId), code("FORBIDDEN"));
+    await assert.rejects(svc.threadTargetAllowed("leak"), code("FORBIDDEN"));
+    await svc.threadTargetAllowed("item");
   } finally { repVault.close(); ownerVault.close(); await db.close(); }
 });
 
