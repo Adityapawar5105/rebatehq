@@ -61,4 +61,5 @@ export const frCA: Partial<Catalog> = {
   "qdoc.brandingTitle": "Présentation des soumissions",
   "qdoc.brandingHelp": "Imprimée sur le PDF client de la soumission. Conservée dans ce coffre chiffré.",
   "qdoc.brandingSaved": "Présentation des soumissions enregistrée.",
+  "people.searchPlaceholder": "Rechercher par nom ou courriel",
 };

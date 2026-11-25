@@ -30,6 +30,7 @@ import { VendorsView } from "./VendorsView";
 import { RolesView } from "./RolesView";
 import { ShareHandoff } from "./ShareHandoff";
 import { ShareGrid } from "./ShareGrid";
+import type { TeamDirectory } from "@/lib/team";
 import { RelayOnboarding, RelayPanel, RelaySetupLine } from './RelayPanel';
 import { QuoteBranding } from './QuoteBranding';
 import { AgentsInbox } from './AgentsInbox';
@@ -53,7 +54,7 @@ const SECTION_DESC: Record<Section, MessageKey> = { Home: "shell.desc.home", "Da
 const SECTION_ICON: Record<Section, IconName> = { Home: "home", "Data Hub": "database", Margin: "chart", Pricing: "tag", Quotes: "quote", "Rebates & Contracts": "coins", Vendors: "users", Reports: "report", Settings: "settings" };
 export const sectionHash = (s: Section) => s === "Rebates & Contracts" ? "rebates" : s.toLowerCase().replace(" ", "-");
 const NAV_KEY = "rebatehq.nav";
-export function VaultApp({ scope, email, workspace, lab = false, relayEnabled = false, account = [] }: { scope: Scope; email: string; workspace: string; lab?: boolean; relayEnabled?: boolean; account?: AccountLink[] }) {
+export function VaultApp({ scope, email, workspace, lab = false, relayEnabled = false, account = [], team = null }: { scope: Scope; email: string; workspace: string; lab?: boolean; relayEnabled?: boolean; account?: AccountLink[]; /** Members and invitations for Team and roles (null in the lab). */ team?: TeamDirectory | null }) {
   useLocale(); // re-render every screen when the language changes
   const client = useRef<VaultClient | null>(null);
   // Every grid totals its selected rows through the worker (DuckDB), never in the page.
@@ -272,7 +273,7 @@ export function VaultApp({ scope, email, workspace, lab = false, relayEnabled = 
           {shown === "Settings" && page === "settings-general" && client.current && <CurrencySettings client={client.current} status={status} busy={busy} operation={operation} onStatus={setStatus}/>}
           {shown === "Settings" && page === "settings-security" && client.current && caps.includes("backup") && <BackupView client={client.current} busy={busy} operation={operation} unlocked onStatus={setStatus}/>}
           {shown === "Settings" && page === "settings-security" && client.current && <PassphraseCard client={client.current} busy={busy} operation={operation} onStatus={setStatus} setMessage={setMessage}/>}
-          {shown === "Settings" && page === "settings-team" && client.current && <RolesView client={client.current} busy={busy} operation={operation} refresh={async () => setStatus(await client.current!.call("status", {}))}>
+          {shown === "Settings" && page === "settings-team" && client.current && <RolesView client={client.current} busy={busy} operation={operation} team={team} refresh={async () => setStatus(await client.current!.call("status", {}))}>
             {caps.includes('collaborate') && status.licence?.tier !== 'starter' && <RelaySetupLine client={client.current} userId={scope.userId} tenantId={scope.tenantId} relayEnabled={relayEnabled}/>}
           </RolesView>}
           {shown === "Settings" && page === "settings-team" && client.current && status.licence?.tier !== "starter" && <ShareHandoff client={client.current} busy={busy} operation={operation} refresh={async () => setStatus(await client.current!.call("status", {}))}/>}

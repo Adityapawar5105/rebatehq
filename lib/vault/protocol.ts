@@ -48,7 +48,10 @@ export type VaultStatus = {
   access?: Access;
 };
 export type Person = { userId: string; name: string; role: RoleId; roleLabel: string; assignedAt: string; you: boolean };
-export type RoleList = { people: Person[]; you: Access; pricingOwner: string | null; canManage: boolean };
+/** Team sharing on this vault, for Team and roles: whether this device joined, whether role edits are an unsigned Owner
+ *  draft (signed at the next key rotation), and the packs each person receives under that grid (null with no grid). */
+export type RoleSharing = { joined: boolean; canSign: boolean; draft: boolean; receives: Record<string, string[]> | null };
+export type RoleList = { people: Person[]; you: Access; pricingOwner: string | null; canManage: boolean; sharing: RoleSharing };
 export type HomeData = {
   access: Access; checklist: Checklist; pricingOwner: string | null; guardrails: string;
   /** The caller's own display name from Team and roles (or the Pricing Owner name if that is them), for the Home greeting. */

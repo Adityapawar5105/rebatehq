@@ -213,3 +213,13 @@
 @media (forced-colors:active){.btn,.card,.stat,.badge,.notice,.tableWrap,.stepMark,.meterTrack{border:1px solid CanvasText}.meterFill{background:Highlight;forced-color-adjust:none}}
 @media(max-width:600px){.grid.cardRow{grid-template-columns:1fr}.actionRow .btn{white-space:normal}}
 .check{display:flex;flex-direction:column;gap:2px;margin:var(--space-2) 0}.checkLabel{display:inline-flex;align-items:center;gap:var(--space-2);font-weight:600;cursor:pointer}.checkLabel input{width:18px;height:18px;margin:0;flex:none}
+/* Toast (Team and roles, 25 Nov 2026) */
+.toast{position:fixed;top:calc(var(--header-h) + var(--space-3));right:var(--space-5);z-index:60;display:flex;gap:var(--space-3);align-items:flex-start;width:min(380px,calc(100vw - 2 * var(--space-5)));padding:var(--space-3) var(--space-4);border-radius:var(--radius-lg);background:var(--toast-bg);color:var(--toast-text);box-shadow:var(--shadow-3);animation:toastIn var(--dur) var(--ease)}
+.toast > svg{flex:none;margin-top:2px;color:var(--chart-green)}
+.toastBody{flex:1;min-width:0}.toastTitle{margin:0;font-weight:500}.toastText{margin:2px 0 0;font-size:var(--fs-sm);opacity:.8}
+.toastActions{display:flex;gap:var(--space-3);margin-top:var(--space-2)}.toastActions button,.toastActions a{background:none;border:0;padding:0;color:inherit;font:inherit;font-size:var(--fs-sm);font-weight:500;text-decoration:underline;cursor:pointer}
+.toastClose{flex:none;background:none;border:0;padding:2px;color:inherit;opacity:.7;cursor:pointer;border-radius:var(--radius-sm)}.toastClose:hover{opacity:1}
+.toast :focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+@keyframes toastIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.toast{animation:none}}
+@media (forced-colors:active){.toast{border:1px solid CanvasText}}
