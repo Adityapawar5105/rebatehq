@@ -77,7 +77,7 @@ import * as sharing from "../sharing/packs";
 import { newCode, openHandoff, packHash, sealHandoff, type Payload } from "../sharing/handoff";
 import { ROLE_IDS } from "./schema";
 import { capsFor } from "../roles/access";
-import { RECOMMENDED } from "../sharing/catalog";
+import { RECOMMENDED, packsFor, type AnyPack } from "../sharing/catalog";
 import { GridSchema, type Grid } from "../relay/protocol";
 import { checkGrid, gridBody, gridPublisher } from "../relay/crypto";
 export class VaultService {
@@ -1117,7 +1117,15 @@ export class VaultService {
   async roleList(): Promise<RoleList> {
     await this.seedRoles();
     const e = this.requireEngine(), you = await this.access(), canManage = you.caps.includes("roles"), all = await roles.people(e, this.identity.userId);
-    return { people: canManage ? all : all.filter(p => p.you), you, pricingOwner: (await pricing.pricingState(e)).owner?.name ?? null, canManage };
+    return { people: canManage ? all : all.filter(p => p.you), you, pricingOwner: (await pricing.pricingState(e)).owner?.name ?? null, canManage, sharing: await this.roleSharing(canManage) };
+  }
+  /** What Team and roles shows about sharing: the draft or signed grid decides who receives which built packs. */
+  private async roleSharing(canManage: boolean): Promise<import("./protocol").RoleSharing> {
+    const state = await this.relayStateRead(), signed = this.signedGrid(state), draft = this.draftStale(state) ? null : state.gridDraft ?? null, grid = draft ?? signed;
+    const canSign = !!signed && signed.people.some(p => p.userId === this.identity.userId && p.role === "owner"), built = new Set<string>(sharing.PACK_IDS);
+    const receives = grid && canManage ? Object.fromEntries(grid.people.map(p => [p.userId,
+      packsFor(p.role, grid.namedOwner === p.userId, Object.fromEntries(grid.ticks) as Partial<Record<typeof p.role, readonly AnyPack[]>>, p.extras).filter(x => built.has(x))])) : null;
+    return { joined: state.epochs.length > 0, canSign, draft: !!draft, receives };
   }
   async roleSet(userId: string, name: string, role: RoleId) {
     await this.seedRoles();

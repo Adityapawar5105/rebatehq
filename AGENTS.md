@@ -301,3 +301,11 @@ See `docs/evidence/SECOND_AUDIT_PASS.md`. The independent security review (R02, 
 - The Storage rule `rebatehq_storage.relay_storage_allowed` lets a holder of the pack read and the signer write. A rep device can never fetch a cost chunk.
 - Migration `20261126120000_sharing_s3_storage.sql` is **locked** (25 Nov 2026) after CI #241 and #242 and the user-run Restore Drill #25 (155 restore-mode checks); 16 migrations are applied and 0 are pending. The drill re-applies the bucket and policies with `scripts/restore-storage-objects.sql`. pgTAP plans 152 fresh and 155 restore checks.
 - Relay gate: 15 checks. See docs/evidence/SHARING_S3_VERIFICATION.md.
+
+**Settings › Team and roles › People (25 Nov 2026; built by Claude Code from a reference design the user supplied).**
+- One list of people joins the vault roles, the workspace members and invitations, and what each person receives under the sharing grid.
+  - Members and invitations are passed as props from `app/home/page.tsx` (`lib/team.ts`), so the vault page makes no new request.
+- Edit/Assign role opens a dialog; a toast with Undo confirms changes. Role pairs the S2 grid verifier refuses are caught at edit time (`roleConflict`).
+- With sharing on, a grid Owner's edits are labelled drafts and others cannot edit.
+- Workspace access, invitations and suspension stay on `/account/users`, restyled to match; its role select now uses the role id.
+- No schema, migration or privacy-gate change. See docs/evidence/TEAM_PEOPLE_VERIFICATION.md.

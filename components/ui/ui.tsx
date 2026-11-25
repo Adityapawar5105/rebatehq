@@ -134,5 +134,14 @@ export function Dialog({ open, onClose, labelledBy, children }: { open: boolean;
   return <dialog ref={ref} className={s.dialog} aria-labelledby={labelledBy} onClose={onClose}>{children}</dialog>;
 }
 
+/** A short confirmation in the corner (Team and roles, 25 Nov 2026): a title, an optional line, optional actions such as
+ *  Undo, and a close button. It announces itself politely and never takes focus. The caller owns every string. */
+export function Toast({ title, body, actions, onClose, closeLabel, testId }: { title: ReactNode; body?: ReactNode; actions?: ReactNode; onClose: () => void; closeLabel: string; testId?: string }) {
+  return <div className={s.toast} role="status" aria-live="polite" data-testid={testId}>
+    <Icon name="checkCircle" size={18}/>
+    <div className={s.toastBody}><p className={s.toastTitle}>{title}</p>{body && <p className={s.toastText}>{body}</p>}{actions && <div className={s.toastActions}>{actions}</div>}</div>
+    <button type="button" className={s.toastClose} aria-label={closeLabel} onClick={onClose}><Icon name="close" size={14}/></button>
+  </div>;
+}
 export function SrOnly({ children }: { children: ReactNode }) { return <span className={s.srOnly}>{children}</span>; }
 export const uiStyles = s;
