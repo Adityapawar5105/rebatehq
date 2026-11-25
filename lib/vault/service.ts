@@ -78,7 +78,7 @@ import { newCode, openHandoff, packHash, sealHandoff, type Payload } from "../sh
 import { ROLE_IDS } from "./schema";
 import { capsFor } from "../roles/access";
 import { RECOMMENDED, packsFor, type AnyPack } from "../sharing/catalog";
-import { GOVERNED, IMPORT_PACKS } from "../sharing/governed";
+import { GOVERNED, lockedPacks } from "../sharing/governed";
 import { GridSchema, type Grid } from "../relay/protocol";
 import { checkGrid, gridBody, gridPublisher } from "../relay/crypto";
 export class VaultService {
@@ -331,11 +331,10 @@ export class VaultService {
   /** Team sharing S3: on a receiving seat, refuse a write to data the publisher shares through the relay. The publisher is
    *  authoritative, so a local edit would be replaced at the next publish (lib/sharing/governed.ts classifies every write). */
   async sharedGuard(action:Action) {
-    const rule = GOVERNED[action]; if (!rule || !this.engine) return;
-    const relay = await this.receivingPacks(); if (!relay) return;
-    const packs: readonly string[] = rule === "any" ? [...relay.keys()] : rule === "import" ? (await this.studioState()).files.flatMap(f => IMPORT_PACKS[String(f.role ?? "")] ?? []) : rule;
-    const hit = packs.find(p => relay.has(p)); if (!hit) return;
-    throw new VaultError("SHARE", msg("share.readOnly", { name: relay.get(hit)!, pack: msg(`share.pack.${hit}` as import("../i18n/core").MessageKey) }));
+    if (!GOVERNED[action] || !this.engine) return;
+    const held = (await this.access()).shared ?? null; if (!held) return;
+    const hit = lockedPacks(action, held, GOVERNED[action] === "import" ? (await this.studioState()).files.map(f => f.role) : [])[0]; if (!hit) return;
+    throw new VaultError("SHARE", msg("share.readOnly", { name: held.packs[hit], pack: msg(`share.pack.${hit}` as import("../i18n/core").MessageKey) }));
   }
   /** The packs this device received through the relay while it is not a publisher under the signed grid, with each
    *  publisher's name; null on a publisher, without sharing, or with nothing received. */
@@ -1091,7 +1090,14 @@ export class VaultService {
   }
   // ---- 5A: access, home, checklist, item cleanup, cost basis -----------------------------
   /** What the signed-in person may do here (cached until a role, the owner or the preview changes). */
-  async access(): Promise<Access> { const e = this.requireEngine(); return this.accessCache ??= await roles.accessFor(e, this.identity.userId, this.viewAs); }
+  async access(): Promise<Access> {
+    const e = this.requireEngine();
+    // S3c: what this seat holds read-only travels with the role, so screens can disable those writes before they are tried.
+    if (!this.accessCache) { const a = await roles.accessFor(e, this.identity.userId, this.viewAs);
+      // Vaults since v9 always have relay_state; a hand-built test vault without it simply shares nothing.
+      const held = await this.receivingPacks().catch(error => { if (/relay_state/.test(String(error))) return null; throw error; }); this.accessCache = { ...a, shared: held ? { packs: Object.fromEntries(held) } : null }; }
+    return this.accessCache;
+  }
   /** Called by the command dispatcher before every command: a role that may not do something never reaches its query. */
   async guard(cap: Cap | null) {
     if (!cap || !this.engine) return;

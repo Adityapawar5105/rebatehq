@@ -52,3 +52,15 @@ export const NOT_GOVERNED: Readonly<Partial<Record<Action, string>>> = {
   quoteValidity: "quotes", brandingSet: "quote branding", priceList: "a generated file", priceMailing: "a generated file",
   quoteShare: "quotes", quoteRelaySync: "quotes", quoteDecide: "quotes",
 };
+
+/** What a receiving seat holds read-only: each pack received through the relay, with its publisher's name. Null on a
+ *  publisher, without sharing, or with nothing received. Carried on Access so screens can disable a write before it is tried. */
+export type SharedLock = { packs: Record<string, string> } | null;
+
+/** The packs a write would change that this seat holds read-only (empty when the write is allowed). The worker refuses
+ *  the command and the screens disable its button, both from this one rule. */
+export function lockedPacks(action: string, held: SharedLock, fileRoles: readonly (string | null | undefined)[] = []): string[] {
+  const rule = GOVERNED[action as Action]; if (!rule || !held) return [];
+  const packs = rule === "any" ? Object.keys(held.packs) : rule === "import" ? fileRoles.flatMap(r => IMPORT_PACKS[String(r ?? "")] ?? []) : rule;
+  return [...new Set(packs.filter(p => p in held.packs))];
+}

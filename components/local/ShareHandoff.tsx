@@ -10,6 +10,7 @@ import { fmt, msg, say, t } from "@/lib/i18n";
 import { download } from "./PricingView";
 import { PACK_IDS, PACK_LABEL, type PackId } from "@/lib/sharing/packs";
 import { STALE_DAYS, daysSince } from "@/lib/sharing/stale";
+import { useSharedLock } from "./sharedLock";
 import styles from "./vault.module.css";
 
 type State = Results["shareState"]; type Counts = Results["shareCounts"]; type Preview = Results["shareImportPreview"];
@@ -18,6 +19,7 @@ const packLabel = (p: string) => (PACK_IDS as readonly string[]).includes(p) ? t
 
 export function ShareHandoff({ client, busy, operation, refresh }: { client: VaultClient; busy: boolean; operation: (f: () => Promise<void>) => Promise<void>; refresh: () => Promise<void> }) {
   const [state, setState] = useState<State | null>(null), [counts, setCounts] = useState<Counts | null>(null), [note, setNote] = useState("");
+  const importLock = useSharedLock()("shareImport");
   const [role, setRole] = useState<RoleId>("sales_rep"), [name, setName] = useState(""), [packs, setPacks] = useState<string[]>(SALES), [code, setCode] = useState("");
   const [file, setFile] = useState<File | null>(null), [typed, setTyped] = useState(""), [preview, setPreview] = useState<Preview | null>(null);
   useEffect(() => { let on = true; void client.call("shareState", {}).then(async s => { if (!on) return; setState(s); if (s.canExport) { const c = await client.call("shareCounts", {}); if (on) setCounts(c); } }).catch(() => { if (on) setNote(msg("share.loadFailed")); }); return () => { on = false; }; }, [client]);
@@ -69,7 +71,7 @@ export function ShareHandoff({ client, busy, operation, refresh }: { client: Vau
         <p>{t("share.previewFor", { role: say(ROLE_LABEL[preview.recipientRole]), name: preview.recipientName || t("share.none") })}</p>
         <ul className={styles.guardList}>{preview.packs.map(p => <li key={p.pack}>{t("share.packLine", { pack: packLabel(p.pack), rows: fmt.int(p.rows) })}{p.older ? " " + t("share.olderPack") : ""}</li>)}</ul>
         <p>{t("share.replaceNote")}</p>
-        <Button variant="primary" disabled={busy || preview.packs.some(p => p.older)} data-testid="share-import" onClick={() => void operation(async () => {
+        <Button variant="primary" disabled={busy || preview.packs.some(p => p.older) || !!importLock} title={importLock ?? undefined} data-testid="share-import" onClick={() => void operation(async () => {
           const r = await client.call("shareImport", { file: file!, code: typed }); setState(r.state); setPreview(null); setTyped(""); setNote(msg("share.imported", { count: r.packs.length, changed: Number(r.changed) })); await refresh();
         })}>{t("share.importButton")}</Button>
       </Notice>}

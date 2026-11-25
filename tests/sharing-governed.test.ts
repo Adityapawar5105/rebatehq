@@ -4,7 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { ACTIONS } from "../lib/roles/access";
-import { GOVERNED, NOT_GOVERNED, IMPORT_PACKS } from "../lib/sharing/governed";
+import { GOVERNED, NOT_GOVERNED, IMPORT_PACKS, lockedPacks } from "../lib/sharing/governed";
 import { PACK_IDS } from "../lib/sharing/packs";
 import { ROLES as FILE_KINDS } from "../lib/studio/formats";
 import { emptyRelay } from "../lib/relay/session";
@@ -84,4 +84,26 @@ test("S3 read-only seats: shareState marks a receiving seat and reports the last
     const s = await service(d, "pm").shareState();
     assert.equal(s.receiving, false, "without sharing, a hand-off file copy keeps S1 behaviour"); assert.equal(s.lastSyncedAt, null);
   } finally { d.close(); }
+});
+
+test("S3c: the screens and the worker share one rule, so a receiving seat's buttons are disabled before they are pressed", async () => {
+  const held = { packs: { guards: "Pat Owner", items: "Pat Owner" } };
+  assert.deepEqual(lockedPacks("guardSet", held), ["guards"]);
+  assert.deepEqual(lockedPacks("guardSet", null), [], "a publisher or a vault without sharing holds nothing read-only");
+  assert.deepEqual(lockedPacks("quoteCreate", held), []);
+  assert.deepEqual(lockedPacks("playgroundLoad", held).sort(), ["guards", "items"]);
+  assert.deepEqual(lockedPacks("studioCommit", held, ["sales_history", null, "item_master"]), ["items"]);
+  assert.deepEqual(lockedPacks("studioCommit", held, ["customer_list"]), [], "customers are not held read-only here");
+  // The worker puts what this seat holds on Access, which every screen already receives.
+  const c = await vault();
+  try {
+    c.query(relay(new Date().toISOString())); c.query(book("guards", "relay")); c.query(book("customers", "file"));
+    assert.deepEqual((await service(c, "pm").access()).shared, { packs: { guards: "Pat Owner" } }, "only relay copies, with the publisher");
+    assert.equal((await service(c, "po").access()).shared, null, "the publisher's own vault");
+  } finally { c.close(); }
+  // Every governed button reads the hook, and the worker guard reads Access.shared.
+  const ui = ["components/local/PricingView.tsx", "components/local/ImportStudio.tsx", "components/local/ShareHandoff.tsx", "components/local/HomeView.tsx"].map(f => readFileSync(f, "utf8")).join(" ");
+  for (const a of ["guardSet", "ruleApprove", "studioCommit", "playgroundLoad", "shareImport"]) assert.ok(ui.includes(`lock("${a}"`) || ui.includes(`useSharedLock()("${a}")`), `${a} has no disabled state`);
+  const app = readFileSync("components/local/VaultApp.tsx", "utf8");
+  for (const s of ['sharedLock("cleanupApply")', 'sharedLock("costBasisSet")', '<SharedLockProvider value={access?.shared}>']) assert.ok(app.includes(s), s);
 });
