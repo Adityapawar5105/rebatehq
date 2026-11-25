@@ -64,3 +64,13 @@ The S5b gate pushed the lab workspace past nine relay events, and the Sales Mana
 - Native-language review of the new Spanish and French strings.
 - Threads on contract prices, guardrails, cost and vendor reviews: the targets exist in the protocol, but no screen has a Discuss button for them yet.
 - A real email sender, and "who's viewing" (not built).
+
+## CI
+
+[CI #267](https://github.com/Adityapawar5105/rebatehq/actions/runs/45693771972) passed on `d53d3e2` (PR #42), 26 November 2026. All four jobs passed:
+- unit tests, audit and build;
+- database tests and the Chromium privacy and relay gates, against real Supabase with `--auth`, including `threadsUi`;
+- the Firefox lab gate;
+- `verify`.
+
+PR #42 was merged into `main`.
