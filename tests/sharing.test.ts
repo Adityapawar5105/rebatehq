@@ -119,7 +119,10 @@ test("S1 file: one-time code, wrong code, a changed byte, another workspace and 
   assert.throws(() => normaliseCode("too short"), code("SHARE"));
   const file = await sealHandoff(payload, one);
   const text = new TextDecoder("latin1").decode(new Uint8Array(await file.arrayBuffer()));
-  for (const plain of ["Ball valve", "10500", "Acme", "P1"]) assert.ok(!text.includes(plain), `the file must not contain ${plain} in clear`);
+  // Quoted JSON strings, as they would appear in a plaintext file: a bare two-letter value such as P1 also turns up in random
+  // ciphertext by chance (CI #239 failed that way), while a quoted value cannot appear in the base64 header and
+  // is vanishingly rare in the encrypted bytes.
+  for (const plain of ["Ball valve", "10500", "Acme", "P1"].map(v => JSON.stringify(v))) assert.ok(!text.includes(plain), `the file must not contain ${plain} in clear`);
   const opened = await openHandoff(file, one.toLowerCase(), "t1");
   assert.deepEqual(opened.packs, payload.packs); assert.equal(opened.recipient.name, "Raj");
   await assert.rejects(openHandoff(file, two, "t1"), code("SHARE"));

@@ -20,7 +20,7 @@ export function ShareHandoff({ client, busy, operation, refresh }: { client: Vau
   const [state, setState] = useState<State | null>(null), [counts, setCounts] = useState<Counts | null>(null), [note, setNote] = useState("");
   const [role, setRole] = useState<RoleId>("sales_rep"), [name, setName] = useState(""), [packs, setPacks] = useState<string[]>(SALES), [code, setCode] = useState("");
   const [file, setFile] = useState<File | null>(null), [typed, setTyped] = useState(""), [preview, setPreview] = useState<Preview | null>(null);
-  useEffect(() => { let on = true; void client.call("shareState", {}).then(s => { if (!on) return; setState(s); if (s.canExport) void client.call("shareCounts", {}).then(c => { if (on) setCounts(c); }); }).catch(() => { if (on) setNote(msg("share.loadFailed")); }); return () => { on = false; }; }, [client]);
+  useEffect(() => { let on = true; void client.call("shareState", {}).then(async s => { if (!on) return; setState(s); if (s.canExport) { const c = await client.call("shareCounts", {}); if (on) setCounts(c); } }).catch(() => { if (on) setNote(msg("share.loadFailed")); }); return () => { on = false; }; }, [client]);
   if (!state) return null;
   if (state.tier === "starter") return <Card headingId="share-heading" title={t("share.heading")} description={t("share.starter")}/>;
   const lockedRole = state.roles.find(r => r.role === role)?.locked ?? true;
