@@ -2,7 +2,7 @@
 
 ## Governing blueprint
 
-Read `BLUEPRINT.md` before planning or implementing RebateHQ work. The user-approved **Blueprint v2.6** governs (v2.6, 10 Nov 2026: B2B buyer gap registry, section 22 item 28; two pre-8A fixes; item 29 records the 8R retirement; item 30 the 14 Nov 2026 user feedback pass: checklist off Home, Scale 2M lines, Leak Report redesign; item 31 the operator subscriptions view, migration locked after CI #160 and Restore Drill #22; item 32 the 15 Nov 2026 Home greeting and work tabs and the trimmed command palette; item 33 the 16 Nov 2026 interface polish: checkbox size, spacing, lock screen, sub-tab search, page-scoped errors; item 34 the 21 Nov 2026 Quote Desk completion, vault v22; item 35 the 22 Nov 2026 Phase 15 pull-forward, vault v23; item 36 the 23 Nov 2026 sidebar and shell redesign; item 38 the 24 Nov 2026 team sharing decisions and design, `SHARING_DESIGN.md`; item 37 is reserved for the new list prices in PR #23). Section 22 records its approved changes. v2.3 UX/quoting/pricing, v2.4 multi-currency/Firefox, and v2.5 selection aggregates/row notes/grid filter-sort work have been implemented only as the verified chunks below state; other roadmap items remain future work. Later explicit user instructions take precedence. Any blueprint edit must add a section 22 entry and be reported to the user.
+Read `BLUEPRINT.md` before planning or implementing RebateHQ work. The user-approved **Blueprint v2.6** governs (v2.6, 10 Nov 2026: B2B buyer gap registry, section 22 item 28; two pre-8A fixes; item 29 records the 8R retirement; item 30 the 14 Nov 2026 user feedback pass: checklist off Home, Scale 2M lines, Leak Report redesign; item 31 the operator subscriptions view, migration locked after CI #160 and Restore Drill #22; item 32 the 15 Nov 2026 Home greeting and work tabs and the trimmed command palette; item 33 the 16 Nov 2026 interface polish: checkbox size, spacing, lock screen, sub-tab search, page-scoped errors; item 34 the 21 Nov 2026 Quote Desk completion, vault v22; item 35 the 22 Nov 2026 Phase 15 pull-forward, vault v23; item 36 the 23 Nov 2026 sidebar and shell redesign; item 38 the 24 Nov 2026 team sharing decisions and design, `SHARING_DESIGN.md`; item 39 the 26 Nov 2026 near-miss rebate tiers; item 37 is reserved for the new list prices in PR #23). Section 22 records its approved changes. v2.3 UX/quoting/pricing, v2.4 multi-currency/Firefox, and v2.5 selection aggregates/row notes/grid filter-sort work have been implemented only as the verified chunks below state; other roadmap items remain future work. Later explicit user instructions take precedence. Any blueprint edit must add a section 22 entry and be reported to the user.
 
 `BLUEPRINT_EXECUTION_PLAN.md` sequences the work into repo chunks (4.0, 4A-4E,
 5A-5B, 6A, 6R, 6B, 7A, 7U, 7B, 7V (7V-1, 7V-2, 7V-3), 7C (7C-1, 7C-2, 7C-3), 7D (7D-1, 7D-2), 7E-7F, 8A-8D, 8R, 9A) with a standard preamble and "Done when" criteria.
@@ -350,3 +350,19 @@ See `docs/evidence/SECOND_AUDIT_PASS.md`. The independent security review (R02, 
 - Nothing was installed or deployed: there is no package manager here, and an account and deployment need the owner.
 - Blockers: OpenNext does not run the Node.js `proxy.ts`; the `pg` pool on `globalThis` needs per-request clients or Hyperdrive; the CA file cannot be read at run time; the `/spike/*` headers would need to move.
 - Recommendation: stay on Netlify for now. If a move is wanted, try vinext on a throwaway branch first, then OpenNext with `middleware.ts`; Vercel runs `proxy.ts` natively.
+
+**Next.js 16.4.3 to 16.4.6 (26 Nov 2026; built by Claude Code on the owner's yes).**
+- Seven moderate advisories, all fixed in 16.4.6. They cover `'use cache'` leaks and poisoning, an SVG bypass in image optimisation, HttpOnly cookies on Edge routes, and responses injected across clients.
+- It is a same-major patch with identical dependencies. With no pnpm on the authoring machine, `package.json` and `pnpm-lock.yaml` were edited by hand with the registry's integrity hashes, and CI's `pnpm install --frozen-lockfile` checks them.
+- `experimental.agentUpgrade` was not set.
+- **It passed** [CI #271](https://github.com/Adityapawar5105/rebatehq/actions/runs/45740078152) on `911a0e0` and merged as PR #44.
+
+**Near-miss rebate tiers (26 Nov 2026; built by Claude Code; blueprint section 22, item 39).**
+- `lib/rebate/nearmiss.ts` adds three columns to customer and supplier rebate progress:
+  - the extra rebate if the next tier is reached;
+  - the days left in the period;
+  - an outlook (on pace, within reach, far, top tier reached, not started, closed, not tiered) and the amount still needed per day.
+- A line above each grid gives the count and value of the near rows, with "Show them".
+- The monthly and weekly report PDFs list the ten nearest programmes.
+- Spend and tiers only: `rebateProgress` stays in the decision 16 payload scan, and supplier progress still needs `cost`.
+- No new command, schema change or migration. See docs/evidence/NEAR_MISS_VERIFICATION.md.
