@@ -3374,6 +3374,7 @@ export const es: Catalog = {
   "people.status.local": "En este dispositivo",
   "people.roleGuide": "Qué puede hacer cada rol",
   "share.readOnly": "{name} comparte {pack} con el equipo, así que es de solo lectura en este dispositivo. Pida a {name} que haga el cambio y lo publique.",
+  "share.overCapacity": "Estos datos compartidos superarían la capacidad {tier} de la bóveda, así que no se aplicaron. Pida al propietario que comparta menos artículos o que pase este puesto a un plan superior.",
   "share.banner.title": "Compartido por {name}",
   "share.banner.pack": "{pack}, versión {version}",
   "share.banner.received": "recibido el {date}",

@@ -88,3 +88,22 @@ test("review R2: rotations after compaction are verified, and every key epoch is
     assert.equal(relayObjects(saved.get(owner.actor.deviceId)!).objects[0].comments.at(-1)!.text, "after the rotations");
   } finally { Object.assign(RELAY_TAIL, before); await db.close(); }
 });
+
+test("review R2: a sync that applies nothing does not save the vault again until QUIET_SAVE_MS has passed", async () => {
+  const db = await testDatabase();
+  try {
+    const { owner, rep, client, saved } = await team(db);
+    await client(owner).sync();
+    const stamp = saved.get(owner.actor.deviceId)!.lastSyncedAt;
+    await client(owner).sync(); await client(owner).sync();
+    assert.equal(saved.get(owner.actor.deviceId)!.lastSyncedAt, stamp, "two quiet syncs wrote nothing");
+    await client(rep).share({ objectKind: "quote", title: "Q-NEW", reference: "R-3", amountMinor: "100", currency: "USD", preset: "standard" });
+    await client(owner).sync();
+    assert.notEqual(saved.get(owner.actor.deviceId)!.lastSyncedAt, stamp, "a sync that applied an event saves");
+    assert.equal(relayObjects(saved.get(owner.actor.deviceId)!).objects[0].subject.title, "Q-NEW");
+    // An old saved time makes a quiet sync save again, so the last-synced time does not drift for long.
+    const old = saved.get(owner.actor.deviceId)!; old.lastSyncedAt = new Date(Date.now() - 16 * 60_000).toISOString(); saved.set(owner.actor.deviceId, old);
+    await client(owner).sync();
+    assert.ok(Date.parse(saved.get(owner.actor.deviceId)!.lastSyncedAt!) > Date.now() - 60_000);
+  } finally { await db.close(); }
+});

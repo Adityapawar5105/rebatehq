@@ -48,6 +48,8 @@ import { sqlText } from "../spike/exact";
 import { Studio, listSources, loadRecipes, recipeSql, removeSource, type Progress } from "../studio/studio";
 import type { Role, Settings, SettingsPatch } from "../studio/formats";
 import type { ErpProfile, FieldSource } from "../studio/mapper";
+import { capUsage } from "../studio/load";
+import { fitsLicenceCapacity } from "../licence-policy";
 import { dismissSql, fixGroups, fixRows, fixSetSql, recheck, roleOf } from "../studio/fixlater";
 import { health } from "../studio/health";
 import { PLAYGROUND_PREFIX, SAMPLE_COUNTS_SQL, generatePlayground, sampleState } from "../studio/playground";
@@ -171,6 +173,9 @@ export class VaultService {
         if(x.rows)await this.savePackRows(e,p,x.rows);
       }
       const packs=entries.map(x=>x.pack),lines=Number((await e.conn.query('SELECT count(*) AS n FROM (SELECT 1 FROM sales_lines LIMIT 1)')).toArray()[0].n);
+      // Review R2 (flaw 3.9): shared items count against this vault's capacity like imported ones. Over it, the whole write
+      // rolls back, so a Scale publisher cannot push a Professional seat past the cap its later imports would be refused at.
+      if(packs.includes('items')){const used=await capUsage(e,new Set(),null);if(!fitsLicenceCapacity(this.tier,used.products,used.lines))throw new VaultError('LICENCE',msg('share.overCapacity',{tier:msg(`tier.${this.tier}` as import("../i18n/core").MessageKey)}));}
       if(lines&&(packs.includes('items')||packs.includes('customers')))await this.financialBody(e);
       else await e.conn.query('UPDATE vault_meta SET pricing_revision=pricing_revision+1 WHERE id=1');
     });
@@ -404,7 +409,8 @@ export class VaultService {
       try{got=await this.receivePack(session,p);}catch(error){if(error instanceof DOMException&&error.name==='AbortError')throw error;if(!(error instanceof RelayError&&error.code==='NOT_READY'))failed++;continue;}
       if(!got)continue;
       const full=delta.toData(p,got.rows),g=got.got;
-      await this.applyShared('share.received',{actor:this.identity.userId,pack:p,version:g.version,from:g.sender},[{pack:p,data:full,version:g.version,publisherId:g.sender,publisherName:labels.get(g.sender)??g.sender,publishedAt:g.createdAt,hash:await packHash(full),rows:got.rows}],'relay',null);
+      try{await this.applyShared('share.received',{actor:this.identity.userId,pack:p,version:g.version,from:g.sender},[{pack:p,data:full,version:g.version,publisherId:g.sender,publisherName:labels.get(g.sender)??g.sender,publishedAt:g.createdAt,hash:await packHash(full),rows:got.rows}],'relay',null);}
+      catch(error){if(error instanceof VaultError&&error.code==='LICENCE'){failed++;continue;}throw error;} // over capacity: the other packs still apply
       await session.packMarkApplied(p,g.version,g.head);
     }
     this.accessCache=null;

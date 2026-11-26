@@ -3374,6 +3374,7 @@ export const fr: Catalog = {
   "people.status.local": "Sur cet appareil",
   "people.roleGuide": "Ce que chaque rôle peut faire",
   "share.readOnly": "{name} partage {pack} avec l’équipe : ces données sont en lecture seule sur cet appareil. Demandez à {name} de faire la modification et de la publier.",
+  "share.overCapacity": "Ces données partagées dépasseraient la capacité {tier} du coffre-fort : elles n’ont pas été appliquées. Demandez au propriétaire de partager moins d’articles ou de passer ce siège à une formule supérieure.",
   "share.banner.title": "Partagé par {name}",
   "share.banner.pack": "{pack}, version {version}",
   "share.banner.received": "reçu le {date}",

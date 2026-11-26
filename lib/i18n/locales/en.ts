@@ -3326,6 +3326,7 @@ const share = {
   "thread.err.cannotRead": "Someone you mentioned or assigned cannot read this thread: they do not receive that kind of data under the sharing grid.",
   "thread.err.notFound": "This thread is not on this device yet. Sync the shared inbox and try again.",
   "share.readOnly": "{name} shares {pack} with the team, so it is read-only on this device. Ask {name} to make the change and publish it.",
+  "share.overCapacity": "This shared data would take the vault past its {tier} capacity, so it was not applied. Ask the Owner to share fewer items, or to move this seat to a higher plan.",
   "share.banner.title": "Shared by {name}",
   "share.banner.pack": "{pack}, version {version}",
   "share.banner.received": "received {date}",

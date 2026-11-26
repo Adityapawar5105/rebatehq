@@ -12,6 +12,9 @@ import type {RelayTransport} from './http';
 import { msg } from "../i18n/core";
 /** Team sharing S4: how long a pack version may lack its chunks before that counts as a failure (uploads take seconds). */
 export const NOT_READY_MS = 15 * 60_000;
+/** Review R2 (flaw 3.4): a sync that changed nothing saves (an audited, whole-vault write) at most this often, so the
+ *  last-synced time stays roughly current without a write every minute. */
+export const QUIET_SAVE_MS = 15 * 60_000;
 import {syncStatus} from './sync-status';
 /** Review R2 (B3): the relay log no longer grows without end. Once more than `max` verified entries are kept, all but the
  *  newest `keep` are folded into a local checkpoint (shared objects, threads, rejections) and dropped. Key epochs are all
@@ -105,8 +108,10 @@ export class RelaySession{
   const users=[...new Set(d.devices.map(v=>v.userId))].sort(),previousGrid=d.latest?.v==='2'?d.latest.grid:null;
   const next=await newEpoch(this.currentIdentity(),d.devices,d.latest,d.head,gridFor?gridFor(users,previousGrid):undefined);this.state.pendingEpoch=next;await this.persist('key_publication_pending');await this.transport.post({action:'epoch',epoch:next.epoch});return this.sync();
  }
+ /** What a sync can change: if this is the same afterwards, the sync applied nothing new. */
+ private syncKey(){const s=this.state;return JSON.stringify([s.head,s.epochs.length,s.pending?.id??null,s.pendingEpoch?.epoch.id??null,s.base?.sequence??null,s.entries.length,s.entries.filter(e=>!e.content).length]);}
  async sync():Promise<RelayView>{
-  this.currentIdentity();const directory=await this.loadDirectory();
+  this.currentIdentity();const directory=await this.loadDirectory(),before=this.syncKey(),savedAt=this.state.lastSyncedAt;
   if(!this.last()){
    const pending=this.state.pendingEpoch;
    if(!pending)return this.view();
@@ -152,7 +157,9 @@ export class RelaySession{
     }
    }
    this.compact();
-   if(this.state.head.sequence===page.head.sequence&&this.last()!.epoch.number===page.latestEpoch){if(this.state.head.hash!==page.head.hash)fail();this.state.lastSyncedAt=new Date().toISOString();await this.persist('inbox_synced');await this.loadDirectory();return this.view();}
+   if(this.state.head.sequence===page.head.sequence&&this.last()!.epoch.number===page.latestEpoch){if(this.state.head.hash!==page.head.hash)fail();this.state.lastSyncedAt=new Date().toISOString();
+    if(this.syncKey()!==before||!savedAt||Date.now()-Date.parse(savedAt)>=QUIET_SAVE_MS)await this.persist('inbox_synced');
+    await this.loadDirectory();return this.view();}
    if(!page.events.length&&!page.epochs.length)fail(msg("relay.err.theRelayOmittedPart"));
   }
   // Review R2: a long catch-up keeps what it verified and continues at the next sync, instead of starting over.
