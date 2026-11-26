@@ -107,3 +107,35 @@ test("review R2: a sync that applies nothing does not save the vault again until
     assert.ok(Date.parse(saved.get(owner.actor.deviceId)!.lastSyncedAt!) > Date.now() - 60_000);
   } finally { await db.close(); }
 });
+
+test("review R2: an approval requested before the checkpoint is decided after it, and every device agrees", async () => {
+  const db = await testDatabase(), before = { ...RELAY_TAIL };
+  try {
+    const { owner, manager, rep, client, saved } = await team(db);
+    RELAY_TAIL.keep = 4; RELAY_TAIL.max = 8;
+    const shared = await client(rep).share({ objectKind: "quote", title: "Q-APPROVE", reference: "R-4", amountMinor: "100", currency: "USD", preset: "standard" });
+    const object = shared.objects[0].id;
+    const asked = await client(rep).request(object, [owner.actor.userId]);
+    assert.equal(asked.objects[0].approval?.status, "pending");
+    for (let i = 0; i < 10; i++) await client(i % 2 ? owner : rep).comment(object, `between ${i}`, []);
+    await client(owner).sync();
+    assert.ok(saved.get(owner.actor.deviceId)!.base, "the request is now inside the Owner's checkpoint");
+    const decided = await client(owner).decide(object, "approve");
+    assert.equal(decided.objects.find(o => o.id === object)!.approval?.status, "approved");
+    await client(rep).sync();
+    RELAY_TAIL.keep = 100_000; RELAY_TAIL.max = 100_000; await client(manager).sync();
+    for (const device of [owner, rep, manager]) assert.equal(relayObjects(saved.get(device.actor.deviceId)!).objects.find(o => o.id === object)!.approval?.status, "approved", "every device folds the same decision");
+  } finally { Object.assign(RELAY_TAIL, before); await db.close(); }
+});
+
+test("review R2: the checkpoint keeps its text within the budget, dropping the oldest messages first", async () => {
+  const { trimBase } = await import("../lib/relay/session");
+  const msgs = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `m${i}`, author: "u", text: "x".repeat(100), at: "2026-11-26T00:00:00Z", mentions: [], sequence: String(i + 1) }));
+  const base = { sequence: "500", hash: "h", objects: [], rejected: [], hidden: [], threadRejected: [],
+    threads: [{ id: "t", pack: "items", target: { type: "item", ref: ["P1"], label: "P1" }, author: "u", createdAt: "", updatedAt: "", sequence: "500", resolved: false, task: null, messages: msgs(200), events: [] }] } as any;
+  trimBase(base, 5_000);
+  const kept = base.threads[0].messages;
+  assert.equal(kept[0].id, "m0", "the opening message is kept");
+  assert.equal(kept.at(-1).id, "m199", "the newest messages are kept");
+  assert.ok(kept.reduce((n: number, m: any) => n + m.text.length + 96, 0) <= 5_000 + 196, `kept ${kept.length} messages`);
+});

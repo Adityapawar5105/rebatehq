@@ -21,7 +21,21 @@ import {syncStatus} from './sync-status';
  *  kept: a pack version may be signed under an old epoch, and thread holders read its signed pack wraps. Only an
  *  administrator can rotate, so epochs grow slowly; the 7A bound of 256 is raised to 4,096. The 7A client stopped at
  *  10,000 events; the server allows 1,000,000. Mutable for tests only. */
-export const RELAY_TAIL = { keep: 1000, max: 2000 };
+export const RELAY_TAIL = { keep: 1000, max: 2000, budget: 8_000_000 };
+/** Drop the oldest comments, thread messages and thread events until the checkpoint's text is within `budget` characters.
+ *  Later operations only append to these lists, so dropping old ones changes what is shown, never what is accepted. */
+export function trimBase(base:FoldBase,budget:number):FoldBase{
+ type Item={seq:bigint;cost:number;drop:()=>void};const items:Item[]=[];let total=0;
+ for(const o of base.objects)for(const c of o.comments){const cost=c.text.length+64;total+=cost;items.push({seq:BigInt(o.sequence),cost,drop:()=>{o.comments.splice(o.comments.indexOf(c),1);}});}
+ for(const t of base.threads){
+  for(const m of t.messages.slice(1)){const cost=m.text.length+96;total+=cost;items.push({seq:BigInt(m.sequence),cost,drop:()=>{t.messages.splice(t.messages.indexOf(m),1);}});}
+  for(const e of t.events.slice(1)){const cost=96;total+=cost;items.push({seq:BigInt(e.sequence),cost,drop:()=>{t.events.splice(t.events.indexOf(e),1);}});}
+ }
+ if(total<=budget)return base;
+ items.sort((a,b)=>a.seq<b.seq?-1:a.seq>b.seq?1:0);
+ for(const item of items){if(total<=budget)break;item.drop();total-=item.cost;}
+ return base;
+}
 /** A sanity bound on what a saved state may hold; compaction keeps real states far below it. */
 const STATE_BOUNDS = { entries: 50_000, epochs: 4096 };
 /** The shared objects and threads of a saved state: its checkpoint plus the entries kept after it. */
@@ -174,7 +188,7 @@ export class RelaySession{
   if(s.entries.length>RELAY_TAIL.max){
    const cut=s.entries.length-RELAY_TAIL.keep,older=s.entries.slice(0,cut),last=older.at(-1)!.event,epochs=s.epochs.map(e=>e.epoch);
    const objects=fold(older,epochs,s.base??null),threads=foldThreads(older,epochs,s.base??null);
-   s.base={sequence:last.sequence,hash:last.hash,objects:objects.objects,rejected:objects.rejected.slice(-1000),threads:threads.threads,hidden:threads.hidden,threadRejected:threads.rejected.slice(-1000)};
+   s.base=trimBase({sequence:last.sequence,hash:last.hash,objects:objects.objects,rejected:objects.rejected.slice(-1000),threads:threads.threads,hidden:threads.hidden,threadRejected:threads.rejected.slice(-1000)},RELAY_TAIL.budget);
    s.entries=s.entries.slice(cut);
   }
  }

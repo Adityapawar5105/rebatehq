@@ -14,7 +14,7 @@ function limiter(limit:number,windowMs:number):Ratelimit|null{
 export async function rateLimit(request:Request,action:string,limit=12,windowMs=10*60_000,options:{subject?:string;memoryFallback?:boolean}={}):Promise<{ok:boolean;remaining:number}>{
   // B-9: the same platform-set address as the audit log (lib/db.ts clientIp), never a caller-chosen first hop.
  const ip=clientIp(request.headers)||"unknown";const key=createHash("sha256").update(options.subject?`user:${options.subject}`:ip).digest("hex").slice(0,24);const upstash=limiter(limit,windowMs);
- if(upstash){const result=await upstash.limit(`${action}:${key}`);return{ok:result.success,remaining:result.remaining}}
- if(process.env.NODE_ENV==="production"&&!options.memoryFallback)throw new Error("Production rate limiter is not configured.");
+ if(upstash){try{const result=await upstash.limit(`${action}:${key}`);return{ok:result.success,remaining:result.remaining}}catch(error){if(!options.memoryFallback)throw error;}}
+ if(process.env.NODE_ENV==="production"&&!options.memoryFallback&&!upstash)throw new Error("Production rate limiter is not configured.");
  const now=Date.now(),id=`${action}:${key}`,current=localCounters.get(id);if(!current||current.resetAt<=now){localCounters.set(id,{count:1,resetAt:now+windowMs});return{ok:true,remaining:limit-1}}current.count+=1;return{ok:current.count<=limit,remaining:Math.max(0,limit-current.count)};
 }

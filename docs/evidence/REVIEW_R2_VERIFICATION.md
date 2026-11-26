@@ -50,6 +50,13 @@ Built by Claude Code on 26 November 2026, phase R2 of the 26 November full proje
 
 ## Not done or not verified
 
+- **The relay read lock is kept.** The review proposed reading without it. The lock gives each page a consistent head and event list, so the per-person rate limits are the mitigation instead.
+- **No lower per-device event quota for non-publishers.** It needs a change to the relay insert trigger, so a migration. The checkpoint's text budget (`trimBase`) bounds what each device keeps instead.
+- **The activity feed** (`service.ts`, `activityFeed`) reads only the kept tail, so very old activity drops off it after a checkpoint.
+- **The invited-colleague note** shows only when `RELAY_ENABLED` is on, and the lab gates do not exercise it.
+- **`RELAY_LIMITS.events` and `RELAY_LIMITS.epochs`** in `lib/relay/protocol.ts` still say 10,000 and 256. Nothing enforces them any more.
+- **A relay pack refused for capacity** is retried after an hour, and its reason is shown on a manual sync. The relay path of this check is not covered by a test; the hand-off file path is.
+
 - **Bounds:** the checkpoint is tested with small thresholds. A real 10,000-event log was not replayed (the server's per-device rate limit makes that a 3-hour test).
 - **Gate coverage:** a gate pass with `RELAY_ENABLED` off is not in CI. The WebSocket scan may not see the worker's doorbell socket.
 - **Limits:** database connections are not capped globally; relay chunk retention and the tenant purge still wait for a decision.
@@ -60,7 +67,7 @@ Built by Claude Code on 26 November 2026, phase R2 of the 26 November full proje
 
 Run locally on 26 November 2026, not CI evidence:
 - Migration lock check: 17 applied and 1 pending, matching `migrations.lock`.
-- JS 80 of 80. TypeScript 412 of 412 (411 plus `tests/i18n.test.ts`, rerun after two keys the new screens no longer use were removed). `tsc --noEmit` is clean.
+- JS 80 of 80 and TypeScript 414 of 414 on the final code (with the approval and budget tests). `tsc --noEmit` is clean.
 - Chrome vault gate in lab mode, on a production build: passed, including the required-sections floor.
 - Lab relay gate: 18 checks passed. The Owner typed the manager's and the rep's device codes, read from their own devices; the codes were never shown on the Owner's screen.
 - pgTAP, including the new deleted-workspace check and plans 156 and 159: CI only. There is no local Supabase here.

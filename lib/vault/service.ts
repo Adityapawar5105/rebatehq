@@ -175,7 +175,7 @@ export class VaultService {
       const packs=entries.map(x=>x.pack),lines=Number((await e.conn.query('SELECT count(*) AS n FROM (SELECT 1 FROM sales_lines LIMIT 1)')).toArray()[0].n);
       // Review R2 (flaw 3.9): shared items count against this vault's capacity like imported ones. Over it, the whole write
       // rolls back, so a Scale publisher cannot push a Professional seat past the cap its later imports would be refused at.
-      if(packs.includes('items')){const used=await capUsage(e,new Set(),null);if(!fitsLicenceCapacity(this.tier,used.products,used.lines))throw new VaultError('LICENCE',msg('share.overCapacity',{tier:msg(`tier.${this.tier}` as import("../i18n/core").MessageKey)}));}
+      if(packs.includes('items')){const used=await capUsage(e,new Set(),null);if(!fitsLicenceCapacity(this.tier,used.products,BigInt(0)))throw new VaultError('LICENCE',msg('share.overCapacity',{tier:msg(`tier.${this.tier}` as import("../i18n/core").MessageKey)}));}
       if(lines&&(packs.includes('items')||packs.includes('customers')))await this.financialBody(e);
       else await e.conn.query('UPDATE vault_meta SET pricing_revision=pricing_revision+1 WHERE id=1');
     });
@@ -187,6 +187,8 @@ export class VaultService {
   private bell: { epoch: string; door: Doorbell } | null = null;
   private bellToken: { value: DoorbellToken; until: number } | null = null;
   private lastBackground = 0;
+  /** Review R2: packs a relay receipt refused for this vault's capacity, with when; retried after an hour. */
+  private capacityRefused = new Map<string, number>();
   private ringHook: (() => void) | null = null;
   /** The worker passes how to queue an immediate sync when the doorbell rings. */
   onRelayRing(hook: () => void) { this.ringHook = hook; }
@@ -394,7 +396,7 @@ export class VaultService {
     const labels=new Map((view?.devices??[]).map((d:{userId:string;label:string})=>[d.userId,d.label]));
     // One pack that fails its checks (a chunk missing after a restore or a half-finished publish, or changed bytes) is
     // skipped without touching the vault; the others still apply, and the person is told to ask for a fresh publish.
-    let failed=0;const cost=(await this.access()).caps.includes('cost');
+    let failed=0,overCapacity=false;const cost=(await this.access()).caps.includes('cost');
     for(const p of sharing.PACK_IDS){
       if(sharing.PACKS[p].cost&&!cost){
         // S4b: a seat that lost cost (the signed grid changed its role, so it no longer holds the key either) keeps no
@@ -404,16 +406,20 @@ export class VaultService {
         continue;
       }
       if(!session.heldPacks().includes(p))continue;
+      // Review R2: a pack refused for capacity is not downloaded and applied again on every tick; retry after an hour.
+      if((this.capacityRefused.get(p)??0)>Date.now()-3_600_000){overCapacity=true;continue;}
       let got:Awaited<ReturnType<VaultService['receivePack']>>;
       // S4: a version whose chunks are still uploading (the doorbell can ring first) is not ready yet, not a failure.
       try{got=await this.receivePack(session,p);}catch(error){if(error instanceof DOMException&&error.name==='AbortError')throw error;if(!(error instanceof RelayError&&error.code==='NOT_READY'))failed++;continue;}
       if(!got)continue;
       const full=delta.toData(p,got.rows),g=got.got;
       try{await this.applyShared('share.received',{actor:this.identity.userId,pack:p,version:g.version,from:g.sender},[{pack:p,data:full,version:g.version,publisherId:g.sender,publisherName:labels.get(g.sender)??g.sender,publishedAt:g.createdAt,hash:await packHash(full),rows:got.rows}],'relay',null);}
-      catch(error){if(error instanceof VaultError&&error.code==='LICENCE'){failed++;continue;}throw error;} // over capacity: the other packs still apply
+      catch(error){if(error instanceof VaultError&&error.code==='LICENCE'){this.capacityRefused.set(p,Date.now());overCapacity=true;continue;}throw error;} // over capacity: the other packs still apply
+      this.capacityRefused.delete(p);
       await session.packMarkApplied(p,g.version,g.head);
     }
     this.accessCache=null;
+    if(overCapacity&&!quiet)throw new VaultError('LICENCE',msg('share.overCapacity',{tier:msg(`tier.${this.tier}` as import("../i18n/core").MessageKey)}));
     if(failed&&!quiet)throw new VaultError('SHARE',msg('share.receiveFailed',{count:failed}));
   }
   /** Settings › Who receives what › Publish now: send every pack this publisher's device holds to the team. */
