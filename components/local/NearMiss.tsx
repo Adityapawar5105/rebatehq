@@ -21,10 +21,11 @@ export function nearColumns<R extends NearMiss>():GridColumn<R>[]{
  ];
 }
 
-/** One line above a progress grid: how many programmes are close to their next tier, and a filter to them. */
-export function NearBanner({near,query,onQuery,disabled}:{near:{count:string;extra:string}|undefined;query:GridQuery;onQuery:(q:GridQuery)=>void;disabled?:boolean}){
+/** One line above a progress grid: how many programmes are close to their next tier, and a filter to them.
+ * `kind` says which way the money goes: a customer tier adds to what is owed, a supplier tier to what can be claimed. */
+export function NearBanner({kind,near,query,onQuery,disabled}:{kind:'customer'|'supplier';near:{count:string;extra:string}|undefined;query:GridQuery;onQuery:(q:GridQuery)=>void;disabled?:boolean}){
  if(!near||near.count==='0')return null;
  const on=isNearQuery(query);
  return <Notice data-testid="near-banner" actions={<Button size="sm" data-testid="near-show" disabled={disabled} onClick={()=>onQuery(on?{}:NEAR_QUERY)}>{t(on?'near.showAll':'near.show')}</Button>}>
-  <p>{t('near.summary',{count:fmt.int(near.count),amount:fmt.currency(near.extra)})}</p><p>{t('near.help')}</p></Notice>;
+  <p>{t(kind==='customer'?'near.summary':'near.summarySupplier',{count:fmt.int(near.count),amount:fmt.currency(near.extra)})}</p><p>{t('near.help')}</p></Notice>;
 }
