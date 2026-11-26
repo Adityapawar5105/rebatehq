@@ -53,11 +53,11 @@ try{
  const checks3=owner.getByTestId('relay-device-checks');assert.equal(await checks3.getByTestId('relay-device-known').count(),1);assert.equal(await checks3.getByTestId('relay-device-code').count(),2);
  assert.ok(await owner.getByRole('button',{name:'Start workspace sharing',exact:true}).isDisabled(),'Sharing starts without the new device codes');
  const escape=v=>v.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
- for(const i of [1,2]){const page=pages[i];await close(page);await open(page);const code=await page.getByTestId('relay-own-fingerprint').innerText();await close(page);
+ for(const i of [1,2]){const page=pages[i],d=page.getByRole('dialog',{name:'Shared inbox',exact:true});if(!(await d.isVisible()))await open(page);const code=await page.getByTestId('relay-own-fingerprint').innerText();
   assert.ok(!(await checks3.innerText()).includes(code),'A new device code is shown to the Owner');
   await checks3.getByLabel(new RegExp(escape(actors[i].email??actors[i].userId))).fill(code);}
  await click(owner,'Start workspace sharing');
- for(const page of [manager,rep]){await close(page);await open(page);await page.getByLabel('Verified administrator fingerprint').fill(pin);await click(page,'Verify and join sharing');}
+ for(const page of [manager,rep]){await close(page);await open(page);await page.getByLabel("Owner's device code").fill(pin);await click(page,'Verify and join sharing');}
  checks.verifiedFingerprintJoin=true;
  // Team sharing S2b: "Start workspace sharing" signs a format 2 grid. The Owner device holds every pack key; the rep's
  // device (a Sales Rep under the grid: no role in the Owner's vault) holds none with cost, in the UI and in the database.

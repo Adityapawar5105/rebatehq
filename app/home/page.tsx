@@ -16,5 +16,5 @@ export default async function Home() {
     (await db.query("SELECT user_id,email,role,status,created_at FROM membership WHERE tenant_id=$1 ORDER BY created_at LIMIT 500", [context.tenantId])).rows,
     (await db.query("SELECT email,role,expires_at,created_at FROM invite WHERE tenant_id=$1 AND accepted_at IS NULL AND revoked_at IS NULL ORDER BY created_at DESC LIMIT 200", [context.tenantId])).rows,
     context.role === "owner")) : null;
-  return <VaultApp scope={{ userId: context.userId, tenantId: context.tenantId }} email={context.email} workspace={context.tenantName} relayEnabled={process.env.RELAY_ENABLED === "true"} account={account} team={team}/>;
+  return <VaultApp scope={{ userId: context.userId, tenantId: context.tenantId }} email={context.email} workspace={context.tenantName} relayEnabled={process.env.RELAY_ENABLED === "true"} account={account} team={team} workspaceRole={context.role}/>;
 }

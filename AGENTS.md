@@ -378,3 +378,27 @@ See `docs/evidence/SECOND_AUDIT_PASS.md`. The independent security review (R02, 
 - Spend and tiers only: `rebateProgress` stays in the decision 16 payload scan, and supplier progress still needs `cost`.
 - No new command, schema change or migration.
 - **It passed** [CI #273](https://github.com/Adityapawar5105/rebatehq/actions/runs/45746538213) on `dbac074` and merged as PR #45. See docs/evidence/NEAR_MISS_VERIFICATION.md.
+
+**Review R1 (26 Nov 2026; built by Claude Code).**
+- **Fixed:**
+  - the `/dashboard` dead links, with a test;
+  - the read-only seat gaps in folder pickup and Fix Later recheck;
+  - removing a sharing participant's seat now answers 409;
+  - vault creation: licensed capacity by default, and a repeat-passphrase field;
+  - screen copy;
+  - the vault gate's required sections;
+  - Node pinned for Netlify and the Restore Drill;
+  - the tenant-table floor raised to 15;
+  - a docs pass.
+- **It passed** [CI #277](https://github.com/Adityapawar5105/rebatehq/actions/runs/45830750129) on `ae41d86` and merged as PR #47.
+
+**Review R2: team sharing made safe to turn on (26 Nov 2026; built by Claude Code).**
+- **Relay log checkpoint:** the 10,000-event ceiling is gone (`RELAY_TAIL`, `FoldBase`).
+- **Joining:** a device can join after a Pricing Owner rotation.
+- **Rotation:** a new device must be confirmed by its own code.
+- **Saves and caps:** quiet syncs stop saving every minute; shared items count against capacity.
+- **Rate limits:** on relay and licence.
+- **Privacy gates:** they scan WebSocket frames.
+- **Screens and records:** plain-language sharing screens, and register entries R18 to R27.
+- Migration `20261128120000_review_r2_deleted_workspaces.sql` is **pending** until CI and a user-run Restore Drill pass. pgTAP plans 156 fresh and 159 restore checks.
+- See docs/evidence/REVIEW_R2_VERIFICATION.md.

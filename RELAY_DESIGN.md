@@ -5,7 +5,7 @@
 > - **Pack manifests:** they live in `relay_pack_version`, not in a `pack` relay event.
 > - **Storage and Realtime:** the worker reaches them directly with the person's own session token (`/api/relay?mode=token`), and the page CSP allows the Supabase https and wss origins.
 > - **Server caps:** 100,000 epochs and 1,000,000 events / 1 GiB per workspace; a lifetime limit of 1,000 device keys.
-> - **Client caps:** `RELAY_LIMITS` still enforces 10,000 events, 256 epochs and 60 devices. That is a known ceiling, with no compaction yet.
+> - **Client caps (review R2):** each device folds verified entries beyond a kept tail into a local checkpoint (`RELAY_TAIL`, `FoldBase`), so the 10,000-event ceiling is gone; key epochs are all kept, bounded at 4,096; an epoch still holds at most 60 devices.
 > - **Not built:** rolling caps, compaction and per-tier Storage caps.
 
 5 November 2026. Design written before implementation. Governing blueprint v2.2;
