@@ -6,13 +6,25 @@ import {findLeaks} from '../margin/leaks';
 import {bridge} from '../margin/bridge';
 import {customerHealth} from '../margin/monitor';
 import {exceptions,expiry} from '../pricing/ops';
-import {reconciliation} from '../rebate/store';
+import {reconciliation,progressRows as rebateRows} from '../rebate/store';
+import {progressRows as supplierRows} from '../rebate/supplier';
+import {hasRebates,hasSupplier} from '../rebate/input';
+import {NEAR,type Outlook} from '../rebate/nearmiss';
 import {workspaceCurrency} from '../vault/currency';
 import {summary as roi} from './roi';
 import {VaultError} from '../vault/protocol';
 import {msg} from '../i18n/core';
 import {businessToday} from '../vault/today';
 export type PackKind='monthly'|'weekly';
+export type NearRow={kind:'customer'|'supplier';reference:string;party:string;remaining:string;extra:string;daysLeft:string;outlook:Outlook};
+/** Item 39: programmes on pace for, or within reach of, their next tier, largest extra rebate first. */
+export async function nearTiers(e:Engine,today=businessToday()){
+ const out:NearRow[]=[];
+ if(await hasRebates(e))for(const r of await rebateRows(e,today))if(NEAR.includes(r.outlook)&&r.extra!==null&&r.remaining!==null&&r.daysLeft!==null)out.push({kind:'customer',reference:r.reference,party:r.customer,remaining:r.remaining,extra:r.extra,daysLeft:r.daysLeft,outlook:r.outlook});
+ if(await hasSupplier(e))for(const r of await supplierRows(e,today))if(NEAR.includes(r.outlook)&&r.extra!==null&&r.remaining!==null&&r.daysLeft!==null)out.push({kind:'supplier',reference:r.reference,party:r.supplier,remaining:r.remaining,extra:r.extra,daysLeft:r.daysLeft,outlook:r.outlook});
+ out.sort((a,b)=>{const x=BigInt(a.extra),y=BigInt(b.extra);return x!==y?(y>x?1:-1):a.reference<b.reference?-1:a.reference>b.reference?1:0;});
+ return {count:String(out.length),rows:out.slice(0,10)};
+}
 export const cancelled=()=>new VaultError('CANCELLED',msg('cadence.cancelled'));
 export function windowFor(kind:PackKind,month?:string,today=businessToday()){
  if(!['monthly','weekly'].includes(kind)||!/^\d{4}-\d\d-\d\d$/.test(today))throw new VaultError('REPORT',msg('cadence.invalid'));
@@ -30,10 +42,10 @@ export async function check(e:Engine,kind:PackKind,month:string|undefined,signal
  step('cadence.bridge');const change=kind==='monthly'?await bridge(e,{month:window.month}):null;
  step('cadence.exceptions');const exception=await exceptions(e,{from:window.from,to:window.to});
  step('cadence.contracts');const contracts=await expiry(e,90,today);
- step('cadence.rebates');const rebates=await reconciliation(e),claims=(await rows(e,`SELECT count(*) FILTER(WHERE status<>'cancelled')::VARCHAR cases,coalesce(sum(CAST(amount_claimed AS HUGEINT)) FILTER(WHERE status IN ('prepared','submitted','approved')),0)::VARCHAR unpaid,coalesce(sum(CAST(amount_claimed AS HUGEINT)) FILTER(WHERE status='paid'),0)::VARCHAR paid FROM supplier_claims`))[0];
+ step('cadence.rebates');const rebates=await reconciliation(e),claims=(await rows(e,`SELECT count(*) FILTER(WHERE status<>'cancelled')::VARCHAR cases,coalesce(sum(CAST(amount_claimed AS HUGEINT)) FILTER(WHERE status IN ('prepared','submitted','approved')),0)::VARCHAR unpaid,coalesce(sum(CAST(amount_claimed AS HUGEINT)) FILTER(WHERE status='paid'),0)::VARCHAR paid FROM supplier_claims`))[0],near=await nearTiers(e,today);
  step('cadence.health');const health=kind==='weekly'?await customerHealth(e,'500',today):null;
  step('cadence.roi');const recovery=await roi(e),currency=await workspaceCurrency(e),meta=(await rows(e,`SELECT count(*)::VARCHAR lines FROM sales_lines WHERE sale_date>=DATE ${Q(window.from)} AND sale_date<DATE ${Q(window.to)}`))[0];
  if(signal.aborted)throw cancelled();const checkedAt=new Date().toISOString(),revision=(await rows(e,'SELECT pricing_revision::VARCHAR n FROM vault_meta WHERE id=1'))[0].n;
- return {id,kind,window,currency,checkedAt,asOf:today,lines:meta.lines,leaks:{...leaks,findings:leaks.findings.slice(0,10),findingCount:String(leaks.findings.length)},bridge:change?.totals??null,exceptions:{count:String(exception.total.count),gap:String(exception.total.gap),rows:exception.rows.slice(0,10)},contracts:{count:contracts.count,rows:contracts.rows.slice(0,10)},rebates,claims,health:health?{...health,alerts:health.alerts.slice(0,10)}:null,roi:recovery,stamp:`INSERT INTO report_checks(kind,checked_at,period_start,period_end,revision) VALUES(${Q(kind)},${Q(checkedAt)},DATE ${Q(window.from)},DATE ${Q(window.to)},${revision}) ON CONFLICT(kind) DO UPDATE SET checked_at=excluded.checked_at,period_start=excluded.period_start,period_end=excluded.period_end,revision=excluded.revision;`};
+ return {id,kind,window,currency,checkedAt,asOf:today,lines:meta.lines,leaks:{...leaks,findings:leaks.findings.slice(0,10),findingCount:String(leaks.findings.length)},bridge:change?.totals??null,exceptions:{count:String(exception.total.count),gap:String(exception.total.gap),rows:exception.rows.slice(0,10)},contracts:{count:contracts.count,rows:contracts.rows.slice(0,10)},rebates,claims,near,health:health?{...health,alerts:health.alerts.slice(0,10)}:null,roi:recovery,stamp:`INSERT INTO report_checks(kind,checked_at,period_start,period_end,revision) VALUES(${Q(kind)},${Q(checkedAt)},DATE ${Q(window.from)},DATE ${Q(window.to)},${revision}) ON CONFLICT(kind) DO UPDATE SET checked_at=excluded.checked_at,period_start=excluded.period_start,period_end=excluded.period_end,revision=excluded.revision;`};
 }
 export type Pack=Omit<Awaited<ReturnType<typeof check>>,'stamp'>;

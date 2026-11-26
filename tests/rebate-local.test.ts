@@ -106,7 +106,10 @@ test('7D-1 app-open reminder uses the next threshold and the local period end; S
  const {c,e}=await fixture();try{
   const today=businessToday(),input={reference:'REMINDER',customer:'C',mode:'retroactive' as const,treatment:'additional' as const,from:today,to:today,eligible:'A',excluded:'',enabled:true,tiers:[{from:'5000',to:'',rate:'4'}]};const p=await rebates.saveSql(e,input,'actor');c.query(p.sql);await rebates.rebuildAccruals(e);
   let progress=(await rebates.progress(e)).rows[0];assert.equal(progress.remaining,'500000');assert.equal(progress.nextRate,'4.000');assert.equal(progress.reminder,true);
-  c.query("UPDATE rebate_programs SET enabled=false");await rebates.rebuildAccruals(e);progress=(await rebates.progress(e)).rows[0];assert.equal(progress.reminder,false);
+  // Item 39: no spend on the last day is far from a $5,000 tier worth $200; nothing is near.
+  assert.equal(progress.outlook,'far');assert.equal(progress.extra,'20000');assert.equal(progress.daysLeft,'1');assert.equal(progress.perDay,'500000');assert.deepEqual((await rebates.progress(e)).near,{count:'0',extra:'0'});
+  assert.equal((await rebates.progress(e,0,{filters:[{col:'outlook',values:['far']}]})).rows.length,1,'the outlook column filters in the worker');
+  c.query("UPDATE rebate_programs SET enabled=false");await rebates.rebuildAccruals(e);progress=(await rebates.progress(e)).rows[0];assert.equal(progress.reminder,false);assert.equal(progress.outlook,'ended','a paused program has no outlook');assert.equal(progress.extra,null);
   c.query("INSERT INTO products(product_id) VALUES('a')");await assert.rejects(cleanupPlan(e,'merge_duplicates','A',null,'actor','2026-11-08'),/agreement inclusion/);
  }finally{c.close();}
 });

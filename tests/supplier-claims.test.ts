@@ -53,3 +53,13 @@ test('7D-2 receipt synonyms map without guesses and supplier reminder is exact C
  const h=['Line ID','PO Number','Vendor ID','SKU','Received Date','Qty','Unit Purchase Cost','Transaction Kind','Unit'];assert.equal(detectRole('purchases.csv',h).role,'purchases');const m=toMapping(suggestMapping('purchases',h));assert.equal(m.purchase_amount.kind,'unit');assert.deepEqual(mappingProblems('purchases',m),[]);
  const {c,e}=await fixture();try{await seeded(e);const id=await save(e,input({tiers:[{from:'0',to:'41900',rate:'2'},{from:'41900',to:'',rate:'4'}]}));const v=await supplier.preview(e,id);assert.equal(v.live.remaining,'1240000');assert.equal(v.live.nextRate,'4.000');c.query((await supplier.exportPlan(e,id,v.fingerprint)).sql);c.query(await supplier.statusSql(e,id,'submitted'));c.query(await supplier.statusSql(e,id,'rejected'));await assert.rejects(supplier.exportPlan(e,id,(await supplier.preview(e,id)).fingerprint));c.query(await supplier.statusSql(e,id,'draft'));assert.equal((await supplier.get(e,id)).snapshot,null);}finally{c.close();}
 });
+test('item 39: a draft supplier claim near its next tier shows the extra rebate; frozen and ship-and-debit claims have no outlook',async()=>{const {c,e}=await fixture();try{await seeded(e);
+ const id=await save(e,input({tiers:[{from:'0',to:'30000',rate:'2'},{from:'30000',to:'',rate:'3'}]}));
+ // $29,500 of $30,000 by 21 March (day 80 of 90): on pace, $310 more rebate (3% of $30,000 less 2% of $29,500).
+ let r=(await supplier.progressRows(e,'2026-03-21')).find(x=>x.id===id)!;assert.equal(r.outlook,'on_pace');assert.equal(r.extra,'31000');assert.equal(r.daysLeft,'11');assert.equal(r.remaining,'50000');
+ const {nearTiers}=await import('../lib/reports/pack');const near=await nearTiers(e,'2026-03-21');assert.equal(near.count,'1');assert.deepEqual(near.rows[0],{kind:'supplier',reference:'NORTH',party:'N',remaining:'50000',extra:'31000',daysLeft:'11',outlook:'on_pace'});
+ assert.equal((await supplier.progressRows(e,'2026-04-01')).find(x=>x.id===id)!.outlook,'ended');
+ c.query(`UPDATE supplier_claims SET status='submitted' WHERE id='${id}'`);r=(await supplier.progressRows(e,'2026-03-21')).find(x=>x.id===id)!;assert.equal(r.outlook,'ended');assert.equal(r.extra,null);
+ const ship=await save(e,input({reference:'SD',program:'Debit',type:'ship_and_debit',authorization:'AUTH-1',tiers:[]}));assert.equal((await supplier.progressRows(e,'2026-03-21')).find(x=>x.id===ship)!.outlook,'not_tiered');
+ const page=await supplier.progress(e,0,{filters:[{col:'outlook',values:['not_tiered']}]});assert.equal(page.grid.matched,'1');
+}finally{c.close();}});

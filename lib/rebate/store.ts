@@ -11,8 +11,9 @@ import {hasRebates,salesInput} from './input';
 import {gridPage,gridQuery,memoryPage} from '../grid/sql';
 import type {ClientColumn,GridMeta,GridSpec} from '../grid/core';
 import {businessToday} from '../vault/today';
+import {nearMiss,nearSummary,type NearMiss} from './nearmiss';
 /** Rebate progress grid: earned and progress only, never cost or margin (decision 16; reps can see it). */
-export const PROGRESS_GRID:GridSpec={reference:'text',customer:'text',from:'date',spend:'money',earned:'money',remaining:'money'};
+export const PROGRESS_GRID:GridSpec={reference:'text',customer:'text',from:'date',spend:'money',earned:'money',remaining:'money',extra:'money',daysLeft:'int',outlook:'text'};
 export const EVIDENCE_GRID:GridSpec={source:'text',product:'text',date:'date',base:'money',booked:'money',accrued:'money',recognized:'money'};
 export type ProgramInput={id?:string;reference:string;customer:string;mode:Agreement['calculation_mode'];treatment:'additional'|'replace';from:string;to:string;eligible:string;excluded:string;enabled:boolean;tiers:{from:string;to:string;rate:string}[]};
 export type Program={id:string;reference:string;name:string;customer:string;mode:Agreement['calculation_mode'];treatment:'additional'|'replace';from:string;to:string;eligible:string[];excluded:string[];enabled:boolean;source:string|null;sourceRow:string|null;checkedAt:string|null;tiers:{from:string;to:string|null;rate:string}[]};
@@ -54,15 +55,22 @@ export async function rebuildAccruals(e:Engine){
  }
  await e.conn.query(`UPDATE rebate_programs SET last_calculated_at=${Q(new Date().toISOString())}`);
 }
-export type Progress={id:string;reference:string;customer:string;from:string;to:string;mode:string;enabled:boolean;spend:string;earned:string;remaining:string|null;nextRate:string|null;checkedAt:string|null;reminder:boolean};
-export async function progress(e:Engine,offset=0,grid?:unknown){
- const list=await programs(e),out:Progress[]=[];const today=businessToday(),soon=new Date(Date.parse(today+'T00:00:00Z')+30*86400000).toISOString().slice(0,10);
+/** Spend and tiers only (decision 16): `extra`, `daysLeft`, `perDay` and `outlook` come from lib/rebate/nearmiss.ts. */
+export type Progress={id:string;reference:string;customer:string;from:string;to:string;mode:string;enabled:boolean;spend:string;earned:string;remaining:string|null;nextRate:string|null;checkedAt:string|null;reminder:boolean}&NearMiss;
+/** Every programme's progress, unpaged (the report pack ranks the near misses). A paused programme has no outlook. */
+export async function progressRows(e:Engine,today=businessToday()){
+ const list=await programs(e),out:Progress[]=[];const soon=new Date(Date.parse(today+'T00:00:00Z')+30*86400000).toISOString().slice(0,10);
  for(const p of list){const r=(await rows(e,`SELECT coalesce(sum(base_cents),0)::VARCHAR spend FROM rebate_accruals WHERE program_id=${Q(p.id)}`))[0];const value=accrueCents(BigInt(r.spend),p.mode,p.tiers);
-  out.push({id:p.id,reference:p.reference,customer:p.customer,from:p.from,to:p.to,mode:p.mode,enabled:p.enabled,...value,checkedAt:p.checkedAt,reminder:p.enabled&&value.remaining!==null&&BigInt(value.remaining)>BigInt(0)&&p.to>=today&&p.to<=soon});}
+  out.push({id:p.id,reference:p.reference,customer:p.customer,from:p.from,to:p.to,mode:p.mode,enabled:p.enabled,...value,checkedAt:p.checkedAt,reminder:p.enabled&&value.remaining!==null&&BigInt(value.remaining)>BigInt(0)&&p.to>=today&&p.to<=soon,
+   ...(p.enabled?nearMiss(value,p.mode,p.tiers,p.from,p.to,today):{extra:null,daysLeft:null,perDay:null,outlook:'ended' as const})});}
+ return out;
+}
+export async function progress(e:Engine,offset=0,grid?:unknown){
+ const out=await progressRows(e);
  offset=Number.isInteger(offset)?Math.max(0,offset):0;
- const cols:ClientColumn<Progress>[]=[{id:'reference',type:'text',value:r=>r.reference},{id:'customer',type:'text',value:r=>r.customer},{id:'from',type:'date',value:r=>r.from},{id:'spend',type:'money',value:r=>r.spend},{id:'earned',type:'money',value:r=>r.earned},{id:'remaining',type:'money',value:r=>r.remaining}];
+ const cols:ClientColumn<Progress>[]=[{id:'reference',type:'text',value:r=>r.reference},{id:'customer',type:'text',value:r=>r.customer},{id:'from',type:'date',value:r=>r.from},{id:'spend',type:'money',value:r=>r.spend},{id:'earned',type:'money',value:r=>r.earned},{id:'remaining',type:'money',value:r=>r.remaining},{id:'extra',type:'money',value:r=>r.extra},{id:'daysLeft',type:'int',value:r=>r.daysLeft},{id:'outlook',type:'text',value:r=>r.outlook}];
  const page=await memoryPage(e,out,cols,PROGRESS_GRID,gridQuery(PROGRESS_GRID,grid),{limit:50,offset});
- return {currency:await workspaceCurrency(e),rows:page.rows,total:page.grid.matched,offset,grid:page.grid};
+ return {currency:await workspaceCurrency(e),rows:page.rows,total:page.grid.matched,offset,grid:page.grid,near:nearSummary(out)};
 }
 export async function reconciliation(e:Engine){
  if(!await hasRebates(e))return {booked:'0',expected:'0',recognized:'0',adjustment:'0',programs:'0',valid:true};
