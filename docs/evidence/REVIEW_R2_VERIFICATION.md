@@ -66,8 +66,24 @@ Built by Claude Code on 26 November 2026, phase R2 of the 26 November full proje
 ## Results
 
 Run locally on 26 November 2026, not CI evidence:
-- Migration lock check: 17 applied and 1 pending, matching `migrations.lock`.
+- Migration lock check before the lock: 17 applied and 1 pending, matching `migrations.lock`.
 - JS 80 of 80 and TypeScript 414 of 414 on the final code (with the approval and budget tests). `tsc --noEmit` is clean.
 - Chrome vault gate in lab mode, on a production build: passed, including the required-sections floor.
 - Lab relay gate: 18 checks passed. The Owner typed the manager's and the rep's device codes, read from their own devices; the codes were never shown on the Owner's screen.
 - pgTAP, including the new deleted-workspace check and plans 156 and 159: CI only. There is no local Supabase here.
+
+## CI and the Restore Drill
+
+- **[CI #279](https://github.com/Adityapawar5105/rebatehq/actions/runs/45844379547)** passed on `56f4fac` (PR #48), 26 November 2026. All four jobs passed:
+  - unit tests, audit and build;
+  - database tests with the new deleted-workspace pgTAP check (156 checks);
+  - the authenticated Chromium privacy and relay gates, against real Supabase, with the device-code step and the rate limits;
+  - the Firefox lab gate;
+  - `verify`.
+- PR #48 merged as `aed1b13`, and [CI #280](https://github.com/Adityapawar5105/rebatehq/actions/runs/45847465985) passed on `main` there.
+- **The user-run [Restore Drill #28](https://github.com/Adityapawar5105/rebatehq/actions/runs/45854536136)** passed on `aed1b13`:
+  - `1..159`, with the suite run twice and tenant row counts unchanged;
+  - the licence, relay and benchmark hashes and the restore sentinel matched;
+  - 15 tenant tables.
+- **The migration is locked** in `migrations.lock`: 18 applied, 0 pending.
+- **Staging** `rebatehq-staging` does not have this migration yet.

@@ -61,7 +61,7 @@ owner's decision D11).
 
 This section supersedes the dated orders in the chunk history below, such as "Do not start 7D", "Next chunk: …" and "Only 9A remains". Those orders are history.
 - **Merged on `main`:** every chunk through 8R; roadmap phases 1 to 16 apart from the owner's items; team sharing S1 to S5b; near-miss tiers (blueprint item 39). The sidebar redesign (PR #24) merged on 23 Nov 2026.
-- **Numbers:** local vault v25 / 69 tables. Supabase has 17 locked migrations, 0 pending, and 15 control-plane tables. Staging `rebatehq-staging` has all 17, with `RELAY_ENABLED` false.
+- **Numbers:** local vault v25 / 69 tables. Supabase has 18 locked migrations, 0 pending, and 15 control-plane tables. Staging `rebatehq-staging` has the first 17 (the review R2 migration is not applied there yet), with `RELAY_ENABLED` false.
 - **Excluded by the owner:** payments (Phase 12) and the mobile app (9A / 15.5).
 - **The open work list:** the 26 Nov full project review, kept in the owner's private notes and not in this public repo. R1 fixes are in progress.
 - Work follows the owner's explicit instruction for each step.
@@ -400,5 +400,6 @@ See `docs/evidence/SECOND_AUDIT_PASS.md`. The independent security review (R02, 
 - **Rate limits:** on relay and licence.
 - **Privacy gates:** they scan WebSocket frames.
 - **Screens and records:** plain-language sharing screens, and register entries R18 to R27.
-- Migration `20261128120000_review_r2_deleted_workspaces.sql` is **pending** until CI and a user-run Restore Drill pass. pgTAP plans 156 fresh and 159 restore checks.
+- Migration `20261128120000_review_r2_deleted_workspaces.sql` is **locked** (26 Nov 2026) after CI #279 on `56f4fac`, CI #280 on `main` at `aed1b13`, and the user-run Restore Drill #28 (159 restore-mode checks, twice). 18 migrations are applied and 0 are pending. pgTAP plans 156 fresh and 159 restore checks.
+- **It passed** [CI #279](https://github.com/Adityapawar5105/rebatehq/actions/runs/45844379547) and merged as PR #48.
 - See docs/evidence/REVIEW_R2_VERIFICATION.md.

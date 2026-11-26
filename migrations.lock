@@ -7,9 +7,9 @@
   "hashUpdateDate": "2026-10-25",
   "hashUpdateReason": "Windows CRLF versus CI LF caused different raw-byte hashes; normalized hash matches the CI content hash.",
   "sqlContentUnchangedSinceBaselineRun": true,
-  "lockUpdateDate": "2026-11-25",
-  "lockUpdateReason": "Team sharing S4 doorbell migration (blueprint section 22 item 38) promoted from pending to locked after RebateHQ CI #257 (run 45646205080) passed on 3a3364d with the authenticated relay gate proving a Realtime ring (11 s, 5 rings) against real Supabase, CI #258 (run 45649270101) on main at 853628d, a rolled-back hosted dry run on rebatehq-staging, and the user-run Restore Drill #27 (run 45652954657, local target) on 853628d: the Realtime policy re-applied by scripts/restore-storage-objects.sql and the 158-check restore plan twice with unchanged row counts. Normalized hash unchanged since it was added. Prior locked migrations unchanged.",
-  "appliedThrough": "20261127120000_sharing_s4_doorbell.sql",
+  "lockUpdateDate": "2026-11-26",
+  "lockUpdateReason": "Review R2 deleted-workspace migration (Storage and Realtime rules refuse a deleted workspace; SECURITY_REVIEW.md R20) promoted from pending to locked after RebateHQ CI #279 (run 45844379547) passed on 56f4fac with the new pgTAP check (156 fresh), CI #280 (run 45847465985) on main at aed1b13, and the user-run Restore Drill #28 (run 45854536136) on aed1b13: 159 restore-mode checks twice, licence, relay and benchmark hashes and 15 tenant tables matched. Hash unchanged.",
+  "appliedThrough": "20261128120000_review_r2_deleted_workspaces.sql",
   "appliedMigrations": {
     "202610240001_phase1_foundation.sql": "8faa57997119f29b3921b0e15b4b9e964edbc7fa2ecd8b52fbe32392be38c3bb",
     "202610250001_revoke_platform_public_privileges.sql": "d4b48072fac75e3d5a6683fe4b13e00042c9feb5a6a65a9e5576e44ecb9214a2",
@@ -27,7 +27,8 @@
     "20261114120000_operator_subscriptions.sql": "93009b04b1041f45ede8ef1258404ac15a3244f0b137454ac187493cdd2601a2",
     "20261125120000_sharing_s2_packs.sql": "e43c788ec32246b4f99a4fa9b55324ded2f6e67e4b22ce925a94599123124ff8",
     "20261126120000_sharing_s3_storage.sql": "5dbf8bb03260345139c732bf8df080458aff4b2049386169fc68a6ca719c9273",
-    "20261127120000_sharing_s4_doorbell.sql": "f87a8d2bda664f76998c0e09a10b5030f3956045cb7feecbfe6fc7785b7b1000"
+    "20261127120000_sharing_s4_doorbell.sql": "f87a8d2bda664f76998c0e09a10b5030f3956045cb7feecbfe6fc7785b7b1000",
+    "20261128120000_review_r2_deleted_workspaces.sql": "8a796b84cecfa8f7c4d42e4c2272ea67cfd65b2cf1becbc6a232aba2fce6685f"
   },
   "appliedOrder": [
     "202610240001_phase1_foundation.sql",
@@ -46,14 +47,11 @@
     "20261114120000_operator_subscriptions.sql",
     "20261125120000_sharing_s2_packs.sql",
     "20261126120000_sharing_s3_storage.sql",
-    "20261127120000_sharing_s4_doorbell.sql"
-  ],
-  "pendingOrder": [
+    "20261127120000_sharing_s4_doorbell.sql",
     "20261128120000_review_r2_deleted_workspaces.sql"
   ],
-  "pendingMigrations": {
-    "20261128120000_review_r2_deleted_workspaces.sql": "8a796b84cecfa8f7c4d42e4c2272ea67cfd65b2cf1becbc6a232aba2fce6685f"
-  },
+  "pendingOrder": [],
+  "pendingMigrations": {},
   "appliedMigrationEvidence": {
     "202610250001_revoke_platform_public_privileges.sql": {
       "date": "2026-10-26",
@@ -150,6 +148,12 @@
       "commit": "853628d",
       "ciRun": "https://github.com/Adityapawar5105/rebatehq/actions/runs/45649270101",
       "restoreRun": "https://github.com/Adityapawar5105/rebatehq/actions/runs/45652954657"
+    },
+    "20261128120000_review_r2_deleted_workspaces.sql": {
+      "date": "2026-11-26",
+      "commit": "aed1b13",
+      "ciRun": "https://github.com/Adityapawar5105/rebatehq/actions/runs/45847465985",
+      "restoreRun": "https://github.com/Adityapawar5105/rebatehq/actions/runs/45854536136"
     }
   }
 }
