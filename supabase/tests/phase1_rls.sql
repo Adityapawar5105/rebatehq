@@ -41,7 +41,7 @@ ORDER BY c.oid;
 DO $$ DECLARE t text; n integer; v_sentinel jsonb; v_expected_hash text; v_actual_hash text;
   v_count_match boolean:=true; v_sentinel_present boolean:=false; v_detail text:=''; BEGIN
   SELECT count(*) INTO n FROM pg_temp.phase1_rls_tables;
-  IF n<13 THEN RAISE EXCEPTION 'Expected at least 13 application tenant tables after 8R; found %',n; END IF;
+  IF n<15 THEN RAISE EXCEPTION 'Expected at least 15 application tenant tables after team sharing S2; found %',n; END IF;
   IF current_setting('app.restore_test_mode',true)='true' THEN
     v_expected_hash:=current_setting('app.restore_sentinel_content_hash');
     -- 8R: the sentinel is a licence location (same hash as scripts/verify-restore-equivalence.mjs).
@@ -577,7 +577,7 @@ DO $$ DECLARE t text; n integer; expected_count integer; v_bad text:='';
   v_state text; v_msg text; BEGIN
   IF current_setting('app.restore_test_mode',true)='true' THEN
     SELECT count(*) INTO expected_count FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='r';
-    IF expected_count<13 THEN RAISE EXCEPTION 'Restore isolation check expected at least 13 tenant tables; found %',expected_count; END IF;
+    IF expected_count<15 THEN RAISE EXCEPTION 'Restore isolation check expected at least 15 tenant tables; found %',expected_count; END IF;
     FOR t IN SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='r' LOOP
       BEGIN
         EXECUTE format('SELECT count(*) FROM public.%I WHERE tenant_id=$1',t)
@@ -1078,7 +1078,7 @@ DO $$ DECLARE t text; n integer; checked integer:=0; BEGIN
   EXECUTE format('SELECT count(*) FROM public.%I',t) INTO n;
   IF n<>0 THEN RAISE EXCEPTION '%: unauthenticated context exposed % rows',t,n; END IF;
  END LOOP;
- IF checked<13 THEN RAISE EXCEPTION 'No-context loop expected at least 13 readable tenant tables, checked %',checked; END IF;
+ IF checked<15 THEN RAISE EXCEPTION 'No-context loop expected at least 15 readable tenant tables, checked %',checked; END IF;
  PERFORM set_config('app.phase1_no_context_tables',checked::text,true);
 END $$;
 RESET ROLE;

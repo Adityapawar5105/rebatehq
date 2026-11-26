@@ -19,6 +19,7 @@ export const GOVERNED: Readonly<Partial<Record<Action, readonly PackId[] | "impo
   costBasisSet: ["cost"],                         // cost_basis_settings
   cleanupApply: ["items"], cleanupUndo: ["items"], cleanupMergeAll: ["items"], cleanupUndoMany: ["items"], // products
   studioPlan: "import", studioCommit: "import",
+  fixRecheck: "import",                           // reloads rows of one earlier file: decided by that file's kind (review R1)
   playgroundLoad: "any",                          // loads sample items, customers and prices
   shareImport: "any",                             // an S1 hand-off file would replace relay copies
 };
@@ -47,7 +48,7 @@ export const NOT_GOVERNED: Readonly<Partial<Record<Action, string>>> = {
   exportLayoutSave: "export layouts", exportLayoutDelete: "export layouts", backupRestore: "whole-vault recovery; newer publishes apply again",
   studioAdd: "staging only", studioUpdate: "staging only", studioDrop: "staging only", studioClear: "staging only",
   recipeSave: "import recipes", recipeApply: "staging only", sourceRemove: "removes only rows its own file supplied",
-  fixSet: "staging only", fixDismiss: "staging only", fixRecheck: "staging only", playgroundRemove: "removes only sample files",
+  fixSet: "staging only", fixDismiss: "staging only", playgroundRemove: "removes only sample files",
   creditsLoad: "credit notes", leakReport: "a generated file", reconAccept: "reconciliation", reconRebuild: "reconciliation",
   quoteCreate: "quotes", quoteLines: "quotes", quoteSubmit: "quotes", quoteWithdraw: "quotes", quoteCopy: "quotes", quoteRevise: "quotes",
   quoteValidity: "quotes", brandingSet: "quote branding", priceList: "a generated file", priceMailing: "a generated file",

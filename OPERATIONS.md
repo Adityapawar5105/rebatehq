@@ -1,14 +1,15 @@
 # RebateHQ operations
 
-Rewritten on 21 November 2026 (roadmap 13.5) for the system as it runs now. The earlier chronological log, chunk by chunk from Phase 1, is kept unchanged in [docs/evidence/OPERATIONS_HISTORY.md](docs/evidence/OPERATIONS_HISTORY.md).
+Rewritten on 21 November 2026 (roadmap 13.5) for the system as it runs now; numbers refreshed on 26 November 2026 (review R1). The earlier chronological log, chunk by chunk from Phase 1, is kept unchanged in [docs/evidence/OPERATIONS_HISTORY.md](docs/evidence/OPERATIONS_HISTORY.md).
 
 ## What runs where
 
 | Part | Where | Holds |
 |---|---|---|
-| The app (Next.js) | Netlify, built from `main` | No business data. Server routes cover sign-in, workspaces and invites, licences and devices, the ciphertext relay, opt-in benchmarks and the operator subscriptions view |
-| Control plane (Supabase Postgres and Auth) | `rebatehq-staging` today; production is a separate project (not set up yet) | Identity, workspaces and memberships, licences, seats and devices, the relay's encrypted events, pseudonymous benchmark rows, the audit trail. 14 locked migrations; 13 control-plane tables |
-| Each user's vault | That user's browser (DuckDB-Wasm in a Web Worker, encrypted snapshots in OPFS) | All prices, costs, invoices, rules, quotes and reports. The server never receives them; **we cannot restore a vault for a customer**: only their own encrypted backup can |
+| The app (Next.js) | Netlify, built from `main` | No business data. Server routes cover sign-in, workspaces and invites, licences and devices, the ciphertext relay (including `/api/relay?mode=token`, which hands the signed-in person's own session token to the vault worker), opt-in benchmarks and the operator subscriptions view |
+| Control plane (Supabase Postgres and Auth) | `rebatehq-staging` today; production is a separate project (not set up yet) | Identity, workspaces and memberships, licences, seats and devices, the relay's encrypted events, wrapped pack keys and signed pack versions, pseudonymous benchmark rows, the audit trail. 17 locked migrations; 15 control-plane tables |
+| Team sharing storage (Supabase Storage and Realtime) | The private `relay-packs` bucket, and one Realtime channel per pack | With sharing on, encrypted copies of the shared prices, items, customers, guardrails and (for roles with cost) costs, as AES-GCM chunks. The server cannot read them. A channel carries only a pack version number. The worker calls both directly with the person's own session token |
+| Each user's vault | That user's browser (DuckDB-Wasm in a Web Worker, encrypted snapshots in OPFS) | All prices, costs, invoices, rules, quotes and reports. The server never receives them in readable form (shared packs arrive only as ciphertext, above); **we cannot restore a vault for a customer**: only their own encrypted backup can |
 
 The retired server business routes answer with a fixed 410 (decision D12). The legacy business pages and their switch were removed in roadmap 13.3.
 
@@ -26,8 +27,9 @@ Server settings live in the hosting provider's environment, never in git. `.env.
 
 - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `APP_BASE_URL`.
 - `APP_DATABASE_URL`: the restricted `rebatehq_app_login` (NOSUPERUSER, NOBYPASSRLS), never the postgres or service-role credentials. `SEED_DATABASE_URL` is for operator scripts only.
-- `ACTOR_SIGNING_SECRET`, `LICENCE_SIGNING_KEY` (server only) and `NEXT_PUBLIC_LICENCE_VERIFY_KEY` (public): generate with `node scripts/control-plane-keys.mjs`; keep the private parts in the secret manager.
-- `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`: required in production; sign-in, invite and workspace routes refuse to run without them. The limiter keys on Netlify's client address (`x-nf-client-connection-ip`, then the last `x-forwarded-for` hop; audit B-9).
+- `ACTOR_SIGNING_SECRET`, `LICENCE_SIGNING_KEY` (server only) and `NEXT_PUBLIC_LICENCE_VERIFY_KEY` (public): generate with `node scripts/control-plane-keys.mjs --install` (writes `.env.local`) or `--ci-env`; keep the private parts in the secret manager.
+- `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`: required in production; sign-in, invite and workspace routes refuse to run without them. The limiter keys on Netlify's client address (`x-nf-client-connection-ip`, then `x-real-ip`, then the last `x-forwarded-for` hop; audit B-9). Whether Netlify overwrites a header the client sends is not yet verified on the live site.
+- `PG_POOL_MAX` (optional, default 4): database connections per server instance.
 - `RESEND_API_KEY` and `EMAIL_FROM` for invites; Supabase Auth sends sign-in links through its own SMTP setting (roadmap 0.6: a dedicated sender is still to be configured).
 - Feature switches, off by default: `RELAY_ENABLED` (ciphertext sharing), `BENCHMARKS_ENABLED` with `BENCH_PSEUDONYM_KEY`, `VAULT_LAB_ENABLED` (never in a deployment), `DEV_IMPERSONATION_ENABLED` (development only).
 
@@ -36,7 +38,7 @@ Server settings live in the hosting provider's environment, never in git. `.env.
 1. Every change goes through a pull request. The `verify` job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) must pass before merging: typecheck, unit tests, the high/critical dependency audit, migration hashes, pgTAP on a clean local Supabase, the authenticated Chromium privacy gate with the relay gate, and the Firefox lab gate. Netlify's own checks are not enough.
 2. Merging to `main` deploys to staging. The same `verify` job runs on `main`; a red run there is investigated before the next merge.
 3. A Supabase migration follows [MIGRATION_RULES.md](MIGRATION_RULES.md): CI passes, then the user-run Restore Drill passes, then the migration is locked in `migrations.lock`. Applied migrations are never edited.
-4. A local vault schema change is a new versioned step in `lib/vault/schema.ts` (forward-only; the committed v1 fixture must still open). The vault is v22.
+4. A local vault schema change is a new versioned step in `lib/vault/schema.ts` (forward-only; the committed v1 fixture must still open). The vault is v25 (69 tables).
 
 ## Backups and restore
 
@@ -48,10 +50,10 @@ Server settings live in the hosting provider's environment, never in git. `.env.
 | Situation | What to do |
 |---|---|
 | Forgotten passphrase | There is no recovery. On the lock screen, "Forgot your passphrase?" → "Start again on this device" deletes this device's vault; then "Restore encrypted backup" with a backup made under the old passphrase |
-| New computer or browser | Sign in there; the Owner approves the device under Account › Licence, seats and devices (a "devices waiting" badge shows on Settings). Then restore a backup |
-| Lost or stolen device | The Owner revokes it under Account › Licence, seats and devices. If sharing is set up, an administrator rotates the workspace key so the device cannot read new items |
+| New computer or browser | Sign in there; the Owner approves the device under Settings › Licence, seats and devices (a "devices waiting" badge shows on Settings). Then restore a backup |
+| Lost or stolen device | The Owner revokes it under Settings › Licence, seats and devices. If sharing is set up, an administrator rotates the workspace key so the device cannot read new items |
 | Licence offline or read-only | A server error keeps the saved licence inside its offline allowance; only a refusal or bad signature makes the vault read-only. Check the licence and device rows (operator view below) |
-| Customer leaves | The Owner uses Account › Workspace › Disable workspace. The workspace's control-plane rows stay until removed: `scripts/purge-deleted-tenants.ts` is **suspended** (it stops at its first line). Before it is switched back on, a pgTAP test must prove that deleting a tenant cascades to its control-plane rows and keeps the audit rows, and the Restore Drill must pass with it (Phase 16 audit, 22 Nov 2026). Vault data on their devices is theirs to delete |
+| Customer leaves | The Owner uses Settings › Workspace › Disable workspace. The workspace's control-plane rows stay until removed: `scripts/purge-deleted-tenants.ts` is **suspended** (it stops at its first line). Before it is switched back on, a pgTAP test must prove that deleting a tenant cascades to its control-plane rows and keeps the audit rows, and the Restore Drill must pass with it (Phase 16 audit, 22 Nov 2026). Vault data on their devices is theirs to delete |
 
 ## Incidents and secrets
 

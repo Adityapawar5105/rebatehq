@@ -130,7 +130,7 @@ test("database repeatability command runs the suite twice and proves no tenant r
   assert.match(repeatability, /await runDatabaseSuite\(\)[\s\S]*?const afterSecond = await snapshotTenantRows\(pool\)/);
   assert.match(repeatability, /assertTenantRowCountsEqual\(before, afterSecond/);
   assert.match(repeatability, /GROUP BY c\.relname\s+ORDER BY c\.relname/, "Tenant tables must be uniquely and deterministically sorted by name.");
-  assert.match(repeatability, /tables\.rows\.length >= 13/);
+  assert.match(repeatability, /tables\.rows\.length >= 15/);
   assert.match(rowCountHelpers, /public\.\$\{tableName\}/, "Count mismatch errors must identify the public table.");
 });
 

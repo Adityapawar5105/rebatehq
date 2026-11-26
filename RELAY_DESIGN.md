@@ -1,5 +1,13 @@
 # Chunk 7A — ciphertext-only collaboration relay
 
+> **Current state (26 Nov 2026, review R1).** This design predates team sharing. As built since then:
+> - **Migrations:** the 7A migration is locked (Restore Drill #19), and so are the S2, S3 and S4 sharing migrations.
+> - **Pack manifests:** they live in `relay_pack_version`, not in a `pack` relay event.
+> - **Storage and Realtime:** the worker reaches them directly with the person's own session token (`/api/relay?mode=token`), and the page CSP allows the Supabase https and wss origins.
+> - **Server caps:** 100,000 epochs and 1,000,000 events / 1 GiB per workspace; a lifetime limit of 1,000 device keys.
+> - **Client caps:** `RELAY_LIMITS` still enforces 10,000 events, 256 epochs and 60 devices. That is a known ceiling, with no compaction yet.
+> - **Not built:** rolling caps, compaction and per-tier Storage caps.
+
 5 November 2026. Design written before implementation. Governing blueprint v2.2;
 7A only. No Quote Desk, ERP integration or rebate calculation UI is built here.
 The relay carries an immutable shared summary/reference, comments and approval
@@ -197,7 +205,7 @@ Team sharing (`SHARING_DESIGN.md`, blueprint section 22 item 38) changes this de
   - The sentence above that the workspace key "is not a way to hide costs from another keyholder" stays true of the workspace key. Cost is hidden by pack keys, which a role without the `cost` capability never receives.
 - **Bulk data leaves the event table.**
   - Encrypted price-book chunks go to a private Supabase Storage bucket.
-  - A `pack` event carries only the signed manifest.
+  - *(Planned; as built, the signed manifest is a `relay_pack_version` row, not a relay event.)* A `pack` event carries only the signed manifest.
   - The 16 KiB message cap stays.
 - **Caps become rolling.**
   - Events older than the latest snapshot of every pack can be compacted, keeping the hash-chain head and a signed checkpoint.

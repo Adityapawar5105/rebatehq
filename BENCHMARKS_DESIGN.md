@@ -105,6 +105,10 @@ A simulation of the first design (1-point bins, k = 10, ε = 1) showed a typical
 
 There is one new Supabase migration. Business data stays off the server; these are aggregates the Owner chose to share.
 
+> **As built (`20261111120000_chunk8d_benchmarks.sql`, locked; review R1, 26 Nov 2026).** The plan below differs from the migration. As built:
+> - **Tables:** `public.bench_consent` keyed by `tenant_id` (not `workspace_id`), and `rebatehq_private.bench_submission`, `bench_contribution`, `bench_release` and `bench_release_log`. The names are singular.
+> - **Release:** done by `bench_publish(text, numeric, integer)`, granted only to the migration owner. Reading the figures is `bench_figures`. There is no `bench_release(quarter)` function.
+
 | Table | Columns | Who can read |
 | --- | --- | --- |
 | `bench_consent` | `workspace_id`, `opted_in`, `consent_version`, `decided_by` (user ID), `decided_at` | the workspace's Owner (RLS) |
@@ -116,7 +120,7 @@ There is one new Supabase migration. Business data stays off the server; these a
   - `bench_submit(payload)`: checks the caller is the Owner with current consent and validates the payload strictly (section 6). It replaces any earlier submission for the same pseudonym and quarter, so there is one record set per workspace per quarter, and limits submissions to 5 a day.
   - `bench_withdraw()`: deletes rows for every quarter's pseudonym.
   - `bench_release(quarter)`: service role only; does the k check, noise and freeze.
-- **Verification:** pgTAP for RLS, the RPC validation, k suppression and withdrawal, plus a Restore Drill (user-run), following MIGRATION_RULES.md. The migration stays pending until CI and the drill pass.
+- **Verification:** pgTAP for RLS, the RPC validation, k suppression and withdrawal, plus a Restore Drill (user-run), following MIGRATION_RULES.md. The migration was locked after CI #146 and Restore Drill #20 (it stayed pending until CI and the drill passed).
 - **No raw values** are ever stored. The server sees the payload, the authenticated user and the IP address at request time, like every control-plane request. IPs are not stored by the app.
 
 ## 6. The only payload ever sent

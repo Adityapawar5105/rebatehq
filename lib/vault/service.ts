@@ -48,7 +48,7 @@ import { sqlText } from "../spike/exact";
 import { Studio, listSources, loadRecipes, recipeSql, removeSource, type Progress } from "../studio/studio";
 import type { Role, Settings, SettingsPatch } from "../studio/formats";
 import type { ErpProfile, FieldSource } from "../studio/mapper";
-import { dismissSql, fixGroups, fixRows, fixSetSql, recheck } from "../studio/fixlater";
+import { dismissSql, fixGroups, fixRows, fixSetSql, recheck, roleOf } from "../studio/fixlater";
 import { health } from "../studio/health";
 import { PLAYGROUND_PREFIX, SAMPLE_COUNTS_SQL, generatePlayground, sampleState } from "../studio/playground";
 import { AUTO_LOCK_MS, LOCK_WARNING_MS, LEASE_WAIT_MS, VaultError, vaultPhase, type LeaksView, type Scope, type Tier, type VaultStatus } from "./protocol";
@@ -524,10 +524,13 @@ export class VaultService {
   licenceGuard(action:Action) { this.licence.guard(action); }
   /** Team sharing S3: on a receiving seat, refuse a write to data the publisher shares through the relay. The publisher is
    *  authoritative, so a local edit would be replaced at the next publish (lib/sharing/governed.ts classifies every write). */
-  async sharedGuard(action:Action) {
+  async sharedGuard(action:Action, data?:unknown) {
     if (!GOVERNED[action] || !this.engine) return;
     const held = (await this.access()).shared ?? null; if (!held) return;
-    const hit = lockedPacks(action, held, GOVERNED[action] === "import" ? (await this.studioState()).files.map(f => f.role) : [])[0]; if (!hit) return;
+    // An import is decided by the kinds of the files it writes: the staged batch, or for Fix Later the one earlier file.
+    const sourceId = action === "fixRecheck" ? (data as { sourceId?: unknown } | undefined)?.sourceId : undefined;
+    const roles = GOVERNED[action] !== "import" ? [] : action === "fixRecheck" ? (typeof sourceId === "string" ? [await roleOf(this.engine, sourceId)] : []) : (await this.studioState()).files.map(f => f.role);
+    const hit = lockedPacks(action, held, roles)[0]; if (!hit) return;
     throw new VaultError("SHARE", msg("share.readOnly", { name: held.packs[hit], pack: msg(`share.pack.${hit}` as import("../i18n/core").MessageKey) }));
   }
   /** The packs this device received through the relay while it is not a publisher under the signed grid, with each
@@ -740,7 +743,10 @@ export class VaultService {
       const files = await folderFiles(d, name => !!kindOf(name));
       const st = files.length ? await this.studioFolder(files) : null, added = st?.folder.added.length ?? 0, skipped = st?.folder.skipped.length ?? 0;
       let imported = false;
-      if (added && c.auto && this.licence.writable) {
+      // Review R1: the page's commands pass sharedGuard in dispatch; this background import must too, or a receiving
+      // seat would write data its publisher shares. A refusal leaves the files staged for review.
+      const shared = added && c.auto && this.licence.writable ? await this.sharedGuard("studioCommit").then(() => false, () => true) : false;
+      if (added && c.auto && this.licence.writable && !shared) {
         const planned = await this.studioPlan(new AbortController().signal, () => undefined);
         if (cleanForAuto(planned.report, planned.files.map(f => f.role))) { await this.studioCommit(false, () => undefined); imported = true; }
       }

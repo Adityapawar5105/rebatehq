@@ -162,7 +162,7 @@ async function rebatesUi(){
  context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-rebates-')),browserOptions);await configureContext();page=await openPage();
  try{
   dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();
-  await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic rebate owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
+  await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Type the passphrase again').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic rebate owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
   await page.locator('nav a[href="#settings"]').click();await page.locator('section[aria-labelledby="currency-heading"] select').selectOption('CAD');await page.getByRole('button',{name:'Save currency',exact:true}).click();await page.getByText('Current currency: CAD',{exact:true}).waitFor();
   const customer=marker+'-RC',sku=marker+'-RP',ref=marker+'-NORTH';
   const sales=Buffer.from('line_id,product_id,customer_id,sale_date,quantity,list_amount,discount_amount,freight_amount,rebate_amount,cost_amount\n1,'+sku+','+customer+',2026-03-31,1,29500.00,0,0,350.00,10000.00\n');
@@ -189,7 +189,7 @@ async function vendorsUi(){
  const savedContext=context,savedPage=page,active=dataPlaneActive;
  context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-vendors-')),browserOptions);await configureContext();page=await openPage();
  try{
- dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic vendor owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
+ dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Type the passphrase again').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic vendor owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
  await page.locator('nav a[href="#settings"]').click();await page.locator('section[aria-labelledby="currency-heading"] select').selectOption('CAD');await page.getByRole('button',{name:'Save currency',exact:true}).click();await page.getByText('Current currency: CAD',{exact:true}).waitFor();
  const sku=marker+'-VALVE',vendor=marker+'-MILLS',unknown=marker+'-NOT-IN-ITEMS';
  const batch=async files=>{await page.locator('nav a[href="#data-hub"]').click();await review(files);await page.getByRole('button',{name:'Confirm and import locally',exact:true}).click();await page.getByRole('heading',{name:'Batch report'}).waitFor({state:'detached'});};
@@ -223,7 +223,7 @@ async function simUi(){
  const savedContext=context,savedPage=page,active=dataPlaneActive;
  context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-sim-')),browserOptions);await configureContext();page=await openPage();
  try{
- dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic simulator owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
+ dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Type the passphrase again').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic simulator owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
  await page.locator('nav a[href="#settings"]').click();await page.locator('section[aria-labelledby="currency-heading"] select').selectOption('CAD');await page.getByRole('button',{name:'Save currency',exact:true}).click();await page.getByText('Current currency: CAD',{exact:true}).waitFor();
  const sku=marker+'-SIMVALVE',customer=marker+'-SIMCUST';
  await page.locator('nav a[href="#data-hub"]').click();await review([
@@ -271,7 +271,7 @@ async function convertersUi(){
  await context.addInitScript(()=>{window.showDirectoryPicker=async()=>await(await navigator.storage.getDirectory()).getDirectoryHandle('rebatehq-import-seam',{create:true});});
  page=await openPage();
  try{
- dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic converter owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
+ dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Type the passphrase again').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic converter owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
  // Short customer IDs fit the report's fixed columns; the privacy marker travels in the saved recipe's name.
  const c1='CV-1',c2='CV-2',recipeName='Print sales '+marker;
  const sales=printReport([['1','P-100',c1,'2026-01-05','2','200.00','120.00'],['2','P-200',c2,'2026-01-06','10','1250.50','900.00'],['3','P-100',c1,'2026-01-07','1','100.00','60.00']]);
@@ -324,7 +324,7 @@ async function guidanceUi(){
  const savedContext=context,savedPage=page,active=dataPlaneActive;
  context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-guidance-')),browserOptions);await configureContext();page=await openPage();
  try{
- dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic guidance owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
+ dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Type the passphrase again').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic guidance owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
  // v2.6 gap 2: the relay set-up card appears only where the relay answers and this device has no key; "Not now" is remembered.
  await page.waitForTimeout(1500);let relayOnboarding='relay-unavailable';
  if(await page.getByTestId('relay-onboarding').count()){await page.getByTestId('relay-onboarding-dismiss').click();await page.getByTestId('relay-onboarding').waitFor({state:'detached'});await page.locator('nav a[href="#settings"]').click();await page.locator('nav a[href="#home"]').click();await page.waitForTimeout(1000);assert.equal(await page.getByTestId('relay-onboarding').count(),0,'The dismissed relay card came back');relayOnboarding='dismissed-and-remembered';}
@@ -364,7 +364,7 @@ async function agentsUi(){
  const savedContext=context,savedPage=page,active=dataPlaneActive;
  context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-agents-')),browserOptions);await configureContext();page=await openPage();
  try{
- dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic agents owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
+ dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Type the passphrase again').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic agents owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
  const sku=marker+'-AGWIRE',other=marker+'-AGVALVE',customer=marker+'-AGCUST',series='Copper '+marker;
  await page.locator('nav a[href="#data-hub"]').click();await importFiles([
   {name:'agents-items.csv',mimeType:'text/csv',buffer:Buffer.from('product_id,description,category,uom,current_cost,list_price\n'+sku+',Synthetic wire,Wire,EA,60.00,100.00\n'+other+',Synthetic valve,Valves,EA,20.00,40.00\n')},
@@ -408,7 +408,7 @@ async function deadStockUi(){
  const savedContext=context,savedPage=page,active=dataPlaneActive;
  context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-dead-')),browserOptions);await configureContext();page=await openPage();
  try{
- dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic dead-stock owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
+ dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Type the passphrase again').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic dead-stock owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
  const d1=marker+'-DEAD',a1=marker+'-LIVE',customer=marker+'-DC',ago=n=>new Date(Date.now()-n*86400000).toISOString().slice(0,10);
  await page.locator('nav a[href="#data-hub"]').click();await importFiles([
   {name:'dead-items.csv',mimeType:'text/csv',buffer:Buffer.from('product_id,description,category,uom,current_cost,list_price\n'+d1+',Synthetic slow valve,Valves,EA,60.00,100.00\n'+a1+',Synthetic fast valve,Valves,EA,50.00,90.00\n')},
@@ -446,7 +446,7 @@ async function activationUi(){
  const savedContext=context,savedPage=page,active=dataPlaneActive;
  context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-activation-')),browserOptions);await configureContext();page=await openPage();
  try{
- dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic activation owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
+ dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Type the passphrase again').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic activation owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
  await page.getByTestId('home-start').waitFor();assert.equal(await page.getByTestId('sample-banner').count(),0,'A new vault shows the sample banner');
  await page.getByTestId('home-start').getByRole('button',{name:'Try the Playground',exact:true}).click();
  const leak=page.getByTestId('cash-leak-value');
@@ -483,7 +483,7 @@ async function phase8Ui(){
  const savedContext=context,savedPage=page,active=dataPlaneActive;
  context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-phase8-')),browserOptions);await configureContext();page=await openPage();
  try{
- dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic phase 8 owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).first().waitFor({timeout:120000});dataPlaneActive=true;
+ dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Type the passphrase again').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic phase 8 owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).first().waitFor({timeout:120000});dataPlaneActive=true;
  await page.locator('nav a[href="#data-hub"]').click();
  await page.getByTestId('studio-files').setInputFiles([{name:'scanned-report.pdf',mimeType:'application/pdf',buffer:Buffer.from(scannedPdf())}]);
  const scanned=page.getByTestId('scanned-pdf');await scanned.filter({hasText:'scanned-report.pdf is a scanned PDF'}).waitFor({timeout:60000});
@@ -517,7 +517,7 @@ async function passphraseUi(){
  const savedContext=context,savedPage=page,active=dataPlaneActive,next=secret+'-changed';
  context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-passphrase-')),browserOptions);await configureContext();page=await openPage();
  try{
- dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic recovery owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
+ dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Type the passphrase again').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic recovery owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
  await openSub('settings-security');await page.getByTestId('passphrase-card').waitFor();
  await page.getByTestId('passphrase-current').fill(secret);await page.getByTestId('passphrase-next').fill(next);await page.getByTestId('passphrase-again').fill(next);
  await page.getByTestId('passphrase-submit').click();await page.getByRole('status').filter({hasText:'Passphrase changed'}).waitFor({timeout:60000});
@@ -542,7 +542,7 @@ async function shareUi(){
  const savedContext=context,savedPage=page,active=dataPlaneActive;
  context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-share-')),browserOptions);await configureContext();page=await openPage();
  try{
- dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic sharing owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
+ dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Type the passphrase again').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic sharing owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
  await openSub('settings-team');await page.getByTestId('share-card').waitFor();
  await page.getByTestId('share-role').selectOption('sales_rep');
  assert.ok(await page.getByTestId('share-pack-cost').isDisabled(),'Cost can be ticked for a Sales Rep');assert.ok(!await page.getByTestId('share-pack-cost').isChecked(),'Cost is ticked for a Sales Rep');
@@ -561,7 +561,7 @@ async function winLossUi(){
  const savedContext=context,savedPage=page,active=dataPlaneActive;
  context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-winloss-')),browserOptions);await configureContext();page=await openPage();
  try{
- dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic win/loss owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
+ dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Type the passphrase again').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic win/loss owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
  const sku=marker+'-WL',customer=marker+'-WLC',day=new Date(Date.now()-20*86400000).toISOString().slice(0,10);
  await page.locator('nav a[href="#data-hub"]').click();await importFiles([
   {name:'winloss-items.csv',mimeType:'text/csv',buffer:Buffer.from('product_id,description,category,uom,current_cost,list_price\n'+sku+',Synthetic fitting,Fittings,EA,70.00,120.00\n')},
@@ -615,7 +615,7 @@ async function offlineUi(){
  try{
  // Session cookies are per host, not per port, so a sign-in on the app server also signs in through the relay.
  // Storage is per origin, so pin one active device id for both addresses; otherwise the relay origin registers a second, pending device.
- dataPlaneActive=false;if(auth)await signInLocal(context,page,base,{deviceId:crypto.randomUUID()});await page.goto(relay.url+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic offline owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
+ dataPlaneActive=false;if(auth)await signInLocal(context,page,base,{deviceId:crypto.randomUUID()});await page.goto(relay.url+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Type the passphrase again').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic offline owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
  const sku=marker+'-OFF',customer=marker+'-OFFC';
  await page.locator('nav a[href="#data-hub"]').click();await importFiles([
   {name:'offline-items.csv',mimeType:'text/csv',buffer:Buffer.from('product_id,description,category,uom,current_cost,list_price\n'+sku+',Synthetic offline item,Offline,EA,4.00,9.00\n')},
@@ -661,7 +661,7 @@ async function benchUi(){
   if(b.action==='withdraw'){state={optedIn:false,version:1,decidedAt:new Date().toISOString()};return r.fulfill({json:{deleted:1,consent:state}});}
   return r.fulfill({status:400,json:{error:'unexpected'}});});}
  try{
- dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic benchmark owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
+ dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Type the passphrase again').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic benchmark owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
  const wire='Wire '+marker,pipe='Pipe '+marker,w=marker+'-BW',p=marker+'-BP',day=i=>new Date(start+(i%60)*86400000).toISOString().slice(0,10),lines=['line_id,product_id,customer_id,sale_date,quantity,list_amount,discount_amount,freight_amount,rebate_amount,cost_amount'];
  for(let i=1;i<=240;i++)lines.push([i,w,marker+'-BC'+(i%24+1),day(i),1,'100.00','10.00','3.00','2.00','60.00'].join(','));
  for(let i=241;i<=245;i++)lines.push([i,p,marker+'-BC1',day(i),1,'50.00','10.00','0','0','30.00'].join(','));
@@ -700,7 +700,7 @@ async function reportsUi(){
  const savedContext=context,savedPage=page,active=dataPlaneActive;
  context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-reports-')),browserOptions);await configureContext();page=await openPage();
  try{
- dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic review owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
+ dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Type the passphrase again').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic review owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
  await page.locator('nav a[href="#settings"]').click();await page.locator('section[aria-labelledby="currency-heading"] select').selectOption('CAD');await page.getByRole('button',{name:'Save currency',exact:true}).click();await page.getByText('Current currency: CAD',{exact:true}).waitFor();
  const sku=marker+'-REVIEW-P',customer=marker+'-REVIEW-C';
  await page.locator('nav a[href="#data-hub"]').click();await importFiles([
@@ -743,7 +743,7 @@ async function suppliersUi(){
  const savedContext=context,savedPage=page,active=dataPlaneActive;
  context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-suppliers-')),browserOptions);await configureContext();page=await openPage();
  try{
- dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic supplier owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
+ dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Type the passphrase again').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic supplier owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
  await page.locator('nav a[href="#settings"]').click();await page.locator('section[aria-labelledby="currency-heading"] select').selectOption('CAD');await page.getByRole('button',{name:'Save currency',exact:true}).click();await page.getByText('Current currency: CAD',{exact:true}).waitFor();
  const supplier=marker+'-SUP',sku=marker+'-PURCHASE',ref=marker+'-CLAIM';
  const csv=Buffer.from('line_id,receipt_ref,supplier,product_id,receipt_date,quantity,purchase_amount,entry_kind,uom\n1,PO1,'+supplier+','+sku+',2026-03-31,1,30000.00,receipt,EA\n2,PO2,'+supplier+','+sku+',2026-03-31,1,400.00,return,EA\n3,PO3,'+supplier+','+sku+',2026-03-31,0,100.00,credit_memo,EA\n');
@@ -769,7 +769,7 @@ async function monitorUi(){
  context=await browserType.launchPersistentContext(await mkdtemp(path.join(os.tmpdir(),'rebatehq-monitor-')),browserOptions);await configureContext();page=await openPage();
  try{
   dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();
-  await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic monitor owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
+  await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Type the passphrase again').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic monitor owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
   await page.locator('nav a[href="#settings"]').click();await page.locator('section[aria-labelledby="currency-heading"] select').selectOption('CAD');await page.getByRole('button',{name:'Save currency',exact:true}).click();await page.getByText('Current currency: CAD',{exact:true}).waitFor();
   const today=new Date().toISOString().slice(0,10),before=new Date(Date.now()-100*86400000).toISOString().slice(0,10),sku=marker+'-MON',customer=marker+'-CUSTOMER';
   const items=Buffer.from('product_id,category,current_cost,list_price\n'+[[sku,'Parts','50.00','100.00'],[sku+'-A','Parts','60.00','120.00'],[sku+'-B','Parts','60.00','110.00'],[sku+'-C','Parts','60.00','110.00']].map(r=>r.join(',')).join('\n')+'\n');
@@ -855,7 +855,11 @@ try {
   // The recovery suite intentionally deleted every OPFS handle, including the shell’s empty scope. Reinitialise it.
   await page.reload(); await ready();
   if (process.argv.includes("--margin-only")) { console.log(JSON.stringify(results.checks.margin, null, 2)); process.exit(0); }
-  await page.getByLabel("Vault passphrase").fill(secret); await page.getByLabel("Pricing Owner (name)").fill("Synthetic Pricing Owner");
+  await page.getByLabel("Vault passphrase").fill(secret); await page.getByLabel("Type the passphrase again").fill(secret); await page.getByLabel("Pricing Owner (name)").fill("Synthetic Pricing Owner");
+  // Review R1: the capacity starts at the licensed tier (the lab licence is Scale); this flow then picks Starter on purpose,
+  // because its cap and "Use licensed capacity" checks need a Starter vault. A mismatched repeat keeps Create disabled.
+  const capacity = page.getByLabel("Vault capacity (licensed tier or lower)"); if (!auth) assert.equal(await capacity.inputValue(), "scale", "A new vault does not start at the licensed capacity"); await capacity.selectOption("starter");
+  await page.getByLabel("Type the passphrase again").fill(secret + "x"); assert.ok(await page.getByRole("button", { name: "Create encrypted vault", exact: true }).isDisabled(), "A vault can be created with a mistyped passphrase"); await page.getByLabel("Type the passphrase again").fill(secret);
   assert.ok(await page.getByRole("button", { name: "Create encrypted vault", exact: true }).isEnabled()); await page.getByLabel("Pricing Owner (name)").fill(""); assert.ok(await page.getByRole("button", { name: "Create encrypted vault", exact: true }).isDisabled(), "A vault can be created without naming the Pricing Owner");
   await page.getByLabel("Pricing Owner (name)").fill("Synthetic Pricing Owner"); await page.getByRole("button", { name: "Create encrypted vault", exact: true }).click();
   await page.getByRole("button", { name: "Lock vault", exact: true }).waitFor();
@@ -1346,6 +1350,10 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "Mobile shell overflows"); results.checks.mobile = true;
   await Promise.all(headerChecks); assert.deepEqual(failures, []); results.checks.privacy = true;
+  // Review R1: the relay gate pins its check count; this gate pins the sections that must run in every mode, so one
+  // skipped or removed section fails here instead of passing silently. offlineUi runs in Chrome and Edge only.
+  const required = ["activationUi","agentsUi","benchUi","convertersUi","currencyUi","deadStockUi","gridTrustUi","gridsUi","guidanceUi","licenceOutageUi","marginUi","monitorUi","notesUi","passphraseUi","pricingOpsUi","pricingToolsUi","pricingUi","quoteDeskUi","quoteFlowUi","quotesUi","rebatesUi","reportsUi","roiUi","roleViewsUi","shareUi","simUi","suppliersUi","vendorsUi","winLossUi", ...(channel === "firefox" ? [] : ["offlineUi"])];
+  const missing = required.filter(name => !results.checks[name]); assert.deepEqual(missing, [], "Vault gate sections did not run");
   results.requests = { count: requests.length, paths: [...new Set(requests)].filter(p => !p.startsWith("/_next/")) };
   results.status = "passed"; console.log(JSON.stringify({ status: "passed", auth, browser: results.browser, checks: Object.keys(results.checks), startupTargets: full ? { oneMillion: results.checks.startup1000000Under3s, twoMillion: results.checks.startup2000000Under3s } : undefined, measurements: results.measurements }, null, 2));
 }

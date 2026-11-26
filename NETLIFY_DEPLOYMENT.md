@@ -1,6 +1,13 @@
 # Netlify deployment
 
-Requested 14 November 2026: deploy the full Next.js app with real Supabase sign-in, not the synthetic Scale lab. Deployment and hosted sign-in remain **unverified** until a live run proves them. No migration, migration hash or application data needs to change to host the app.
+> **Current state (26 Nov 2026, review R1).**
+> - Staging `rebatehq-staging` has all 17 locked migrations and 15 control-plane tables.
+> - `RELAY_ENABLED` stays false there.
+> - Production deploys of `main` have been skipped since 21 Nov because the Netlify account's credits ran out. The live site still serves PR #18 (`d103180`).
+> - `netlify.toml` pins Node 24.22.1, the same as CI.
+> - The numbers in the 14 November record below (13 migrations, 13 tables) are history.
+
+Requested 14 November 2026: deploy the full Next.js app with real Supabase sign-in, not the synthetic Scale lab. A live run on 14 November 2026 proved deployment and hosted sign-in (below); a second user, a second device and invitations are still unverified on staging. No migration, migration hash or application data needs to change to host the app.
 
 ## Build and privacy boundary
 
@@ -28,7 +35,7 @@ The existing connected project is named `rebatehq-staging`. It has all **17** ap
 
 1. Sign into Netlify CLI and create/link the intended site. CLI 27.19.0 was selected for this task; do not add the CLI to application dependencies. An authenticated Netlify account is required for this app's server/edge functions.
 2. Configure the environment above in the selected site. Add the exact HTTPS `/auth/callback` URL to Supabase Auth's redirect allowlist, and set its site URL appropriately. Preserve other approved redirects.
-3. Confirm all 14 locked migrations match (`node scripts/check-migrations-lock.mjs`). Check the existing restricted DB login and installed actor signing key; apply only missing setup, never replay old migrations onto a live schema.
+3. Confirm all 17 locked migrations match (`node scripts/check-migrations-lock.mjs`). Check the existing restricted DB login and installed actor signing key; apply only missing setup, never replay old migrations onto a live schema.
 4. Use Netlify's Linux builder with the selected GitHub repository connected and the site's build/runtime environment configured. `netlify deploy --remote --prod` requires that Git connection; it does not upload disconnected source. The local Next.js build passes, but adapter 5.16.6 encountered Windows symlink and drive-path errors while bundling middleware. Do not remove middleware or relax CSP to bypass them. Where local packaging is supported, use `netlify build --context production` followed by `netlify deploy --prod --no-build`. A first preview can omit `--prod`. `netlify build --offline` is not hosted deployment evidence.
 5. Verify `/api/health` is 200, `/` leads to `/login` when signed out, nonce scripts hydrate, COOP/COEP and worker/WASM MIME headers are correct, and `/lab/vault` is 404. Check the licence endpoint rejects unauthenticated requests.
 6. Complete a real magic-link login, create/select a workspace and assign its licence/seat using the existing pilot tooling. Confirm `/home`, workspace isolation, issuer verification, encrypted vault creation/unlock and local import privacy. Recheck sign-out and an invalid callback. Do not mark these verified from a successful build alone.

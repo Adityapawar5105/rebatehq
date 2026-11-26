@@ -337,8 +337,8 @@ async function snapshot(pool, applicationTableNames, authUserIds) {
   const authUserCount = authUserIds.length
     ? Number((await pool.query("SELECT count(*)::int AS count FROM auth.users WHERE id=ANY($1::uuid[])", [authUserIds])).rows[0].count)
     : 0;
-  assert.ok(Object.keys(tenantRowCounts).length >= 13,
-    `Restore equivalence found only ${Object.keys(tenantRowCounts).length} tenant tables; expected at least 13 after Chunk 8R.`);
+  assert.ok(Object.keys(tenantRowCounts).length >= 15,
+    `Restore equivalence found only ${Object.keys(tenantRowCounts).length} tenant tables; expected at least 15 after team sharing S2.`);
   assert.equal(authUserCount, authUserIds.length, "A referenced auth.users ID is missing from the source or restored target.");
   const sentinelResult = await pool.query(`
     SELECT l.tenant_id::text,l.id::text,md5(jsonb_build_object(
@@ -378,8 +378,8 @@ async function main() {
   if (!databaseUrl) throw new Error(`${mode === "--snapshot" ? "RESTORE_TEST_SOURCE_DATABASE_URL" : "RESTORE_TEST_TARGET_DATABASE_URL"} is required.`);
   const inventory = JSON.parse(readFileSync(inventoryPath, "utf8"));
   assert.deepEqual(inventory.applicationSchemas, [...APPLICATION_SCHEMAS], "Restore equivalence only accepts the reviewed public application schema allowlist.");
-  assert.ok(Array.isArray(inventory.schemaTables) && inventory.schemaTables.filter(t=>t.schema==='public').length >= 13,
-    `Dump inventory contains ${inventory.schemaTables?.length ?? 0} application tables; expected at least 13 after Chunk 8R.`);
+  assert.ok(Array.isArray(inventory.schemaTables) && inventory.schemaTables.filter(t=>t.schema==='public').length >= 15,
+    `Dump inventory contains ${inventory.schemaTables?.length ?? 0} application tables; expected at least 15 after team sharing S2.`);
   const applicationTableNames = inventory.schemaTables.filter(t=>t.schema==='public').map(item => {
     assert.equal(item.schema, "public", `Unexpected non-application table ${item.schema}.${item.table}.`);
     return item.table;

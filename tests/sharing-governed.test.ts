@@ -21,7 +21,10 @@ test("S3 read-only seats: every write command is classified once, with known pac
   for (const rule of Object.values(GOVERNED)) if (Array.isArray(rule)) for (const p of rule) assert.ok((PACK_IDS as readonly string[]).includes(p), p);
   for (const [kind, packs] of Object.entries(IMPORT_PACKS)) { assert.ok((FILE_KINDS as readonly string[]).includes(kind), kind); for (const p of packs) assert.ok((PACK_IDS as readonly string[]).includes(p), p); }
   assert.ok(!("sales_history" in IMPORT_PACKS) && !("purchases" in IMPORT_PACKS), "these imports only add missing IDs, never overwrite a shared row");
-  assert.match(readFileSync("lib/vault/dispatch.ts", "utf8"), /service\.licenceGuard\(request\.action\);\s*await service\.sharedGuard\(request\.action\);\s*const \{ progress \}/, "the guard runs before every command");
+  assert.match(readFileSync("lib/vault/dispatch.ts", "utf8"), /service\.licenceGuard\(request\.action\);\s*await service\.sharedGuard\(request\.action, \(request as \{ data\?: unknown \}\)\.data\);\s*const \{ progress \}/, "the guard runs before every command");
+  // Review R1: the background folder pickup imports without dispatch, so it must ask the same guard before planning.
+  const pickup = readFileSync("lib/vault/service.ts", "utf8").split("async folderPickupDue()")[1].split("\n  }\n")[0];
+  assert.ok(pickup.indexOf('this.sharedGuard("studioCommit")') > 0 && pickup.indexOf('this.sharedGuard("studioCommit")') < pickup.indexOf("this.studioPlan("), "folder pickup checks the shared guard before it imports");
 });
 
 async function vault() {
@@ -59,6 +62,10 @@ test("S3 read-only seats: a Pricing Manager cannot change shared guardrails, ite
     assert.equal(await refused(service(c, "pm", [{ role: "item_master" }]).sharedGuard("studioCommit")), true, "an item master import overwrites shared items");
     assert.equal(await refused(service(c, "pm", [{ role: "sales_history" }, { role: "purchases" }]).sharedGuard("studioCommit")), false, "sales and purchases only add missing IDs");
     assert.equal(await refused(service(c, "pm", [{ role: "customer_list" }]).sharedGuard("studioPlan")), false, "customers arrived by file, not the relay: the local owner may replace them");
+    // Review R1: Fix Later recheck reloads rows of one earlier file, so it is decided by that file's kind.
+    c.query("INSERT INTO source_files VALUES('items-file','items.csv','item_master',0,'2026-01-01'),('sales-file','sales.csv','sales_history',0,'2026-01-01')");
+    assert.equal(await refused(pm.sharedGuard("fixRecheck", { sourceId: "items-file", code: "x" })), true, "rechecked item rows would overwrite shared items");
+    assert.equal(await refused(pm.sharedGuard("fixRecheck", { sourceId: "sales-file", code: "x" })), false, "rechecked sales rows only add missing IDs");
     // A publisher under the signed grid (the named Pricing Owner, or the Owner) is never a receiving seat.
     for (const u of ["po", "boss"]) assert.equal(await refused(service(c, u).sharedGuard("guardSet")), false, u);
     // The message names the publisher and the pack.

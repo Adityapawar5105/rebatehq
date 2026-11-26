@@ -41,7 +41,7 @@ try{
   }
  }
  active=true;
- for(const page of pages){await page.goto(base+route);await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic local owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();await open(page);await click(page,'Set up this sharing device');}
+ for(const page of pages){await page.goto(base+route);await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Type the passphrase again').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic local owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();await open(page);await click(page,'Set up this sharing device');}
  checks.threeWorkerDeviceKeys=true;
  const [owner,manager,rep]=pages;
  // Reopen after all registrations so the creator verifies the complete roster.

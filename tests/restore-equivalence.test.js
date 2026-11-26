@@ -124,9 +124,9 @@ test("Drill #9 missing EXECUTE on later functions is a strict source-only ACL mi
   assert.equal(assertFunctionAclSectionsEqual(source, structuredClone(source)), true);
 });
 
-test("restore inventory requires all 13 tenant tables (after 8R) and compares every discovered public function", () => {
+test("restore inventory requires all 15 tenant tables (after team sharing S2) and compares every discovered public function", () => {
   const script = fs.readFileSync(path.join(__dirname, "..", "scripts", "verify-restore-equivalence.mjs"), "utf8");
-  assert.match(script, /inventory\.schemaTables\.filter[\s\S]*?length >= 13/);
-  assert.match(script, /Object\.keys\(tenantRowCounts\)\.length >= 13/);
+  assert.match(script, /inventory\.schemaTables\.filter[\s\S]*?length >= 15/);
+  assert.match(script, /Object\.keys\(tenantRowCounts\)\.length >= 15/);
   assert.match(script, /WHERE n\.nspname='public'/, "The function inventory is discovered from pg catalogs rather than a fixed function list.");
 });

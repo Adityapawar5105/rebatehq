@@ -13,6 +13,6 @@ export default async function ConfirmSignIn({searchParams}:{searchParams:Promise
    <input type="hidden" name="token_hash" value={tokenHash}/><input type="hidden" name="type" value={type}/>{invite&&<input type="hidden" name="invite" value={invite}/>}
    <button className="primary" type="submit" data-testid="confirm-sign-in">{t("page.confirm.button")}</button>
    <p className="small muted">{t("page.confirm.note")}</p>
-  </form>:<p role="alert" className="form-message error">{t("page.login.errorLink")}</p>}
+  </form>:<><p role="alert" className="form-message error">{t("page.login.errorLink")}</p><p><a href="/login" data-testid="confirm-back">{t("page.confirm.back")}</a></p></>}
  </section></main>;
 }

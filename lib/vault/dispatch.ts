@@ -11,7 +11,7 @@ export async function dispatch(service: VaultService, request: Request, hooks: H
   if (!(request.action in ACTION_CAP)) throw new VaultError("PROTOCOL", msg("vault.dispatch.unsupportedLocalCommand2"));
   await service.guard(ACTION_CAP[request.action]);
   service.licenceGuard(request.action);
-  await service.sharedGuard(request.action);
+  await service.sharedGuard(request.action, (request as { data?: unknown }).data);
   const { progress } = hooks;
   switch (request.action) {
     case "reportState":return service.reportState();

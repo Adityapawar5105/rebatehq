@@ -29,7 +29,7 @@ remain manual checks.
 
 **The cloud handles identity and access metadata.** Database tests check tenant
 isolation, a restricted application role, exact grants and an append-only server
-audit log: 113 checks on a fresh database and 116 in local restore mode. These
+audit log: 155 checks on a fresh database and 158 in local restore mode (26 Nov 2026; 113 and 116 when this page was first written). These
 are separate from the local vault's hash chain.
 [Database suite](https://github.com/Adityapawar5105/rebatehq/tree/ade310e/supabase/tests)
 · [CI #75](https://github.com/Adityapawar5105/rebatehq/actions/runs/41989796464)
@@ -51,11 +51,14 @@ nested fields. This still trusts the app deployment and its embedded hashes.
 
 **Important boundaries.** Ordinary reports/ERP exports are plaintext files you
 choose to create. Identity, licences and authentication records reach the control
-plane. Legacy rebate/audit readers and historical server tables still exist
-behind a default-off flag; retired business APIs return 410. We make no app-wide
+plane. The historical server business tables were dropped (chunks 6R and 8R) and
+the legacy switch is retired; retired business APIs return 410. We make no app-wide
 “nothing ever leaves your device” claim. A compromised computer, extension or
-application origin can read an unlocked vault. The new sharing relay is default-off and not yet CI/restore verified;
-no relay privacy claim is made here until its linked acceptance run passes. Hosted sign-in, independent review and real crash/picker
+application origin can read an unlocked vault. Team sharing is off unless `RELAY_ENABLED` is set. When it is on, encrypted copies of the shared data
+(prices, items, customers, guardrails and, for roles with cost, costs) are stored as AES-GCM chunks in a private
+Supabase Storage bucket, a Realtime channel per pack carries only a version number, and the vault worker holds the
+person's own session token to reach both. The relay and sharing migrations passed CI and Restore Drills; the
+independent review of sharing is still owed, so no sharing privacy claim is made here. Hosted sign-in, independent review and real crash/picker
 checks remain unverified.
 [Boundary tests](https://github.com/Adityapawar5105/rebatehq/blob/ade310e/tests/http-boundary.test.js)
 · [CI #75](https://github.com/Adityapawar5105/rebatehq/actions/runs/41989796464).

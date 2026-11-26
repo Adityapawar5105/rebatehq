@@ -3,7 +3,7 @@
   publish = ".next"
 
 [build.environment]
-  NODE_VERSION = "24"
+  NODE_VERSION = "24.22.1" # review R1: the same Node as CI (24.22.3 crashed V8 at test exit)
   PNPM_VERSION = "10.11.0"
   PNPM_FLAGS = "--shamefully-hoist"
   VAULT_LAB_ENABLED = "false"
