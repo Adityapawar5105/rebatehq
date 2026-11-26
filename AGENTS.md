@@ -365,4 +365,5 @@ See `docs/evidence/SECOND_AUDIT_PASS.md`. The independent security review (R02, 
 - A line above each grid gives the count and value of the near rows, with "Show them".
 - The monthly and weekly report PDFs list the ten nearest programmes.
 - Spend and tiers only: `rebateProgress` stays in the decision 16 payload scan, and supplier progress still needs `cost`.
-- No new command, schema change or migration. See docs/evidence/NEAR_MISS_VERIFICATION.md.
+- No new command, schema change or migration.
+- **It passed** [CI #273](https://github.com/Adityapawar5105/rebatehq/actions/runs/45746538213) on `dbac074` and merged as PR #45. See docs/evidence/NEAR_MISS_VERIFICATION.md.
