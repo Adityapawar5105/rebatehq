@@ -7,12 +7,23 @@ import {PackPageSchema,type PackVersion} from './protocol';
 import {sealPack,openPack,openDelta} from '../sharing/publish';
 import type {DeltaData} from '../sharing/delta';
 import type {PackData,PackId} from '../sharing/packs';
-import {fold,ensureOperation,type Applied,type Shared} from './state';
+import {fold,ensureOperation,type Applied,type Shared,type FoldBase} from './state';
 import type {RelayTransport} from './http';
 import { msg } from "../i18n/core";
 /** Team sharing S4: how long a pack version may lack its chunks before that counts as a failure (uploads take seconds). */
 export const NOT_READY_MS = 15 * 60_000;
 import {syncStatus} from './sync-status';
+/** Review R2 (B3): the relay log no longer grows without end. Once more than `max` verified entries are kept, all but the
+ *  newest `keep` are folded into a local checkpoint (shared objects, threads, rejections) and dropped. Key epochs are all
+ *  kept: a pack version may be signed under an old epoch, and thread holders read its signed pack wraps. Only an
+ *  administrator can rotate, so epochs grow slowly; the 7A bound of 256 is raised to 4,096. The 7A client stopped at
+ *  10,000 events; the server allows 1,000,000. Mutable for tests only. */
+export const RELAY_TAIL = { keep: 1000, max: 2000 };
+/** A sanity bound on what a saved state may hold; compaction keeps real states far below it. */
+const STATE_BOUNDS = { entries: 50_000, epochs: 4096 };
+/** The shared objects and threads of a saved state: its checkpoint plus the entries kept after it. */
+export function relayObjects(state:RelayState){return fold(state.entries,state.epochs.map(e=>e.epoch),state.base??null);}
+export function relayThreads(state:RelayState){return foldThreads(state.entries,state.epochs.map(e=>e.epoch),state.base??null);}
 export type RelayState={version:'1';lastSyncedAt?:string;identity:Identity|null;retired:Identity[];epochs:{epoch:Epoch;key:string;packs?:Record<string,string>}[];start:{sequence:string;hash:string};head:{sequence:string;hash:string};entries:Applied[];pending:RelayEvent|null;pendingEpoch:{epoch:Epoch;key:string}|null;
  /** Team sharing S5a: the log position up to which this person has seen their inbox. */
  inboxSeen?:string;
@@ -21,13 +32,15 @@ export type RelayState={version:'1';lastSyncedAt?:string;identity:Identity|null;
  /** The hash of the signed epoch the draft was edited from; a draft from an older grid is never signed (security review). */
  gridDraftBase?:string;
  /** Team sharing S3: the last verified version of each pack's chain, and the version this vault last applied. */
- packHeads?:Record<string,{version:string;hash:string}>;packApplied?:Record<string,string>};
+ packHeads?:Record<string,{version:string;hash:string}>;packApplied?:Record<string,string>;
+ /** Review R2: the checkpoint the entries before `entries[0]` were folded into (see RELAY_TAIL). */
+ base?:FoldBase};
 export type RelayView={sync:{status:'synced'|'pending'|'conflict';lastSyncedAt:string|null};registered:boolean;joined:boolean;deviceId:string;fingerprint:string;role:string;devices:{deviceId:string;userId:string;label:string;role:string;fingerprint:string}[];head:{sequence:string;hash:string;epoch:string};administratorFingerprint:string;canStart:boolean;rotationRequired:boolean;pending:boolean;objects:Shared[];rejected:string[];packs:string[];grid:{namedOwner:string|null;people:{userId:string;role:string}[]}|null;ownerDevices:number};
 export function emptyRelay():RelayState{return {version:'1',identity:null,retired:[],epochs:[],start:{sequence:'0',hash:ZERO_HASH},head:{sequence:'0',hash:ZERO_HASH},entries:[],pending:null,pendingEpoch:null};}
 export class RelaySession{
  private directory:Directory|null=null;
  constructor(private scope:{tenantId:string;userId:string;deviceId:string},private state:RelayState,private transport:RelayTransport,private save:(state:RelayState,stage:string)=>Promise<void>,private signal:AbortSignal){
-  if(state.version!=='1'||state.entries.length>10000||state.epochs.length>256)fail();
+  if(state.version!=='1'||state.entries.length>STATE_BOUNDS.entries||state.epochs.length>STATE_BOUNDS.epochs)fail();
   if(state.identity&&(state.identity.device.tenantId!==scope.tenantId||state.identity.device.userId!==scope.userId))fail();
  }
  private currentIdentity(){const i=this.state.identity;if(!i||i.device.deviceId!==this.scope.deviceId)throw new RelayError('DEVICE',msg("relay.err.setUpSharingOn"));return i;}
@@ -42,8 +55,8 @@ export class RelaySession{
   this.directory=d;return d;
  }
  private rosterMatches(d:Directory){const latest=this.last()?.epoch;return !!latest&&latest.members.length===d.devices.length&&latest.members.every((m,i)=>{const v=d.devices[i];return m.deviceId===v.deviceId&&m.userId===v.userId&&m.role===v.role&&m.ecdh===v.ecdh&&m.signing===v.signing;});}
- async view(){const d=this.directory??await this.loadDirectory(),identity=this.state.identity,current=d.devices.find(p=>p.deviceId===this.scope.deviceId&&p.userId===this.scope.userId),last=this.last(),signer=d.latest?.members.find(m=>m.deviceId===d.latest!.signerDevice),derived=fold(this.state.entries,this.state.epochs.map(e=>e.epoch));
-  return {sync:syncStatus({head:this.state.head,remote:d.head,pending:this.state.pending,pendingEpoch:!!this.state.pendingEpoch,rejected:derived.rejected.length+foldThreads(this.state.entries,this.state.epochs.map(e=>e.epoch)).rejected.length,lastSyncedAt:this.state.lastSyncedAt}),registered:!!identity&&identity.device.deviceId===this.scope.deviceId&&!!current,joined:!!last,deviceId:this.scope.deviceId,fingerprint:identity?await fingerprint(identity.device):'',role:current?.role??'',devices:await Promise.all(d.devices.map(async v=>({deviceId:v.deviceId,userId:v.userId,label:v.label??v.userId,role:v.role,fingerprint:await fingerprint(v)}))),head:{...this.state.head,epoch:last?.epoch.number??'0'},administratorFingerprint:signer?await fingerprint(signer):'',canStart:!d.latest&&!!current&&admin(current.role),rotationRequired:!!last&&!this.rosterMatches(d),pending:!!this.state.pending||!!this.state.pendingEpoch,objects:derived.objects.slice(0,100).map(o=>({...o,comments:o.comments.slice(-100)})),rejected:derived.rejected,
+ async view(){const d=this.directory??await this.loadDirectory(),identity=this.state.identity,current=d.devices.find(p=>p.deviceId===this.scope.deviceId&&p.userId===this.scope.userId),last=this.last(),rooted=[...this.state.epochs].reverse().map(x=>x.epoch).find(e=>e.v!=='2'||e.grid.people.some(p=>p.userId===e.signerUser&&p.role==='owner')),root=rooted&&d.latest&&BigInt(rooted.number)<=BigInt(d.latest.number)?rooted:d.latest,signer=root?.members.find(m=>m.deviceId===root!.signerDevice),derived=relayObjects(this.state);
+  return {sync:syncStatus({head:this.state.head,remote:d.head,pending:this.state.pending,pendingEpoch:!!this.state.pendingEpoch,rejected:derived.rejected.length+relayThreads(this.state).rejected.length,lastSyncedAt:this.state.lastSyncedAt}),registered:!!identity&&identity.device.deviceId===this.scope.deviceId&&!!current,joined:!!last,deviceId:this.scope.deviceId,fingerprint:identity?await fingerprint(identity.device):'',role:current?.role??'',devices:await Promise.all(d.devices.map(async v=>({deviceId:v.deviceId,userId:v.userId,label:v.label??v.userId,role:v.role,fingerprint:await fingerprint(v)}))),head:{...this.state.head,epoch:last?.epoch.number??'0'},administratorFingerprint:signer?await fingerprint(signer):'',canStart:!d.latest&&!!current&&admin(current.role),rotationRequired:!!last&&!this.rosterMatches(d),pending:!!this.state.pending||!!this.state.pendingEpoch,objects:derived.objects.slice(0,100).map(o=>({...o,comments:o.comments.slice(-100)})),rejected:derived.rejected,
    packs:ALL_PACKS.filter(p=>!!last?.packs?.[p]),grid:last?.epoch.v==='2'?{namedOwner:last.epoch.grid.namedOwner,people:last.epoch.grid.people.map(p=>({userId:p.userId,role:p.role}))}:null,
    ownerDevices:d.devices.filter(v=>last?.epoch.v==='2'?last.epoch.grid.people.some(p=>p.userId===v.userId&&p.role==='owner'):v.role==='owner').length};
  }
@@ -58,7 +71,25 @@ export class RelaySession{
  async join(administratorFingerprint:string){
   if(this.last())return this.sync();this.currentIdentity();const d=await this.loadDirectory();if(!d.latest)throw new RelayError('KEY',msg("relay.err.askAnAdministratorTo"));
   const pin=administratorFingerprint.replace(/[\s-]/g,'').toLowerCase();if(!/^[a-f0-9]{64}$/.test(pin))throw new RelayError('VERIFY',msg("relay.err.enterTheAdministratorFingerprint"));
-  const epoch=await verifyEpoch(d.latest,null,pin),key=await this.keyFor(epoch);this.state.epochs=[{epoch,key,packs:await this.packsFor(epoch)}];this.state.start={sequence:epoch.baseSequence,hash:epoch.baseHash};this.state.head={...this.state.start};await this.persist('workspace_joined');return this.sync();
+  const epoch=await this.rootedLatest(d.latest,pin),key=await this.keyFor(epoch);this.state.epochs=[{epoch,key,packs:await this.packsFor(epoch)}];this.state.start={sequence:epoch.baseSequence,hash:epoch.baseHash};this.state.head={...this.state.start};await this.persist('workspace_joined');return this.sync();
+ }
+ /** Review R2: the latest epoch, verified from the pinned administrator. A first signed grid must come from an Owner, so when a
+  *  Pricing Owner signed the latest rotation the joiner walks the chain from the newest epoch an Owner signed with the pinned
+  *  fingerprint: each later epoch is checked against the one before it, so nobody but an Owner changed the grid on the way. */
+ private async rootedLatest(latest:Epoch,pin:string){
+  try{return await verifyEpoch(latest,null,pin);}catch(error){if(!(error instanceof RelayError))throw error;}
+  const chain:unknown[]=[];let after='0';
+  for(let round=0;round<20000;round++){
+   this.signal.throwIfAborted();const page=PageSchema.parse(await this.transport.page('0',after));
+   chain.push(...page.epochs);if(!page.epochs.length||page.epochs.at(-1)!.number===page.latestEpoch)break;after=page.epochs.at(-1)!.number;
+  }
+  for(let i=chain.length-1;i>=0;i--){
+   let root:Epoch;try{root=await verifyEpoch(chain[i],null,pin);}catch{continue;}
+   let prior=root;for(const next of chain.slice(i+1))prior=await verifyEpoch(next,prior);
+   if(prior.id!==latest.id||prior.hash!==latest.hash)fail();
+   return prior;
+  }
+  return verifyEpoch(latest,null,pin); // no Owner-signed root matches the pin: report the original refusal
  }
  /** Team sharing S2: this device's pack keys from a format 2 epoch (none from format 1). */
  private async packsFor(epoch:Epoch):Promise<Record<string,string>>{return epoch.v==='2'?await unwrapPacks(this.currentIdentity(),epoch) as Record<string,string>:{};}
@@ -94,7 +125,9 @@ export class RelaySession{
    this.signal.throwIfAborted();const page=PageSchema.parse(await this.transport.page(this.state.head.sequence,this.last()!.epoch.number));
    if(BigInt(page.head.sequence)<BigInt(this.state.head.sequence)||BigInt(page.latestEpoch)<BigInt(this.last()!.epoch.number))fail();
    for(const record of page.epochs){
-    const prior=this.last()!.epoch,epoch=await verifyEpoch(record,prior);this.state.epochs.push({epoch,key:await this.keyFor(epoch),packs:await this.packsFor(epoch)});
+    const prior=this.last()!.epoch,epoch=await verifyEpoch(record,prior);
+    if(this.state.base&&BigInt(epoch.baseSequence)<BigInt(this.state.base.sequence))fail(); // its base entry was folded away
+    this.state.epochs.push({epoch,key:await this.keyFor(epoch),packs:await this.packsFor(epoch)});
     if(this.state.pendingEpoch?.epoch.id===epoch.id){if(this.state.pendingEpoch.epoch.hash!==epoch.hash)fail();this.state.pendingEpoch=null;}
    }
    for(const item of page.events){
@@ -111,23 +144,39 @@ export class RelaySession{
    }
    for(const {epoch} of this.state.epochs){
     if(BigInt(epoch.baseSequence)<=BigInt(this.state.head.sequence)){
-     const base=epoch.baseSequence===this.state.start.sequence?this.state.start.hash:this.state.entries.find(e=>e.event.sequence===epoch.baseSequence)?.event.hash;
+     const folded=this.state.base;
+     // An epoch whose base was folded into the checkpoint was checked before it was folded (compaction runs only after this loop).
+     if(folded&&BigInt(epoch.baseSequence)<BigInt(folded.sequence))continue;
+     const base=epoch.baseSequence===this.state.start.sequence?this.state.start.hash:epoch.baseSequence===folded?.sequence?folded.hash:this.state.entries.find(e=>e.event.sequence===epoch.baseSequence)?.event.hash;
      if(base!==epoch.baseHash)fail();
     }
    }
+   this.compact();
    if(this.state.head.sequence===page.head.sequence&&this.last()!.epoch.number===page.latestEpoch){if(this.state.head.hash!==page.head.hash)fail();this.state.lastSyncedAt=new Date().toISOString();await this.persist('inbox_synced');await this.loadDirectory();return this.view();}
    if(!page.events.length&&!page.epochs.length)fail(msg("relay.err.theRelayOmittedPart"));
   }
-  throw new RelayError('LIMIT',msg("relay.err.sharingExceededItsHistory"));
+  // Review R2: a long catch-up keeps what it verified and continues at the next sync, instead of starting over.
+  await this.persist('inbox_synced');return this.view();
  }
- private object(id:string){const object=fold(this.state.entries,this.state.epochs.map(e=>e.epoch)).objects.find(o=>o.id===id);if(!object)throw new RelayError('CONTENT',msg("relay.err.syncThisSharedReference"));return object;}
+ /** Review R2 (B3): fold all but the newest RELAY_TAIL.keep verified entries into the checkpoint. Only ever called after
+  *  the epoch base checks, so every epoch whose base is folded away was verified first. */
+ private compact(){
+  const s=this.state;
+  if(s.entries.length>RELAY_TAIL.max){
+   const cut=s.entries.length-RELAY_TAIL.keep,older=s.entries.slice(0,cut),last=older.at(-1)!.event,epochs=s.epochs.map(e=>e.epoch);
+   const objects=fold(older,epochs,s.base??null),threads=foldThreads(older,epochs,s.base??null);
+   s.base={sequence:last.sequence,hash:last.hash,objects:objects.objects,rejected:objects.rejected.slice(-1000),threads:threads.threads,hidden:threads.hidden,threadRejected:threads.rejected.slice(-1000)};
+   s.entries=s.entries.slice(cut);
+  }
+ }
+ private object(id:string){const object=relayObjects(this.state).objects.find(o=>o.id===id);if(!object)throw new RelayError('CONTENT',msg("relay.err.syncThisSharedReference"));return object;}
  private async send(objectId:string,objectKind:RelayEvent['objectKind'],content:Content|((last:{epoch:Epoch;key:string;packs?:Record<string,string>},id:string)=>Promise<{content:Content;sealed:SealedState}>),recipients:string[]=[],mentions:string[]=[]){
   await this.sync();const d=this.directory!;if(!this.rosterMatches(d))throw new RelayError('ROTATE',msg("relay.err.anAdministratorMustRotate"));
   if(this.state.pending)throw new RelayError('NETWORK',msg("relay.err.anItemIsStill"));
   const last=this.last()!,id=crypto.randomUUID(),built=typeof content==='function'?await content(last,id):{content,sealed:undefined};
   const event=await encryptEvent(this.currentIdentity(),last.epoch,last.key,this.state.head,objectId,objectKind,built.content,recipients,mentions,id);
-  ensureOperation(this.state.entries,this.state.epochs.map(e=>e.epoch),event,built.content);
-  if(built.sealed&&foldThreads([...this.state.entries,{event,content:built.content,sealed:built.sealed}],this.state.epochs.map(e=>e.epoch)).rejected.includes(event.id))throw new RelayError('CONTENT',msg("relay.state.anInvalidSharedOperation"));
+  ensureOperation(this.state.entries,this.state.epochs.map(e=>e.epoch),event,built.content,this.state.base??null);
+  if(built.sealed&&foldThreads([...this.state.entries,{event,content:built.content,sealed:built.sealed}],this.state.epochs.map(e=>e.epoch),this.state.base??null).rejected.includes(event.id))throw new RelayError('CONTENT',msg("relay.state.anInvalidSharedOperation"));
   this.state.pending=event;await this.persist('send_pending');
   await this.transport.post({action:'event',event});return this.sync();
  }
@@ -152,7 +201,7 @@ export class RelaySession{
   catch(error){if(error instanceof RelayError&&['CONTENT','DECRYPT'].includes(error.code))return {state:'bad'};throw error;}
  }
  /** Threads this device can read, folded from the local log (no network). */
- threads(){return foldThreads(this.state.entries,this.state.epochs.map(e=>e.epoch));}
+ threads(){return relayThreads(this.state);}
  inboxSeen(){return this.state.inboxSeen??'0';}
  async markInboxSeen(){this.state.inboxSeen=this.state.head.sequence;await this.persist('inbox_seen');}
  private sealedSend(objectId:string,pack:AnyPack,body:ThreadBody,mentions:string[],recipients:string[]){

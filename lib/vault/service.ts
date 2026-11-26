@@ -67,7 +67,7 @@ import type { Access, CleanupApplied, CleanupMergedAll, CleanupUndone, HomeData,
 import { isLocale, plainText } from "../i18n/core";
 import * as quotes from "../quotes/quotes";
 import * as documents from "../quotes/documents";
-import {RelaySession,emptyRelay,type RelayState,type RelayView} from '../relay/session';
+import {RelaySession,emptyRelay,relayObjects,relayThreads,type RelayState,type RelayView} from '../relay/session';
 import { doorbell, type Doorbell, type DoorbellToken } from '../relay/doorbell';
 import {relayHttp} from '../relay/http';
 import {RelayError} from '../relay/protocol';
@@ -81,9 +81,8 @@ import { ROLE_IDS } from "./schema";
 import { capsFor } from "../roles/access";
 import { RECOMMENDED, packsFor, type AnyPack } from "../sharing/catalog";
 import { GOVERNED, lockedPacks } from "../sharing/governed";
-import { foldThreads, holders, inboxFor, visibleTo, TargetSchema, TARGET_PACK, type TargetType } from "../sharing/threads";
+import { holders, inboxFor, visibleTo, TargetSchema, TARGET_PACK, type TargetType } from "../sharing/threads";
 import { COST_PACKS, type AnyPack as SharedPack } from "../sharing/catalog";
-import { fold } from "../relay/state";
 import { GridSchema, type Grid } from "../relay/protocol";
 import { checkGrid, gridBody, gridPublisher } from "../relay/crypto";
 export class VaultService {
@@ -250,7 +249,7 @@ export class VaultService {
   private async threadGuard(){const cost=(await this.access()).caps.includes('cost');return (pack:SharedPack)=>cost||!COST_PACKS.includes(pack);}
   private async threadContext(){
     const state=await this.relayStateRead(),cost=(await this.access()).caps.includes('cost'),epochs=state.epochs.map(e=>e.epoch),last=epochs.at(-1)??null;
-    const threads=foldThreads(state.entries,epochs).threads.filter(visibleTo(cost));
+    const threads=relayThreads(state).threads.filter(visibleTo(cost));
     const names=new Map((await this.requireEngine().conn.query('SELECT user_id,display_name FROM role_assignments')).toArray().map(r=>[String(r.user_id),String(r.display_name)]));
     const people=[...new Set([...(last?.members.map(m=>m.userId)??[]),...names.keys()])].sort().map(userId=>({userId,name:names.get(userId)??userId}));
     // Who can be mentioned or assigned on a thread about each pack: the people holding it under the latest epoch.
@@ -277,7 +276,7 @@ export class VaultService {
   /** Who published, received, approved or commented, and when: this vault's relay log and its shared-data receipts. */
   async activityFeed(){
     const c=await this.threadContext(),items:{at:string;who:string;kind:string;label:string;pack:string|null}[]=[];
-    const titles=new Map(fold(c.state.entries,c.state.epochs.map(p=>p.epoch)).objects.map(o=>[o.id,o.subject.title]));
+    const titles=new Map(relayObjects(c.state).objects.map(o=>[o.id,o.subject.title]));
     for(const {event:e,content:x} of c.state.entries){
       if(!x||x.kind==='thread')continue;
       const label=x.kind==='share'?x.subject.title:titles.get(e.objectId)??'';
