@@ -35,3 +35,17 @@ END $$;
 RESET ROLE;
 SELECT pg_temp.use_identity('');
 SELECT extensions.ok(true,'S4: relay_channel_allowed lets a pack holder join its channel and refuses a rep cost, other tenants and malformed channels');
+-- Review R2 (migration 20261128120000_review_r2_deleted_workspaces.sql): once the Owner deletes the workspace, neither rule
+-- lets a member read its pack chunks or join its doorbell channels. The deletion is undone so later checks see tenant A.
+RESET ROLE;
+UPDATE public.tenant SET deleted_at=now() WHERE tenant_id='__PHASE1_RELAY_TENANT_A_ID__';
+SELECT pg_temp.use_identity('__PHASE1_RELAY_USER_R_ID__');
+SET LOCAL ROLE authenticated;
+DO $$ BEGIN
+ IF rebatehq_storage.relay_storage_allowed('__PHASE1_RELAY_TENANT_A_ID__/book/__PHASE1_SHARE_BOOK_V1_ID__/0',false) THEN RAISE EXCEPTION 'R2 a deleted workspace chunk is readable'; END IF;
+ IF rebatehq_storage.relay_channel_allowed('pack:__PHASE1_RELAY_TENANT_A_ID__:book') THEN RAISE EXCEPTION 'R2 a deleted workspace channel can be joined'; END IF;
+END $$;
+RESET ROLE;
+UPDATE public.tenant SET deleted_at=NULL WHERE tenant_id='__PHASE1_RELAY_TENANT_A_ID__';
+SELECT pg_temp.use_identity('');
+SELECT extensions.ok(true,'Review R2: a deleted workspace''s pack chunks and doorbell channels are refused to its members');

@@ -60,7 +60,7 @@ const SECTION_DESC: Record<Section, MessageKey> = { Home: "shell.desc.home", "Da
 const SECTION_ICON: Record<Section, IconName> = { Home: "home", "Data Hub": "database", Margin: "chart", Pricing: "tag", Quotes: "quote", "Rebates & Contracts": "coins", Vendors: "users", Reports: "report", Settings: "settings" };
 export const sectionHash = (s: Section) => s === "Rebates & Contracts" ? "rebates" : s.toLowerCase().replace(" ", "-");
 const NAV_KEY = "rebatehq.nav";
-export function VaultApp({ scope, email, workspace, lab = false, relayEnabled = false, account = [], team = null }: { scope: Scope; email: string; workspace: string; lab?: boolean; relayEnabled?: boolean; account?: AccountLink[]; /** Members and invitations for Team and roles (null in the lab). */ team?: TeamDirectory | null }) {
+export function VaultApp({ scope, email, workspace, lab = false, relayEnabled = false, account = [], team = null, workspaceRole = null }: { scope: Scope; email: string; workspace: string; lab?: boolean; relayEnabled?: boolean; account?: AccountLink[]; /** Members and invitations for Team and roles (null in the lab). */ team?: TeamDirectory | null; /** The server membership role, to recognise an invited colleague (review R2). */ workspaceRole?: string | null }) {
   useLocale(); // re-render every screen when the language changes
   const client = useRef<VaultClient | null>(null);
   // Every grid totals its selected rows through the worker (DuckDB), never in the page.
@@ -71,6 +71,8 @@ export function VaultApp({ scope, email, workspace, lab = false, relayEnabled = 
   useOfflineWorker(); // 8C-2: offline copy of the app shell (production builds only)
   // Status and error text are kept as message references, so a language switch re-renders them.
   useEffect(() => { setWorkspaceCurrency(status?.state === "unlocked" ? status.currency : "USD"); }, [status?.state, status?.currency]);
+  const invited = !lab && relayEnabled && !!workspaceRole && workspaceRole !== "owner";
+  useEffect(() => { if (invited && status && !status.exists) setOwnerName(name => name || email.split("@")[0]); }, [invited, status?.exists, email]);
   // Review R1: a new vault starts at the licensed capacity, so a Scale customer who leaves the field alone gets Scale.
   const licensedTier = status?.licence?.tier;
   useEffect(() => { if (status && !status.exists && licensedTier) setTier(licensedTier); }, [status?.exists, licensedTier]);
@@ -139,14 +141,14 @@ export function VaultApp({ scope, email, workspace, lab = false, relayEnabled = 
   // Sub-pages per section (23 Nov 2026): the same role and tier rules as each view; Settings also lists the account pages.
   const navCtx = { caps, tier: status?.licence?.tier };
   const pagesOf = (s: Section) => [
-    ...sectionPages(s, navCtx).map(p => ({ href: "#" + p.hash, hash: p.hash, label: t(p.label), testId: p.testId })),
-    ...(s === "Settings" && !lab ? account.map(a => ({ href: a.href, hash: "", label: t(a.label), testId: undefined })) : []),
+    ...sectionPages(s, navCtx).map(p => ({ href: "#" + p.hash, hash: p.hash, label: t(p.label), testId: p.testId, note: undefined as string | undefined })),
+    ...(s === "Settings" && !lab ? account.map(a => ({ href: a.href, hash: "", label: t(a.label), testId: undefined, note: t("shell.accountLeaves") })) : []),
   ];
   // S3c: whether a write is read-only on this receiving seat (the same rule the worker enforces).
   const sharedLock = (action: import("@/lib/vault/protocol").Action) => lockedPacks(action, access?.shared ?? null).length > 0;
   const pages = pagesOf(shown), page = pageOfHash(hash, pages.filter(p => p.hash)) ?? "", pageInfo = pages.length > 1 ? pages.find(p => p.hash === page) : undefined;
   const sideItems: SideNavItem[] = navItems.map(item => ({ href: `#${SECTION_HASH[item]}`, label: t(SECTION_LABEL[item]), icon: SECTION_ICON[item], current: shown === item,
-    children: pagesOf(item).map(p => ({ href: p.href, label: p.label, testId: p.testId, current: shown === item && !!p.hash && p.hash === page })) }));
+    children: pagesOf(item).map(p => ({ href: p.href, label: p.label, testId: p.testId, note: p.note, current: shown === item && !!p.hash && p.hash === page })) }));
   const navigate = (href: string) => { const s = href.startsWith("#") ? sectionOfHash(href) : null; if (s) setSection(s); setDrawer(false); };
   useEffect(() => {
     if (!unlocked || lab) { setWaiting(0); return; }
@@ -235,7 +237,8 @@ export function VaultApp({ scope, email, workspace, lab = false, relayEnabled = 
               <Field label={t("shell.passphrase")} hint={status.exists ? undefined : t("shell.passphraseHint")}><input type="password" minLength={12} maxLength={256} required autoComplete={status.exists ? "current-password" : "new-password"} value={passphrase} onChange={event => setPassphrase(event.target.value)} disabled={busy}/></Field>
               {/* Review R1: no passphrase recovery exists, so a typo at creation would lock the owner out; ask for it twice. */}
               {!status.exists && <Field label={t("shell.passphraseRepeat")} hint={repeat && repeat !== passphrase ? <span role="alert">{t("shell.passphraseMismatch")}</span> : undefined}><input type="password" minLength={12} maxLength={256} required autoComplete="new-password" value={repeat} onChange={event => setRepeat(event.target.value)} disabled={busy}/></Field>}
-              {!status.exists && <Field label={t("shell.ownerName")} hint={<span id="owner-help">{t("shell.ownerHelp")}</span>}><input required maxLength={160} value={ownerName} onChange={event => setOwnerName(event.target.value)} disabled={busy} aria-describedby="owner-help"/></Field>}
+              {!status.exists && invited && <Notice data-testid="invited-note">{t("shell.invitedNote")}</Notice>}
+              {!status.exists && <Field label={t("shell.ownerName")} hint={<span id="owner-help">{t(invited ? "shell.ownerHelpInvited" : "shell.ownerHelp")}</span>}><input required maxLength={160} value={ownerName} onChange={event => setOwnerName(event.target.value)} disabled={busy} aria-describedby="owner-help"/></Field>}
               {!status.exists && <Field label={t("shell.capacity")} hint={t("shell.capacityHint")}><select value={tier} onChange={event => setTier(event.target.value as Tier)} disabled={busy}><option value="starter">{t("shell.tier.starter")}</option><option value="professional" disabled={status.licence?.tier==='starter'}>{t("shell.tier.professional")}</option><option value="scale" disabled={status.licence?.tier!=='scale'}>{t("shell.tier.scale")}</option></select></Field>}
               <Button type="submit" variant="primary" size="lg" block icon={status.exists ? "key" : "shield"} disabled={busy || (!status.exists && (!ownerName.trim() || repeat !== passphrase))}>{busy ? t("shell.openingButton") : t(status.exists ? "shell.unlockButton" : "shell.createButton")}</Button>
             </form>

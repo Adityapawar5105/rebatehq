@@ -29,7 +29,7 @@ remain manual checks.
 
 **The cloud handles identity and access metadata.** Database tests check tenant
 isolation, a restricted application role, exact grants and an append-only server
-audit log: 155 checks on a fresh database and 158 in local restore mode (26 Nov 2026; 113 and 116 when this page was first written). These
+audit log: 156 checks on a fresh database and 159 in local restore mode (26 Nov 2026; 113 and 116 when this page was first written). These
 are separate from the local vault's hash chain.
 [Database suite](https://github.com/Adityapawar5105/rebatehq/tree/ade310e/supabase/tests)
 · [CI #75](https://github.com/Adityapawar5105/rebatehq/actions/runs/41989796464)

@@ -6,7 +6,7 @@
 import { Icon, type IconName } from "@/components/ui/Icon";
 import sh from "./shell.module.css";
 
-export type SideNavChild = { href: string; label: string; current: boolean; testId?: string };
+export type SideNavChild = { href: string; label: string; current: boolean; testId?: string; /** A plain-language note on the link (its tooltip). */ note?: string };
 export type SideNavItem = { href: string; label: string; icon: IconName; current: boolean; children: SideNavChild[] };
 
 export function SideNav({ label, items, collapsed = false, onNavigate }: { label: string; items: SideNavItem[]; collapsed?: boolean; onNavigate?: (href: string) => void }) {
@@ -19,7 +19,7 @@ export function SideNav({ label, items, collapsed = false, onNavigate }: { label
       </a>
       {open && <ul className={sh.subnav}>
         {collapsed && <li className={sh.subnavTitle} aria-hidden="true">{item.label}</li>}
-        {item.children.map(c => <li key={c.href}><a href={c.href} className={sh.subLink} aria-current={c.current ? "page" : undefined} data-testid={c.testId} title={c.label} onClick={() => onNavigate?.(c.href)}>{c.label}</a></li>)}
+        {item.children.map(c => <li key={c.href}><a href={c.href} className={sh.subLink} aria-current={c.current ? "page" : undefined} data-testid={c.testId} title={c.note ? `${c.label}: ${c.note}` : c.label} onClick={() => onNavigate?.(c.href)}>{c.label}{c.note && <span className={sh.subNote} aria-hidden="true"> ↗</span>}</a></li>)}
       </ul>}
     </div>;
   })}</nav>;

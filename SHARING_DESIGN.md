@@ -11,7 +11,7 @@
 **Status (26 Nov 2026):** S1 to S5b are built and merged: the hand-off file, pack keys and the signed grid, Storage packs, read-only receiving seats, live updates, small deltas, threads and tasks. Where a section has an "as built" note, that note is current.
 
 **Not built:**
-- compaction and checkpoints of relay history (the client still stops at 10,000 events and 256 epochs; see the review of 26 Nov);
+- server-side compaction (each device now folds its own verified log into a local checkpoint, review R2; the server keeps every row);
 - rolling or per-tier caps;
 - email notices;
 - "who's viewing";

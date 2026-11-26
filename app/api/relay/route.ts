@@ -6,6 +6,11 @@ import {relayDirectory,relayPage,relayPackPage,relayPost,type RelayActor} from '
 import {RelayError,PostSchema} from '@/lib/relay/protocol';
 import { msg } from "../../../lib/i18n/core";
 import {createSupabaseServerClient} from '@/lib/supabase/server';
+import {rateLimit} from '@/lib/rate-limit';
+// Review R2 (flaw 3.3): every relay read takes the workspace lock, so one person looping requests could stall a
+// workspace; these limits are far above a device's 60-second sync, its doorbell rings and its pack pages.
+const READS_PER_MINUTE=240,WRITES_PER_MINUTE=120;
+const limited=()=>Response.json({code:'NETWORK',error:msg("api.relay.tooManyRequests")},{status:429,headers:{'Cache-Control':'no-store','Retry-After':'60'}});
 export const runtime='nodejs';
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const json=(body:unknown)=>Response.json(body,{headers:{'Cache-Control':'no-store'}});
@@ -19,6 +24,7 @@ function failure(e:unknown){
 export async function GET(request:Request){try{
  if(process.env.RELAY_ENABLED!=='true')throw new HttpError(404,msg("api.relay.workspaceSharingIsNot2"));
  const ctx=await getAppContext(request.headers);if(!ctx)throw new HttpError(401,msg("api.relay.signInToYour2"));
+ if(!(await rateLimit(request,'relay-read',READS_PER_MINUTE,60_000,{subject:ctx.userId,memoryFallback:true})).ok)return limited();
  const u=new URL(request.url),deviceId=u.searchParams.get('device')??'',mode=u.searchParams.get('mode');
  if(!uuid.test(deviceId)||!['directory','sync','packs','token'].includes(mode??'')||[...u.searchParams.keys()].some(k=>!['device','mode','after','epochAfter','pack'].includes(k))||[...u.searchParams.keys()].some(k=>u.searchParams.getAll(k).length!==1))throw new HttpError(400,msg("api.relay.invalidSharingRequest"));
  const actor:RelayActor={tenantId:ctx.tenantId,userId:ctx.userId,deviceId},after=u.searchParams.get('after')??'0',epochAfter=u.searchParams.get('epochAfter')??'0',pack=u.searchParams.get('pack')??'';
@@ -34,6 +40,7 @@ export async function GET(request:Request){try{
 export async function POST(request:Request){try{
  if(process.env.RELAY_ENABLED!=='true')throw new HttpError(404,msg("api.relay.workspaceSharingIsNot"));
  const ctx=await getAppContext(request.headers);if(!ctx)throw new HttpError(401,msg("api.relay.signInToYour"));
+ if(!(await rateLimit(request,'relay-write',WRITES_PER_MINUTE,60_000,{subject:ctx.userId,memoryFallback:true})).ok)return limited();
  const parsed=PostSchema.safeParse(await readJsonLimited(request,1024*1024));if(!parsed.success)throw new HttpError(400,msg("api.relay.theSharingRequestHas"));
  const p=parsed.data,deviceId=p.action==='register'?p.device.deviceId:p.action==='epoch'?p.epoch.signerDevice:p.action==='pack'?p.pack.senderDevice:p.event.senderDevice;
  return json(await withDatabase(databaseContext(ctx,request.headers),db=>relayPost(db,{tenantId:ctx.tenantId,userId:ctx.userId,deviceId},p)));

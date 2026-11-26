@@ -5,8 +5,11 @@ export type Applied = {event:RelayEvent;content:Content|null;sealed?:import('../
 export type Approval = {id:string;hash:string;requester:string;approvers:string[];decisions:{userId:string;decision:'approve'|'reject';level:string}[];status:'pending'|'approved'|'rejected'};
 export type Shared = {id:string;kind:RelayEvent['objectKind'];subject:ShareInput;author:string;hash:string;epochId:string;requiredLevels:1|2;approval:Approval|null;comments:{id:string;author:string;text:string;mentions:string[]}[];sequence:string};
 function reject():never{throw new RelayError('CONTENT',msg("relay.state.anInvalidSharedOperation"));}
-export function fold(entries:Applied[],epochs:Epoch[]){
- const objects=new Map<string,Shared>(),rejected:string[]=[];
+/** Review R2 (B3): what every applied entry up to `sequence` folded into, so those entries need not be kept. The checkpoint is
+ *  local to this vault: each device folds its own verified log, and nothing here is sent or trusted from the server. */
+export type FoldBase = {sequence:string;hash:string;objects:Shared[];rejected:string[];threads:import('../sharing/threads').Thread[];hidden:string[];threadRejected:string[]};
+export function fold(entries:Applied[],epochs:Epoch[],base:FoldBase|null=null){
+ const objects=new Map<string,Shared>((base?.objects??[]).map(o=>[o.id,structuredClone(o)])),rejected:string[]=[...(base?.rejected??[])];
  for(const {event:e,content:c} of entries){
   if(!c){rejected.push(e.id);continue;}
   if(c.kind==='thread')continue; // S5a: threads and tasks are folded by foldThreads
@@ -38,6 +41,6 @@ export function fold(entries:Applied[],epochs:Epoch[]){
  }
  return {objects:[...objects.values()].sort((a,b)=>BigInt(a.sequence)>BigInt(b.sequence)?-1:1),rejected};
 }
-export function ensureOperation(entries:Applied[],epochs:Epoch[],event:RelayEvent,content:Content){
- const result=fold([...entries,{event,content}],epochs);if(result.rejected.includes(event.id))reject();
+export function ensureOperation(entries:Applied[],epochs:Epoch[],event:RelayEvent,content:Content,base:FoldBase|null=null){
+ const result=fold([...entries,{event,content}],epochs,base);if(result.rejected.includes(event.id))reject();
 }

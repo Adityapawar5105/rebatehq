@@ -64,8 +64,8 @@ const deviceHolds = (epoch: Epoch, pack: string, deviceId: string) => epoch.v ==
 
 /** Fold every thread event in log order. An event that breaks a rule is listed in `rejected` and changes nothing, so one
  *  member can never poison the log; events this device cannot open are skipped (their threads are not shown here). */
-export function foldThreads(entries: Entry[], epochs: Epoch[]) {
-  const threads = new Map<string, Thread>(), rejected: string[] = [], hidden = new Set<string>();
+export function foldThreads(entries: Entry[], epochs: Epoch[], base: { threads: Thread[]; hidden: string[]; threadRejected: string[] } | null = null) {
+  const threads = new Map<string, Thread>((base?.threads ?? []).map(t => [t.id, structuredClone(t)])), rejected: string[] = [...(base?.threadRejected ?? [])], hidden = new Set<string>(base?.hidden ?? []);
   for (const { event: e, content: c, sealed } of entries) {
     if (!c || c.kind !== "thread") continue;
     const epoch = epochs.find(p => p.id === e.epochId), pack = c.pack as AnyPack;
@@ -93,7 +93,7 @@ export function foldThreads(entries: Entry[], epochs: Epoch[]) {
     t.events.push({ id: e.id, author: e.senderUser, at: e.createdAt, sequence: e.sequence, kind: b.kind === "reply" ? "reply" : b.kind === "status" ? (b.resolved ? "resolved" : "reopened") : "task" });
     t.updatedAt = e.createdAt; t.sequence = e.sequence;
   }
-  return { threads: [...threads.values()].sort((a, b) => BigInt(a.sequence) > BigInt(b.sequence) ? -1 : 1), rejected };
+  return { threads: [...threads.values()].sort((a, b) => BigInt(a.sequence) > BigInt(b.sequence) ? -1 : 1), rejected, hidden: [...hidden] };
 }
 
 export type InboxItem = { thread: string; kind: "mention" | "task" | "reply"; sequence: string; at: string; from: string; text: string; target: Target; pack: AnyPack };
