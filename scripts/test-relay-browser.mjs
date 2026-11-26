@@ -13,7 +13,7 @@ const marker='RELAY-PRIVATE-'+randomUUID(),amount='9876543210.98',secret='relay-
 const markers=[marker,marker+'-reference',marker+'-comment',amount,'987654321098','9,876,543,210.98','5000.00','500000',secret];
 const checks={},failures=[],inspections=[],contexts=[],pages=[],actors=[],storageRequests=[];const storageUrl=process.env.NEXT_PUBLIC_SUPABASE_URL||'http://127.0.0.1:54321';let active=false,local=null,db=null;
 const browser=await chromium.launch({...(channel==='chromium'?{}:{channel}),headless:true});
-const result={date:new Date().toISOString(),auth,channel,browser:browser.version(),checks};
+const result={date:new Date().toISOString(),auth,channel,browser:browser.version(),checks,webSocketFrames:0};
 async function settled(page){await page.locator('dialog[aria-labelledby="relay-title"][aria-busy="false"]').waitFor({state:'attached',timeout:60000});await page.getByRole('status').filter({hasText:'Working in the encrypted vault…'}).waitFor({state:'hidden',timeout:60000});const alerts=await page.getByRole('alert').filter({hasText:/\S/}).allInnerTexts();assert.equal(alerts.length,0,'Relay UI reported an error (content suppressed)');}
 async function click(page,name){await page.getByRole('button',{name,exact:true}).click();await settled(page);}
 async function open(page){await page.getByRole('button',{name:'Open shared inbox',exact:true}).click();await page.getByRole('dialog',{name:'Shared inbox',exact:true}).waitFor();await settled(page);}
@@ -29,6 +29,9 @@ try{
   context.on('request',r=>{inspections.push(r.allHeaders().then(headers=>{assertNoRelayPlaintext([r.url(),headers,r.postDataBuffer()??''],markers,'request');const u=new URL(r.url());const chunk=/^\/storage\/v1\/object\/(authenticated\/)?relay-packs\/[0-9a-f-]{36}\/([a-z_]+)\/[0-9a-f-]{36}\/\d{1,3}$/.exec(u.pathname);if(chunk){storageRequests.push({page:i,pack:chunk[2],read:!!chunk[1]});}if(active&&!chunk){assert.equal(u.origin,new URL(base).origin,'Unexpected external request');if(u.pathname.startsWith('/api/'))assert.ok(u.pathname==='/api/licence'&&r.method()==='GET'||u.pathname==='/api/licence/devices'&&r.method()==='GET'&&!u.search&&!r.postData()||u.pathname==='/api/relay'&&['GET','POST'].includes(r.method()),'Unexpected API in relay flow');}}).catch(()=>failures.push('Private content or unapproved request reached the network')));});
   context.on('console',m=>{inspections.push(Promise.all(m.args().map(a=>a.jsonValue())).then(args=>assertNoRelayPlaintext([m.text(),args],markers,'console')).catch(()=>failures.push('Private fixture content appeared in console output')));});
   const page=await context.newPage();pages.push(page);page.setDefaultTimeout(45000);page.on('pageerror',()=>failures.push('Unhandled relay page error'));
+  // Review R2: every WebSocket frame the page reports is scanned for the private markers too. Playwright may not report a
+  // socket a dedicated worker opens (the doorbell runs in the vault worker), so the count is recorded, not assumed.
+  page.on('websocket',ws=>{const scan=f=>{result.webSocketFrames++;try{assertNoRelayPlaintext([String(f.payload)],markers,'websocket');}catch{failures.push('Private fixture content appeared in a WebSocket frame');}};ws.on('framesent',scan);ws.on('framereceived',scan);});
   if(auth)actors.push(await signInLocal(context,page,base,{...(i?{tenantId:actors[0].tenantId,role:i===1?'manager':'rep'}:{}),deviceId:randomUUID()}));
   else{
    const actor=local.actors[i];actors.push(actor);
@@ -46,8 +49,14 @@ try{
  const [owner,manager,rep]=pages;
  // Reopen after all registrations so the creator verifies the complete roster.
  await close(owner);await open(owner);const pin=await owner.getByTestId('relay-own-fingerprint').innerText();
- const deviceChecks=owner.getByRole('group',{name:'Verified device fingerprints'}).getByRole('checkbox');assert.equal(await deviceChecks.count(),3);
- for(const box of await deviceChecks.all())await box.check();await click(owner,'Start workspace sharing');
+ // Review R2: the Owner's own device is confirmed; each new device's code is typed from that device and is not shown here.
+ const checks3=owner.getByTestId('relay-device-checks');assert.equal(await checks3.getByTestId('relay-device-known').count(),1);assert.equal(await checks3.getByTestId('relay-device-code').count(),2);
+ assert.ok(await owner.getByRole('button',{name:'Start workspace sharing',exact:true}).isDisabled(),'Sharing starts without the new device codes');
+ const escape=v=>v.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+ for(const i of [1,2]){const page=pages[i];await close(page);await open(page);const code=await page.getByTestId('relay-own-fingerprint').innerText();await close(page);
+  assert.ok(!(await checks3.innerText()).includes(code),'A new device code is shown to the Owner');
+  await checks3.getByLabel(new RegExp(escape(actors[i].email??actors[i].userId))).fill(code);}
+ await click(owner,'Start workspace sharing');
  for(const page of [manager,rep]){await close(page);await open(page);await page.getByLabel('Verified administrator fingerprint').fill(pin);await click(page,'Verify and join sharing');}
  checks.verifiedFingerprintJoin=true;
  // Team sharing S2b: "Start workspace sharing" signs a format 2 grid. The Owner device holds every pack key; the rep's

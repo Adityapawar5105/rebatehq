@@ -61,7 +61,11 @@ export function RelaySetupLine({client,userId,tenantId,relayEnabled}:{client:Vau
 
 export function RelayPanel({client,userId,tenantId,relayEnabled,onChange}:{client:VaultClient;userId:string;tenantId:string;relayEnabled:boolean;onChange:()=>Promise<void>}){
  const dialog=useRef<HTMLDialogElement>(null),[open,setOpen]=useState(false),[view,setView]=useState<RelayView|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
- const [tab,setTab]=useState<Tab>('inbox'),[selected,setSelected]=useState(''),[pin,setPin]=useState(''),[confirmed,setConfirmed]=useState<string[]>([]);
+ const [tab,setTab]=useState<Tab>('inbox'),[selected,setSelected]=useState(''),[pin,setPin]=useState(''),[codes,setCodes]=useState<Record<string,string>>({});
+ // Review R2 (flaw 3.2): a device is confirmed when the last signed epoch already carries its keys, when it is this device,
+ // or when the code typed for it matches. A new or changed device's code is not shown here, so only the real device has it.
+ const normal=(v:string)=>v.replace(/[\s-]/g,'').toLowerCase();
+ const confirmed=view?view.devices.filter(d=>d.known||(d.deviceId===view.deviceId&&d.fingerprint===view.fingerprint)||normal(codes[d.deviceId]??'')===d.fingerprint).map(d=>d.deviceId):[];
  const currency=getWorkspaceCurrency();
  const [title,setTitle]=useState(''),[reference,setReference]=useState(''),[amount,setAmount]=useState(''),[kind,setKind]=useState<ShareInput['objectKind']>('price_change'),[preset,setPreset]=useState<ShareInput['preset']>('standard');
  const [first,setFirst]=useState(''),[second,setSecond]=useState(''),[text,setText]=useState(''),[mentions,setMentions]=useState<string[]>([]);
@@ -110,11 +114,11 @@ export function RelayPanel({client,userId,tenantId,relayEnabled,onChange}:{clien
     {!view.registered?<><p>{t("relay.setUpASharing")}</p><Button variant="primary" disabled={busy} onClick={()=>void run('relayRegister',{},msg("relay.note2"))}>{t("relay.setUpThisSharing")}</Button></>:
     !view.joined?<>
      <p>{t("relay.yourDeviceFingerprint")}{" "}<code data-testid="relay-own-fingerprint">{view.fingerprint}</code></p>
-     {view.canStart?<><p>{t("relay.beforeStartingVerifyEach")}</p><DeviceChecks view={view} confirmed={confirmed} setConfirmed={setConfirmed} disabled={busy}/><Button variant="primary" disabled={busy||confirmed.length!==view.devices.length} onClick={()=>rotate("relay.note3")}>{t("relay.startWorkspaceSharing")}</Button></>:
+     {view.canStart?<><p>{t("relay.beforeStartingVerifyEach")}</p><DeviceChecks view={view} codes={codes} setCodes={setCodes} confirmed={confirmed} disabled={busy}/><Button variant="primary" disabled={busy||confirmed.length!==view.devices.length} onClick={()=>rotate("relay.note3")}>{t("relay.startWorkspaceSharing")}</Button></>:
      view.administratorFingerprint?<form onSubmit={e=>{e.preventDefault();void run('relayJoin',{fingerprint:pin},msg("relay.note4"));}}><p>{t("relay.askATrustedAdministrator")}</p><Field label={t("relay.verifiedAdministratorFingerprint")}><input value={pin} onChange={e=>setPin(e.target.value)} autoComplete="off" required/></Field><Button variant="primary" type="submit" disabled={busy||!pin.trim()}>{t("relay.verifyAndJoinSharing")}</Button></form>:<><p>{t("relay.askYourAdministratorTo")}</p><Button variant="primary" disabled={busy} onClick={()=>void run('relayView',{},msg("relay.note5"))}>{t("relay.refreshSharingSetup")}</Button></>}
     </>:<>
      <div className={styles.row}>
-      <Tabs label={t("relay.workspaceSharing")} idPrefix="relay" active={tab} onChange={x=>{if(x==='keys')setConfirmed([]);setTab(x);}} tabs={[{id:'inbox',label:t("relay.inbox")},{id:'threads',label:unread?`${t("thread.tab")} (${unread})`:t("thread.tab")},{id:'share',label:t("relay.shareAReference2")},{id:'keys',label:t("relay.deviceKeys")}]}/>
+      <Tabs label={t("relay.workspaceSharing")} idPrefix="relay" active={tab} onChange={x=>{if(x==='keys')setCodes({});setTab(x);}} tabs={[{id:'inbox',label:t("relay.inbox")},{id:'threads',label:unread?`${t("thread.tab")} (${unread})`:t("thread.tab")},{id:'share',label:t("relay.shareAReference2")},{id:'keys',label:t("relay.deviceKeys")}]}/>
       <Button variant={tab==='inbox'&&!object?'primary':'secondary'} disabled={busy} onClick={()=>void run('relaySync',{},msg("relay.note6"))}>{t("relay.syncInbox")}</Button>
      </div>
      {view.rotationRequired&&<Notice tone="warn" role="alert">{t("relay.theMemberDeviceList")}</Notice>}
@@ -127,7 +131,7 @@ export function RelayPanel({client,userId,tenantId,relayEnabled,onChange}:{clien
      <div {...tabPanelProps("relay",tab)}>
      {tab==='keys'&&<section><h3>{t("relay.deviceVerification")}</h3><p>{t("relay.yourFingerprint")}{" "}<code data-testid="relay-own-fingerprint">{view.fingerprint}</code></p>
       <details className={styles.small}><summary>{t("relay.techDetails")}</summary><p>{t("relay.currentVerificationHeadEpoch", { epoch: Number(view.head.epoch), sequence: Number(view.head.sequence) })}{" "}<code>{view.head.hash}</code>{t("relay.compareThisHeadWith")}</p></details>
-      <DeviceChecks view={view} confirmed={confirmed} setConfirmed={setConfirmed} disabled={busy}/>{['owner','manager'].includes(view.role)&&<Button variant="primary" disabled={busy||confirmed.length!==view.devices.length} onClick={()=>rotate("relay.note9")}>{t("relay.rotateWorkspaceKey")}</Button>}<p className={styles.muted}>{t("relay.revokeLostDevicesIn")}</p></section>}
+      <DeviceChecks view={view} codes={codes} setCodes={setCodes} confirmed={confirmed} disabled={busy}/>{['owner','manager'].includes(view.role)&&<Button variant="primary" disabled={busy||confirmed.length!==view.devices.length} onClick={()=>rotate("relay.note9")}>{t("relay.rotateWorkspaceKey")}</Button>}<p className={styles.muted}>{t("relay.revokeLostDevicesIn")}</p></section>}
      {tab==='threads'&&<ThreadsInbox client={client} userId={userId} onUnread={setUnread}/>}
      {tab==='share'&&<form onSubmit={e=>{e.preventDefault();void run('relayShare',{input:{objectKind:kind,title,reference,amount,currency,preset}},msg("relay.note10")).then(ok=>{if(ok){setTitle('');setReference('');setAmount('');setTab('inbox');setSelected('');}});}}>
       <h3>{t("relay.shareAReference")}</h3><p>{t("relay.thisSharesASummary")}</p>
@@ -152,6 +156,10 @@ export function RelayPanel({client,userId,tenantId,relayEnabled,onChange}:{clien
   </dialog>
  </Card>;
 }
-function DeviceChecks({view,confirmed,setConfirmed,disabled}:{view:RelayView;confirmed:string[];setConfirmed:(v:string[])=>void;disabled:boolean}){
- return <fieldset className={styles.relayChecks}><legend>{t("relay.verifiedDeviceFingerprints")}</legend>{view.devices.map(d=><label key={d.deviceId}><input type="checkbox" disabled={disabled} checked={confirmed.includes(d.deviceId)} onChange={e=>setConfirmed(e.target.checked?[...confirmed,d.deviceId]:confirmed.filter(id=>id!==d.deviceId))}/><span>{t("relay.personRole", { name: d.label, role: relayRole(d.role) })}<br/><code>{d.fingerprint}</code><br/>{t("relay.iVerifiedThisFingerprint")}</span></label>)}</fieldset>;
+function DeviceChecks({view,codes,setCodes,confirmed,disabled}:{view:RelayView;codes:Record<string,string>;setCodes:(v:Record<string,string>)=>void;confirmed:string[];disabled:boolean}){
+ return <fieldset className={styles.relayChecks} data-testid="relay-device-checks"><legend>{t("relay.verifiedDeviceFingerprints")}</legend><p>{t("relay.deviceCodeHelp")}</p>{view.devices.map(d=>{
+  const name=t("relay.personRole",{name:d.label,role:relayRole(d.role)}),self=d.deviceId===view.deviceId&&d.fingerprint===view.fingerprint,ok=confirmed.includes(d.deviceId);
+  return d.known||self?<p key={d.deviceId} data-testid="relay-device-known"><span>{name}</span><br/><span className={styles.muted}>{t(self?"relay.deviceThis":"relay.deviceKnown")}</span></p>
+   :<Field key={d.deviceId} label={t("relay.deviceCodeFor",{name})} hint={ok?t("relay.deviceCodeMatches"):t("relay.deviceCodeNew")}><input data-testid="relay-device-code" autoComplete="off" spellCheck={false} disabled={disabled} value={codes[d.deviceId]??""} onChange={e=>setCodes({...codes,[d.deviceId]:e.target.value})}/></Field>;
+ })}</fieldset>;
 }

@@ -616,6 +616,12 @@ const relay = {
   "relay.sendEncryptedComment": "Send encrypted comment",
   "relay.verifiedDeviceFingerprints": "Verified device fingerprints",
   "relay.iVerifiedThisFingerprint": "I verified this fingerprint through a trusted channel.",
+  "relay.deviceCodeHelp": "Devices already in the last key publication, and this device, are confirmed. For each new or changed device, ask its person to read out the device code shown on that device (Shared inbox › Device keys) and type it here.",
+  "relay.deviceCodeFor": "Device code for {name}",
+  "relay.deviceCodeNew": "New or changed device: type the code from that device.",
+  "relay.deviceCodeMatches": "The code matches.",
+  "relay.deviceKnown": "Confirmed: its keys are in the last key publication.",
+  "relay.deviceThis": "This device.",
 } as const;
 
 const studio = {
@@ -2748,11 +2754,13 @@ const api = {
   "api.invite.thisEmailIsAlready": "This email is already a member of the workspace.",
   "api.invite.anActiveInvitationAlready": "An active invitation already exists for this email.",
   "api.licence.signInToYour": "Sign in to your workspace.",
+  "api.licence.tooManyRequests": "Too many licence checks from this account. Wait a minute and try again.",
   "api.licence.aDeviceIdIs": "A device id is required.",
   "api.relay.theSharedWorkspaceChanged": "The shared workspace changed. Sync and try again.",
   "api.relay.aKeyRotationOr": "A key rotation or quota check blocked this change. Sync and ask your workspace administrator.",
   "api.relay.workspaceSharingIsNot2": "Workspace sharing is not enabled.",
   "api.relay.signInToYour2": "Sign in to your workspace.",
+  "api.relay.tooManyRequests": "Too many sharing requests from this account. Wait a minute and try again.",
   "api.relay.invalidSharingRequest": "Invalid sharing request.",
   "api.relay.invalidSharingCursor": "Invalid sharing cursor.",
   "api.relay.workspaceSharingIsNot": "Workspace sharing is not enabled.",

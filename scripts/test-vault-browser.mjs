@@ -92,6 +92,8 @@ const throttle = Number(process.env.VAULT_TEST_CPU_THROTTLE || 0);
 async function openPage() {
   const opened = await context.newPage();
   opened.on("pageerror", e => {failures.push("Unhandled page error");pageErrors.push(e.message);});
+  // Review R2: WebSocket frames the page reports are scanned for the private markers (the count is in the results).
+  opened.on("websocket", ws => { const scan = f => { results.webSocketFrames = (results.webSocketFrames ?? 0) + 1; if (markers.some(m => String(f.payload).includes(m))) failures.push("Private fixture value appeared in a WebSocket frame"); }; ws.on("framesent", scan); ws.on("framereceived", scan); });
   if(throttle > 1 && channel === 'firefox') throw Error('CDP CPU throttling is not available in Firefox');
   if (throttle > 1) await (await context.newCDPSession(opened)).send("Emulation.setCPUThrottlingRate", { rate: throttle });
   return opened;
