@@ -39,7 +39,7 @@ try {
   await step("persistRequestAvailable", () => page.evaluate(() => typeof navigator.storage.persist === "function"));
   await step("createVault", async () => {
     await page.getByRole("button", { name: /Create encrypted vault|Unlock vault/ }).waitFor({ timeout: 60000 });
-    await page.getByLabel("Vault passphrase").fill(secret); await page.getByLabel("Pricing Owner (name)").fill("WebKit pre-check owner");
+    await page.getByLabel("Vault passphrase").fill(secret); await page.getByLabel("Type the passphrase again").fill(secret); await page.getByLabel("Pricing Owner (name)").fill("WebKit pre-check owner");
     await page.getByRole("button", { name: "Create encrypted vault", exact: true }).click(); await page.getByRole("button", { name: "Lock vault", exact: true }).waitFor({ timeout: 120000 }); return true;
   });
   await step("importCsv", async () => {

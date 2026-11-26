@@ -71,8 +71,11 @@ export function VaultApp({ scope, email, workspace, lab = false, relayEnabled = 
   useOfflineWorker(); // 8C-2: offline copy of the app shell (production builds only)
   // Status and error text are kept as message references, so a language switch re-renders them.
   useEffect(() => { setWorkspaceCurrency(status?.state === "unlocked" ? status.currency : "USD"); }, [status?.state, status?.currency]);
+  // Review R1: a new vault starts at the licensed capacity, so a Scale customer who leaves the field alone gets Scale.
+  const licensedTier = status?.licence?.tier;
+  useEffect(() => { if (status && !status.exists && licensedTier) setTier(licensedTier); }, [status?.exists, licensedTier]);
   const [error, setError] = useState(""), [message, setMessage] = useState(msg("shell.opening")), [busy, setBusy] = useState(false);
-  const [passphrase, setPassphrase] = useState(""), [tier, setTier] = useState<Tier>("starter"), [ownerName, setOwnerName] = useState("");
+  const [passphrase, setPassphrase] = useState(""), [repeat, setRepeat] = useState(""), [tier, setTier] = useState<Tier>("starter"), [ownerName, setOwnerName] = useState("");
   const [storage, setStorage] = useState<StorageStatus | null>(null), [progress, setProgress] = useState<{ stage: string; done: string; total: string; kind?: "save" | "sim" | "check" } | null>(null);
   const [supported, setSupported] = useState(true);
   // Home header: the caller's own name, role label and Pricing Owner, from the role-checked `home` read.
@@ -228,11 +231,13 @@ export function VaultApp({ scope, email, workspace, lab = false, relayEnabled = 
             <span className={sh.authIcon}><Icon name="lock" size={24}/></span>
             <h2 id="auth-heading">{t(status.exists ? "shell.unlockHeading" : "shell.createHeading")}</h2>
             <p className={sh.authNote}>{t("shell.passphraseNote")}</p>
-            <form onSubmit={event => { event.preventDefault(); const secret = passphrase; setPassphrase(""); void operation(async () => { const start = performance.now(); const result = status.exists ? await client.current!.call("unlock", { passphrase: secret }) : await client.current!.call("create", { passphrase: secret, tier, ownerName }); setStatus(result); setMessage(msg("shell.vaultReady", { ms: Math.round(performance.now() - start) })); window.dispatchEvent(new CustomEvent("vault-ready")); }); }}>
-              <Field label={t("shell.passphrase")}><input type="password" minLength={12} maxLength={256} required autoComplete={status.exists ? "current-password" : "new-password"} value={passphrase} onChange={event => setPassphrase(event.target.value)} disabled={busy}/></Field>
+            <form onSubmit={event => { event.preventDefault(); if (!status.exists && repeat !== passphrase) return; const secret = passphrase; setPassphrase(""); setRepeat(""); void operation(async () => { const result = status.exists ? await client.current!.call("unlock", { passphrase: secret }) : await client.current!.call("create", { passphrase: secret, tier, ownerName }); setStatus(result); setMessage(msg("shell.vaultReady")); window.dispatchEvent(new CustomEvent("vault-ready")); }); }}>
+              <Field label={t("shell.passphrase")} hint={status.exists ? undefined : t("shell.passphraseHint")}><input type="password" minLength={12} maxLength={256} required autoComplete={status.exists ? "current-password" : "new-password"} value={passphrase} onChange={event => setPassphrase(event.target.value)} disabled={busy}/></Field>
+              {/* Review R1: no passphrase recovery exists, so a typo at creation would lock the owner out; ask for it twice. */}
+              {!status.exists && <Field label={t("shell.passphraseRepeat")} hint={repeat && repeat !== passphrase ? <span role="alert">{t("shell.passphraseMismatch")}</span> : undefined}><input type="password" minLength={12} maxLength={256} required autoComplete="new-password" value={repeat} onChange={event => setRepeat(event.target.value)} disabled={busy}/></Field>}
               {!status.exists && <Field label={t("shell.ownerName")} hint={<span id="owner-help">{t("shell.ownerHelp")}</span>}><input required maxLength={160} value={ownerName} onChange={event => setOwnerName(event.target.value)} disabled={busy} aria-describedby="owner-help"/></Field>}
-              {!status.exists && <Field label={t("shell.capacity")}><select value={tier} onChange={event => setTier(event.target.value as Tier)} disabled={busy}><option value="starter">{t("shell.tier.starter")}</option><option value="professional" disabled={status.licence?.tier==='starter'}>{t("shell.tier.professional")}</option><option value="scale" disabled={status.licence?.tier!=='scale'}>{t("shell.tier.scale")}</option></select></Field>}
-              <Button type="submit" variant="primary" size="lg" block icon={status.exists ? "key" : "shield"} disabled={busy || (!status.exists && !ownerName.trim())}>{busy ? t("shell.openingButton") : t(status.exists ? "shell.unlockButton" : "shell.createButton")}</Button>
+              {!status.exists && <Field label={t("shell.capacity")} hint={t("shell.capacityHint")}><select value={tier} onChange={event => setTier(event.target.value as Tier)} disabled={busy}><option value="starter">{t("shell.tier.starter")}</option><option value="professional" disabled={status.licence?.tier==='starter'}>{t("shell.tier.professional")}</option><option value="scale" disabled={status.licence?.tier!=='scale'}>{t("shell.tier.scale")}</option></select></Field>}
+              <Button type="submit" variant="primary" size="lg" block icon={status.exists ? "key" : "shield"} disabled={busy || (!status.exists && (!ownerName.trim() || repeat !== passphrase))}>{busy ? t("shell.openingButton") : t(status.exists ? "shell.unlockButton" : "shell.createButton")}</Button>
             </form>
             {licenceLine}
             {status.exists && client.current && <StartAgain client={client.current} workspace={workspace} busy={busy} operation={operation} onStatus={setStatus} setMessage={setMessage}/>}

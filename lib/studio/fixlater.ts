@@ -32,7 +32,7 @@ export async function fixRows(engine: Engine, sourceId: string, code: string, of
   const rows = (await engine.conn.query(`SELECT source_row::VARCHAR AS r, code, ${fields.map((_, i) => `v${i}`).join(",")} FROM rejected_rows WHERE source_id=${sqlText(sourceId)} AND code=${sqlText(code)} AND status='open' ORDER BY source_row LIMIT ${Math.min(200, Math.max(1, limit))} OFFSET ${Math.max(0, Math.floor(offset))}`)).toArray();
   return rows.map(r => ({ sourceRow: String(r.r), code: String(r.code), values: fields.map((f, i) => ({ field: f.name, value: r[`v${i}`] === null ? "" : String(r[`v${i}`]) })) }));
 }
-async function roleOf(engine: Engine, sourceId: string) {
+export async function roleOf(engine: Engine, sourceId: string) {
   const role = (await engine.conn.query(`SELECT coalesce(k.kind, s.role) AS role FROM source_files s LEFT JOIN source_kinds k ON k.source_id=s.id WHERE s.id=${sqlText(sourceId)}`)).toArray()[0]?.role;
   if (!role) throw new StudioError(msg("fixlater.thatFileIsNo"));
   return String(role) as Role;

@@ -8,7 +8,16 @@
 
   Blueprint section 22, item 38 records them. This revision replaces the first version's sections 4 to 6. What changed, and why, is in section 11.
 
-**Status:** nothing here is built yet, apart from the comments and approvals relay (chunk 7A, `RELAY_DESIGN.md`), which exists and is off by default. Each release in section 9 is its own pull request, with tests and an evidence file in `docs/evidence/`.
+**Status (26 Nov 2026):** S1 to S5b are built and merged: the hand-off file, pack keys and the signed grid, Storage packs, read-only receiving seats, live updates, small deltas, threads and tasks. Where a section has an "as built" note, that note is current.
+
+**Not built:**
+- compaction and checkpoints of relay history (the client still stops at 10,000 events and 256 epochs; see the review of 26 Nov);
+- rolling or per-tier caps;
+- email notices;
+- "who's viewing";
+- the `supplier`, `rules`, `competitors`, `documents` and `results` packs.
+
+The status written before building read: nothing here is built yet, apart from the comments and approvals relay (chunk 7A, `RELAY_DESIGN.md`), which exists and is off by default. Each release in section 9 is its own pull request, with tests and an evidence file in `docs/evidence/`.
 
 ## 1. The problem
 
@@ -246,7 +255,7 @@ Together they change the following.
 **Relay tables:**
 - `relay_epoch` gains a signed `grid` (canonical JSON, at most 64 KiB) and a format version. Version 1 epochs stay valid.
 - A new `relay_pack_wrap` table (tenant, epoch, pack, recipient device, ephemeral key, IV, wrapped key) records which devices hold which packs. That fact is metadata the server may see; the keys stay wrapped.
-- `relay_event.object_kind` also allows `pack`, `thread` and `task`.
+- *(Planned, not built.)* `relay_event.object_kind` also allows `pack`, `thread` and `task`. As built, the CHECK constraint is unchanged (`quote`, `price_change`, `rebate`): threads ride `price_change` events with random object ids, and pack versions live in `relay_pack_version`.
 
 **Caps and compaction:**
 - Per-message ciphertext stays at most 16 KiB. Bulk data goes to Storage instead.
@@ -310,9 +319,9 @@ Together they change the following.
 | Release | What | Server change | Depends on |
 |---|---|---|---|
 | **S1** | Encrypted hand-off file: export a pack selection for a colleague, protected by a one-time code of six groups of four characters (120 random bits) shown once; import it into the governed tables (section 6); vault **v24**; the `floor_from_cost` flag | none | nothing |
-| **S2** | The role table and pack keys in the protocol (epoch format 2), the signed grid, invite and approve a device and its keys, rotation on role change or removal, the recovery kit prompt, **plus the one migration** | the migration | Restore Drill before lock |
-| **S3** | Publish and receive packs through Storage; Settings › Sharing grid with presets ("Recommended", "Open team", "Strict", reset), Preview as… and a change summary; read-only governed screens; what changed; roll back | none (uses S2's migration) | S2 locked |
-| **S4** | Live: Realtime doorbell, small deltas, the sync status dot, the 60-second polling fallback, privacy gates for the WebSocket and downloads | none | S3 |
+| **S2** | The role table and pack keys in the protocol (epoch format 2), the signed grid, invite and approve a device and its keys, rotation on role change or removal, the recovery kit prompt, **plus the S2 migration** | `20261125120000_sharing_s2_packs.sql` (locked) | Restore Drill before lock |
+| **S3** | Publish and receive packs through Storage; Settings › Sharing grid with presets ("Recommended", "Open team", "Strict", reset), Preview as… and a change summary; read-only governed screens; what changed; roll back | `20261126120000_sharing_s3_storage.sql` (locked; the plan said none) | S2 locked |
+| **S4** | Live: Realtime doorbell, small deltas, the sync status dot, the 60-second polling fallback, privacy gates for the WebSocket and downloads | `20261127120000_sharing_s4_doorbell.sql` (locked; the plan said none). The privacy gates do not yet read WebSocket frames | S3 |
 | **S5** | Threads, tasks, inbox, activity feed, content-free email notices (off until a sender exists), who's viewing (off) | none | S4; an email sender for notices |
 | **S6** | Chosen by pilot demand: shared PDFs, saved views, published results (D17), branch scoping, guest access, co-editing drafts | per item | D17 for published results |
 

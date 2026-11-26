@@ -26,7 +26,7 @@ try {
   await page.getByLabel("Vault passphrase").waitFor(); await settle();
   for (const [size, viewport] of Object.entries(SIZES)) { await page.setViewportSize(viewport); await settle(); await shot(`create-light-${size}`); }
   await page.setViewportSize(SIZES.desktop);
-  await page.getByLabel("Vault passphrase").fill(secret); await page.getByLabel("Pricing Owner (name)").fill("Synthetic Pricing Owner");
+  await page.getByLabel("Vault passphrase").fill(secret); await page.getByLabel("Type the passphrase again").fill(secret); await page.getByLabel("Pricing Owner (name)").fill("Synthetic Pricing Owner");
   await page.getByRole("button", { name: "Create encrypted vault", exact: true }).click();
   await page.getByRole("button", { name: "Lock vault", exact: true }).waitFor();
   await page.locator('nav a[href="#data-hub"]').click();

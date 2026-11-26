@@ -50,10 +50,21 @@ records; add a file to its `LEGACY_FILES` only for a deliberate bridge.
 
 The completed repository Phases 0–3 are the earlier backend foundation. The
 blueprint's product-roadmap phases are a separate sequence; do not rename past
-verification evidence or assume planned features already exist. Current code
-still has server-side business-data paths, so do not describe it as having
-achieved the blueprint's local-only privacy boundary before that is implemented
-and tested.
+verification evidence or assume planned features already exist. The server's
+business tables were dropped in 6R and 8R and the retired business routes answer
+410, but team sharing stores encrypted copies of shared data in Supabase Storage
+and the privacy gates do not yet read WebSocket frames: do not describe the
+product as having achieved a "data never leaves your device" boundary (the
+owner's decision D11).
+
+### Current state (26 November 2026)
+
+This section supersedes the dated orders in the chunk history below, such as "Do not start 7D", "Next chunk: …" and "Only 9A remains". Those orders are history.
+- **Merged on `main`:** every chunk through 8R; roadmap phases 1 to 16 apart from the owner's items; team sharing S1 to S5b; near-miss tiers (blueprint item 39). The sidebar redesign (PR #24) merged on 23 Nov 2026.
+- **Numbers:** local vault v25 / 69 tables. Supabase has 17 locked migrations, 0 pending, and 15 control-plane tables. Staging `rebatehq-staging` has all 17, with `RELAY_ENABLED` false.
+- **Excluded by the owner:** payments (Phase 12) and the mobile app (9A / 15.5).
+- **The open work list:** the 26 Nov full project review, kept in the owner's private notes and not in this public repo. R1 fixes are in progress.
+- Work follows the owner's explicit instruction for each step.
 
 Keep all applied migrations and their locked hashes unchanged. Follow
 `MIGRATION_RULES.md`, preserve validated margin-engine golden cases and security
@@ -146,7 +157,7 @@ The Safari desktop spike ran only as a WebKit pre-check, which was inconclusive 
 
 8R (wave 2 of the legacy table retirement; built by Claude Code, 13 November 2026) drops the last 12 server business tables (quote, quote_line, quote_share_link, approval, approval_rule, rebate_agreement, rebate_progress, rebate_tier, rebate_entry, supplier_credit, alert, fx_rate) in `20261113120000_chunk8r_retire_wave2.sql`, with no CASCADE. `fx_rate` goes because the vault has kept exchange rates since 7C-3a. `lib/rebates.ts` is removed and `/legacy/rebates` is a fixed not-found. The server keeps 13 control-plane tables. pgTAP plans **136** fresh and **139** restore checks, the tenant-table minimum is **13**, and the restore sentinel is a licence location. Blueprint section 22, item 29 records it. **8R passed CI** in [CI #150](https://github.com/Adityapawar5105/rebatehq/actions/runs/43453893489) on `436459c` (361 unit tests, 136-check pgTAP twice, 67 Chromium, 64 Firefox, 12 relay checks). The user-run [Restore Drill #21](https://github.com/Adityapawar5105/rebatehq/actions/runs/43467938552) (local target) on `7683d7b` passed (139 restore-mode checks, licence/relay/benchmark hashes, 13 tenant tables). **8R is complete**, and the migration is locked: 13 applied, 0 pending; the locked state passed [CI #152](https://github.com/Adityapawar5105/rebatehq/actions/runs/43469014775) on `db03d4d`. See docs/evidence/CHUNK_8R_VERIFICATION.md. **Only 9A (mobile field-rep PWA) remains, and it waits for the user's explicit prompt.**
 
-**Staging (14 November 2026):** https://rebatehq.netlify.app on Netlify (the site was renamed from `rebatehq-aditya`; the old address returns 404) (production deploys from `main`; previews behind Netlify team login) with Supabase project `rebatehq-staging` (`cgwbedmswfvbslvuihqy`, us-east-1, 14 locked migrations). The hosted pgTAP suite passed 136/136 twice, and a real sign-in, workspace, Scale pilot licence and encrypted vault worked end to end. Operator secrets live only in the git-ignored `.env.staging.local`; the app login is `rebatehq_netlify_login`. See NETLIFY_DEPLOYMENT.md. Staging is not production: a customer launch needs separate production services (OPERATIONS.md).
+**Staging (14 November 2026):** https://rebatehq.netlify.app on Netlify (the site was renamed from `rebatehq-aditya`; the old address returns 404) (production deploys from `main`; previews behind Netlify team login) with Supabase project `rebatehq-staging` (`cgwbedmswfvbslvuihqy`, us-east-1; 14 locked migrations then, 17 since 25 Nov 2026). The hosted pgTAP suite passed 136/136 twice, and a real sign-in, workspace, Scale pilot licence and encrypted vault worked end to end. Operator secrets live only in the git-ignored `.env.staging.local`; the app login is `rebatehq_netlify_login`. See NETLIFY_DEPLOYMENT.md. Staging is not production: a customer launch needs separate production services (OPERATIONS.md).
 
 **Quote flow fix (20 November 2026, after the 16–17 November product review; built by Claude Code).** A below-floor quote could get stuck in `pending` (no edit, no withdraw, no approver while sharing is off), and a price typed into a quote line was dropped if Submit was pressed before "Update prices". Now:
 - quote status moves live in one table (`TRANSITIONS`, `assertMove` in `lib/quotes/quotes.ts`);
@@ -261,7 +272,7 @@ See `docs/evidence/SECOND_AUDIT_PASS.md`. The independent security review (R02, 
 - **D1, D2, A1:** Data Hub is four pages and Settings three; the account pages sit under Settings in one sidebar, from the server role (`lib/account-nav.ts`).
 - **V1–V4, V6–V9:** breadcrumb header, line count and licence line in the top bar, sentence-case labels, Net pocket names its lines, 34/30 px rows, one notice group, weights 400/500/600, short transitions.
 - Not built (the user's "maybe"): N2, N3, R1, V5. No schema, migration or worker change.
-- **It passed CI** in [CI #219](https://github.com/Adityapawar5105/rebatehq/actions/runs/45226298972) on `588abb6` (PR #24): unit tests, audit and build, the authenticated Chromium privacy and relay gates, the Firefox lab gate and `verify`. The first run, CI #218, failed because the gate still looked for the removed "Account" navigation on the account pages. Not merged: the owner reviews the real app first. See docs/evidence/SIDEBAR_REDESIGN_VERIFICATION.md.
+- **It passed CI** in [CI #219](https://github.com/Adityapawar5105/rebatehq/actions/runs/45226298972) on `588abb6` (PR #24): unit tests, audit and build, the authenticated Chromium privacy and relay gates, the Firefox lab gate and `verify`. The first run, CI #218, failed because the gate still looked for the removed "Account" navigation on the account pages. It merged on 23 Nov 2026 (merge `7dbd22c`) after the owner's review. See docs/evidence/SIDEBAR_REDESIGN_VERIFICATION.md.
 
 
 **Team sharing S1: the encrypted hand-off file (24 Nov 2026; built by Claude Code; blueprint section 22, item 38).**

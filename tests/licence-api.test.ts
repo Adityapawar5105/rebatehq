@@ -32,3 +32,11 @@ test('all licence admin endpoint SQL branches run against PGlite with signed RLS
   await db.exec('ROLLBACK');
  }finally{await db.close();}
 });
+test('review R1: removing the seat of a sharing participant answers 409 with what to do, not a server error',async()=>{
+ const javascript=ts.transpileModule(readFileSync('lib/licence-admin-api.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText.replace(/^import .*;\r?\n/gm,'').replace('export async function','async function');
+ // relay_device_key references licence_device without a cascade, so Postgres refuses the cascading seat delete with 23503.
+ const fk=()=>Object.assign(new Error('violates foreign key constraint'),{code:'23503'});
+ const invoke=new Function('getAppContext','withDatabase','databaseContext','HttpError','errorResponse','readJsonLimited','z','msg',javascript+'\nreturn licenceAdmin;')(async()=>({userId:randomUUID(),tenantId:randomUUID(),role:'owner'}),async()=>{throw fk();},()=>({}),HttpError,errorResponse,(r:Request)=>r.json(),z,msg);
+ const res=await invoke(new Request('https://app.example/api/licence/seats',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userId:randomUUID(),remove:true})}),'seats');
+ assert.equal(res.status,409);assert.equal((await res.json()).error,msg('api.licenceAdmin.seatInSharing'));
+});

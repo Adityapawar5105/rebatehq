@@ -1,5 +1,13 @@
 # Architecture transition map (chunk 4.0)
 
+> **26 Nov 2026 (review R1): changes to the boundary since this map was written.**
+> - The server has 15 control-plane tables: the 13 after 8R, plus `relay_pack_wrap` and `relay_pack_version` from team sharing S2.
+> - It also has the `rebatehq_storage` schema and the private `relay-packs` Storage bucket (S3), and a Realtime doorbell policy (S4).
+> - `/api/relay?mode=token` gives the vault worker the person's own session token, so the browser now reaches Supabase Storage and Realtime directly. That is a change to the boundary this map describes.
+> - `/api/licence/devices` and `/api/licence/locations` exist, and so does the operator subscriptions view.
+> - The scripts `seed-demo`, `import-prototype`, `benchmark-import` and `run-scheduled-ingestion` and the file `lib/quote-approval.ts` no longer exist. `next.config.ts` now sets COEP.
+> - The wave-1 and wave-2 business tables were dropped (6R, 8R). Statements below that they "stay" are history.
+
 > **21 Nov 2026 (roadmap 13.6):** removed since this map was written: the static prototype `index.html` and `app.js` (13.1); the unreferenced `lib/session.ts`, `lib/margin-engine.ts`, `lib/quote-approval.ts` and `vercel.json` (13.2); the legacy business pages, the `LEGACY_BUSINESS_ENABLED` switch, `GlobalSearch` and `ConnectorSecretForm` (13.3); the engine spike lab `/lab/spike` (13.4). The retired API routes keep their fixed 410 answer (decision D12). Rows below that name these files are historical.
 
 *2 Nov 2026. Baseline: commit `c943956` (repo Phases 0–3 verified in CI #39 and Restore Drill #13). Governs nothing on its own: `BLUEPRINT.md` v2.2 section 4 sets the target. This file answers blueprint open question 3.*

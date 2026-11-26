@@ -24,5 +24,10 @@ export async function licenceAdmin(request:Request, kind:keyof typeof schemas) {
       else await db.query('UPDATE licence_device SET status=$3::text WHERE tenant_id=$1::uuid AND id=$2::uuid',[ctx.tenantId,input.id,input.status]);
       return {ok:true};
     });return Response.json(kind==='devices'&&!input?{data,canApprove:ctx.role==='owner'}:{data},{headers:{'Cache-Control':'no-store'}});
-  }catch(e){if(typeof e==='object'&&e&&'code'in e&&e.code==='23514')return Response.json({error:msg("api.licenceAdmin.licenceLimitReachedAsk")},{status:409});return errorResponse(e);}
+  }catch(e){
+    if(typeof e==='object'&&e&&'code'in e&&e.code==='23514')return Response.json({error:msg("api.licenceAdmin.licenceLimitReachedAsk")},{status:409});
+    // Review R1: a seat whose devices registered for team sharing is referenced by relay_device_key, so the delete
+    // cascading to licence_device fails (23503). Say what to do instead of a generic server error.
+    if(kind==='seats'&&typeof e==='object'&&e&&'code'in e&&e.code==='23503')return Response.json({error:msg("api.licenceAdmin.seatInSharing")},{status:409});
+    return errorResponse(e);}
 }
