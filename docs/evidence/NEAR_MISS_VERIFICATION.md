@@ -56,3 +56,13 @@ The new values come only from eligible spend and the tiers. `rebateProgress` is 
 - **A browser check of the "Show them" line with a programme that is near its tier.** The unit tests cover the calculation, the worker filter and the ranking.
 - **Native-language review** of the new Spanish and French strings.
 - **The straight-line pace** is an estimate. Seasonal buying is not modelled, and the screen help says these are estimates.
+
+## CI
+
+[CI #273](https://github.com/Adityapawar5105/rebatehq/actions/runs/45746538213) passed on `dbac074` (PR #45), 26 November 2026, with Next.js 16.4.6 installed from the lockfile. All four jobs passed:
+- unit tests, audit and build;
+- database tests and the Chromium privacy and relay gates, against real Supabase with `--auth`, including `rebatesUi`;
+- the Firefox lab gate;
+- `verify`.
+
+PR #45 was merged into `main` as `24fc43c`.
