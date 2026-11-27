@@ -106,11 +106,11 @@ Built by Claude Code on branch `claude/review-r2-rest`.
 
 **R24, session cookies.** `lib/supabase/cookies.ts`: HttpOnly, Secure in production, 30 days, used by both server clients; a removal keeps `maxAge` 0 (`tests/auth-cookies.test.ts`).
 
-**R26, failed uploads.** `putChunk` tries each chunk three times; `EXISTS` (Storage's duplicate answer) counts as uploaded; access and size refusals are not retried. A failed publish is retried by the background tick (1, 2, 4 ... minutes, up to an hour). The pack page returns server receive times and the server clock when asked (`times=1`; old clients do not ask and get the old shape), and the not-ready window uses them (`tests/relay-upload-retry.test.ts`: a receiver whose clock is an hour ahead still sees a just-received version as not ready; the old code called it lost).
+**R26, failed uploads.** `putChunk` tries each chunk three times; `EXISTS` (Storage's duplicate answer) counts as uploaded; access and size refusals are not retried. A failed publish is retried by the background tick (1, 2, 4 ... minutes, up to an hour). The pack page returns server receive times and the server clock when asked (`times=1`; old clients do not ask and get the old shape), and the not-ready window uses them (`tests/relay-upload-retry.test.ts`: a receiver whose clock is an hour ahead still sees a just-received version as not ready; the old code called it lost). The background republish in `lib/vault/service.ts` has no automated test yet, so R26 is recorded as mitigated.
 
 **R25, device limit warning.** The sharing panel shows a status line from 50 of the 60 devices, in en, es and fr (fr-CA uses fr).
 
-**R27, relay-off pass.** CI restarts the same build with `RELAY_ENABLED=false` after the relay gate and runs `pnpm test:vault:privacy --browser=chromium --relay-off-only`. It fails on any `/api/relay`, Storage or Realtime request, or any WebSocket, over an import, the sharing pages and a 65-second wait.
+**R27, relay-off pass.** CI restarts the same build with `RELAY_ENABLED=false` after the relay gate and runs `pnpm test:vault:privacy --browser=chromium --relay-off-only`. It first probes `/api/relay` signed out and requires 404 (a relay-on server answers 401), so it cannot pass against the wrong server; CI also waits for the relay-on server to release the port. It then fails on any `/api/relay`, Storage or Realtime request, any WebSocket, or the sharing set-up card on Home, over an import, the sharing pages and a 65-second wait.
 
 **R23** is accepted and documented in `SECURITY_REVIEW.md`: moving the pack name into the sealed body would hide nothing a rep device does not already know.
 

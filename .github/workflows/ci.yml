@@ -153,7 +153,11 @@ jobs:
           # Review R2 (SECURITY_REVIEW.md R27): the same build restarted with the relay off makes no relay, Storage or
           # Realtime request and opens no WebSocket (RELAY_ENABLED is read at run time, so no rebuild is needed).
           kill "$app_pid" 2>/dev/null || :
+          pkill -f "next start" 2>/dev/null || :
           wait "$app_pid" 2>/dev/null || :
+          # The pass also probes /api/relay for 404, but do not start until the old server has let go of the port.
+          for i in $(seq 1 30); do curl -s -o /dev/null --max-time 2 http://localhost:3000/login || break; sleep 1; done
+          if curl -s -o /dev/null --max-time 2 http://localhost:3000/login; then echo "::error::The relay-on server did not stop."; exit 1; fi
           RELAY_ENABLED=false pnpm start --hostname 0.0.0.0 --port 3000 > "$RUNNER_TEMP/vault-app-relay-off.log" 2>&1 &
           app_pid=$!
           node --input-type=module <<'JS'

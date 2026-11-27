@@ -408,7 +408,7 @@ See `docs/evidence/SECOND_AUDIT_PASS.md`. The independent security review (R02, 
 - **Event quota:** a device whose person does not publish under the signed grid may send 20 relay events a minute and 2,000 a day (publishers keep 60 a minute). A refused send answers 429 `LIMIT`, not a rotation request.
 - **R25:** keys of revoked devices no longer count toward the 1,000 device-key limit; the sharing panel warns from 50 of the 60 devices.
 - **R24:** Supabase session cookies are HttpOnly, Secure in production and live 30 days (`lib/supabase/cookies.ts`).
-- **R26:** chunk uploads are retried, a failed publish is retried by the background tick, and the not-ready window uses the server's receive time.
+- **R26 (mitigated):** chunk uploads are retried, a failed publish is retried by the background tick (not yet covered by a test), and the not-ready window uses the server's receive time.
 - **R27:** a CI pass with `RELAY_ENABLED` off (`--relay-off-only`).
 - **R23:** accepted and documented; no change.
 - Migration `20261129120000_review_r2_relay_quotas.sql` is **pending** until CI and a user-run Restore Drill (163 restore-mode checks). pgTAP plans 160 fresh and 163 restore checks. Not applied to staging.

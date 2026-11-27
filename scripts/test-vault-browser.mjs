@@ -551,6 +551,10 @@ async function relayOffUi(){
  const watch=r=>{const u=new URL(r.url());seen.requests++;if(u.origin===new URL(base).origin&&u.pathname.startsWith('/api/relay'))seen.relay++;if(u.origin===supabaseOrigin&&u.pathname.startsWith('/storage/'))seen.storage++;if(u.origin===supabaseOrigin&&u.pathname.startsWith('/realtime/'))seen.realtime++;};
  context.on('request',watch);page.on('websocket',()=>{seen.sockets++;});
  try{
+  // Proof the server really runs with the relay off: the route checks the switch before sign-in, so off answers 404
+  // and on answers 401 to this signed-out probe (made from Node, outside the browser being watched).
+  const probe=await fetch(base+'/api/relay?device=00000000-0000-4000-8000-000000000000&mode=directory');
+  assert.equal(probe.status,404,'The relay-off pass is talking to a server with the relay on (status '+probe.status+')');
   dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();
   await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Type the passphrase again').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic relay-off owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
   const sales=Buffer.from('line_id,product_id,customer_id,sale_date,quantity,list_amount,discount_amount,freight_amount,rebate_amount,cost_amount\n1,'+marker+'-OFF-P,'+marker+'-OFF-C,2026-03-31,1,98765.43,0,0,0,50000.00\n');
@@ -558,6 +562,9 @@ async function relayOffUi(){
   // The pages where sharing would start, sync or show itself.
   for(const hash of ['settings-team','home','data-hub','quotes']){await page.evaluate(h=>{location.hash=h;},hash);await page.waitForFunction(()=>!document.querySelector('main [aria-busy="true"]'));}
   assert.equal(await page.getByTestId('relay-device-checks').count(),0,'The sharing set-up showed with the relay off');
+  // With the relay on, an Owner's Home shows the sharing set-up card until this device joins; off, it never shows.
+  await page.evaluate(()=>{location.hash='home';});await page.waitForFunction(()=>!document.querySelector('main [aria-busy="true"]'));await page.waitForTimeout(2000);
+  assert.equal(await page.getByTestId('relay-onboarding').count(),0,'The sharing set-up card showed on Home with the relay off');
   await page.waitForTimeout(65000);
   await Promise.all(headerChecks);
   assert.equal(seen.relay,0,'A relay request was made with RELAY_ENABLED off');
@@ -565,7 +572,7 @@ async function relayOffUi(){
   assert.equal(seen.realtime,0,'A Realtime request was made with RELAY_ENABLED off');
   assert.equal(seen.sockets,0,'A WebSocket was opened with RELAY_ENABLED off');
   assert.ok(seen.requests>0,'The relay-off pass saw no requests at all');
-  results.checks.relayOffUi={relayRequests:seen.relay,storageRequests:seen.storage,realtimeRequests:seen.realtime,webSockets:seen.sockets,requestsSeen:seen.requests,waitedPastTickMs:65000,imported:true};
+  results.checks.relayOffUi={serverRelayStatus:probe.status,setupCardShown:false,relayRequests:seen.relay,storageRequests:seen.storage,realtimeRequests:seen.realtime,webSockets:seen.sockets,requestsSeen:seen.requests,waitedPastTickMs:65000,imported:true};
  }catch(error){console.error('Relay-off diagnostics:',JSON.stringify({...await diagnose(),seen}));throw error;}finally{context.off?.('request',watch);await context.close();context=savedContext;page=savedPage;dataPlaneActive=active;}
 }
 async function shareUi(){
