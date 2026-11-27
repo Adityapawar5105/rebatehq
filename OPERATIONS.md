@@ -6,7 +6,7 @@ Rewritten on 21 November 2026 (roadmap 13.5) for the system as it runs now; numb
 
 | Part | Where | Holds |
 |---|---|---|
-| The app (Next.js) | Netlify, built from `main` | No business data. Server routes cover sign-in, workspaces and invites, licences and devices, the ciphertext relay (including `/api/relay?mode=token`, which hands the signed-in person's own session token to the vault worker), opt-in benchmarks and the operator subscriptions view |
+| The app (Next.js) | Netlify, built from `main`; a move to Vercel is prepared (27 Nov 2026, [VERCEL_DEPLOYMENT.md](VERCEL_DEPLOYMENT.md)) | No business data. Server routes cover sign-in, workspaces and invites, licences and devices, the ciphertext relay (including `/api/relay?mode=token`, which hands the signed-in person's own session token to the vault worker), opt-in benchmarks and the operator subscriptions view |
 | Control plane (Supabase Postgres and Auth) | `rebatehq-staging` today; production is a separate project (not set up yet) | Identity, workspaces and memberships, licences, seats and devices, the relay's encrypted events, wrapped pack keys and signed pack versions, pseudonymous benchmark rows, the audit trail. 18 locked migrations; 15 control-plane tables |
 | Team sharing storage (Supabase Storage and Realtime) | The private `relay-packs` bucket, and one Realtime channel per pack | With sharing on, encrypted copies of the shared prices, items, customers, guardrails and (for roles with cost) costs, as AES-GCM chunks. The server cannot read them. A channel carries only a pack version number. The worker calls both directly with the person's own session token |
 | Each user's vault | That user's browser (DuckDB-Wasm in a Web Worker, encrypted snapshots in OPFS) | All prices, costs, invoices, rules, quotes and reports. The server never receives them in readable form (shared packs arrive only as ciphertext, above); **we cannot restore a vault for a customer**: only their own encrypted backup can |
@@ -18,7 +18,7 @@ The retired server business routes answer with a fixed 410 (decision D12). The l
 | | Address | Notes |
 |---|---|---|
 | Local | `http://localhost:3000` | `pnpm dev` (or `next dev --webpack` in a git worktree); `.env.local` from `.env.example`. `VAULT_LAB_ENABLED=true` opens `/lab/vault` without sign-in, for the browser gate only |
-| Staging | https://rebatehq.netlify.app | Production deploy of `main`; PR previews behind the Netlify team login. Supabase `rebatehq-staging`. See [NETLIFY_DEPLOYMENT.md](NETLIFY_DEPLOYMENT.md) |
+| Staging | https://rebatehq.netlify.app | Production deploy of `main`; PR previews behind the Netlify team login. Supabase `rebatehq-staging`. See [NETLIFY_DEPLOYMENT.md](NETLIFY_DEPLOYMENT.md). Pre-launch testing is moving to Vercel Hobby at app.rebatehq.app, with Vercel Pro bought before the first pilot customer ([VERCEL_DEPLOYMENT.md](VERCEL_DEPLOYMENT.md)) |
 | Production | not yet | Needs the final web address first (decision D3): a vault is tied to the address it was created on. Then a separate Supabase project, Netlify site, Resend (or SMTP) sender and Upstash limiter; nothing is shared with staging |
 
 ## Configuration
@@ -28,7 +28,7 @@ Server settings live in the hosting provider's environment, never in git. `.env.
 - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `APP_BASE_URL`.
 - `APP_DATABASE_URL`: the restricted `rebatehq_app_login` (NOSUPERUSER, NOBYPASSRLS), never the postgres or service-role credentials. `SEED_DATABASE_URL` is for operator scripts only.
 - `ACTOR_SIGNING_SECRET`, `LICENCE_SIGNING_KEY` (server only) and `NEXT_PUBLIC_LICENCE_VERIFY_KEY` (public): generate with `node scripts/control-plane-keys.mjs --install` (writes `.env.local`) or `--ci-env`; keep the private parts in the secret manager.
-- `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`: required in production; sign-in, invite and workspace routes refuse to run without them. The limiter keys on Netlify's client address (`x-nf-client-connection-ip`, then `x-real-ip`, then the last `x-forwarded-for` hop; audit B-9). Whether Netlify overwrites a header the client sends is not yet verified on the live site.
+- `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`: required in production; sign-in, invite and workspace routes refuse to run without them. The limiter keys on the platform's client address (`lib/db.ts` `clientIp`; audit B-9). On Netlify: `x-nf-client-connection-ip`, then `x-real-ip`, then the last `x-forwarded-for` hop. On Vercel (`VERCEL=1`): `x-real-ip`, then `x-vercel-forwarded-for`, and never the Netlify header. Neither platform's live headers are verified yet.
 - `PG_POOL_MAX` (optional, default 4): database connections per server instance.
 - `RESEND_API_KEY` and `EMAIL_FROM` for invites; Supabase Auth sends sign-in links through its own SMTP setting (roadmap 0.6: a dedicated sender is still to be configured).
 - Feature switches, off by default: `RELAY_ENABLED` (ciphertext sharing), `BENCHMARKS_ENABLED` with `BENCH_PSEUDONYM_KEY`, `VAULT_LAB_ENABLED` (never in a deployment), `DEV_IMPERSONATION_ENABLED` (development only).
