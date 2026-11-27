@@ -131,3 +131,11 @@ Two checks were rewritten for tables that remain:
 - **Policy.** One SELECT policy on `realtime.messages`, created only where that table exists. No GRANT or REVOKE is made on the managed `realtime` schema.
 - **pgTAP.** Fresh runs plan **155** checks and restore runs plan **158** (`supabase/tests/sharing_s4.sql`).
 - **Restore.** `scripts/restore-storage-objects.sql` re-applies the Realtime policy.
+
+## Review R2 relay quotas (locked 28 November 2026)
+
+`20261129120000_review_r2_relay_quotas.sql` is **locked**: 19 applied, 0 pending.
+- **CI:** [CI #291](https://github.com/Adityapawar5105/rebatehq/actions/runs/46054705568) passed on `78b75e5` (PR #53) with four new pgTAP checks (160 fresh) and the relay-off pass; [CI #292](https://github.com/Adityapawar5105/rebatehq/actions/runs/46059293393) passed on `main` at `31987d4`.
+- **Restore Drill:** the user-run [Restore Drill #29](https://github.com/Adityapawar5105/rebatehq/actions/runs/46061068895) (local target) passed on `31987d4` with `1..163` restore-mode checks.
+- **What it changes:** `public.relay_check_insert()` only, from the S2 body. A device that does not publish under the signed grid may send 20 events a minute and 2,000 a day (publishers 60 a minute); the 1,000 device-key limit counts only keys of active devices, with a lifetime bound of 10,000. Same SECURITY DEFINER, `search_path` and grants.
+- **Staging:** applied on 28 Nov 2026 with `supabase db push` after a dry run. Read-only checks found both changes in the function, SECURITY DEFINER with `search_path=public, pg_temp`, no EXECUTE for anon, authenticated, service_role or rebatehq_app, and its 6 triggers. The security advisor showed nothing new.
