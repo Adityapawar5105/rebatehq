@@ -62,7 +62,10 @@ export const PostSchema = z.discriminatedUnion('action',[
 ]);
 export type Post = z.infer<typeof PostSchema>;
 export type Directory = {devices:DirectoryDevice[];latest:Epoch|null;head:{sequence:string;hash:string}};
-export const PackPageSchema=z.object({versions:z.array(PackVersionSchema).max(RELAY_LIMITS.page),head:z.object({version:counter,hash}).strict()}).strict();
+// Review R2 (R26): with times=1 the page also carries when the server received each version and the server clock, so a
+// receiver measures how long a version has been waiting for its chunks without trusting either device clock.
+export const PackPageSchema=z.object({versions:z.array(PackVersionSchema).max(RELAY_LIMITS.page),head:z.object({version:counter,hash}).strict(),
+ received:z.record(z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/),date).refine(r=>Object.keys(r).length<=RELAY_LIMITS.page).optional(),now:date.optional()}).strict();
 export type PackPage = z.infer<typeof PackPageSchema>;
 export type Page = {epochs:Epoch[];events:RelayEvent[];latestEpoch:string;head:{sequence:string;hash:string}};
 export const DirectorySchema=z.object({devices:z.array(DeviceSchema.extend({role:RelayRole,label:z.string().max(320).optional()}).strict()).max(RELAY_LIMITS.devices),latest:EpochSchema.nullable(),head:z.object({sequence:counter,hash}).strict()}).strict();

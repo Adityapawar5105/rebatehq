@@ -8,10 +8,24 @@ import {sealPack,openPack,openDelta} from '../sharing/publish';
 import type {DeltaData} from '../sharing/delta';
 import type {PackData,PackId} from '../sharing/packs';
 import {fold,ensureOperation,type Applied,type Shared,type FoldBase} from './state';
-import type {RelayTransport} from './http';
+import type {RelayTransport,ChunkStore} from './http';
 import { msg } from "../i18n/core";
 /** Team sharing S4: how long a pack version may lack its chunks before that counts as a failure (uploads take seconds). */
 export const NOT_READY_MS = 15 * 60_000;
+/**
+ * Review R2 (R26): one chunk upload, tried three times (waits of 1 and 4 seconds). A chunk the server already holds (a
+ * retry after a lost response) counts as uploaded; a refusal for access or size is not retried.
+ */
+export async function putChunk(store:ChunkStore,path:string,body:Uint8Array,signal:AbortSignal,waits:readonly number[]=[1000,4000]){
+ for(let i=0;;i++){
+  try{await store.put(path,body);return;}
+  catch(error){
+   if(error instanceof RelayError&&error.code==='EXISTS')return;
+   if(signal.aborted||i>=waits.length||(error instanceof RelayError&&['ACCESS','LIMIT'].includes(error.code)))throw error;
+   await new Promise(r=>setTimeout(r,waits[i]));
+  }
+ }
+}
 /** Review R2 (flaw 3.4): a sync that changed nothing saves (an audited, whole-vault write) at most this often, so the
  *  last-synced time stays roughly current without a write every minute. */
 export const QUIET_SAVE_MS = 15 * 60_000;
@@ -262,7 +276,7 @@ export class RelaySession{
   const version=await encryptPackVersion(me,last.epoch,key,head,pack,asDelta?'delta':'snapshot',asDelta?delta!.data.base:'0',manifest,id);
   await this.transport.post({action:'pack',pack:version});
   // Chunks are uploaded after the signed version exists: Storage only accepts chunks of a version this person signed.
-  for(const c of chunks){const iv=unbase64(c.iv),ct=unbase64(c.ciphertext),body=new Uint8Array(iv.length+ct.length);body.set(iv);body.set(ct,iv.length);await t.chunks.put(this.chunkPath(pack,id,c.n),body);}
+  for(const c of chunks){const iv=unbase64(c.iv),ct=unbase64(c.ciphertext),body=new Uint8Array(iv.length+ct.length);body.set(iv);body.set(ct,iv.length);await putChunk(t.chunks,this.chunkPath(pack,id,c.n),body,this.signal);}
   (this.state.packHeads??={})[pack]={version:version.version,hash:version.hash};(this.state.packApplied??={})[pack]=version.version;
   await this.persist('pack_published');return {pack,epoch:last.epoch.id,version:version.version,hash:version.hash,kind:asDelta?'delta' as const:'snapshot' as const,rows:manifest.rows};
  }
@@ -276,8 +290,12 @@ export class RelaySession{
   */
  async packReceive(pack:PackId):Promise<{version:string;createdAt:string;sender:string;head:{version:string;hash:string};steps:Array<{kind:'snapshot';version:string;data:PackData}|{kind:'delta';version:string;data:DeltaData}>}|null>{
   const t=this.packTransport(),start=this.state.packHeads?.[pack]??null;let head=start,after=head?.version??'0';const seen:Array<{v:PackVersion;key:string|null}>=[];
+  // Review R2 (R26): when the server says when it received each version and what time it is now, the not-ready window
+  // runs on the server clock (offset from this device), not on the publisher clock in the signed version.
+  const received=new Map<string,number>();let offset:number|null=null;
   for(let round=0;round<400;round++){
    this.signal.throwIfAborted();const page=PackPageSchema.parse(await t.page(pack,after));
+   if(page.received&&page.now){offset=Date.parse(page.now)-Date.now();for(const [id,at] of Object.entries(page.received))received.set(id,Date.parse(at));}
    for(const raw of page.versions){
     const entry=this.state.epochs.find(e=>e.epoch.id===raw.epochId);
     if(!entry){if(head)fail();after=raw.version;continue;}
@@ -301,11 +319,12 @@ export class RelaySession{
    return null;
   }
   const steps:Array<{kind:'snapshot';version:string;data:PackData}|{kind:'delta';version:string;data:DeltaData}>=[];
+  const waiting=(v:PackVersion)=>{const at=received.get(v.id.toLowerCase());return at!==undefined&&offset!==null?Date.now()+offset-at:Date.now()-Date.parse(v.createdAt);};
   for(const {v,key} of chosen){
    const manifest=await decryptPackVersion(v,key),chunks=[];
    for(const c of manifest.chunks){let b:Uint8Array;
     // S4: the version row is written before its chunks, so a chunk missing within minutes of signing is still uploading.
-    try{b=await t.chunks.get(this.chunkPath(pack,v.id,Number(c.n)));}catch(error){if(error instanceof RelayError&&error.code!=='LIMIT'&&Date.now()-Date.parse(v.createdAt)<NOT_READY_MS)throw new RelayError('NOT_READY',msg('relay.http.sharingIsUnavailableYour'));throw error;}
+    try{b=await t.chunks.get(this.chunkPath(pack,v.id,Number(c.n)));}catch(error){if(error instanceof RelayError&&error.code!=='LIMIT'&&waiting(v)<NOT_READY_MS)throw new RelayError('NOT_READY',msg('relay.http.sharingIsUnavailableYour'));throw error;}
     if(b.length<29)fail();chunks.push({n:Number(c.n),iv:base64(b.subarray(0,12)),ciphertext:base64(b.subarray(12))});}
    steps.push(v.kind==='snapshot'?{kind:'snapshot',version:v.version,data:await openPack(pack,manifest,chunks,key,v.id)}:{kind:'delta',version:v.version,data:await openDelta(pack,manifest,chunks,key,v.id)});
   }

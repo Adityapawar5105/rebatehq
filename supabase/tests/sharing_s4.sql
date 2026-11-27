@@ -49,3 +49,109 @@ RESET ROLE;
 UPDATE public.tenant SET deleted_at=NULL WHERE tenant_id='__PHASE1_RELAY_TENANT_A_ID__';
 SELECT pg_temp.use_identity('');
 SELECT extensions.ok(true,'Review R2: a deleted workspace''s pack chunks and doorbell channels are refused to its members');
+-- Review R2, the rest (migration 20261129120000_review_r2_relay_quotas.sql). Tenant A's latest epoch is A3, format 2:
+-- A is the grid Owner (a publisher), R a Sales Rep (not a publisher). Operator rows stand in for earlier traffic.
+RESET ROLE;
+SELECT pg_temp.use_identity('');
+DO $$ DECLARE s bigint; BEGIN
+ -- Earlier checks left events of both devices in this minute: move them out, so the counts below are exact.
+ UPDATE public.relay_event SET received_at=clock_timestamp()-interval '2 hours' WHERE tenant_id='__PHASE1_RELAY_TENANT_A_ID__' AND sender_device IN ('__PHASE1_RELAY_DEVICE_R_ID__','__PHASE1_RELAY_DEVICE_A_ID__');
+ SELECT COALESCE(max(sequence),0) INTO s FROM public.relay_event WHERE tenant_id='__PHASE1_RELAY_TENANT_A_ID__';
+ INSERT INTO public.relay_event(id,tenant_id,epoch_id,sequence,previous_hash,sender_user,sender_device,object_id,object_kind,recipient_ids,mention_ids,iv,ciphertext,ciphertext_bytes,signature,content_hash,signed_at,received_at)
+ SELECT gen_random_uuid(),'__PHASE1_RELAY_TENANT_A_ID__','__PHASE1_SHARE_EPOCH_A3_ID__',s+g,decode(repeat('71',32),'hex'),'__PHASE1_RELAY_USER_R_ID__','__PHASE1_RELAY_DEVICE_R_ID__',gen_random_uuid(),'quote','{}','{}',
+  decode(repeat('72',12),'hex'),decode(repeat('73',32),'hex'),32,decode(repeat('74',64),'hex'),decode(md5('r2q'||g)||md5('r2q'||g),'hex'),now(),clock_timestamp()
+ FROM generate_series(1,19) g;
+END $$;
+-- As R: the 20th event in a minute is accepted, the 21st refused.
+SELECT pg_temp.use_identity('__PHASE1_RELAY_USER_R_ID__');
+SET LOCAL ROLE rebatehq_app;
+DO $$ DECLARE s bigint; h bytea; BEGIN
+ IF current_user<>'rebatehq_app' THEN RAISE EXCEPTION 'R2Q unsafe role'; END IF;
+ FOR i IN 1..2 LOOP
+  SELECT sequence,content_hash INTO s,h FROM public.relay_event WHERE tenant_id='__PHASE1_RELAY_TENANT_A_ID__' ORDER BY sequence DESC LIMIT 1;
+  BEGIN
+   INSERT INTO public.relay_event(id,tenant_id,epoch_id,sequence,previous_hash,sender_user,sender_device,object_id,object_kind,recipient_ids,mention_ids,iv,ciphertext,ciphertext_bytes,signature,content_hash,signed_at)
+   VALUES(gen_random_uuid(),'__PHASE1_RELAY_TENANT_A_ID__','__PHASE1_SHARE_EPOCH_A3_ID__',s+1,h,'__PHASE1_RELAY_USER_R_ID__','__PHASE1_RELAY_DEVICE_R_ID__',gen_random_uuid(),'quote','{}','{}',
+    decode(repeat('72',12),'hex'),decode(repeat('73',32),'hex'),32,decode(repeat('74',64),'hex'),decode(md5('r2q-r'||i)||md5('r2q-r'||i),'hex'),now());
+   IF i=2 THEN RAISE EXCEPTION 'R2Q a rep device sent a 21st event in one minute'; END IF;
+  EXCEPTION WHEN check_violation THEN
+   IF i=1 THEN RAISE EXCEPTION 'R2Q the 20th rep event was refused: %',SQLERRM; END IF;
+   IF SQLERRM NOT LIKE 'relay message quota exceeded%' THEN RAISE EXCEPTION 'R2Q wrong refusal: %',SQLERRM; END IF;
+  END;
+ END LOOP;
+END $$;
+RESET ROLE;
+SELECT pg_temp.use_identity('');
+SELECT extensions.ok(true,'Review R2: a device that does not publish may send 20 relay events a minute, not 21');
+-- A day: move R's events out of the last minute, then top R up to 1,999 events in the last day.
+DO $$ DECLARE s bigint; n bigint; BEGIN
+ UPDATE public.relay_event SET received_at=clock_timestamp()-interval '2 hours' WHERE tenant_id='__PHASE1_RELAY_TENANT_A_ID__' AND sender_device='__PHASE1_RELAY_DEVICE_R_ID__';
+ SELECT count(*) INTO n FROM public.relay_event WHERE tenant_id='__PHASE1_RELAY_TENANT_A_ID__' AND sender_device='__PHASE1_RELAY_DEVICE_R_ID__';
+ IF n>1999 THEN RAISE EXCEPTION 'R2Q fixture already has % rep events',n; END IF;
+ SELECT COALESCE(max(sequence),0) INTO s FROM public.relay_event WHERE tenant_id='__PHASE1_RELAY_TENANT_A_ID__';
+ INSERT INTO public.relay_event(id,tenant_id,epoch_id,sequence,previous_hash,sender_user,sender_device,object_id,object_kind,recipient_ids,mention_ids,iv,ciphertext,ciphertext_bytes,signature,content_hash,signed_at,received_at)
+ SELECT gen_random_uuid(),'__PHASE1_RELAY_TENANT_A_ID__','__PHASE1_SHARE_EPOCH_A3_ID__',s+g,decode(repeat('71',32),'hex'),'__PHASE1_RELAY_USER_R_ID__','__PHASE1_RELAY_DEVICE_R_ID__',gen_random_uuid(),'quote','{}','{}',
+  decode(repeat('72',12),'hex'),decode(repeat('73',32),'hex'),32,decode(repeat('74',64),'hex'),decode(md5('r2d'||g)||md5('r2d'||g),'hex'),now(),clock_timestamp()-interval '2 hours'
+ FROM generate_series(1,(1999-n)::integer) g;
+END $$;
+SELECT pg_temp.use_identity('__PHASE1_RELAY_USER_R_ID__');
+SET LOCAL ROLE rebatehq_app;
+DO $$ DECLARE s bigint; h bytea; BEGIN
+ FOR i IN 1..2 LOOP
+  SELECT sequence,content_hash INTO s,h FROM public.relay_event WHERE tenant_id='__PHASE1_RELAY_TENANT_A_ID__' ORDER BY sequence DESC LIMIT 1;
+  BEGIN
+   INSERT INTO public.relay_event(id,tenant_id,epoch_id,sequence,previous_hash,sender_user,sender_device,object_id,object_kind,recipient_ids,mention_ids,iv,ciphertext,ciphertext_bytes,signature,content_hash,signed_at)
+   VALUES(gen_random_uuid(),'__PHASE1_RELAY_TENANT_A_ID__','__PHASE1_SHARE_EPOCH_A3_ID__',s+1,h,'__PHASE1_RELAY_USER_R_ID__','__PHASE1_RELAY_DEVICE_R_ID__',gen_random_uuid(),'quote','{}','{}',
+    decode(repeat('72',12),'hex'),decode(repeat('73',32),'hex'),32,decode(repeat('74',64),'hex'),decode(md5('r2d-r'||i)||md5('r2d-r'||i),'hex'),now());
+   IF i=2 THEN RAISE EXCEPTION 'R2Q a rep device sent a 2,001st event in one day'; END IF;
+  EXCEPTION WHEN check_violation THEN
+   IF i=1 THEN RAISE EXCEPTION 'R2Q the 2,000th rep event of the day was refused: %',SQLERRM; END IF;
+   IF SQLERRM NOT LIKE 'relay message quota exceeded%' THEN RAISE EXCEPTION 'R2Q wrong refusal: %',SQLERRM; END IF;
+  END;
+ END LOOP;
+END $$;
+RESET ROLE;
+SELECT pg_temp.use_identity('');
+SELECT extensions.ok(true,'Review R2: a device that does not publish may send 2,000 relay events a day, not 2,001');
+-- The Owner (a publisher) keeps 60 a minute: 25 events already this minute, and one more is accepted.
+DO $$ DECLARE s bigint; BEGIN
+ SELECT COALESCE(max(sequence),0) INTO s FROM public.relay_event WHERE tenant_id='__PHASE1_RELAY_TENANT_A_ID__';
+ INSERT INTO public.relay_event(id,tenant_id,epoch_id,sequence,previous_hash,sender_user,sender_device,object_id,object_kind,recipient_ids,mention_ids,iv,ciphertext,ciphertext_bytes,signature,content_hash,signed_at,received_at)
+ SELECT gen_random_uuid(),'__PHASE1_RELAY_TENANT_A_ID__','__PHASE1_SHARE_EPOCH_A3_ID__',s+g,decode(repeat('71',32),'hex'),'__PHASE1_RELAY_USER_A_ID__','__PHASE1_RELAY_DEVICE_A_ID__',gen_random_uuid(),'quote','{}','{}',
+  decode(repeat('72',12),'hex'),decode(repeat('73',32),'hex'),32,decode(repeat('74',64),'hex'),decode(md5('r2a'||g)||md5('r2a'||g),'hex'),now(),clock_timestamp()
+ FROM generate_series(1,25) g;
+END $$;
+SELECT pg_temp.use_identity('__PHASE1_RELAY_USER_A_ID__');
+SET LOCAL ROLE rebatehq_app;
+DO $$ DECLARE s bigint; h bytea; BEGIN
+ SELECT sequence,content_hash INTO s,h FROM public.relay_event WHERE tenant_id='__PHASE1_RELAY_TENANT_A_ID__' ORDER BY sequence DESC LIMIT 1;
+ BEGIN
+  INSERT INTO public.relay_event(id,tenant_id,epoch_id,sequence,previous_hash,sender_user,sender_device,object_id,object_kind,recipient_ids,mention_ids,iv,ciphertext,ciphertext_bytes,signature,content_hash,signed_at)
+  VALUES(gen_random_uuid(),'__PHASE1_RELAY_TENANT_A_ID__','__PHASE1_SHARE_EPOCH_A3_ID__',s+1,h,'__PHASE1_RELAY_USER_A_ID__','__PHASE1_RELAY_DEVICE_A_ID__',gen_random_uuid(),'quote','{}','{}',
+   decode(repeat('72',12),'hex'),decode(repeat('73',32),'hex'),32,decode(repeat('74',64),'hex'),decode(md5('r2a-a')||md5('r2a-a'),'hex'),now());
+ EXCEPTION WHEN check_violation THEN RAISE EXCEPTION 'R2Q the Owner''s 26th event in a minute was refused: %',SQLERRM;
+ END;
+END $$;
+RESET ROLE;
+SELECT pg_temp.use_identity('');
+SELECT extensions.ok(true,'Review R2: a publisher keeps the 60-a-minute event limit');
+-- R25: 1,000 keys of revoked devices no longer block a new device's key.
+DO $$ BEGIN
+ INSERT INTO public.licence_device(id,tenant_id,user_id) SELECT ('00000000-0000-4000-8000-'||lpad(g::text,12,'0'))::uuid,'__PHASE1_RELAY_TENANT_A_ID__','__PHASE1_RELAY_USER_A_ID__' FROM generate_series(1,1001) g;
+ UPDATE public.licence_device SET status='revoked' WHERE tenant_id='__PHASE1_RELAY_TENANT_A_ID__' AND id::text LIKE '00000000-0000-4000-8000-%' AND id<>'00000000-0000-4000-8000-000000001001'::uuid;
+ UPDATE public.licence_device SET status='active' WHERE id='00000000-0000-4000-8000-000000001001'::uuid;
+ INSERT INTO public.relay_device_key(id,tenant_id,user_id,agreement_public,signing_public,possession_proof,signed_at,received_at)
+ SELECT ('00000000-0000-4000-8000-'||lpad(g::text,12,'0'))::uuid,'__PHASE1_RELAY_TENANT_A_ID__','__PHASE1_RELAY_USER_A_ID__',decode('04'||repeat('61',64),'hex'),decode('04'||repeat('62',64),'hex'),decode(repeat('63',64),'hex'),now(),clock_timestamp()-interval '2 minutes'
+ FROM generate_series(1,1000) g;
+ IF (SELECT count(*) FROM public.relay_device_key WHERE tenant_id='__PHASE1_RELAY_TENANT_A_ID__')<1000 THEN RAISE EXCEPTION 'R2Q key fixture too small'; END IF;
+END $$;
+SELECT pg_temp.use_identity('__PHASE1_RELAY_USER_A_ID__');
+SET LOCAL ROLE rebatehq_app;
+DO $$ BEGIN
+ INSERT INTO public.relay_device_key(id,tenant_id,user_id,agreement_public,signing_public,possession_proof,signed_at)
+ VALUES('00000000-0000-4000-8000-000000001001','__PHASE1_RELAY_TENANT_A_ID__','__PHASE1_RELAY_USER_A_ID__',decode('04'||repeat('61',64),'hex'),decode('04'||repeat('62',64),'hex'),decode(repeat('63',64),'hex'),now());
+EXCEPTION WHEN check_violation THEN RAISE EXCEPTION 'R2Q revoked device keys still block a new key: %',SQLERRM;
+END $$;
+RESET ROLE;
+SELECT pg_temp.use_identity('');
+SELECT extensions.ok(true,'Review R2 (R25): keys of revoked devices do not count toward the 1,000 device-key limit');

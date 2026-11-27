@@ -97,11 +97,13 @@ export async function relayPost(db:RelayDb,actor:RelayActor,input:unknown):Promi
 // holds that pack's key in the latest epoch, so a device without a cost pack never receives its rows or head.
 function packFrom(r:Row):PackVersion{return {v:'1',id:r.id,tenantId:r.tenant_id,epochId:r.epoch_id,pack:r.pack,version:String(r.version),previousHash:hex(r.previous_hash),kind:r.kind,baseVersion:String(r.base_version),senderUser:r.sender_user,senderDevice:r.sender_device,createdAt:iso(r.signed_at),iv:encoded(r.iv),ciphertext:encoded(r.ciphertext),signature:encoded(r.signature),hash:hex(r.content_hash)};}
 async function packHead(db:RelayDb,tenant:string,pack:string){const r=await db.query('SELECT version::text AS head_version,content_hash FROM public.relay_pack_version WHERE tenant_id=$1::uuid AND pack=$2::text ORDER BY version DESC LIMIT 1',[tenant,pack]);return r.rows.length?{version:r.rows[0].head_version,hash:hex(r.rows[0].content_hash)}:{version:'0',hash:ZERO_HASH};}
-export async function relayPackPage(db:RelayDb,actor:RelayActor,pack:string,after:string):Promise<PackPage>{
+export async function relayPackPage(db:RelayDb,actor:RelayActor,pack:string,after:string,times=false):Promise<PackPage>{
  if(!(ALL_PACKS as readonly string[]).includes(pack)||!/^(0|[1-9][0-9]{0,8})$/.test(after))throw new RelayError('REQUEST',msg("relay.store.theSharingRequestHas"));
  await authorizeRelay(db,actor);await lockRelay(db,actor.tenantId);
  const rows=await db.query('SELECT * FROM public.relay_pack_version WHERE tenant_id=$1::uuid AND pack=$2::text AND version>$3::bigint ORDER BY version LIMIT $4::integer',[actor.tenantId,pack,after,RELAY_LIMITS.page]);
- return {versions:rows.rows.map(packFrom),head:await packHead(db,actor.tenantId,pack)};
+ const page:PackPage={versions:rows.rows.map(packFrom),head:await packHead(db,actor.tenantId,pack)};
+ if(times){page.received=Object.fromEntries(rows.rows.map(r=>[String(r.id).toLowerCase(),iso(r.received_at)]));page.now=new Date().toISOString();}
+ return page;
 }
 async function relayPackPost(db:RelayDb,actor:RelayActor,p:PackVersion):Promise<{ok:true;id:string}>{
  if(p.tenantId!==actor.tenantId||p.senderUser!==actor.userId||p.senderDevice!==actor.deviceId)throw new RelayError('ACCESS',msg("relay.store.theSharedItemBelongs"));

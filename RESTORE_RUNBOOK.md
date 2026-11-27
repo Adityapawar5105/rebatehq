@@ -1,9 +1,9 @@
 # RebateHQ logical restore runbook
 
 > **Current state (26 Nov 2026, review R1).** The record below grew chunk by chunk; where it disagrees, these numbers are current:
-> - **Migrations:** 18 applied and locked, 0 pending (`migrations.lock`).
+> - **Migrations:** 18 applied and locked, 1 pending (`migrations.lock`): `20261129120000_review_r2_relay_quotas.sql` (27 Nov 2026), waiting for CI and a user-run Restore Drill.
 > - **Tables:** 15 public control-plane (tenant) tables. Every restore check requires at least 15 (raised from 13 in review R1).
-> - **pgTAP plan:** 156 checks on a fresh database, 159 in restore mode (`supabase/tests/phase1_rls.sql`), since the review R2 migration `20261128120000_review_r2_deleted_workspaces.sql`. It was locked after the user-run Restore Drill #28 passed with 159 restore-mode checks.
+> - **pgTAP plan:** 160 checks on a fresh database, 163 in restore mode (`supabase/tests/phase1_rls.sql`), since the pending quota migration `20261129120000_review_r2_relay_quotas.sql` (four new checks). The next Restore Drill must report 163 restore-mode checks. Before it, 156 and 159 applied (Restore Drill #28).
 > - **Dump scope:** `public`, `rebatehq_private` and `rebatehq_storage` (`scripts/restore-dump-scope.mjs`). The relay-packs bucket and its policies are re-applied with `scripts/restore-storage-objects.sql` (step 7a). Storage objects themselves are not restored: after a restore, a publisher presses Publish now.
 > - **Hashes compared:** licence, relay (including `relay_pack_wrap` and `relay_pack_version`) and benchmark hashes (`scripts/verify-restore-equivalence.mjs`).
 > - **Restore Drills passed:** #16, #19 to #21, #23 to #25, #27 and #28, all against a local target. A restore into a hosted Supabase project has never run.

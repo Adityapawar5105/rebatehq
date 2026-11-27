@@ -189,6 +189,10 @@ export class VaultService {
   private lastBackground = 0;
   /** Review R2: packs a relay receipt refused for this vault's capacity, with when; retried after an hour. */
   private capacityRefused = new Map<string, number>();
+  /** Review R2 (R26): a publish that failed (a chunk that would not upload) is tried again by the background tick, after
+   *  1 minute, then 2, 4 and so on up to an hour, until one succeeds. Kept in memory: reopening the vault starts again. */
+  private republishAt = 0;
+  private republishWait = 60_000;
   private ringHook: (() => void) | null = null;
   /** The worker passes how to queue an immediate sync when the doorbell rings. */
   onRelayRing(hook: () => void) { this.ringHook = hook; }
@@ -208,6 +212,7 @@ export class VaultService {
       const session = await this.relaySession(new AbortController().signal), view = await session.sync();
       await this.mirrorGrid(session, view);
       if (!session.isPublisher()) await this.receiveAll(session, view, true);
+      else if (this.republishAt && Date.now() >= this.republishAt) await this.publishAll(session, false).catch(() => undefined);
       this.relayListen(session);
       return before !== await seen() || ((await this.relayStateRead()).head?.sequence ?? "0") !== head;
     } catch { return false; }
@@ -337,6 +342,13 @@ export class VaultService {
    * The publisher's record is written only once the version and all its chunks are on the server.
    */
   private async publishAll(session:RelaySession,rotated:boolean){
+    try { const r = await this.publishAllOnce(session, rotated); this.republishAt = 0; this.republishWait = 60_000; return r; }
+    catch (error) {
+      if (!(error instanceof DOMException && error.name === "AbortError")) { this.republishAt = Date.now() + this.republishWait; this.republishWait = Math.min(this.republishWait * 2, 3_600_000); }
+      throw error;
+    }
+  }
+  private async publishAllOnce(session:RelaySession,rotated:boolean){
     const e=this.requireEngine(),out:{pack:string;version:string;rows:string;kind:'snapshot'|'delta'}[]=[];
     const plans=[],epoch=session.epochId()??'';
     for(const p of sharing.PACK_IDS){

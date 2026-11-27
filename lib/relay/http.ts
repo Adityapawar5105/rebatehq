@@ -28,7 +28,7 @@ export function relayHttp(deviceId:string,signal:AbortSignal):RelayTransport{
  }
  return {
   async directory(){return DirectorySchema.parse(await request({mode:'directory'}));},
-  async packPage(pack,after){if(!/^[a-z_]{1,20}$/.test(pack)||!/^(0|[1-9][0-9]{0,8})$/.test(after))throw new RelayError('VERIFY',msg("relay.http.invalidLocalSharingCursor"));return PackPageSchema.parse(await request({mode:'packs',pack,after}));},
+  async packPage(pack,after){if(!/^[a-z_]{1,20}$/.test(pack)||!/^(0|[1-9][0-9]{0,8})$/.test(after))throw new RelayError('VERIFY',msg("relay.http.invalidLocalSharingCursor"));return PackPageSchema.parse(await request({mode:'packs',pack,after,times:'1'}));},
   async page(after,epochAfter){if(!/^(0|[1-9][0-9]{0,8})$/.test(after)||!/^(0|[1-9][0-9]{0,5})$/.test(epochAfter))throw new RelayError('VERIFY',msg("relay.http.invalidLocalSharingCursor"));return PageSchema.parse(await request({mode:'sync',after,epochAfter}));},
   chunks:storageChunks(()=>request({mode:'token'}).then(v=>TokenSchema.parse(v)),signal),
   token:()=>request({mode:'token'}).then(v=>TokenSchema.parse(v)),
@@ -45,7 +45,11 @@ function storageChunks(token:()=>Promise<z.infer<typeof TokenSchema>>,signal:Abo
  const call=async(path:string,init:RequestInit,read:boolean)=>{const t=await auth();let r:Response;
   try{r=await fetch(url(t.url,path,read),{...init,credentials:'omit',cache:'no-store',redirect:'error',headers:{...(init.headers??{}),Authorization:'Bearer '+t.token,apikey:t.apikey},signal:AbortSignal.any([signal,AbortSignal.timeout(30_000)])});}
   catch{throw new RelayError('NETWORK',msg("relay.http.sharingCouldNotReach"));}
-  if(!r.ok)throw new RelayError(r.status===403||r.status===401||r.status===400&&read?'ACCESS':'NETWORK',msg("relay.http.sharingIsUnavailableYour"));return r;};
+  if(!r.ok){
+   // Review R2 (R26): with x-upsert false, Storage refuses a path that already exists (409, or 400 with statusCode 409).
+   if(!read){const text=await r.text().catch(()=>'');if(r.status===409||/"statusCode"s*:s*"409"|Duplicate/i.test(text))throw new RelayError('EXISTS',msg("relay.http.sharingIsUnavailableYour"));}
+   throw new RelayError(r.status===403||r.status===401||r.status===400&&read?'ACCESS':'NETWORK',msg("relay.http.sharingIsUnavailableYour"));}
+  return r;};
  return {
   async put(path,bytes){if(bytes.length>524400)throw new RelayError('LIMIT',msg("relay.http.sharingReturnedTooMuch"));await call(path,{method:'POST',headers:{'Content-Type':'application/octet-stream','x-upsert':'false'},body:new Blob([new Uint8Array(bytes)])},false);},
   async get(path){const r=await call(path,{method:'GET'},true);const b=new Uint8Array(await r.arrayBuffer());if(b.length>524400)throw new RelayError('LIMIT',msg("relay.http.sharingReturnedTooMuch"));return b;},

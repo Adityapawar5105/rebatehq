@@ -91,3 +91,29 @@ Run locally on 26 November 2026, not CI evidence:
   - each is a security definer with `search_path=public, pg_temp`;
   - execute is granted to `authenticated` only;
   - the security advisor reported no new finding.
+
+## The rest of R2 (27 Nov 2026)
+
+Built by Claude Code on branch `claude/review-r2-rest`.
+
+**Lower event quota.** Migration `20261129120000_review_r2_relay_quotas.sql` replaces the relay insert trigger with two changes; the rest of the S2 body is unchanged (checked with a diff).
+- A device whose person is not an Owner, Pricing Owner or the named Pricing Owner in the latest signed grid may send 20 events a minute and 2,000 a day. Publishers keep 60 a minute. A workspace without a signed grid keeps 60 for everyone.
+- Keys of revoked devices no longer count toward the 1,000 device-key limit (R25). A lifetime bound of 10,000 keys still caps the table.
+- `app/api/relay/route.ts` answers a quota refusal with 429 `LIMIT` instead of the rotation message.
+- pgTAP: four new checks in `supabase/tests/sharing_s4.sql` (the 20th and 21st rep event in a minute, the 2,000th and 2,001st in a day, a publisher's 26th in a minute, a new key beside 1,000 revoked keys). Plans: 160 fresh, 163 restore.
+- `tests/relay-quota.test.ts` runs the real trigger in PGlite through the session code: a rep's 21st event in a minute is refused, the Owner's 25 are accepted.
+- PL/pgSQL note: a `CASE ... THEN` inside an `IF` condition ends the condition at its `THEN`, so the limit is computed into a variable first.
+
+**R24, session cookies.** `lib/supabase/cookies.ts`: HttpOnly, Secure in production, 30 days, used by both server clients; a removal keeps `maxAge` 0 (`tests/auth-cookies.test.ts`).
+
+**R26, failed uploads.** `putChunk` tries each chunk three times; `EXISTS` (Storage's duplicate answer) counts as uploaded; access and size refusals are not retried. A failed publish is retried by the background tick (1, 2, 4 ... minutes, up to an hour). The pack page returns server receive times and the server clock when asked (`times=1`; old clients do not ask and get the old shape), and the not-ready window uses them (`tests/relay-upload-retry.test.ts`: a receiver whose clock is an hour ahead still sees a just-received version as not ready; the old code called it lost). The background republish in `lib/vault/service.ts` has no automated test yet, so R26 is recorded as mitigated.
+
+**R25, device limit warning.** The sharing panel shows a status line from 50 of the 60 devices, in en, es and fr (fr-CA uses fr).
+
+**R27, relay-off pass.** CI restarts the same build with `RELAY_ENABLED=false` after the relay gate and runs `pnpm test:vault:privacy --browser=chromium --relay-off-only`. It first probes `/api/relay` signed out and requires 404 (a relay-on server answers 401), so it cannot pass against the wrong server; CI also waits for the relay-on server to release the port. It then fails on any `/api/relay`, Storage or Realtime request, any WebSocket, or the sharing set-up card on Home, over an import, the sharing pages and a 65-second wait.
+
+**R23** is accepted and documented in `SECURITY_REVIEW.md`: moving the pack name into the sealed body would hide nothing a rep device does not already know.
+
+**Local checks:** typecheck clean; the full JS and TS unit suites, including the full pgTAP SQL run in PGlite with assertion stubs (160 planned, 160 ran). Not CI evidence: the authenticated gates, the relay-off pass and real-Postgres pgTAP run in CI.
+
+**Not done:** the independent security review (B5) is the owner's to commission. The migration waits for CI and the owner's Restore Drill, then a lock PR; it is not on staging.

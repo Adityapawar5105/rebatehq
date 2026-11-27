@@ -50,8 +50,12 @@
     "20261127120000_sharing_s4_doorbell.sql",
     "20261128120000_review_r2_deleted_workspaces.sql"
   ],
-  "pendingOrder": [],
-  "pendingMigrations": {},
+  "pendingOrder": [
+    "20261129120000_review_r2_relay_quotas.sql"
+  ],
+  "pendingMigrations": {
+    "20261129120000_review_r2_relay_quotas.sql": "ea6f6724301c54fb0571f9fd80e59898430dd17292343f306571cadd012dc970"
+  },
   "appliedMigrationEvidence": {
     "202610250001_revoke_platform_public_privileges.sql": {
       "date": "2026-10-26",
