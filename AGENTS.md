@@ -61,7 +61,7 @@ owner's decision D11).
 
 This section supersedes the dated orders in the chunk history below, such as "Do not start 7D", "Next chunk: …" and "Only 9A remains". Those orders are history.
 - **Merged on `main`:** every chunk through 8R; roadmap phases 1 to 16 apart from the owner's items; team sharing S1 to S5b; near-miss tiers (blueprint item 39). The sidebar redesign (PR #24) merged on 23 Nov 2026.
-- **Numbers:** local vault v25 / 69 tables. Supabase has 18 locked migrations, 1 pending (`20261129120000_review_r2_relay_quotas.sql`, review R2 rest, waiting for CI and the user's Restore Drill), and 15 control-plane tables. pgTAP plans 160 fresh and 163 restore checks. Staging `rebatehq-staging` has all 18 (the review R2 migration applied on 27 Nov 2026 with `supabase db push`), with `RELAY_ENABLED` false.
+- **Numbers:** local vault v25 / 69 tables. Supabase has 19 locked migrations, 0 pending, and 15 control-plane tables. pgTAP plans 160 fresh and 163 restore checks. Staging `rebatehq-staging` has all 19 (the review R2 quota migration applied on 28 Nov 2026 with `supabase db push`), with `RELAY_ENABLED` false.
 - **Excluded by the owner:** payments (Phase 12) and the mobile app (9A / 15.5).
 - **The open work list:** the 26 Nov full project review, kept in the owner's private notes and not in this public repo. R1 fixes are in progress.
 - Work follows the owner's explicit instruction for each step.
@@ -411,5 +411,6 @@ See `docs/evidence/SECOND_AUDIT_PASS.md`. The independent security review (R02, 
 - **R26 (mitigated):** chunk uploads are retried, a failed publish is retried by the background tick (not yet covered by a test), and the not-ready window uses the server's receive time.
 - **R27:** a CI pass with `RELAY_ENABLED` off (`--relay-off-only`).
 - **R23:** accepted and documented; no change.
-- Migration `20261129120000_review_r2_relay_quotas.sql` is **pending** until CI and a user-run Restore Drill (163 restore-mode checks). pgTAP plans 160 fresh and 163 restore checks. Not applied to staging.
+- Migration `20261129120000_review_r2_relay_quotas.sql` is **locked** (28 Nov 2026) after CI #291 on `78b75e5`, CI #292 on `main` at `31987d4` and the user-run Restore Drill #29 (163 restore-mode checks). 19 migrations are applied and 0 are pending. Applied to staging on 28 Nov 2026.
+- It merged as PR #53 (`31987d4`); CI #289 and #290 failed first on the new relay-off step itself (the old server kept port 3000; an import waited for an acknowledgement box).
 - The independent security review (B5) is still the owner's to commission. See docs/evidence/REVIEW_R2_VERIFICATION.md.

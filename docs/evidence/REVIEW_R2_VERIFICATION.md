@@ -117,3 +117,10 @@ Built by Claude Code on branch `claude/review-r2-rest`.
 **Local checks:** typecheck clean; the full JS and TS unit suites, including the full pgTAP SQL run in PGlite with assertion stubs (160 planned, 160 ran). Not CI evidence: the authenticated gates, the relay-off pass and real-Postgres pgTAP run in CI.
 
 **Not done:** the independent security review (B5) is the owner's to commission. The migration waits for CI and the owner's Restore Drill, then a lock PR; it is not on staging.
+
+### The quota migration is locked (28 Nov 2026)
+
+- PR #53 merged as `31987d4` after [CI #291](https://github.com/Adityapawar5105/rebatehq/actions/runs/46054705568). [CI #292](https://github.com/Adityapawar5105/rebatehq/actions/runs/46059293393) passed on `main`.
+- The user-run [Restore Drill #29](https://github.com/Adityapawar5105/rebatehq/actions/runs/46061068895) passed on `31987d4` with `1..163` restore-mode checks.
+- `migrations.lock`: 19 applied, 0 pending; hash unchanged.
+- Staging `rebatehq-staging`: applied with `supabase db push` after a dry run; it now lists 19 migrations. Read-only checks: both changes present, SECURITY DEFINER with `search_path=public, pg_temp`, no EXECUTE for the four app roles, 6 triggers. The security advisor reported no new finding.
