@@ -30,19 +30,35 @@ Netlify (`NETLIFY_DEPLOYMENT.md`) stays as the fallback until Vercel is proven.
    - **Build time** (baked into the app; redeploy after changing): `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `NEXT_PUBLIC_LICENCE_VERIFY_KEY`.
    - **Server:**
      - `APP_BASE_URL`: `https://app.rebatehq.app` for Production, the vercel.app address for Preview;
-     - `APP_DATABASE_URL`: the restricted `rebatehq_app_login` through the pooler, with the `sslrootcert` path above;
+     - `APP_DATABASE_URL`: the restricted `rebatehq_netlify_login` (the staging login; only membership `rebatehq_app`, SET only) through the us-east-1 transaction pooler `aws-1-us-east-1.pooler.supabase.com:6543`, with `sslmode=verify-full` and the `sslrootcert` path above;
      - `ACTOR_SIGNING_SECRET`, `LICENCE_SIGNING_KEY`;
      - `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`: required, because sign-in, invite and workspace routes refuse to run without them in production;
      - `RESEND_API_KEY`, `EMAIL_FROM`: for invitations, once a sender exists.
    - **Switches:**
      - `RELAY_ENABLED=true` only while testing team sharing on staging data (decision D6);
      - `BENCHMARKS_ENABLED=false`;
+     - `LEGACY_BUSINESS_ENABLED=false`;
      - `VAULT_LAB_ENABLED=false`;
      - `DEV_IMPERSONATION_ENABLED=false`.
    - Do not set `SEED_DATABASE_URL` or `SUPABASE_DB_PASSWORD` on Vercel; they are for operator scripts only.
 4. **Supabase `rebatehq-staging` › Authentication › URL Configuration:**
    - keep the Site URL `https://app.rebatehq.app`;
    - add the project's Vercel address as a redirect, for example `https://rebatehq.vercel.app/auth/callback**`, so sign-in works there before the domain moves.
+
+## Set up on 27 November 2026
+
+- **Account:** Vercel Hobby (`adityapawar5105-4648`). Vercel's GitHub app is installed on `Adityapawar5105/rebatehq` only.
+- **Project:** `rebatehq`, imported with the Next.js defaults, at `https://rebatehq.vercel.app`. Production deploys from `main`.
+- **Variables:** 15, all **Production only**.
+  - Config (readable): `APP_BASE_URL=https://rebatehq.vercel.app`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `NEXT_PUBLIC_LICENCE_VERIFY_KEY`, `PG_POOL_MAX`, `RELAY_ENABLED=true`, and `BENCHMARKS_ENABLED`, `LEGACY_BUSINESS_ENABLED`, `VAULT_LAB_ENABLED`, `DEV_IMPERSONATION_ENABLED` all `false`.
+  - Secret: `ACTOR_SIGNING_SECRET`, `LICENCE_SIGNING_KEY`, `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `APP_DATABASE_URL`.
+  - Preview has none, so preview deployments of pull-request branches are not usable.
+- **Where the secret values came from:**
+  - Netlify's API returns secret variables masked, so they cannot be copied from Netlify.
+  - The signing keys and the Upstash token came from `.env.staging.local`. Before import, checks confirmed the licence private key matches `NEXT_PUBLIC_LICENCE_VERIFY_KEY`, and both public keys match Netlify's.
+  - `APP_DATABASE_URL` was rebuilt from `APP_DB_LOGIN_PASSWORD`. A local connection with the CA check on reached `rebatehq_netlify_login` through `aws-1` (the `aws-0` pooler refuses it).
+  - The owner imported the values; no value was shown or committed.
+- **Supabase:** `https://rebatehq.vercel.app/auth/callback**` added to the redirect list (4 URLs). The Site URL stays `https://app.rebatehq.app`.
 
 ## Test on the vercel.app address first
 
