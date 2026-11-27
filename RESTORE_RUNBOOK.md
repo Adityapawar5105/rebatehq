@@ -1,12 +1,12 @@
 # RebateHQ logical restore runbook
 
 > **Current state (26 Nov 2026, review R1).** The record below grew chunk by chunk; where it disagrees, these numbers are current:
-> - **Migrations:** 17 applied and locked, 0 pending (`migrations.lock`).
+> - **Migrations:** 18 applied and locked, 0 pending (`migrations.lock`).
 > - **Tables:** 15 public control-plane (tenant) tables. Every restore check requires at least 15 (raised from 13 in review R1).
-> - **pgTAP plan:** 156 checks on a fresh database, 159 in restore mode (`supabase/tests/phase1_rls.sql`), since the review R2 migration `20261128120000_review_r2_deleted_workspaces.sql`. That migration is **pending** until CI and a user-run Restore Drill pass: the drill must report 159 restore-mode checks, and the migration is then locked.
+> - **pgTAP plan:** 156 checks on a fresh database, 159 in restore mode (`supabase/tests/phase1_rls.sql`), since the review R2 migration `20261128120000_review_r2_deleted_workspaces.sql`. It was locked after the user-run Restore Drill #28 passed with 159 restore-mode checks.
 > - **Dump scope:** `public`, `rebatehq_private` and `rebatehq_storage` (`scripts/restore-dump-scope.mjs`). The relay-packs bucket and its policies are re-applied with `scripts/restore-storage-objects.sql` (step 7a). Storage objects themselves are not restored: after a restore, a publisher presses Publish now.
 > - **Hashes compared:** licence, relay (including `relay_pack_wrap` and `relay_pack_version`) and benchmark hashes (`scripts/verify-restore-equivalence.mjs`).
-> - **Restore Drills passed:** #16, #19 to #21, and #23 to #25 and #27, all against a local target. A restore into a hosted Supabase project has never run.
+> - **Restore Drills passed:** #16, #19 to #21, #23 to #25, #27 and #28, all against a local target. A restore into a hosted Supabase project has never run.
 > - Older inventories below (38 tables, `quote_share_link`, `approval_rule`, `plan_feature`, "public minimum 24") describe dropped tables and are history.
 
 ## Verification status and scope
