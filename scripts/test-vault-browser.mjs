@@ -558,7 +558,8 @@ async function relayOffUi(){
   dataPlaneActive=false;if(auth)await signInLocal(context,page,base);await page.goto(base+route);await ready();
   await page.getByLabel('Vault passphrase').fill(secret);await page.getByLabel('Type the passphrase again').fill(secret);await page.getByLabel('Pricing Owner (name)').fill('Synthetic relay-off owner');await page.getByRole('button',{name:'Create encrypted vault',exact:true}).click();await page.getByRole('button',{name:'Lock vault',exact:true}).waitFor();dataPlaneActive=true;
   const sales=Buffer.from('line_id,product_id,customer_id,sale_date,quantity,list_amount,discount_amount,freight_amount,rebate_amount,cost_amount\n1,'+marker+'-OFF-P,'+marker+'-OFF-C,2026-03-31,1,98765.43,0,0,0,50000.00\n');
-  await page.locator('nav a[href="#data-hub"]').click();await importFiles([{name:'synthetic-relay-off-sales.csv',mimeType:'text/csv',buffer:sales}],'1',true);
+  await page.locator('nav a[href="#data-hub"]').click();// A clean one-line file has no issues to acknowledge (CI #290 waited for the acknowledgement box).
+  await importFiles([{name:'synthetic-relay-off-sales.csv',mimeType:'text/csv',buffer:sales}],'1');
   // The pages where sharing would start, sync or show itself.
   for(const hash of ['settings-team','home','data-hub','quotes']){await page.evaluate(h=>{location.hash=h;},hash);await page.waitForFunction(()=>!document.querySelector('main [aria-busy="true"]'));}
   assert.equal(await page.getByTestId('relay-device-checks').count(),0,'The sharing set-up showed with the relay off');
