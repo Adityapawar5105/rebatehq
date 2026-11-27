@@ -1,4 +1,5 @@
 import { createServerClient } from "@supabase/ssr";
+import { authCookie, authCookieOptions } from "./lib/supabase/cookies";
 import { NextResponse, type NextRequest } from "next/server";
 import { randomBytes } from "node:crypto";
 
@@ -36,7 +37,7 @@ export async function proxy(request:NextRequest){
  requestHeaders.set("x-nonce",nonce);requestHeaders.set("Content-Security-Policy",policy);
  let response=NextResponse.next({request:{headers:requestHeaders}});
  if(supabaseUrl&&process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY){
-  const supabase=createServerClient(supabaseUrl,process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,{cookies:{getAll:()=>request.cookies.getAll(),setAll(values){values.forEach(({name,value})=>request.cookies.set(name,value));requestHeaders.set("cookie",request.cookies.toString());response=NextResponse.next({request:{headers:requestHeaders}});values.forEach(({name,value,options})=>response.cookies.set(name,value,options));}}});
+  const supabase=createServerClient(supabaseUrl,process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,{cookieOptions:authCookieOptions(),cookies:{getAll:()=>request.cookies.getAll(),setAll(values){values.forEach(({name,value})=>request.cookies.set(name,value));requestHeaders.set("cookie",request.cookies.toString());response=NextResponse.next({request:{headers:requestHeaders}});values.forEach(({name,value,options})=>response.cookies.set(name,value,authCookie(options)));}}});
   await supabase.auth.getClaims();
  }
  response.headers.set("Content-Security-Policy",policy);response.headers.set("X-Content-Type-Options","nosniff");response.headers.set("Referrer-Policy","strict-origin-when-cross-origin");response.headers.set("X-Frame-Options","DENY");response.headers.set("Permissions-Policy","camera=(), microphone=(), geolocation=()");response.headers.set("Cross-Origin-Opener-Policy","same-origin");if(!dev)response.headers.set("Strict-Transport-Security","max-age=63072000; includeSubDomains; preload");

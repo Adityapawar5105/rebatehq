@@ -150,6 +150,16 @@ jobs:
           JS
           pnpm test:vault:privacy --browser=chromium
           node scripts/test-relay-browser.mjs --auth --browser=chromium
+          # Review R2 (SECURITY_REVIEW.md R27): the same build restarted with the relay off makes no relay, Storage or
+          # Realtime request and opens no WebSocket (RELAY_ENABLED is read at run time, so no rebuild is needed).
+          kill "$app_pid" 2>/dev/null || :
+          wait "$app_pid" 2>/dev/null || :
+          RELAY_ENABLED=false pnpm start --hostname 0.0.0.0 --port 3000 > "$RUNNER_TEMP/vault-app-relay-off.log" 2>&1 &
+          app_pid=$!
+          node --input-type=module <<'JS'
+          let ready=false;for(let i=0;i<60;i++){try{if((await fetch('http://localhost:3000/login')).ok){ready=true;break}}catch{}await new Promise(r=>setTimeout(r,1000))}if(!ready)throw Error('App did not restart for the relay-off pass');
+          JS
+          RELAY_ENABLED=false pnpm test:vault:privacy --browser=chromium --relay-off-only
       - name: Realtime server log after a relay gate failure (team sharing S4)
         if: failure()
         shell: bash

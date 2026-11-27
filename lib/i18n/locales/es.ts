@@ -1834,6 +1834,7 @@ export const es: Catalog = {
   "relay.sendEncryptedComment": "Enviar comentario cifrado",
   "relay.verifiedDeviceFingerprints": "Dispositivos que confirmar",
   "relay.deviceCodeHelp": "Los dispositivos de la última publicación de claves, y este dispositivo, ya están confirmados. Para cada dispositivo nuevo o cambiado, pida a su usuario que lea el código que muestra ese dispositivo (Bandeja compartida › Claves de dispositivo) y escríbalo aquí.",
+  "relay.deviceLimitNear": "Este espacio de trabajo tiene {count} de los {max} dispositivos que admite una publicación de claves. Revoque los dispositivos que nadie use antes de añadir más: por encima de {max}, una rotación de claves no puede incluir a todos.",
   "relay.deviceCodeFor": "Código de dispositivo de {name}",
   "relay.deviceCodeNew": "Dispositivo nuevo o cambiado: escriba el código de ese dispositivo.",
   "relay.deviceCodeMatches": "El código coincide.",

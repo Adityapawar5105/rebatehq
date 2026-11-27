@@ -619,6 +619,7 @@ const relay = {
   "relay.sendEncryptedComment": "Send encrypted comment",
   "relay.verifiedDeviceFingerprints": "Devices to confirm",
   "relay.deviceCodeHelp": "Devices already in the last key publication, and this device, are confirmed. For each new or changed device, ask its person to read out the device code shown on that device (Shared inbox › Device keys) and type it here.",
+  "relay.deviceLimitNear": "{count} of the {max} devices a key publication can hold are in this workspace. Revoke devices nobody uses before adding more: past {max}, a key rotation cannot include everyone.",
   "relay.deviceCodeFor": "Device code for {name}",
   "relay.deviceCodeNew": "New or changed device: type the code from that device.",
   "relay.deviceCodeMatches": "The code matches.",

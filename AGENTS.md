@@ -61,7 +61,7 @@ owner's decision D11).
 
 This section supersedes the dated orders in the chunk history below, such as "Do not start 7D", "Next chunk: …" and "Only 9A remains". Those orders are history.
 - **Merged on `main`:** every chunk through 8R; roadmap phases 1 to 16 apart from the owner's items; team sharing S1 to S5b; near-miss tiers (blueprint item 39). The sidebar redesign (PR #24) merged on 23 Nov 2026.
-- **Numbers:** local vault v25 / 69 tables. Supabase has 18 locked migrations, 0 pending, and 15 control-plane tables. Staging `rebatehq-staging` has all 18 (the review R2 migration applied on 27 Nov 2026 with `supabase db push`), with `RELAY_ENABLED` false.
+- **Numbers:** local vault v25 / 69 tables. Supabase has 18 locked migrations, 1 pending (`20261129120000_review_r2_relay_quotas.sql`, review R2 rest, waiting for CI and the user's Restore Drill), and 15 control-plane tables. pgTAP plans 160 fresh and 163 restore checks. Staging `rebatehq-staging` has all 18 (the review R2 migration applied on 27 Nov 2026 with `supabase db push`), with `RELAY_ENABLED` false.
 - **Excluded by the owner:** payments (Phase 12) and the mobile app (9A / 15.5).
 - **The open work list:** the 26 Nov full project review, kept in the owner's private notes and not in this public repo. R1 fixes are in progress.
 - Work follows the owner's explicit instruction for each step.
@@ -403,3 +403,13 @@ See `docs/evidence/SECOND_AUDIT_PASS.md`. The independent security review (R02, 
 - Migration `20261128120000_review_r2_deleted_workspaces.sql` is **locked** (26 Nov 2026) after CI #279 on `56f4fac`, CI #280 on `main` at `aed1b13`, and the user-run Restore Drill #28 (159 restore-mode checks, twice). 18 migrations are applied and 0 are pending. pgTAP plans 156 fresh and 159 restore checks.
 - **It passed** [CI #279](https://github.com/Adityapawar5105/rebatehq/actions/runs/45844379547) and merged as PR #48.
 - See docs/evidence/REVIEW_R2_VERIFICATION.md.
+
+**Review R2, the rest (27 Nov 2026; built by Claude Code).**
+- **Event quota:** a device whose person does not publish under the signed grid may send 20 relay events a minute and 2,000 a day (publishers keep 60 a minute). A refused send answers 429 `LIMIT`, not a rotation request.
+- **R25:** keys of revoked devices no longer count toward the 1,000 device-key limit; the sharing panel warns from 50 of the 60 devices.
+- **R24:** Supabase session cookies are HttpOnly, Secure in production and live 30 days (`lib/supabase/cookies.ts`).
+- **R26:** chunk uploads are retried, a failed publish is retried by the background tick, and the not-ready window uses the server's receive time.
+- **R27:** a CI pass with `RELAY_ENABLED` off (`--relay-off-only`).
+- **R23:** accepted and documented; no change.
+- Migration `20261129120000_review_r2_relay_quotas.sql` is **pending** until CI and a user-run Restore Drill (163 restore-mode checks). pgTAP plans 160 fresh and 163 restore checks. Not applied to staging.
+- The independent security review (B5) is still the owner's to commission. See docs/evidence/REVIEW_R2_VERIFICATION.md.

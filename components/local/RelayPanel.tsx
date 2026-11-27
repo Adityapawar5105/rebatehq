@@ -12,6 +12,8 @@ import styles from './vault.module.css';
 import {Badge,Button,Card,Field,Notice,Tabs,tabPanelProps,type Tone} from '@/components/ui/ui';
 import {Icon} from '@/components/ui/Icon';
 import {ThreadsInbox} from './Threads';
+// Review R2 (R25): a key publication holds at most RELAY_LIMITS.devices (60) devices; warn from 50.
+const DEVICE_LIMIT = 60, DEVICE_WARN = 50;
 const RELAY_ROLE: Record<string, MessageKey> = { owner: "relay.role.owner", manager: "relay.role.manager", rep: "relay.role.rep", analyst: "relay.role.analyst" };
 const relayRole = (r: string) => r in RELAY_ROLE ? t(RELAY_ROLE[r]) : r;
 /** Team sharing S2b: the data packs this device holds a key for, by name. */
@@ -157,7 +159,7 @@ export function RelayPanel({client,userId,tenantId,relayEnabled,onChange}:{clien
  </Card>;
 }
 function DeviceChecks({view,codes,setCodes,confirmed,disabled}:{view:RelayView;codes:Record<string,string>;setCodes:(v:Record<string,string>)=>void;confirmed:string[];disabled:boolean}){
- return <fieldset className={styles.relayChecks} data-testid="relay-device-checks"><legend>{t("relay.verifiedDeviceFingerprints")}</legend><p>{t("relay.deviceCodeHelp")}</p>{view.devices.map(d=>{
+ return <fieldset className={styles.relayChecks} data-testid="relay-device-checks"><legend>{t("relay.verifiedDeviceFingerprints")}</legend><p>{t("relay.deviceCodeHelp")}</p>{view.devices.length>=DEVICE_WARN&&<p role="status" data-testid="relay-device-limit">{t("relay.deviceLimitNear",{count:String(view.devices.length),max:String(DEVICE_LIMIT)})}</p>}{view.devices.map(d=>{
   const name=t("relay.personRole",{name:d.label,role:relayRole(d.role)}),self=d.deviceId===view.deviceId&&d.fingerprint===view.fingerprint,ok=confirmed.includes(d.deviceId);
   return d.known||self?<p key={d.deviceId} data-testid="relay-device-known"><span>{name}</span><br/><span className={styles.muted}>{t(self?"relay.deviceThis":"relay.deviceKnown")}</span></p>
    :<Field key={d.deviceId} label={t("relay.deviceCodeFor",{name})} hint={ok?t("relay.deviceCodeMatches"):t("relay.deviceCodeNew")}><input data-testid="relay-device-code" autoComplete="off" spellCheck={false} disabled={disabled} value={codes[d.deviceId]??""} onChange={e=>setCodes({...codes,[d.deviceId]:e.target.value})}/></Field>;

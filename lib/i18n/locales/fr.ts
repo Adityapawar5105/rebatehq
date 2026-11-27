@@ -1834,6 +1834,7 @@ export const fr: Catalog = {
   "relay.sendEncryptedComment": "Envoyer un commentaire chiffré",
   "relay.verifiedDeviceFingerprints": "Appareils à confirmer",
   "relay.deviceCodeHelp": "Les appareils de la dernière publication de clés, et cet appareil, sont confirmés. Pour chaque appareil nouveau ou modifié, demandez à son utilisateur de lire le code affiché sur cet appareil (Boîte partagée › Clés des appareils) et saisissez-le ici.",
+  "relay.deviceLimitNear": "Cet espace de travail compte {count} des {max} appareils qu’une publication de clés peut contenir. Révoquez les appareils inutilisés avant d’en ajouter : au-delà de {max}, une rotation de clés ne peut pas inclure tout le monde.",
   "relay.deviceCodeFor": "Code d’appareil de {name}",
   "relay.deviceCodeNew": "Appareil nouveau ou modifié : saisissez le code de cet appareil.",
   "relay.deviceCodeMatches": "Le code correspond.",
