@@ -152,11 +152,21 @@ jobs:
           node scripts/test-relay-browser.mjs --auth --browser=chromium
           # Review R2 (SECURITY_REVIEW.md R27): the same build restarted with the relay off makes no relay, Storage or
           # Realtime request and opens no WebSocket (RELAY_ENABLED is read at run time, so no rebuild is needed).
+          # CI #289: killing pnpm left Next's server running (it renames itself "next-server"), so stop whatever listens
+          # on port 3000 as well.
           kill "$app_pid" 2>/dev/null || :
+          pkill -f "next-server" 2>/dev/null || :
           pkill -f "next start" 2>/dev/null || :
+          for p in $(lsof -ti tcp:3000 2>/dev/null); do kill "$p" 2>/dev/null || :; done
+          fuser -k 3000/tcp 2>/dev/null || :
           wait "$app_pid" 2>/dev/null || :
           # The pass also probes /api/relay for 404, but do not start until the old server has let go of the port.
           for i in $(seq 1 30); do curl -s -o /dev/null --max-time 2 http://localhost:3000/login || break; sleep 1; done
+          if curl -s -o /dev/null --max-time 2 http://localhost:3000/login; then
+            for p in $(lsof -ti tcp:3000 2>/dev/null); do kill -9 "$p" 2>/dev/null || :; done
+            fuser -k -9 3000/tcp 2>/dev/null || :
+            sleep 2
+          fi
           if curl -s -o /dev/null --max-time 2 http://localhost:3000/login; then echo "::error::The relay-on server did not stop."; exit 1; fi
           RELAY_ENABLED=false pnpm start --hostname 0.0.0.0 --port 3000 > "$RUNNER_TEMP/vault-app-relay-off.log" 2>&1 &
           app_pid=$!
