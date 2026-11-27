@@ -67,17 +67,21 @@ export async function closeDatabasePool(): Promise<void> {
 }
 
 /**
- * The visitor's address as the hosting platform saw it (audit B-9, roadmap 3.7 and 13.11; 21 Nov 2026).
- * The app runs on Netlify, so its own `x-nf-client-connection-ip` comes first, then `x-real-ip`. For
- * `x-forwarded-for` the LAST entry is used: a proxy appends the address it saw, so only earlier entries can be
- * supplied by the caller (reading the first entry let a caller pick their own rate-limit key). The Vercel header
- * is no longer read. Netlify's docs do not describe these headers; this order is safe whether Netlify overwrites
- * or appends `x-forwarded-for`, and was not observed on the live site.
+ * The visitor's address as the hosting platform saw it (audit B-9, roadmap 3.7 and 13.11; 21 Nov 2026; 27 Nov 2026).
+ * Only headers the platform the app runs on sets itself are trusted, because a caller can send any other header
+ * and pick their own rate-limit key:
+ * - Vercel (`VERCEL=1`, which Vercel sets at run time): `x-real-ip`, then `x-vercel-forwarded-for`, both set by
+ *   Vercel; never the Netlify header, which on Vercel would come from the caller.
+ * - Otherwise (Netlify, local, CI; Netlify documents `NETLIFY=true` for builds only): Netlify's own
+ *   `x-nf-client-connection-ip`, then `x-real-ip`, then the last `x-forwarded-for` hop, unchanged from 21 Nov.
+ * For `x-forwarded-for` the LAST entry is used: a proxy appends the address it saw, so only earlier entries can be
+ * supplied by the caller. Neither platform's behaviour was observed on a live site yet.
  */
-export function clientIp(headers?: Headers): string {
+export function clientIp(headers?: Headers, env: Record<string, string | undefined> = process.env): string {
+  const get = (name: string) => headers?.get(name)?.trim();
   const forwarded = headers?.get("x-forwarded-for")?.split(",").map(part => part.trim()).filter(Boolean) ?? [];
-  for (const value of [headers?.get("x-nf-client-connection-ip")?.trim(), headers?.get("x-real-ip")?.trim(), forwarded.at(-1)]) {
-    if (value && isIP(value)) return value;
-  }
+  const order = env.VERCEL === "1" ? [get("x-real-ip"), get("x-vercel-forwarded-for")]
+    : [get("x-nf-client-connection-ip"), get("x-real-ip"), forwarded.at(-1)];
+  for (const value of order) if (value && isIP(value)) return value;
   return "";
 }
