@@ -61,7 +61,7 @@ owner's decision D11).
 
 This section supersedes the dated orders in the chunk history below, such as "Do not start 7D", "Next chunk: …" and "Only 9A remains". Those orders are history.
 - **Merged on `main`:** every chunk through 8R; roadmap phases 1 to 16 apart from the owner's items; team sharing S1 to S5b; near-miss tiers (blueprint item 39). The sidebar redesign (PR #24) merged on 23 Nov 2026.
-- **Numbers:** local vault v25 / 69 tables. Supabase has 18 locked migrations, 0 pending, and 15 control-plane tables. Staging `rebatehq-staging` has the first 17 (the review R2 migration is not applied there yet), with `RELAY_ENABLED` false.
+- **Numbers:** local vault v25 / 69 tables. Supabase has 18 locked migrations, 0 pending, and 15 control-plane tables. Staging `rebatehq-staging` has all 18 (the review R2 migration applied on 27 Nov 2026 with `supabase db push`), with `RELAY_ENABLED` false.
 - **Excluded by the owner:** payments (Phase 12) and the mobile app (9A / 15.5).
 - **The open work list:** the 26 Nov full project review, kept in the owner's private notes and not in this public repo. R1 fixes are in progress.
 - Work follows the owner's explicit instruction for each step.

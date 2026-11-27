@@ -86,4 +86,8 @@ Run locally on 26 November 2026, not CI evidence:
   - the licence, relay and benchmark hashes and the restore sentinel matched;
   - 15 tenant tables.
 - **The migration is locked** in `migrations.lock`: 18 applied, 0 pending.
-- **Staging** `rebatehq-staging` does not have this migration yet.
+- **Staging** `rebatehq-staging` got this migration on 27 Nov 2026, with `supabase db push` after a dry run listing only it. It now lists all 18 migrations under their repository versions. Read-only checks confirmed:
+  - both rules contain the deleted-workspace check;
+  - each is a security definer with `search_path=public, pg_temp`;
+  - execute is granted to `authenticated` only;
+  - the security advisor reported no new finding.
