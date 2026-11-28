@@ -35,7 +35,7 @@ Server settings live in the hosting provider's environment, never in git. `.env.
 
 ## Releasing a change
 
-1. Every change goes through a pull request. The `verify` job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) must pass before merging: typecheck, unit tests, the high/critical dependency audit, migration hashes, pgTAP on a clean local Supabase, the authenticated Chromium privacy gate with the relay gate, and the Firefox lab gate. Netlify's own checks are not enough.
+1. Every change goes through a pull request. The `verify` job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) must pass before merging: typecheck, unit tests, the high/critical dependency audit, migration hashes, pgTAP on a clean local Supabase, the authenticated Chromium privacy gate with the relay gate, the invite → accept → device approval gate (review R3) and a pass with the relay off, and the Firefox lab gate. Netlify's own checks are not enough.
 2. Merging to `main` deploys to staging. The same `verify` job runs on `main`; a red run there is investigated before the next merge.
 3. A Supabase migration follows [MIGRATION_RULES.md](MIGRATION_RULES.md): CI passes, then the user-run Restore Drill passes, then the migration is locked in `migrations.lock`. Applied migrations are never edited.
 4. A local vault schema change is a new versioned step in `lib/vault/schema.ts` (forward-only; the committed v1 fixture must still open). The vault is v25 (69 tables).

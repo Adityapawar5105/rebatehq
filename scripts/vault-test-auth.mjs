@@ -15,7 +15,7 @@ export function localDatabaseUrl(value, label) {
   assert.ok(["localhost", "127.0.0.1", "[::1]"].includes(url.hostname), `${label} must target the disposable local stack`);
   assert.ok(["postgres:", "postgresql:"].includes(url.protocol), `${label} must be a Postgres connection string`); return url;
 }
-async function emailLink(mailUrl, email, authUrl) {
+export async function emailLink(mailUrl, email, authUrl) {
   const mailbox = email.split("@")[0];
   for (let attempt = 0; attempt < 45; attempt++) {
     for (const mode of ["mailpit", "inbucket"]) {
