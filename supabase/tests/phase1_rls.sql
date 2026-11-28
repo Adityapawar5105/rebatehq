@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT extensions.plan(160 + CASE WHEN current_setting('app.restore_test_mode',true)='true' THEN 3 ELSE 0 END);
+SELECT extensions.plan(164 + CASE WHEN current_setting('app.restore_test_mode',true)='true' THEN 3 ELSE 0 END);
 SELECT set_config('app.phase1_migration_owner',current_user,true);
 -- INCLUDE FUNCTION ACL ALLOWLIST
 

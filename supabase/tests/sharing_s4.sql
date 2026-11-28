@@ -155,3 +155,44 @@ END $$;
 RESET ROLE;
 SELECT pg_temp.use_identity('');
 SELECT extensions.ok(true,'Review R2 (R25): keys of revoked devices do not count toward the 1,000 device-key limit');
+-- Review R3 (migration 20261130120000_r3_tenant_purge.sql): the 30-day purge of a deleted workspace. Relay tenant B is
+-- purged; tenant A must keep every row. The suite runs in one transaction that is rolled back.
+RESET ROLE;
+SELECT pg_temp.use_identity('');
+SELECT extensions.ok(
+  (SELECT NOT p.prosecdef AND n.nspname='rebatehq_private' FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE p.oid='rebatehq_private.purge_deleted_tenant(uuid,interval)'::regprocedure)
+  AND NOT EXISTS(SELECT 1 FROM unnest(ARRAY['anon','authenticated','service_role','rebatehq_app']) r WHERE has_function_privilege(r,'rebatehq_private.purge_deleted_tenant(uuid,interval)','EXECUTE')),
+ 'Review R3: the purge is an invoker function in the private schema that no app or Supabase role may execute');
+DO $$ BEGIN
+ BEGIN PERFORM rebatehq_private.purge_deleted_tenant('__PHASE1_RELAY_TENANT_B_ID__'); RAISE EXCEPTION 'R3P purged a live workspace';
+ EXCEPTION WHEN invalid_parameter_value THEN NULL; END;
+ UPDATE public.tenant SET deleted_at=now()-interval '29 days' WHERE tenant_id='__PHASE1_RELAY_TENANT_B_ID__';
+ BEGIN PERFORM rebatehq_private.purge_deleted_tenant('__PHASE1_RELAY_TENANT_B_ID__'); RAISE EXCEPTION 'R3P purged a workspace deleted 29 days ago';
+ EXCEPTION WHEN invalid_parameter_value THEN NULL; END;
+ UPDATE public.tenant SET deleted_at=now()-interval '31 days' WHERE tenant_id='__PHASE1_RELAY_TENANT_B_ID__';
+ BEGIN PERFORM rebatehq_private.purge_deleted_tenant('__PHASE1_RELAY_TENANT_B_ID__', interval '7 days'); RAISE EXCEPTION 'R3P accepted a 7-day window';
+ EXCEPTION WHEN invalid_parameter_value THEN NULL; END;
+END $$;
+SELECT extensions.ok(true,'Review R3: the purge refuses a live workspace, one deleted 29 days ago, and a window under 30 days');
+CREATE FUNCTION pg_temp.r3_rows(p uuid) RETURNS jsonb LANGUAGE plpgsql AS $r3$
+DECLARE t text; n bigint; o jsonb := '{}'::jsonb;
+BEGIN
+ FOREACH t IN ARRAY ARRAY['relay_pack_version','relay_pack_wrap','relay_event','relay_key_wrap','relay_epoch','relay_device_key',
+                          'bench_consent','licence_device','licence_seat','licence_location','workspace_licence','invite','membership','tenant'] LOOP
+  EXECUTE format('SELECT count(*) FROM public.%I WHERE tenant_id=$1',t) INTO n USING p;
+  o := o || jsonb_build_object(t,n);
+ END LOOP;
+ RETURN o;
+END $r3$;
+SELECT set_config('app.r3_a_before',pg_temp.r3_rows('__PHASE1_RELAY_TENANT_A_ID__')::text,true);
+SELECT set_config('app.r3_b_before',pg_temp.r3_rows('__PHASE1_RELAY_TENANT_B_ID__')::text,true);
+SELECT set_config('app.r3_b_audit',(SELECT count(*) FROM public.audit_log WHERE tenant_id='__PHASE1_RELAY_TENANT_B_ID__')::text,true);
+SELECT set_config('app.r3_result',rebatehq_private.purge_deleted_tenant('__PHASE1_RELAY_TENANT_B_ID__')::text,true);
+SELECT extensions.ok(
+  NOT EXISTS(SELECT 1 FROM jsonb_each_text(pg_temp.r3_rows('__PHASE1_RELAY_TENANT_B_ID__')) WHERE value<>'0')
+  AND current_setting('app.r3_result')::jsonb->>'tenant'='1'
+  AND (SELECT sum(value::bigint) FROM jsonb_each_text(current_setting('app.r3_b_before')::jsonb))>1
+  AND (SELECT count(*) FROM public.audit_log WHERE tenant_id='__PHASE1_RELAY_TENANT_B_ID__')>=current_setting('app.r3_b_audit')::bigint,
+ 'Review R3: a workspace deleted over 30 days ago loses every row in all 14 tables, and its audit rows stay');
+SELECT extensions.ok(pg_temp.r3_rows('__PHASE1_RELAY_TENANT_A_ID__')=current_setting('app.r3_a_before')::jsonb,
+ 'Review R3: purging one workspace leaves every row of the others');

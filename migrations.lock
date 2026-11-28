@@ -52,8 +52,12 @@
     "20261128120000_review_r2_deleted_workspaces.sql",
     "20261129120000_review_r2_relay_quotas.sql"
   ],
-  "pendingOrder": [],
-  "pendingMigrations": {},
+  "pendingOrder": [
+    "20261130120000_r3_tenant_purge.sql"
+  ],
+  "pendingMigrations": {
+    "20261130120000_r3_tenant_purge.sql": "4878d9d5f6aa162c3502d3569a51099ab61719fc1f7ac818eff565764ac72371"
+  },
   "appliedMigrationEvidence": {
     "202610250001_revoke_platform_public_privileges.sql": {
       "date": "2026-10-26",
