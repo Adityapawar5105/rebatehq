@@ -1,6 +1,7 @@
 # Netlify deployment
 
 > **Current state (26 Nov 2026, review R1).**
+> - **28 Nov 2026: app.rebatehq.app now points to Vercel** (VERCEL_DEPLOYMENT.md). This Netlify site is kept as a rollback for a week, then can be closed.
 > - Staging `rebatehq-staging` has all 19 locked migrations and 15 control-plane tables. The review R2 quota migration `20261129120000_review_r2_relay_quotas.sql` was applied on 28 Nov 2026 with `supabase db push` after a dry run listing only it. The review R2 migration `20261128120000_review_r2_deleted_workspaces.sql` was applied on 27 Nov 2026 with `supabase db push` (a dry run first). Read-only checks confirmed both Storage and Realtime rules now refuse a deleted workspace, with their privileges unchanged, and the security advisor showed nothing new.
 > - `RELAY_ENABLED` stays false there.
 > - Production deploys of `main` have been skipped since 21 Nov because the Netlify account's credits ran out. The live site still serves PR #18 (`d103180`).

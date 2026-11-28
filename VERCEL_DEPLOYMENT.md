@@ -60,6 +60,18 @@ Netlify (`NETLIFY_DEPLOYMENT.md`) stays as the fallback until Vercel is proven.
   - The owner imported the values; no value was shown or committed.
 - **Supabase:** `https://rebatehq.vercel.app/auth/callback**` added to the redirect list (4 URLs). The Site URL stays `https://app.rebatehq.app`.
 
+## app.rebatehq.app moved to Vercel (28 November 2026)
+
+- **Vercel:** `app.rebatehq.app` added to the project (Production); Vercel issued its certificate.
+- **Cloudflare DNS:** the `app` CNAME changed from `rebatehq.netlify.app` to `f31ad4a210a5e679.vercel-dns-017.com`, DNS only. Checked through 1.1.1.1; app.rebatehq.app answers with `Server: Vercel`.
+- **`APP_BASE_URL`** is now `https://app.rebatehq.app` (Production). Editing a variable in the Vercel dashboard asks for a two-factor code, so it was deleted and added again as Config.
+- **Rollback:** point the `app` CNAME back to `rebatehq.netlify.app` and set `APP_BASE_URL` back to `https://rebatehq.vercel.app`. Netlify and its domain entry are kept for a week.
+- **Vaults are tied to the address they were made on.** A vault made on rebatehq.vercel.app stays there; carry it to app.rebatehq.app with an encrypted backup.
+
+**A Supabase integration was installed on 27 Nov 2026 (outside the deployment work).** It added 16 Production variables: `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_JWT_SECRET`, `SUPABASE_SECRET_KEY`, `POSTGRES_PASSWORD` and the other `POSTGRES_*` and `SUPABASE_*` names. The app reads none of them (`scripts/check-service-role.mjs`), but admin keys must never sit in the app runtime, so all 16 were deleted on 28 Nov 2026. Deleting them does not revoke them. If the integration was linked to `rebatehq-staging`, rotate that project's service-role key, JWT secret and database password, and uninstall the integration in Vercel.
+
+The project now has exactly the 15 variables listed above.
+
 ## Test on the vercel.app address first
 
 Run before moving the domain, against staging data:

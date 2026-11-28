@@ -18,7 +18,7 @@ The retired server business routes answer with a fixed 410 (decision D12). The l
 | | Address | Notes |
 |---|---|---|
 | Local | `http://localhost:3000` | `pnpm dev` (or `next dev --webpack` in a git worktree); `.env.local` from `.env.example`. `VAULT_LAB_ENABLED=true` opens `/lab/vault` without sign-in, for the browser gate only |
-| Staging | https://rebatehq.netlify.app | Production deploy of `main`; PR previews behind the Netlify team login. Supabase `rebatehq-staging`. See [NETLIFY_DEPLOYMENT.md](NETLIFY_DEPLOYMENT.md). Pre-launch testing is moving to Vercel Hobby at app.rebatehq.app, with Vercel Pro bought before the first pilot customer ([VERCEL_DEPLOYMENT.md](VERCEL_DEPLOYMENT.md)) |
+| Staging | https://app.rebatehq.app | Vercel Hobby, production deploy of `main` (since 28 Nov 2026; [VERCEL_DEPLOYMENT.md](VERCEL_DEPLOYMENT.md)). Also https://rebatehq.vercel.app. Supabase `rebatehq-staging`. Vercel Pro is needed before the first pilot customer. The old Netlify site (https://rebatehq.netlify.app, [NETLIFY_DEPLOYMENT.md](NETLIFY_DEPLOYMENT.md)) is kept as a rollback for a week |
 | Production | not yet | Needs the final web address first (decision D3): a vault is tied to the address it was created on. Then a separate Supabase project, Netlify site, Resend (or SMTP) sender and Upstash limiter; nothing is shared with staging |
 
 ## Configuration
