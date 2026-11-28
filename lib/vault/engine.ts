@@ -84,11 +84,12 @@ export async function makeWritable(engine: Engine) {
   await copyToWritable(engine, engine.conn).catch(async error => { await engine.conn.query("USE incoming"); throw error; });
   await switchToWritable(engine);
 }
-export async function snapshotBytes(engine: Engine) {
+/** timeoutMs grows with the vault (review flaw 11): a fixed 10 seconds failed large saves on slower machines. */
+export async function snapshotBytes(engine: Engine, timeoutMs = 10_000) {
   await makeWritable(engine);
   await engine.conn.query("CHECKPOINT");
   const bytes = await new Promise<Uint8Array>((resolve, reject) => {
-    const timer = setTimeout(() => { engine.worker.removeEventListener("message", receive, true); reject(new Error("RAM snapshot timed out")); }, 10_000);
+    const timer = setTimeout(() => { engine.worker.removeEventListener("message", receive, true); reject(new Error("RAM snapshot timed out")); }, timeoutMs);
     const receive = (event: MessageEvent) => {
       if (event.data?.type !== "vault-ram-exported") return;
       event.stopImmediatePropagation(); clearTimeout(timer); engine.worker.removeEventListener("message", receive, true);

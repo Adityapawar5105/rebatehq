@@ -1,0 +1,94 @@
+name: RebateHQ deploy smoke test
+
+# Pre-pilot (28 Nov 2026): after every production deploy, check that the live site still serves what the CI gates
+# test. Vercel reports each deployment to GitHub; when a Production deployment succeeds, this loads app.rebatehq.app
+# and checks the health route, the sign-in page and its security headers, the vault engine files, a retired route and
+# a missing page. A failure opens (or comments on) one issue labelled "deploy-smoke"; the next good run closes it.
+# No account, secret or third-party action.
+on:
+  deployment_status:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: deploy-smoke
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    if: github.event_name == 'workflow_dispatch' || (github.event.deployment_status.state == 'success' && github.event.deployment.environment == 'Production')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      SITE: https://app.rebatehq.app
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Give the domain a moment to move to the new deployment
+        if: github.event_name == 'deployment_status'
+        run: sleep 30
+      - name: Check the live site
+        id: probe
+        shell: bash
+        run: |
+          set -u
+          failures=""
+          fail() { echo "FAIL: $1"; failures="$failures $1"; }
+          fetch() { # path -> sets code, type, headers, body (three tries)
+            local path="$1"
+            for attempt in 1 2 3; do
+              headers="$(curl -s -D - -o "$RUNNER_TEMP/body" --max-time 30 "$SITE$path" || true)"
+              code="$(printf '%s' "$headers" | awk 'toupper($1) ~ /^HTTP/ {c=$2} END {print c+0}')"
+              [ "$code" != "0" ] && break
+              sleep 10
+            done
+            type="$(printf '%s' "$headers" | grep -i '^content-type:' | tail -1 | tr -d '\r' | cut -d' ' -f2-)"
+            body="$(head -c 200000 "$RUNNER_TEMP/body" 2>/dev/null | tr -d '\000' || true)"
+            echo "$path: $code $type"
+          }
+          header() { printf '%s' "$headers" | grep -i "^$1:" | tail -1 | tr -d '\r' | cut -d' ' -f2-; }
+
+          fetch /api/health
+          [ "$code" = 200 ] || fail "health=$code"
+          echo "$body" | grep -q '"status":"ok"' || fail health-body
+
+          fetch /login
+          [ "$code" = 200 ] || fail "login=$code"
+          csp="$(header content-security-policy)"
+          echo "$csp" | grep -q "'nonce-" || fail csp-nonce
+          echo "$csp" | grep -q "frame-ancestors 'none'" || fail csp-frame-ancestors
+          echo "$csp" | grep -q "unsafe-eval" && fail csp-unsafe-eval
+          echo "$csp" | grep -Eq "script-src[^;]*'unsafe-inline'" && fail csp-script-unsafe-inline
+          [ "$(header cross-origin-opener-policy)" = "same-origin" ] || fail coop
+          [ "$(header cross-origin-embedder-policy)" = "require-corp" ] || fail coep
+          header strict-transport-security | grep -q "max-age=" || fail hsts
+
+          fetch /spike/vault-worker.js
+          [ "$code" = 200 ] && echo "$type" | grep -q javascript || fail "vault-worker=$code/$type"
+          fetch /spike/duckdb-eh.wasm
+          [ "$code" = 200 ] && echo "$type" | grep -q "application/wasm" || fail "duckdb-wasm=$code/$type"
+
+          fetch /api/quotes
+          [ "$code" = 410 ] || fail "retired-route=$code"
+          fetch /rebatehq-smoke-missing-page
+          [ "$code" = 404 ] || fail "missing-page=$code"
+
+          echo "failures=${failures# }" >> "$GITHUB_OUTPUT"
+      - name: Open or update the smoke-test issue
+        if: steps.probe.outputs.failures != ''
+        shell: bash
+        run: |
+          gh label create deploy-smoke --color B60205 --description "Post-deploy check failed" 2>/dev/null || true
+          open="$(gh issue list --label deploy-smoke --state open --json number --jq '.[0].number')"
+          note="Deploy smoke test failed at $(date -u +%FT%TZ) on $SITE: ${{ steps.probe.outputs.failures }}. Deployment: ${{ github.event.deployment.sha || github.sha }}. Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          if [ -n "$open" ]; then gh issue comment "$open" --body "$note"; else gh issue create --label deploy-smoke --title "Production deploy smoke test failed" --body "$note"; fi
+          exit 1
+      - name: Close the smoke-test issue after a good run
+        if: steps.probe.outputs.failures == ''
+        shell: bash
+        run: |
+          open="$(gh issue list --label deploy-smoke --state open --json number --jq '.[0].number' 2>/dev/null || true)"
+          if [ -n "$open" ]; then gh issue close "$open" --comment "Passed again at $(date -u +%FT%TZ)."; fi

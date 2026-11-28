@@ -57,11 +57,13 @@ export async function setSql(e: Engine, actor: { userId: string; role: RoleId; n
   if (named === userId && target.role === "sales_rep") bad(msg("err.roles.theNamedPricingOwner2"));
   return { userId, sql: `DELETE FROM role_assignments WHERE user_id=${Q(userId)}; INSERT INTO role_assignments VALUES(${Q(userId)},${Q(name)},${Q(target.role)},${Q(actor.userId)},${Q(at)});` };
 }
-export async function removeSql(e: Engine, actor: { userId: string }, userId: string) {
+/** Removing a person follows the same rule as editing (review flaw 14): only an Owner or the named Pricing Owner may remove an Owner or a Pricing Owner. */
+export async function removeSql(e: Engine, actor: { userId: string; role: RoleId; namedOwner: boolean }, userId: string) {
   userId = cleanId(userId);
   if (userId === actor.userId) bad(msg("err.roles.youCannotRemoveYour"));
   const current = (await rows(e, `SELECT role FROM role_assignments WHERE user_id=${Q(userId)}`))[0];
   if (!current) bad(msg("err.roles.thatPersonHasNo"));
+  if ((current.role === "owner" || current.role === "pricing_owner") && actor.role !== "owner" && !actor.namedOwner) bad(msg("err.roles.onlyAnOwnerCan"));
   if ((await rows(e, "SELECT owner_id FROM pricing_settings WHERE id=1"))[0]?.owner_id === userId) bad(msg("err.roles.theNamedPricingOwner"));
   if (current.role === "owner" && Number((await rows(e, "SELECT count(*) AS n FROM role_assignments WHERE role='owner'"))[0].n) <= 1) bad(msg("err.roles.aVaultNeedsAt"));
   return `DELETE FROM role_assignments WHERE user_id=${Q(userId)};`;

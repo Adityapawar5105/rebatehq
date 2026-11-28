@@ -65,7 +65,7 @@ test("S4 wiring: the worker polls on its minute tick and debounces rings; the pa
   // A device listens as soon as a relay action finishes (open, join, sync, rotate) and right after unlock, not only after
   // its first background poll: that gap let a publish arrive only by polling (PR #37, four failed CI runs).
   assert.match(service, /this\.relayListen\(session\);\s+return result;/, "every relay action starts the doorbell");
-  assert.match(worker, /agentsDue\(\); relayDue\(\); \}\); \} \}\);/, "a background sync runs right after unlock");
+  assert.match(worker, /agentsDue\(\); relayDue\(\); \}\); \} \}\)\);/, "a background sync runs right after unlock");
   assert.match(service, /595_000 : 55_000/, "a tick a few milliseconds early does not skip a minute");
   assert.match(bell, /await client\.setAuth\(t\.token\)/, "the socket is authorised before any private channel joins");
 });

@@ -117,7 +117,9 @@ test("role changes follow the rules: no self-edits, last Owner and named Pricing
     c.query((await setSql(e, owner, { userId: "newbie", name: "Nia", role: "owner" }, "2025-02-02")).sql); // a second Owner exists now
     c.query((await setSql(e, po, { userId: "owner1", name: "Olga", role: "pricing_manager" }, "2025-02-03")).sql);
     assert.equal(q(c, "SELECT role FROM role_assignments WHERE user_id='owner1'")[0].role, "pricing_manager");
-    await assert.rejects(removeSql(e, { userId: "newbie" }, "newbie"), /own access/); await assert.rejects(removeSql(e, owner, "po"), /named Pricing Owner/);
+    await assert.rejects(removeSql(e, { userId: "newbie", role: "owner", namedOwner: false }, "newbie"), /own access/); await assert.rejects(removeSql(e, owner, "po"), /named Pricing Owner/);
+    // Review flaw 14: removing follows the editing rule, so an Admin cannot remove an Owner or a Pricing Owner.
+    await assert.rejects(removeSql(e, admin, "newbie"), /Only an Owner can change/); await assert.rejects(removeSql(e, admin, "po"), /Only an Owner can change/);
     await assert.rejects(removeSql(e, owner, "ghost"), /no role/); await assert.rejects(removeSql(e, po, "newbie"), /at least one Owner/);
     c.query(await removeSql(e, owner, "rep")); assert.equal(q(c, "SELECT count(*) AS n FROM role_assignments WHERE user_id='rep'")[0].n, "0");
   } finally { c.close(); }

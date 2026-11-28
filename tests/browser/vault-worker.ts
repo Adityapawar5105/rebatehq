@@ -816,6 +816,10 @@ async function phase5a() {
  const refuses=async(s:VaultService,action:string,data:unknown={})=>{try{await call(s,action,data);return false;}catch(e){return (e as Error).message.includes('cannot do this');}};
  let service=new VaultService(()=>undefined);await service.init(scope);
  try {
+  // Review flaw 15: no role-checked command runs while the vault is locked, except the restore card's backup reminder.
+  let lockedRefused=false;try{await call(service,'folderPickupSet',{every:15,auto:false});}catch(e){lockedRefused=(e as {code?:string}).code==='LOCKED';}
+  assert(lockedRefused,'A role-checked command ran while the vault was locked');
+  assert(typeof (await call(service,'backupStatus')).configured==='boolean','The restore card lost its backup reminder');
   let refusedNoOwner=false;try{await call(service,'create',{passphrase:secret,tier:'professional',ownerName:'  '});}catch(e){refusedNoOwner=(e as Error).message.includes('Pricing Owner');}
   assert(refusedNoOwner&&!(await service.status()).exists,'A vault was created without a named Pricing Owner');
   const created=await call(service,'create',{passphrase:secret,tier:'professional',ownerName:'Synthetic Pricing Owner'});
