@@ -55,6 +55,13 @@ Server settings live in the hosting provider's environment, never in git. `.env.
 | Licence offline or read-only | A server error keeps the saved licence inside its offline allowance; only a refusal or bad signature makes the vault read-only. Check the licence and device rows (operator view below) |
 | Customer leaves | The Owner uses Settings › Workspace › Disable workspace. The workspace's control-plane rows stay until removed: `scripts/purge-deleted-tenants.ts` is **suspended** (it stops at its first line). Before it is switched back on, a pgTAP test must prove that deleting a tenant cascades to its control-plane rows and keeps the audit rows, and the Restore Drill must pass with it (Phase 16 audit, 22 Nov 2026). Vault data on their devices is theirs to delete |
 
+## Contact addresses and monitoring (review R3, 28 Nov 2026)
+
+- **support@rebatehq.app** and **security@rebatehq.app** forward to the owner's inbox through Cloudflare Email Routing (free). Its MX, SPF and DKIM records sit on the apex `rebatehq.app`; a sending service such as Resend uses its own subdomain and DKIM name, so the two do not clash.
+- **`/.well-known/security.txt`** names security@rebatehq.app (RFC 9116). Renew its `Expires` date before 28 Nov 2027.
+- **Uptime:** `.github/workflows/uptime.yml` loads `/api/health` and `/login` on app.rebatehq.app every 30 minutes from GitHub's runners (three tries each). A failure opens or comments on one issue labelled `uptime`, and GitHub's issue notification is the alert; the next good run closes it. It checks that the app answers, not the database: a database outage shows as sign-in errors and in Vercel's function logs.
+- **Error tracking** with an account (Sentry or similar) is not set up yet. Until then, server errors are only in Vercel's runtime logs, which Hobby keeps for a short time.
+
 ## Incidents and secrets
 
 - A leaked `LICENCE_SIGNING_KEY` or `ACTOR_SIGNING_SECRET`: generate a new pair, deploy the new public verify key with the app, re-issue licences (devices re-check on their next online start). Record the rotation in `SECURITY_REVIEW.md`.

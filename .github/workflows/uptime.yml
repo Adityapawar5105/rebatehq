@@ -1,0 +1,64 @@
+name: RebateHQ uptime
+
+# Review R3 (28 Nov 2026): a free outside check of the live site. Every 30 minutes GitHub's runners load the health
+# route and the sign-in page of app.rebatehq.app. A failure opens (or comments on) one issue labelled "uptime"; the
+# next good run closes it, so GitHub's issue notifications are the alert. No account, secret or third-party action.
+on:
+  schedule:
+    - cron: "7,37 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: uptime
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      SITE: https://app.rebatehq.app
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Check the health route and the sign-in page (three tries each)
+        id: probe
+        shell: bash
+        run: |
+          set -u
+          failures=""
+          check() {
+            local path="$1" want="$2" code=""
+            for attempt in 1 2 3; do
+              code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$SITE$path" || echo 000)"
+              [ "$code" = "$want" ] && { echo "$path: $code"; return 0; }
+              sleep 10
+            done
+            echo "$path: $code (expected $want)"
+            failures="$failures $path=$code"
+          }
+          check /api/health 200
+          check /login 200
+          # The health route must say ok, not just answer.
+          body="$(curl -s --max-time 20 "$SITE/api/health" || true)"
+          echo "$body" | grep -q '"status":"ok"' || failures="$failures health-body"
+          echo "failures=${failures# }" >> "$GITHUB_OUTPUT"
+      - name: Open or update the uptime issue
+        if: steps.probe.outputs.failures != ''
+        shell: bash
+        run: |
+          gh label create uptime --color B60205 --description "Live site check failed" 2>/dev/null || true
+          open="$(gh issue list --label uptime --state open --json number --jq '.[0].number')"
+          note="Uptime check failed at $(date -u +%FT%TZ): ${{ steps.probe.outputs.failures }} on $SITE. Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          if [ -n "$open" ]; then gh issue comment "$open" --body "$note"; else gh issue create --label uptime --title "app.rebatehq.app is not responding" --body "$note"; fi
+          exit 1
+      - name: Close the uptime issue after a good run
+        if: steps.probe.outputs.failures == ''
+        shell: bash
+        run: |
+          open="$(gh issue list --label uptime --state open --json number --jq '.[0].number' 2>/dev/null || true)"
+          if [ -n "$open" ]; then gh issue close "$open" --comment "Back up at $(date -u +%FT%TZ)."; fi
