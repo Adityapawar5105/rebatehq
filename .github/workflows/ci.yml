@@ -199,7 +199,15 @@ jobs:
           export RESEND_API_KEY=ci-resend-key RESEND_API_URL=http://127.0.0.1:3099 EMAIL_FROM="RebateHQ CI <ci@example.test>"
           stop_app
           start_app vault-app-invite.log RELAY_ENABLED=true
-          node scripts/test-invite-browser.mjs --browser=chromium
+          if ! node scripts/test-invite-browser.mjs --browser=chromium; then
+            echo "::group::App server log, invite pass (token, secret, key and password lines removed)"
+            tail -n 120 "$RUNNER_TEMP/vault-app-invite.log" | grep -viE "token|secret|password|apikey|api_key|bearer" || :
+            echo "::endgroup::"
+            echo "::group::Limiter log"
+            docker logs invite-srh 2>&1 | tail -n 40 | grep -viE "token|secret|password" || :
+            echo "::endgroup::"
+            exit 1
+          fi
           unset UPSTASH_REDIS_REST_URL UPSTASH_REDIS_REST_TOKEN RESEND_API_KEY RESEND_API_URL EMAIL_FROM
           # Review R2 (SECURITY_REVIEW.md R27): the same build with the relay off makes no relay, Storage or Realtime
           # request and opens no WebSocket.

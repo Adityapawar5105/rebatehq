@@ -20,16 +20,19 @@ for (const name of ['UPSTASH_REDIS_REST_URL', 'UPSTASH_REDIS_REST_TOKEN', 'RESEN
 const receiver = localUrl(process.env.RESEND_API_URL, 'Invitation email receiver');
 const db = new pg.Client({ connectionString: localDatabaseUrl(process.env.SEED_DATABASE_URL, 'Invite gate database').href });
 const passphrase = 'invite-gate-passphrase-' + randomUUID(), invitee = `invite-gate-${randomUUID()}@example.test`;
-const checks = {}, outbox = [];
+const checks = {}, outbox = [], hits = [];
 
 // The Resend stand-in: accepts only the app's bearer key and the Resend request shape, and records the message.
 const server = http.createServer((req, res) => {
   let body = '';
   req.on('data', c => { body += c; if (body.length > 65536) req.destroy(); });
   req.on('end', () => {
-    if (req.method !== 'POST' || req.url !== '/emails' || req.headers.authorization !== 'Bearer ' + process.env.RESEND_API_KEY) { res.writeHead(401).end(); return; }
-    try { const m = JSON.parse(body); assert.ok(m.from && Array.isArray(m.to) && m.subject && m.text && m.html); outbox.push(m); res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ id: randomUUID() })); }
-    catch { res.writeHead(422).end(); }
+    // CI #300: record every request (method, path, whether the key matched, which fields came) for the diagnostics.
+    const hit = { method: req.method, url: req.url, keyMatches: req.headers.authorization === 'Bearer ' + process.env.RESEND_API_KEY, contentType: req.headers['content-type'] };
+    hits.push(hit);
+    if (req.method !== 'POST' || req.url !== '/emails' || !hit.keyMatches) { hit.answer = 401; res.writeHead(401).end(); return; }
+    try { const m = JSON.parse(body); hit.fields = Object.keys(m); assert.ok(m.from && Array.isArray(m.to) && m.subject && m.text && m.html); outbox.push(m); hit.answer = 200; res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ id: randomUUID() })); }
+    catch { hit.answer = 422; res.writeHead(422).end(); }
   });
 });
 await new Promise(r => server.listen(Number(receiver.port), receiver.hostname, r));
@@ -58,8 +61,12 @@ try {
   // 2. The invitation, through the app's own form and its normal Resend call.
   await ownerPage.goto(new URL('/account/users', base).href);
   await ownerPage.locator('#invite-email').fill(invitee); await ownerPage.locator('#invite-role').selectOption('rep');
-  await ownerPage.getByRole('button', { name: 'Invite user', exact: true }).click();
-  const mail = await until(() => outbox.find(m => m.to.includes(invitee)), 'The app sent no invitation email');
+  const [answer] = await Promise.all([
+    ownerPage.waitForResponse(r => new URL(r.url()).pathname === '/api/invites' && r.request().method() === 'POST'),
+    ownerPage.getByRole('button', { name: 'Invite user', exact: true }).click(),
+  ]);
+  if (!answer.ok()) { const body = await answer.json().catch(() => ({})); throw new Error(`The invite request answered ${answer.status()}: ${body.error ?? '(no message)'}; receiver saw ${JSON.stringify(hits)}`); }
+  const mail = await until(() => outbox.find(m => m.to.includes(invitee)), 'The app sent no invitation email; receiver saw ' + JSON.stringify(hits), 20000);
   assert.equal(mail.from, process.env.EMAIL_FROM);
   const inviteUrl = (mail.text.match(/https?:\/\/\S+\/invite\/[A-Za-z0-9_-]{43}/) || [])[0];
   assert.ok(inviteUrl && new URL(inviteUrl).origin === new URL(base).origin, 'The invitation has no link to this app');
