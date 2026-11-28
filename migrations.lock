@@ -8,8 +8,8 @@
   "hashUpdateReason": "Windows CRLF versus CI LF caused different raw-byte hashes; normalized hash matches the CI content hash.",
   "sqlContentUnchangedSinceBaselineRun": true,
   "lockUpdateDate": "2026-11-28",
-  "lockUpdateReason": "Review R2 relay quota migration (non-publisher event quota; revoked device keys not counted, SECURITY_REVIEW.md R25) promoted from pending to locked after RebateHQ CI #291 (run 46054705568) passed on 78b75e5 with the four new pgTAP checks (160 fresh) and the relay-off pass, CI #292 (run 46059293393) on main at 31987d4, and the user-run Restore Drill #29 (run 46061068895) on 31987d4: 1..163 restore-mode checks. Hash unchanged.",
-  "appliedThrough": "20261129120000_review_r2_relay_quotas.sql",
+  "lockUpdateReason": "Review R3 tenant purge migration (rebatehq_private.purge_deleted_tenant, the 30-day operator purge) promoted from pending to locked after RebateHQ CI #304 (run 46150659264) passed on 532cd0b with the four new pgTAP checks (164 fresh), CI #305 (run 46155910493) on main at db1a1d6, and the user-run Restore Drill #30 (run 46158386268) on db1a1d6: 1..167 restore-mode checks twice. Hash unchanged.",
+  "appliedThrough": "20261130120000_r3_tenant_purge.sql",
   "appliedMigrations": {
     "202610240001_phase1_foundation.sql": "8faa57997119f29b3921b0e15b4b9e964edbc7fa2ecd8b52fbe32392be38c3bb",
     "202610250001_revoke_platform_public_privileges.sql": "d4b48072fac75e3d5a6683fe4b13e00042c9feb5a6a65a9e5576e44ecb9214a2",
@@ -29,7 +29,8 @@
     "20261126120000_sharing_s3_storage.sql": "5dbf8bb03260345139c732bf8df080458aff4b2049386169fc68a6ca719c9273",
     "20261127120000_sharing_s4_doorbell.sql": "f87a8d2bda664f76998c0e09a10b5030f3956045cb7feecbfe6fc7785b7b1000",
     "20261128120000_review_r2_deleted_workspaces.sql": "8a796b84cecfa8f7c4d42e4c2272ea67cfd65b2cf1becbc6a232aba2fce6685f",
-    "20261129120000_review_r2_relay_quotas.sql": "ea6f6724301c54fb0571f9fd80e59898430dd17292343f306571cadd012dc970"
+    "20261129120000_review_r2_relay_quotas.sql": "ea6f6724301c54fb0571f9fd80e59898430dd17292343f306571cadd012dc970",
+    "20261130120000_r3_tenant_purge.sql": "4878d9d5f6aa162c3502d3569a51099ab61719fc1f7ac818eff565764ac72371"
   },
   "appliedOrder": [
     "202610240001_phase1_foundation.sql",
@@ -50,14 +51,11 @@
     "20261126120000_sharing_s3_storage.sql",
     "20261127120000_sharing_s4_doorbell.sql",
     "20261128120000_review_r2_deleted_workspaces.sql",
-    "20261129120000_review_r2_relay_quotas.sql"
-  ],
-  "pendingOrder": [
+    "20261129120000_review_r2_relay_quotas.sql",
     "20261130120000_r3_tenant_purge.sql"
   ],
-  "pendingMigrations": {
-    "20261130120000_r3_tenant_purge.sql": "4878d9d5f6aa162c3502d3569a51099ab61719fc1f7ac818eff565764ac72371"
-  },
+  "pendingOrder": [],
+  "pendingMigrations": {},
   "appliedMigrationEvidence": {
     "202610250001_revoke_platform_public_privileges.sql": {
       "date": "2026-10-26",
@@ -166,6 +164,12 @@
       "commit": "31987d4",
       "ciRun": "https://github.com/Adityapawar5105/rebatehq/actions/runs/46059293393",
       "restoreRun": "https://github.com/Adityapawar5105/rebatehq/actions/runs/46061068895"
+    },
+    "20261130120000_r3_tenant_purge.sql": {
+      "date": "2026-11-28",
+      "commit": "db1a1d6",
+      "ciRun": "https://github.com/Adityapawar5105/rebatehq/actions/runs/46155910493",
+      "restoreRun": "https://github.com/Adityapawar5105/rebatehq/actions/runs/46158386268"
     }
   }
 }

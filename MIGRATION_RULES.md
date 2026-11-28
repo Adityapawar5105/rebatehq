@@ -140,9 +140,12 @@ Two checks were rewritten for tables that remain:
 - **What it changes:** `public.relay_check_insert()` only, from the S2 body. A device that does not publish under the signed grid may send 20 events a minute and 2,000 a day (publishers 60 a minute); the 1,000 device-key limit counts only keys of active devices, with a lifetime bound of 10,000. Same SECURITY DEFINER, `search_path` and grants.
 - **Staging:** applied on 28 Nov 2026 with `supabase db push` after a dry run. Read-only checks found both changes in the function, SECURITY DEFINER with `search_path=public, pg_temp`, no EXECUTE for anon, authenticated, service_role or rebatehq_app, and its 6 triggers. The security advisor showed nothing new.
 
-## Review R3 tenant purge (pending)
+## Review R3 tenant purge (locked 28 November 2026)
 
-`20261130120000_r3_tenant_purge.sql` is **pending**: 19 applied, 1 pending. It is locked only after green CI and a **user-run** Restore Drill reporting `1..167`.
+`20261130120000_r3_tenant_purge.sql` is **locked**: 20 applied, 0 pending.
+- **CI:** [CI #304](https://github.com/Adityapawar5105/rebatehq/actions/runs/46150659264) passed on `532cd0b` (PR #58) with the four new pgTAP checks (164 fresh); [CI #305](https://github.com/Adityapawar5105/rebatehq/actions/runs/46155910493) passed on `main` at `db1a1d6`.
+- **Restore Drill:** the user-run [Restore Drill #30](https://github.com/Adityapawar5105/rebatehq/actions/runs/46158386268) (local target) passed on `db1a1d6` with `1..167` restore-mode checks twice, as role `postgres` without SUPERUSER and with BYPASSRLS (the hosted shape).
+- **Staging:** applied on 28 Nov 2026 with `supabase db push` after a dry run listing only it. Read-only checks: SECURITY INVOKER, `search_path=public, pg_temp`, no EXECUTE for anon, authenticated, service_role or rebatehq_app; no workspace is due. The security advisor showed nothing new.
 - **What it adds:** `rebatehq_private.purge_deleted_tenant(uuid, interval DEFAULT '30 days')`, SECURITY INVOKER with `search_path = public, pg_temp`. It refuses a caller without SUPERUSER or BYPASSRLS, a window under 30 days, and a workspace that is live or was deleted less than the window ago. It deletes the workspace's rows from the 13 child tables, children first, then the tenant row, and returns the count per table. The audit log keeps its rows.
 - **Grants:** revoked from `PUBLIC, anon, authenticated, service_role, rebatehq_app`; the private schema's USAGE was already closed to them. No table, policy or public function changes, so the tenant-table minimum stays 15.
 - **pgTAP:** four checks at the end of `supabase/tests/sharing_s4.sql` (closed ACL; the three refusals; a real purge of relay tenant B leaving zero rows in 14 tables with its audit rows kept; tenant A unchanged). Plans: **164** fresh, **167** restore.
