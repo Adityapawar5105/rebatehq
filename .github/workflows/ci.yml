@@ -134,7 +134,7 @@ jobs:
         shell: bash
         run: bash scripts/ci-install-browser.sh chromium
       - name: Required authenticated local-vault privacy gate
-        timeout-minutes: 25
+        timeout-minutes: 30
         env:
           RELAY_ENABLED: "true"
           BENCHMARKS_ENABLED: "true"
@@ -150,29 +150,50 @@ jobs:
           JS
           pnpm test:vault:privacy --browser=chromium
           node scripts/test-relay-browser.mjs --auth --browser=chromium
-          # Review R2 (SECURITY_REVIEW.md R27): the same build restarted with the relay off makes no relay, Storage or
-          # Realtime request and opens no WebSocket (RELAY_ENABLED is read at run time, so no rebuild is needed).
-          # CI #289: killing pnpm left Next's server running (it renames itself "next-server"), so stop whatever listens
-          # on port 3000 as well.
-          kill "$app_pid" 2>/dev/null || :
-          pkill -f "next-server" 2>/dev/null || :
-          pkill -f "next start" 2>/dev/null || :
-          for p in $(lsof -ti tcp:3000 2>/dev/null); do kill "$p" 2>/dev/null || :; done
-          fuser -k 3000/tcp 2>/dev/null || :
-          wait "$app_pid" 2>/dev/null || :
-          # The pass also probes /api/relay for 404, but do not start until the old server has let go of the port.
-          for i in $(seq 1 30); do curl -s -o /dev/null --max-time 2 http://localhost:3000/login || break; sleep 1; done
-          if curl -s -o /dev/null --max-time 2 http://localhost:3000/login; then
-            for p in $(lsof -ti tcp:3000 2>/dev/null); do kill -9 "$p" 2>/dev/null || :; done
-            fuser -k -9 3000/tcp 2>/dev/null || :
-            sleep 2
-          fi
-          if curl -s -o /dev/null --max-time 2 http://localhost:3000/login; then echo "::error::The relay-on server did not stop."; exit 1; fi
-          RELAY_ENABLED=false pnpm start --hostname 0.0.0.0 --port 3000 > "$RUNNER_TEMP/vault-app-relay-off.log" 2>&1 &
-          app_pid=$!
-          node --input-type=module <<'JS'
-          let ready=false;for(let i=0;i<60;i++){try{if((await fetch('http://localhost:3000/login')).ok){ready=true;break}}catch{}await new Promise(r=>setTimeout(r,1000))}if(!ready)throw Error('App did not restart for the relay-off pass');
+          # The same build is restarted for two more passes (RELAY_ENABLED and the limiter and email settings are read at
+          # run time, so no rebuild is needed). CI #289: killing pnpm left Next's server running (it renames itself
+          # "next-server"), so stop whatever listens on port 3000 and wait until the port is free.
+          stop_app() {
+            kill "$app_pid" 2>/dev/null || :
+            pkill -f "next-server" 2>/dev/null || :
+            pkill -f "next start" 2>/dev/null || :
+            for p in $(lsof -ti tcp:3000 2>/dev/null); do kill "$p" 2>/dev/null || :; done
+            fuser -k 3000/tcp 2>/dev/null || :
+            wait "$app_pid" 2>/dev/null || :
+            for i in $(seq 1 30); do curl -s -o /dev/null --max-time 2 http://localhost:3000/login || break; sleep 1; done
+            if curl -s -o /dev/null --max-time 2 http://localhost:3000/login; then
+              for p in $(lsof -ti tcp:3000 2>/dev/null); do kill -9 "$p" 2>/dev/null || :; done
+              fuser -k -9 3000/tcp 2>/dev/null || :
+              sleep 2
+            fi
+            if curl -s -o /dev/null --max-time 2 http://localhost:3000/login; then echo "::error::The previous app server did not stop."; exit 1; fi
+          }
+          start_app() {
+            local log="$1"; shift
+            env "$@" pnpm start --hostname 0.0.0.0 --port 3000 > "$RUNNER_TEMP/$log" 2>&1 &
+            app_pid=$!
+            node --input-type=module <<'JS'
+          let ready=false;for(let i=0;i<60;i++){try{if((await fetch('http://localhost:3000/login')).ok){ready=true;break}}catch{}await new Promise(r=>setTimeout(r,1000))}if(!ready)throw Error('App did not restart');
           JS
+          }
+          # Review R3 (review blocker B4): invite → accept → device approval, with production's fail-closed rate limiter
+          # (a real Redis behind an Upstash-compatible REST endpoint) and the invitation email caught by the gate's
+          # Resend stand-in on this machine.
+          docker network create invite-gate >/dev/null 2>&1 || :
+          docker run -d --rm --name invite-redis --network invite-gate redis:7-alpine >/dev/null
+          docker run -d --rm --name invite-srh --network invite-gate -p 8079:80 -e SRH_MODE=env -e SRH_TOKEN=ci-srh-token -e SRH_CONNECTION_STRING=redis://invite-redis:6379 hiett/serverless-redis-http:latest >/dev/null
+          for i in $(seq 1 60); do curl -s -X POST -H "Authorization: Bearer ci-srh-token" -d '["PING"]' http://localhost:8079 | grep -q PONG && break; sleep 1; done
+          curl -s -X POST -H "Authorization: Bearer ci-srh-token" -d '["PING"]' http://localhost:8079 | grep -q PONG || { echo "::error::The Upstash-compatible limiter did not start."; exit 1; }
+          export UPSTASH_REDIS_REST_URL=http://localhost:8079 UPSTASH_REDIS_REST_TOKEN=ci-srh-token
+          export RESEND_API_KEY=ci-resend-key RESEND_API_URL=http://127.0.0.1:3099 EMAIL_FROM="RebateHQ CI <ci@example.test>"
+          stop_app
+          start_app vault-app-invite.log RELAY_ENABLED=true
+          node scripts/test-invite-browser.mjs --browser=chromium
+          unset UPSTASH_REDIS_REST_URL UPSTASH_REDIS_REST_TOKEN RESEND_API_KEY RESEND_API_URL EMAIL_FROM
+          # Review R2 (SECURITY_REVIEW.md R27): the same build with the relay off makes no relay, Storage or Realtime
+          # request and opens no WebSocket.
+          stop_app
+          start_app vault-app-relay-off.log RELAY_ENABLED=false
           RELAY_ENABLED=false pnpm test:vault:privacy --browser=chromium --relay-off-only
       - name: Realtime server log after a relay gate failure (team sharing S4)
         if: failure()
