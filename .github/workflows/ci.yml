@@ -195,7 +195,12 @@ jobs:
             curl -s -i --max-time 3 -X POST -H "Authorization: Bearer ci-srh-token" -H "Content-Type: application/json" -d '["PING"]' http://127.0.0.1:8079 || :
             exit 1
           fi
-          export UPSTASH_REDIS_REST_URL=http://127.0.0.1:8079 UPSTASH_REDIS_REST_TOKEN=ci-srh-token
+          # CI #301: open-source Redis refuses the limiter's Upstash-only `#!lua flags=allow-key-locking` script line;
+          # scripts/ci-upstash-shim.mjs removes that line and forwards everything else to the endpoint above.
+          node scripts/ci-upstash-shim.mjs > "$RUNNER_TEMP/upstash-shim.log" 2>&1 &
+          for i in $(seq 1 30); do curl -s --max-time 3 -X POST -H "Authorization: Bearer ci-srh-token" -H "Content-Type: application/json" -d '["PING"]' http://127.0.0.1:8078 2>/dev/null | grep -q PONG && break; sleep 1; done
+          curl -s --max-time 3 -X POST -H "Authorization: Bearer ci-srh-token" -H "Content-Type: application/json" -d '["PING"]' http://127.0.0.1:8078 | grep -q PONG || { echo "::error::The limiter shim did not start."; cat "$RUNNER_TEMP/upstash-shim.log"; exit 1; }
+          export UPSTASH_REDIS_REST_URL=http://127.0.0.1:8078 UPSTASH_REDIS_REST_TOKEN=ci-srh-token
           export RESEND_API_KEY=ci-resend-key RESEND_API_URL=http://127.0.0.1:3099 EMAIL_FROM="RebateHQ CI <ci@example.test>"
           stop_app
           start_app vault-app-invite.log RELAY_ENABLED=true
