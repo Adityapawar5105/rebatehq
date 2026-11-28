@@ -7,7 +7,7 @@ import { plainText } from "../lib/i18n/core";
 const mappingProblems = (...a: Parameters<typeof problemRefs>) => problemRefs(...a).map(plainText);
 import { cleanDate, cleanId, cleanNumber, lineTotal } from "../lib/studio/clean";
 import { detectDateFormat, normalizeHeader } from "../lib/studio/formats";
-import { generatePlayground, tierDiscountBp } from "../lib/studio/playground";
+import { PLAYGROUND_REFERENCE_DATE, generatePlayground, playgroundMonths, tierDiscountBp } from "../lib/studio/playground";
 import { RETAIL_HEADER, SALES_HEADER } from "./helpers/studio-fixtures";
 
 const show = (fields: MappedField[], headers: string[]) => Object.fromEntries(fields.map(f => [f.field, f.source.kind === "column" || f.source.kind === "unit" ? `${f.source.kind}:${headers[f.source.index]}` : f.source.kind]));
@@ -78,7 +78,7 @@ test("generated line IDs are deterministic, distinct and within 53 bits", () => 
   for (const id of [...ids].slice(0, 1000)) assert.ok(Number.isSafeInteger(Number(id)) && Number(id) > 0 && /^[1-9]\d{0,17}$/.test(id));
 });
 test("Playground is deterministic and its planted-leak manifest is committed", () => {
-  const a = generatePlayground(), b = generatePlayground();
+  const a = generatePlayground(PLAYGROUND_REFERENCE_DATE), b = generatePlayground(PLAYGROUND_REFERENCE_DATE);
   assert.deepEqual(a.manifest, b.manifest);
   assert.equal(a.files[4].text, b.files[4].text);
   assert.deepEqual(a.manifest, JSON.parse(readFileSync("tests/fixtures/playground-manifest.json", "utf8")));
@@ -89,4 +89,24 @@ test("Playground is deterministic and its planted-leak manifest is committed", (
   assert.equal(tierDiscountBp(1), 3000); assert.equal(tierDiscountBp(50), 550);
   for (const f of a.files) assert.ok(f.name.startsWith("Playground - "));
   assert.ok(normalizeHeader(a.files[4].text.split("\n")[0].split(",")[1]) === "invoiceid");
+});
+test("Playground dates follow today, so the 90-day cash leak never runs dry, and the planted leaks stay the same", () => {
+  const fixture = JSON.parse(readFileSync("tests/fixtures/playground-manifest.json", "utf8"));
+  const ref = playgroundMonths(PLAYGROUND_REFERENCE_DATE);
+  assert.deepEqual([ref.months[0], ref.months.at(-1), ref.costRise, ref.vendorFrom, ref.contractFrom, ref.contractTo], ["2024-11", "2026-10", "2025-11-01", "2024-11-01", "2025-01-01", "2026-12-31"]);
+  // January rolls the year back; contracts run to the last day of next month, leap Februaries included.
+  const jan = playgroundMonths(new Date(2027, 0, 20));
+  assert.deepEqual([jan.months[0], jan.months.at(-1)], ["2025-01", "2026-12"]);
+  assert.equal(playgroundMonths(new Date(2025, 11, 31)).contractTo, "2026-01-31");
+  assert.equal(playgroundMonths(new Date(2026, 0, 2)).contractTo, "2026-02-28");
+  assert.equal(playgroundMonths(new Date(2028, 0, 2)).contractTo, "2028-02-29");
+  for (const today of [new Date(2027, 1, 10), new Date(2029, 6, 1)]) {
+    const p = generatePlayground(today), sales = p.files[4].text.trim().split("\n").slice(1).map(l => l.split(",")[4]);
+    assert.deepEqual(p.manifest.leaks.map(l => [l.id, l.lines, l.cents]), fixture.leaks.map((l: { id: string; lines: number; cents: string }) => [l.id, l.lines, l.cents]));
+    const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const ninety = new Date(today); ninety.setDate(ninety.getDate() - 90);
+    assert.ok(sales.filter(d => d >= ymd(ninety)).length > 5000, "the last 90 days hold sales");
+    assert.ok(sales.every(d => d < ymd(new Date(today.getFullYear(), today.getMonth(), 1))), "no sale is dated this month or later");
+    assert.ok(p.manifest.leaks[3].description.includes(p.manifest.costRise));
+  }
 });

@@ -65,6 +65,6 @@ function cover(v: { generated_at: string; schema_version: number; entries: strin
   y -= 8; lines(tr("auditpack.contents"), 13, true);
   for (const [key, n] of [["auditpack.approvals", v.counts.approvals], ["auditpack.exportEvents", v.counts.export_events], ["auditpack.receipts", v.counts.export_receipts], ["auditpack.roleEvents", v.counts.role_events], ["auditpack.currentRoles", v.counts.current_roles]] as const)
     lines(tr(key, { count: integer(locale, n) }));
-  y -= 8; lines(tr("auditpack.howTo"), 13, true); lines(tr("auditpack.howToBody")); lines(tr("auditpack.neutral"), 9);
+  y -= 8; lines(tr("auditpack.howTo"), 13, true); lines(tr("auditpack.howToBody")); lines(tr("auditpack.limits")); lines(tr("auditpack.neutral"), 9);
   return pdf.bytes(tr("auditpack.title"));
 }

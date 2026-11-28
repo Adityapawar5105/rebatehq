@@ -179,7 +179,7 @@ export function ImportStudio({ part = "import", client, status, caps = [], busy,
       <UiButton variant="primary" disabled={busy || !canCommit || status.dirty || !!importLock} title={importLock ?? undefined} onClick={() => void operation(async () => {
         const out = await client.call("studioCommit", { acknowledge: ack }); onStatus(out.status); setStudio(out.studio); setAck(false); setOpen(null); await refreshSources(); bump();
         setAfter({ loaded: out.result.loaded, rejected: out.result.rejected }); window.scrollTo({ top: 0 });
-        setMessage(msg("studio.imported", { rows: fmt.int(out.result.loaded), count: Number(out.result.files) }) + (out.result.cleanup ? "" : " " + msg("studio.cleanupHarmless")));
+        setMessage(msg("studio.imported", { rows: fmt.int(out.result.loaded), count: Number(out.result.files) }) + (out.result.cleanup ? "" : " " + msg("studio.cleanupHarmless")) + (out.result.totalsStale ? " " + msg("studio.totalsStale") : ""));
       })}>{t("studio.confirmAndImportLocally")}</UiButton>
     </Card>}
     <Playground {...shared} sources={sources} onSources={refreshSources}/>
@@ -385,6 +385,6 @@ function Playground({ client, busy, operation, onStatus, setMessage, bump, sourc
     <p>{t("studio.aFictionalIndustrialValve")}</p>
     {!loaded ? <UiButton variant="primary" disabled={busy || !!playLock} title={playLock ?? undefined} onClick={() => void operation(async () => { const out = await client.call("playgroundLoad", {}); onStatus(out.status); setManifest(out.manifest); await onSources(); bump(); setMessage(msg("studio.playgroundLoadedInvoiceLines", { lines: out.manifest.lines, count: out.manifest.leaks.length })); })}>{t("studio.loadThePlayground")}</UiButton>
       : <UiButton disabled={busy} onClick={() => void operation(async () => { const out = await client.call("playgroundRemove", {}); onStatus(out.status); setManifest(null); await onSources(); bump(); setMessage(msg("studio.removedPlaygroundFilesAnd", { count: Number(out.removed) })); })}>{t("studio.removePlaygroundData")}</UiButton>}
-    {manifest && <ul className={styles.small}>{manifest.leaks.map(l => <li key={l.id}>{t("studio.plantedLeak", { id: l.id, description: l.id in PLANTED ? t(PLANTED[l.id],{minimum:fmt.currency("10000"),freight:fmt.currency("1500")}) : l.description, count: l.lines, dollars: fmt.currency(l.cents) })}</li>)}</ul>}
+    {manifest && <ul className={styles.small}>{manifest.leaks.map(l => <li key={l.id}>{t("studio.plantedLeak", { id: l.id, description: l.id in PLANTED ? t(PLANTED[l.id],{minimum:fmt.currency("10000"),freight:fmt.currency("1500"),date:manifest.costRise}) : l.description, count: l.lines, dollars: fmt.currency(l.cents) })}</li>)}</ul>}
   </Card>;
 }

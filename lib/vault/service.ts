@@ -41,7 +41,13 @@ import * as pricing from '../pricing/rules';
 import { backupConfig, storeBackupConfig, writeBackup } from './backup';
 import { openMemory, snapshotBytes, closeMemory, makeWritable, readyToWrite, startWarmup, type Engine } from "./engine";
 import { VaultStorage } from "./storage";
-import { decrypt, deriveKey, type Key } from "./crypto";
+import { MAX_VAULT_BYTES, NEAR_VAULT_BYTES, decrypt, deriveKey, type Key } from "./crypto";
+/** Whole MiB, for the size messages. */
+export const mib = (bytes: number) => String(Math.ceil(bytes / (1024 * 1024)));
+/** Ten seconds plus one for every 4 MiB of the last snapshot, at most three minutes (review flaw 11). */
+export const snapshotTimeout = (bytes: number) => Math.min(180_000, 10_000 + Math.ceil(bytes / (4 * 1024 * 1024)) * 1000);
+/** The size line in the status: near from 85% of the limit. */
+export const vaultSize = (bytes: number) => bytes > 0 ? { bytes: String(bytes), limit: String(MAX_VAULT_BYTES), near: bytes >= NEAR_VAULT_BYTES } : undefined;
 import { appendAudit, verifyAudit, GENESIS } from "./audit";
 import { V1_SQL, SCHEMA_VERSION, upgradeSql } from "./schema";
 import { sqlText } from "../spike/exact";
@@ -64,7 +70,7 @@ import * as cleanup from "../cleanup/item-master";
 import { basisSql, costBasis, type BasisId } from "../cost/basis";
 import * as setup from "../setup/checklist";
 import * as roles from "../roles/store";
-import { isRole, type Cap, type RoleId } from "../roles/access";
+import { LOCKED_ACTIONS, isRole, type Cap, type RoleId } from "../roles/access";
 import type { Access, CleanupApplied, CleanupMergedAll, CleanupUndone, HomeData, RoleList, SearchHit } from "./protocol";
 import { isLocale, plainText } from "../i18n/core";
 import * as quotes from "../quotes/quotes";
@@ -572,6 +578,10 @@ export class VaultService {
   private lastSaved: string | null = null;
   private dirty = false;
   private recovered = false;
+  /** Bytes of the last snapshot read or written (review flaw 11). */
+  private snapshotSize = 0;
+  /** Review flaw 16: an import committed but its totals rebuild failed twice; the next change rebuilds them. */
+  private derivedStale = false;
   private tier: Tier = "starter";
   private accessCache: Access | null = null;
   private viewAs: RoleId | null = null;
@@ -650,9 +660,17 @@ export class VaultService {
     if (!sql) return;
     await makeWritable(engine);
     // v5 adds the margin pre-aggregate; build it from the lines already in the vault.
-    await engine.conn.query(`BEGIN; ${sql} ${version < 5 ? REBUILD_SQL : ""} UPDATE vault_meta SET schema_version=${SCHEMA_VERSION} WHERE id=1`);
-    try { await appendAudit(engine, "vault.schema_upgraded", { from: String(version), to: String(SCHEMA_VERSION) }); await engine.conn.query("COMMIT"); this.dirty = true; }
-    catch (error) { await engine.conn.query("ROLLBACK"); throw error; }
+    // Review flaw 12: any failure, the upgrade statements included, rolls back to the old version in memory; nothing
+    // is saved, so the encrypted snapshot on disk is unchanged and the next open tries again. The person gets the
+    // upgrade's own message rather than "wrong passphrase".
+    await engine.conn.query("BEGIN");
+    try {
+      await engine.conn.query(`${sql} ${version < 5 ? REBUILD_SQL : ""} UPDATE vault_meta SET schema_version=${SCHEMA_VERSION} WHERE id=1`);
+      await appendAudit(engine, "vault.schema_upgraded", { from: String(version), to: String(SCHEMA_VERSION) }); await engine.conn.query("COMMIT"); this.dirty = true;
+    } catch {
+      await engine.conn.query("ROLLBACK").catch(() => undefined);
+      throw new VaultError("UPGRADE", msg("vault.upgradeFailed", { from: String(version), to: String(SCHEMA_VERSION) }));
+    }
   }
   async unlock(passphrase: string) {
     if (this.engine) throw new VaultError("STATE", msg("vault.theVaultIsAlready"));
@@ -670,7 +688,7 @@ export class VaultService {
       }
       passphrase = "";
       if (!decoded) throw new VaultError("UNLOCK_FAILED", msg("vault.wrongPassphraseOrDamaged"));
-      this.key = decoded.key; this.generation = decoded.sequence;
+      this.key = decoded.key; this.generation = decoded.sequence; this.snapshotSize = decoded.bytes.byteLength;
       // The passphrase was right once decrypt succeeded: an engine that fails to start is not a "wrong passphrase" (audit B-11).
       try { this.engine = await openMemory(decoded.bytes); } // one engine; registered RAM buffer only
       catch { throw new VaultError("ENGINE", msg("vault.engineFailed")); }
@@ -721,11 +739,15 @@ export class VaultService {
   async save() {
     const engine = this.requireEngine();
     if (!this.dirty) return this.status();
-    const bytes = await snapshotBytes(engine);
+    const bytes = await snapshotBytes(engine, snapshotTimeout(this.snapshotSize));
+    if (bytes.byteLength > MAX_VAULT_BYTES) {
+      const size = mib(bytes.byteLength); bytes.fill(0);
+      throw new VaultError("SAVE", msg("vault.size.tooLarge", { size, limit: mib(MAX_VAULT_BYTES) }));
+    }
     try {
       const sequence = (BigInt(this.generation) + BigInt(1)).toString();
       const head = await this.storage.publish(bytes, this.key!, sequence);
-      this.generation = sequence; this.lastSaved = head.savedAt; this.dirty = false;
+      this.generation = sequence; this.lastSaved = head.savedAt; this.dirty = false; this.snapshotSize = bytes.byteLength;
     } catch { throw new VaultError("SAVE", msg("vault.theChangeIsIn")); }
     finally { if (bytes.byteLength) bytes.fill(0); }
     return this.status();
@@ -812,10 +834,14 @@ export class VaultService {
     const engine = await this.writable(progress);
     progress(msg("vault.loadingRowsIntoThe"), "0", "1");
     const result = await this.studio.commit(engine, acknowledge);
-    this.dirty = true; progress(msg("vault.updatingMarginTotals2"), "0", "1"); await this.derived(engine, false);
+    // The rows are committed. Review flaw 16: a failed totals rebuild is tried once more; if it fails again the rows are
+    // still saved, the totals are rebuilt with the next change, and the person is told (Reconciliation shows the gap).
+    this.dirty = true; progress(msg("vault.updatingMarginTotals2"), "0", "1");
+    const rebuilt = await this.derived(engine, false).then(() => true, () => this.derived(engine, false).then(() => true, () => false));
+    this.derivedStale = !rebuilt;
     progress(msg("vault.savingEncryptedSnapshot"), "0", "1", "save"); await this.save();
     progress(msg("vault.saved"), "1", "1", "save"); this.touch();
-    return { status: await this.status(), studio: await this.studioState(), result };
+    return { status: await this.status(), studio: await this.studioState(), result: rebuilt ? result : { ...result, totalsStale: true } };
   }
   async studioDownload(id: string, signal: AbortSignal) { this.requireEngine(); return this.studio.download(id, signal); }
   async studioZip(signal: AbortSignal) { this.requireEngine(); return this.studio.zip(signal); }
@@ -1276,7 +1302,7 @@ export class VaultService {
     if (this.licence.writable && await differencesChanged(engine, d.found)) {
       const w = await this.writable();
       await w.conn.query("BEGIN");
-      try { await w.conn.query(await recordSql(d.found, at)); await w.conn.query("COMMIT"); } catch (error) { await w.conn.query("ROLLBACK").catch(() => undefined); throw error; }
+      try { await w.conn.query(await recordSql(d.found, at)); await appendAudit(w, "reconcile.recorded", { open: String(d.found.length) }); await w.conn.query("COMMIT"); } catch (error) { await w.conn.query("ROLLBACK").catch(() => undefined); throw error; }
       this.dirty = true; await this.save();
     }
     return reconSummary(engine, d, at);
@@ -1307,7 +1333,8 @@ export class VaultService {
   /** One audited, atomic change that is saved before it returns. */
   private async write(action: string, details: Record<string, string>, work: (e: Engine) => Promise<void>) {
     const e=await this.writable(); await e.conn.query('BEGIN');
-    try {await work(e);await appendAudit(e,action,details);await e.conn.query('COMMIT');}
+    // Review flaw 16: totals left out of date by a failed rebuild after an import are rebuilt inside the next change.
+    try {await work(e);if(this.derivedStale)await this.financialBody(e);await appendAudit(e,action,details);await e.conn.query('COMMIT');this.derivedStale=false;}
     catch(error){await e.conn.query('ROLLBACK').catch(()=>undefined);throw error;}
     this.dirty=true;this.dataVersion++;this.leakCache=null;await this.save();this.touch();
   }
@@ -1322,8 +1349,13 @@ export class VaultService {
     return this.accessCache;
   }
   /** Called by the command dispatcher before every command: a role that may not do something never reaches its query. */
-  async guard(cap: Cap | null) {
-    if (!cap || !this.engine) return;
+  /**
+   * Review flaw 15: roles live inside the encrypted vault, so while it is locked no role can be checked. A command
+   * that needs one is refused then, except those in LOCKED_ACTIONS (the restore card reads its backup reminder).
+   */
+  async guard(cap: Cap | null, action?: Action) {
+    if (!cap) return;
+    if (!this.engine) { if (action && LOCKED_ACTIONS.has(action)) return; throw new VaultError("LOCKED", msg("vault.unlockYourVaultFirst")); }
     const a = await this.access();
     if (!a.caps.includes(cap)) throw new VaultError("FORBIDDEN", msg("vault.cannotDoThisAsk", { roleLabel: a.roleLabel }));
   }
@@ -1384,7 +1416,7 @@ export class VaultService {
     this.accessCache = null; await this.gridDraftPerson(plan.userId, role); return this.roleList();
   }
   async roleRemove(userId: string) {
-    const sql = await roles.removeSql(this.requireEngine(), { userId: this.identity.userId }, userId);
+    const sql = await roles.removeSql(this.requireEngine(), await this.actor(), userId);
     await this.write("roles.removed", { actor: this.identity.userId, user: userId }, async w => { await w.conn.query(sql); });
     this.accessCache = null; await this.gridDraftPerson(userId, "sales_rep"); return this.roleList();
   }
@@ -1496,7 +1528,7 @@ export class VaultService {
     return {...await pricing.preview(this.requireEngine(),result!.id),ms:result!.ms};
   }
   async rulePreview(id:string,offset=0,query?:unknown){if(id.startsWith("ops-"))this.opsTier();return id.startsWith("grid-")?grid.gridPreview(this.requireEngine(),id,this.licence.tier,offset,query):pricing.preview(this.requireEngine(),id,offset,query);}
-  async ruleApprove(id:string){if(id.startsWith("ops-"))this.opsTier();await this.pricingWrite('pricing.approved',async e=>{const isGrid=id.startsWith('grid-');await e.conn.query(await pricing.approveSql(e,id,this.identity.userId,isGrid?await grid.gridApproval(e,id,this.licence.tier):await ops.approvalMatrixSql(e,id),isGrid?await grid.gridPreview(e,id,this.licence.tier):undefined));});await this.derived(this.requireEngine());await this.save();const config=await backupConfig(this.storage.scope);if(config.directory)await this.backupNow().catch(()=>undefined);return {preview:await this.rulePreview(id),backup:await this.backupStatus()};}
+  async ruleApprove(id:string){if(id.startsWith("ops-"))this.opsTier();await this.pricingWrite('pricing.approved',async e=>{const isGrid=id.startsWith('grid-');await e.conn.query(await pricing.approveSql(e,id,this.identity.userId,isGrid?await grid.gridApproval(e,id,this.licence.tier):await ops.approvalMatrixSql(e,id),isGrid?await grid.gridPreview(e,id,this.licence.tier):undefined));await this.financialBody(e);});const config=await backupConfig(this.storage.scope);if(config.directory)await this.backupNow().catch(()=>undefined);return {preview:await this.rulePreview(id),backup:await this.backupStatus()};}
   // Roadmap 15.6: a workspace's own export layouts. Listing them needs export rights, as does changing them.
   async exportLayouts(){return layouts.layouts(this.requireEngine());}
   async exportLayoutSave(input:unknown,id?:unknown){const p=await layouts.saveSql(this.requireEngine(),input,id,this.identity.userId,new Date().toISOString());await this.write('pricing.layout_saved',{id:p.id,actor:this.identity.userId},e=>e.conn.query(p.sql).then(()=>undefined));return this.exportLayouts();}
@@ -1531,7 +1563,7 @@ export class VaultService {
     if(this.engine||await this.storage.exists())throw new VaultError('BACKUP',msg("vault.restoreIntoAnEmpty"));
     if(file.size>600*1024*1024)throw new VaultError('BACKUP',msg("vault.thisBackupExceedsThe"));
     await this.lease();let bytes:Uint8Array|undefined;
-    try {const value=await decrypt(file,passphrase,this.storage.scope);passphrase='';bytes=value.bytes;this.engine=await openMemory(bytes);this.key=value.key;
+    try {const value=await decrypt(file,passphrase,this.storage.scope);passphrase='';bytes=value.bytes;this.snapshotSize=bytes.byteLength;this.engine=await openMemory(bytes);this.key=value.key;
       const meta=(await this.engine.conn.query('SELECT scope,tier FROM vault_meta WHERE id=1')).toArray()[0];if(meta.scope!==this.storage.scope||!['starter','professional','scale'].includes(meta.tier))throw new Error('metadata');
       if(!(await verifyAudit(this.engine)).valid)throw new Error('audit');this.tier=this.licence.effective(meta.tier as Tier);await this.migrate();await makeWritable(this.engine);
       await this.engine.conn.query('BEGIN');await appendAudit(this.engine,'backup.restored',{});await this.engine.conn.query('COMMIT');this.dirty=true;this.generation=value.sequence;await this.save();this.touch();return this.status();
@@ -1553,7 +1585,7 @@ export class VaultService {
     if (this.timer) clearTimeout(this.timer); this.timer = null; this.stopBell(); this.lastBackground = 0;
     const engine = this.engine; this.engine = null; this.key = null; this.packLast=null; this.agentsOpened = false; this.studio.clear(); this.leakCache = null; this.accessCache = null; this.viewAs = null;
     if (engine) await closeMemory(engine).catch(() => undefined);
-    this.releaseLease?.(); this.releaseLease = null; this.dirty = false;
+    this.releaseLease?.(); this.releaseLease = null; this.dirty = false; this.snapshotSize = 0;
   }
   async currencySet(currency: string) {
     await this.write('workspace.currency_set', {}, async e => { const sql = await currencyChangeSql(e, currency); if (sql) await e.conn.query(sql); });
@@ -1570,6 +1602,6 @@ export class VaultService {
     const access = await this.access(), cost = access.caps.includes("cost");
     const files = (await this.engine.conn.query(SAMPLE_COUNTS_SQL)).toArray()[0], sample = sampleState(Number(files.sample), Number(files.real));
     const totals = (await this.engine.conn.query(`SELECT coalesce(sum(list_cents),0)::VARCHAR AS list,coalesce(sum(discount_cents),0)::VARCHAR AS discounts,coalesce(sum(freight_cents),0)::VARCHAR AS freight,coalesce(sum(rebate_cents),0)::VARCHAR AS rebates,coalesce(sum(list_cents-discount_cents-freight_cents-rebate_cents),0)::VARCHAR AS pocket${cost ? `,coalesce(sum(cost_cents),0)::VARCHAR AS cost,coalesce(sum(list_cents-discount_cents-freight_cents-rebate_cents-cost_cents),0)::VARCHAR AS margin` : ""} FROM ${await salesInput(this.engine)}`)).toArray()[0];
-    return { ...base, currency: await workspaceCurrency(this.requireEngine()), lines: String(data.lines), products: String(data.products), customers: String(data.customers), auditEntries: String(data.entries), schemaVersion: String(data.version), sample, totals: { cost: null, margin: null, ...totals } as VaultStatus["totals"], access };
+    return { ...base, size: vaultSize(this.snapshotSize), currency: await workspaceCurrency(this.requireEngine()), lines: String(data.lines), products: String(data.products), customers: String(data.customers), auditEntries: String(data.entries), schemaVersion: String(data.version), sample, totals: { cost: null, margin: null, ...totals } as VaultStatus["totals"], access };
   }
 }

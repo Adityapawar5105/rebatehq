@@ -43,6 +43,8 @@ export type VaultStatus = {
   writable: boolean; preparing: boolean;
   lines: string; products: string; customers: string; auditEntries: string;
   currency: string; schemaVersion: string; generation: string; tier: Tier; lastSaved: string | null;
+  /** Unlocked only: the last saved snapshot's size against the 512 MiB limit; near from 85% (review flaw 11). */
+  size?: { bytes: string; limit: string; near: boolean };
   /** Unlocked only: whether the vault holds no files, only the Playground's sample files, both, or real files only. */
   sample?: import("../studio/playground").SampleState;
   /** cost and margin are null for roles that may not see cost: the worker never selects them. */
@@ -220,7 +222,8 @@ export type Commands = {
   reconRebuild: Record<string, never>;
 };
 export type LeaksView = { result: LeakResult; roi: RoiSummary; sample: boolean; recorded: number };
-export type CommitResult = { loaded: string; rejected: string; files: string; cleanup: boolean };
+/** totalsStale (review flaw 16): the rows were imported and saved, but the margin totals could not be rebuilt; the next change rebuilds them. */
+export type CommitResult = { loaded: string; rejected: string; files: string; cleanup: boolean; totalsStale?: boolean };
 export type Results = {
   reportState:Awaited<ReturnType<VaultService["reportState"]>>;
   reportCheck:Awaited<ReturnType<VaultService["reportCheck"]>>;

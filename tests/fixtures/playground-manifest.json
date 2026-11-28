@@ -5,6 +5,7 @@
   "tiers": 50,
   "lines": 120000,
   "months": "2024-11 to 2026-10",
+  "costRise": "2025-11-01",
   "leaks": [
     {
       "id": "L1",

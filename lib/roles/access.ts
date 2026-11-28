@@ -127,6 +127,8 @@ export const ACTIONS: Record<Action, { cap: Cap | null; mode: Mode }> = {
 /** The capability each command needs, read from ACTIONS. */
 export const ACTION_CAP = Object.fromEntries(Object.entries(ACTIONS).map(([action, v]) => [action, v.cap])) as Record<Action, Cap | null>;
 /** Commands that keep working while the licence is read-only, read from ACTIONS. */
+/** Commands that need a capability but may run while the vault is locked: they read local settings only (review flaw 15). */
+export const LOCKED_ACTIONS: ReadonlySet<Action> = new Set<Action>(["backupStatus"]);
 export const READ_ONLY_ACTIONS: ReadonlySet<Action> = new Set((Object.keys(ACTIONS) as Action[]).filter(action => ACTIONS[action].mode === "read"));
 /** Sections of the app a role can open (the worker still checks every command). */
 export function sectionsFor(caps: Cap[]): string[] {

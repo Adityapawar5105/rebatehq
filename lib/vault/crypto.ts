@@ -1,6 +1,10 @@
 import { VaultError } from "./protocol";
 import { msg } from "../i18n/core";
 export const ITERATIONS = 600_000, CHUNK_BYTES = 1024 * 1024;
+/** The largest snapshot the envelope holds (512 chunks, 512 MiB); a bigger vault cannot be saved. */
+export const MAX_VAULT_BYTES = 512 * CHUNK_BYTES;
+/** From this share of the limit the app warns (review flaw 11). */
+export const NEAR_VAULT_BYTES = Math.floor(MAX_VAULT_BYTES * 0.85);
 const MAGIC = new TextEncoder().encode("MDVAULT1");
 export const buffer = (value: Uint8Array) => new Uint8Array(value).buffer;
 export const hex = (value: ArrayBuffer) => Array.from(new Uint8Array(value), x => x.toString(16).padStart(2, "0")).join("");
@@ -26,7 +30,7 @@ export async function readHeader(source: Blob, scope: string) {
   const header = new Uint8Array(await source.slice(0, 12 + length).arrayBuffer());
   const meta: Envelope = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(header.subarray(12)));
   if (meta.format !== 1 || meta.scope !== scope || meta.iterations !== ITERATIONS || meta.chunkBytes !== CHUNK_BYTES ||
-      !Number.isSafeInteger(meta.bytes) || meta.bytes < 1 || meta.bytes > 512 * CHUNK_BYTES || !/^\d{1,18}$/.test(meta.sequence) ||
+      !Number.isSafeInteger(meta.bytes) || meta.bytes < 1 || meta.bytes > MAX_VAULT_BYTES || !/^\d{1,18}$/.test(meta.sequence) ||
       typeof meta.salt !== "string" || typeof meta.iv !== "string" || unb64(meta.salt).length !== 16 || unb64(meta.iv).length !== 8 ||
       source.size !== header.length + meta.bytes + 16 * Math.ceil(meta.bytes / CHUNK_BYTES)) throw new Error("settings");
   return { header, meta };
@@ -38,7 +42,7 @@ export async function encrypt(bytes: Uint8Array, sink: CipherSink, key: Key, sco
   const json = new TextEncoder().encode(JSON.stringify(meta));
   const header = new Uint8Array(12 + json.length); header.set(MAGIC); new DataView(header.buffer).setUint32(8, json.length); header.set(json, 12);
   try {
-    if (!bytes.length || bytes.length > 512 * CHUNK_BYTES) throw new Error("size");
+    if (!bytes.length || bytes.length > MAX_VAULT_BYTES) throw new Error("size");
     await sink.write(header);
     for (let at = 0, index = 0; at < bytes.length; at += CHUNK_BYTES, index++) {
       const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv: buffer(iv(prefix, index)), additionalData: buffer(aad(header, index)) }, key.key, buffer(bytes.subarray(at, at + CHUNK_BYTES)));

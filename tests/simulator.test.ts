@@ -10,7 +10,7 @@ import { VaultError, type Request } from '../lib/vault/protocol';
 import { simulate, simRows, simOptions, checkScenario, percentBp, SIM_GRID, SIM_MAX_LINES, type SimChange } from '../lib/vendor/simulate';
 import { lineFromCents } from '../lib/margin/engine';
 import { rha, rateBp, basisPointsDecimal } from '../lib/margin/decimal';
-import { generatePlayground } from '../lib/studio/playground';
+import { PLAYGROUND_REFERENCE_DATE, generatePlayground } from '../lib/studio/playground';
 import { ACTION_CAP, capsFor } from '../lib/roles/access';
 import { READ_ONLY_ACTIONS } from '../lib/vault/licence';
 import { ROLE_IDS } from '../lib/vault/schema';
@@ -135,7 +135,7 @@ const csv = (text: string) => text.trim().split(/\r?\n/).slice(1).map(l => l.spl
 const q = (s: string) => `'${s.replaceAll("'", "''")}'`;
 
 test('7E-2 playground: the simulator totals equal the engine replaying every line (actual and scenario)', async () => {
-  const { files } = generatePlayground(), file = (p: string) => files.find(f => f.name.includes(p))!.text;
+  const { files } = generatePlayground(PLAYGROUND_REFERENCE_DATE), file = (p: string) => files.find(f => f.name.includes(p))!.text;
   const items = csv(file('item master')), custs = csv(file('customers')), sales = csv(file('sales history'));
   const category = new Map(items.map(r => [r[0], r[2]]));
   const { c, e } = await vault();
