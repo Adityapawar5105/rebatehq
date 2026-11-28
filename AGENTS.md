@@ -414,3 +414,5 @@ See `docs/evidence/SECOND_AUDIT_PASS.md`. The independent security review (R02, 
 - Migration `20261129120000_review_r2_relay_quotas.sql` is **locked** (28 Nov 2026) after CI #291 on `78b75e5`, CI #292 on `main` at `31987d4` and the user-run Restore Drill #29 (163 restore-mode checks). 19 migrations are applied and 0 are pending. Applied to staging on 28 Nov 2026.
 - It merged as PR #53 (`31987d4`); CI #289 and #290 failed first on the new relay-off step itself (the old server kept port 3000; an import waited for an acknowledgement box).
 - The independent security review (B5) is still the owner's to commission. See docs/evidence/REVIEW_R2_VERIFICATION.md.
+
+**app.rebatehq.app on Vercel (28 Nov 2026).** The Cloudflare `app` CNAME points to Vercel; `APP_BASE_URL` is `https://app.rebatehq.app`. The Netlify site stays as a rollback for a week. 16 variables added by a Supabase integration (including the service-role key and database password) were removed from the Vercel project; the app reads none of them. See VERCEL_DEPLOYMENT.md.
