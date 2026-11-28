@@ -61,7 +61,7 @@ owner's decision D11).
 
 This section supersedes the dated orders in the chunk history below, such as "Do not start 7D", "Next chunk: …" and "Only 9A remains". Those orders are history.
 - **Merged on `main`:** every chunk through 8R; roadmap phases 1 to 16 apart from the owner's items; team sharing S1 to S5b; near-miss tiers (blueprint item 39). The sidebar redesign (PR #24) merged on 23 Nov 2026.
-- **Numbers:** local vault v25 / 69 tables. Supabase has 19 locked migrations, 0 pending, and 15 control-plane tables. pgTAP plans 160 fresh and 163 restore checks. Staging `rebatehq-staging` has all 19 (the review R2 quota migration applied on 28 Nov 2026 with `supabase db push`), with `RELAY_ENABLED` false.
+- **Numbers:** local vault v25 / 69 tables. Supabase has 19 locked migrations, 1 pending (the R3 tenant purge), and 15 control-plane tables. pgTAP plans 164 fresh and 167 restore checks (160 and 163 before the pending migration). Staging `rebatehq-staging` has all 19 (the review R2 quota migration applied on 28 Nov 2026 with `supabase db push`), with `RELAY_ENABLED` false.
 - **Excluded by the owner:** payments (Phase 12) and the mobile app (9A / 15.5).
 - **The open work list:** the 26 Nov full project review, kept in the owner's private notes and not in this public repo. R1 fixes are in progress.
 - Work follows the owner's explicit instruction for each step.
@@ -416,3 +416,8 @@ See `docs/evidence/SECOND_AUDIT_PASS.md`. The independent security review (R02, 
 - The independent security review (B5) is still the owner's to commission. See docs/evidence/REVIEW_R2_VERIFICATION.md.
 
 **app.rebatehq.app on Vercel (28 Nov 2026).** The Cloudflare `app` CNAME points to Vercel; `APP_BASE_URL` is `https://app.rebatehq.app`. The Netlify site stays as a rollback for a week. 16 variables added by a Supabase integration (including the service-role key and database password) were removed from the Vercel project; the app reads none of them. See VERCEL_DEPLOYMENT.md.
+
+**Review R3 (28 Nov 2026; built by Claude Code).**
+- **Monitoring and contact:** an uptime workflow checks `/api/health` and `/login` twice an hour and opens an `uptime` issue on failure (PR #56); `security.txt`, and support@ and security@rebatehq.app forward to the owner.
+- **Invite gate (B4, PR #57):** a CI pass sends a real invite through a local Resend receiver, accepts it and approves the device, with a Redis-backed rate limiter.
+- **30-day tenant purge:** migration `20261130120000_r3_tenant_purge.sql` (**pending** until CI and a user-run Restore Drill with `1..167`) adds `rebatehq_private.purge_deleted_tenant`; `scripts/purge-deleted-tenants.ts` is no longer suspended. It is a dry run by default; with `--apply` and `CONFIRM_TENANT_PURGE=YES` it deletes the workspace's encrypted `relay-packs` chunks through the Storage API, then its rows in 14 tables, keeping the audit log. See MIGRATION_RULES.md.

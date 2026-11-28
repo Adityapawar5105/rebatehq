@@ -139,3 +139,11 @@ Two checks were rewritten for tables that remain:
 - **Restore Drill:** the user-run [Restore Drill #29](https://github.com/Adityapawar5105/rebatehq/actions/runs/46061068895) (local target) passed on `31987d4` with `1..163` restore-mode checks.
 - **What it changes:** `public.relay_check_insert()` only, from the S2 body. A device that does not publish under the signed grid may send 20 events a minute and 2,000 a day (publishers 60 a minute); the 1,000 device-key limit counts only keys of active devices, with a lifetime bound of 10,000. Same SECURITY DEFINER, `search_path` and grants.
 - **Staging:** applied on 28 Nov 2026 with `supabase db push` after a dry run. Read-only checks found both changes in the function, SECURITY DEFINER with `search_path=public, pg_temp`, no EXECUTE for anon, authenticated, service_role or rebatehq_app, and its 6 triggers. The security advisor showed nothing new.
+
+## Review R3 tenant purge (pending)
+
+`20261130120000_r3_tenant_purge.sql` is **pending**: 19 applied, 1 pending. It is locked only after green CI and a **user-run** Restore Drill reporting `1..167`.
+- **What it adds:** `rebatehq_private.purge_deleted_tenant(uuid, interval DEFAULT '30 days')`, SECURITY INVOKER with `search_path = public, pg_temp`. It refuses a caller without SUPERUSER or BYPASSRLS, a window under 30 days, and a workspace that is live or was deleted less than the window ago. It deletes the workspace's rows from the 13 child tables, children first, then the tenant row, and returns the count per table. The audit log keeps its rows.
+- **Grants:** revoked from `PUBLIC, anon, authenticated, service_role, rebatehq_app`; the private schema's USAGE was already closed to them. No table, policy or public function changes, so the tenant-table minimum stays 15.
+- **pgTAP:** four checks at the end of `supabase/tests/sharing_s4.sql` (closed ACL; the three refusals; a real purge of relay tenant B leaving zero rows in 14 tables with its audit rows kept; tenant A unchanged). Plans: **164** fresh, **167** restore.
+- **Storage:** chunks cannot be deleted from SQL. `scripts/purge-deleted-tenants.ts` deletes the workspace's `relay-packs/<tenant>/` objects through the Storage API first, and calls the function only once none are left.
